@@ -1,7 +1,93 @@
 {
   "taproot_quota": {
     "title": "Quota",
-    "placeholder": "Pooled remaining quota per provider, with recorded and projected burn, lands here next.",
-    "legacy_link": "Open the previous quota page"
+    "meta_one": "{{count}} credential · {{reporting}} reporting",
+    "meta_other": "{{count}} credentials · {{reporting}} reporting",
+    "show_emails": "Show emails",
+    "hide_emails": "Hide emails",
+    "refresh": "Refresh",
+    "load_failed": "Could not load quota: {{message}}",
+    "empty": "No accounts yet. Add a Claude or Codex credential under OAuth Login, and its quota appears here after its first request.",
+    "controls": {
+      "view": "Chart view",
+      "remaining": "Remaining",
+      "drain": "Drain rate",
+      "burn_rate": "Burn rate",
+      "hours_one": "{{count}}h",
+      "hours_other": "{{count}}h",
+      "future": "Future usage",
+      "future_same": "Same as now",
+      "future_heavy": "Heavy (1.5x)",
+      "future_light": "Light (0.5x)",
+      "future_none": "No more usage",
+      "accounts": "Accounts",
+      "range": "{{from}} to {{to}}",
+      "previous": "Previous week",
+      "next": "Next week",
+      "today": "Today"
+    },
+    "card": {
+      "accounts_one": "{{count}} account",
+      "accounts_other": "{{count}} accounts",
+      "disabled_one": "{{count}} disabled",
+      "disabled_other": "{{count}} disabled",
+      "of": "of {{capacity}}",
+      "no_enabled": "No enabled accounts. Disabled accounts do not count toward the pool."
+    },
+    "stats": {
+      "pool_empty": "Pool empty",
+      "first_empty": "First empty",
+      "next_reset": "Next reset",
+      "burn": "Burn, last {{hours}}h",
+      "not_by": "Not by {{date}}",
+      "now": "Now",
+      "in": "in {{duration}}",
+      "reset_value": "+{{gain}} {{time}}",
+      "none": "None ahead"
+    },
+    "chart": {
+      "now": "Now",
+      "pool": "Pool",
+      "recorded": "Recorded",
+      "projected": "projected",
+      "projected_legend": "Projected",
+      "tooltip_left": "{{value}}% left",
+      "tooltip_drain": "{{value}}%/h",
+      "aria": "{{provider}} pooled quota: {{remaining}} of {{capacity}} remaining, recorded and projected over the selected range"
+    },
+    "windows": {
+      "five_hour": "5-hour",
+      "seven_day": "Weekly",
+      "seven_day_opus": "Weekly Opus",
+      "seven_day_sonnet": "Weekly Sonnet",
+      "seven_day_fable": "Weekly Fable",
+      "codex_primary": "Primary",
+      "codex_secondary": "Secondary"
+    },
+    "status": {
+      "available": "Available",
+      "blocked": "Blocked",
+      "blocked_until": "Blocked until {{time}}",
+      "disabled": "Disabled",
+      "no_data": "No quota data"
+    },
+    "accounts": {
+      "title": "Accounts",
+      "account": "Account",
+      "status": "Status",
+      "trend": "Remaining",
+      "used": "{{value}} used",
+      "binding": "binding",
+      "resets": "resets {{time}} (in {{in}})",
+      "no_reset": "no reset known",
+      "none": "—",
+      "not_reported": "Not reported for this account"
+    },
+    "live": {
+      "description": "Taproot records no quota for this provider. Read it live from the provider instead.",
+      "no_files": "No credential file for a live read.",
+      "show": "Live quota",
+      "hide": "Hide live quota"
+    }
   }
 }

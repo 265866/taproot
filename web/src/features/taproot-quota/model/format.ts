@@ -31,8 +31,10 @@ export function formatDay(t: number, locale?: string): string {
   return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(t);
 }
 
+/** Axis tick: `Fri 23`, weekday first in every locale. */
 export function formatWeekdayDay(t: number, locale?: string): string {
-  return new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric' }).format(t);
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(t);
+  return `${weekday} ${new Date(t).getDate()}`;
 }
 
 /** `Tue 10:00 AM` within a week of `now`, otherwise `Nov 12, 10:00 AM`. */
@@ -48,7 +50,7 @@ export function formatMoment(t: number, now: number, locale?: string): string {
 
 /**
  * Masks an account label so screenshots do not leak it: `anthropic1@sl.example.org` becomes
- * `an•••@s•••.run`. Labels without `@` keep their first two characters.
+ * `an•••1@s•••.run`. Labels without `@` keep their first two characters.
  */
 export function maskLabel(label: string): string {
   const dots = '•••';
@@ -59,5 +61,18 @@ export function maskLabel(label: string): string {
   const domain = label.slice(at + 1);
   const dot = domain.lastIndexOf('.');
   const tld = dot > 0 ? domain.slice(dot) : '';
-  return `${local.slice(0, 2)}${dots}@${domain.slice(0, 1)}${dots}${tld}`;
+  const tail = local.length > 3 ? local.slice(-1) : '';
+  return `${local.slice(0, 2)}${dots}${tail}@${domain.slice(0, 1)}${dots}${tld}`;
+}
+
+/** Fallback name for a window id without a catalog entry: `seven_day_opus` -> `Seven day opus`. */
+export function humanizeWindow(id: string): string {
+  const text = id.replace(/_/g, ' ').trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : id;
+}
+
+/** An account's display name: its label (or auth index), masked unless emails are shown. */
+export function accountName(account: { label: string; authIndex: string }, show: boolean): string {
+  const label = account.label || account.authIndex;
+  return show ? label : maskLabel(label);
 }

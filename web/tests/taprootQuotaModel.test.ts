@@ -204,7 +204,8 @@ describe('format', () => {
   });
 
   test('masks account labels', () => {
-    expect(maskLabel('anthropic1@sl.example.org')).toBe('an•••@s•••.run');
+    expect(maskLabel('anthropic1@sl.example.org')).toBe('an•••1@s•••.run');
+    expect(maskLabel('anthropic@sl.example.org')).toBe('an•••c@s•••.run');
     expect(maskLabel('8dc6f68dec36dcc4')).toBe('8d•••');
     expect(maskLabel('a@localhost')).toBe('a•••@l•••');
     expect(maskLabel('')).toBe('');
