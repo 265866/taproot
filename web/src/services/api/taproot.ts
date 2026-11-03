@@ -135,25 +135,45 @@ export interface Price {
   updatedAt: string;
 }
 
+/** One row of `GET /request-logs`; reqlog's `LogMeta` owns the shape. */
 export interface RequestLogMeta {
   requestId: string;
-  traceId: string;
-  sessionId: string;
-  ts: string;
+  traceId?: string;
+  sessionId?: string;
+  parentSessionId?: string;
+  timestamp: string;
+  durationMs: number;
   method: string;
+  url: string;
   path: string;
   status: number;
-  model: string;
-  authIndex: string;
-  reqBytes: number;
-  respBytes: number;
+  model?: string;
+  authIndex?: string;
+  streaming: boolean;
+  /** Recorded only because it failed while full request logging was off. */
+  errorOnly: boolean;
+  /** Why parts of the record were not stored, for example a body over the memory budget. */
+  dropped?: string;
+  requestBytes: number;
+  responseBytes: number;
+  recordBytes: number;
 }
+
+/** Header values arrive as lists because a header can repeat. */
+export type HeaderMap = Record<string, string[]>;
 
 export interface RequestLogDetail {
   meta: RequestLogMeta;
-  request: { headers: Record<string, string>; body: string };
-  response: { status: number; headers: Record<string, string>; body: string };
-  upstream: Record<string, unknown>;
+  request: { method: string; url: string; headers: HeaderMap; body: string };
+  response: { status: number; headers: HeaderMap; body: string };
+  /** Executor-formatted sections, verbatim; each can hold several attempts. */
+  upstream: {
+    request?: string;
+    response?: string;
+    errors?: { status: number; message: string }[];
+    websocketTimeline?: string;
+    apiWebsocketTimeline?: string;
+  };
 }
 
 export interface RequestLogStats {
@@ -162,24 +182,56 @@ export interface RequestLogStats {
   oldest: string | null;
   newest: string | null;
   count: number;
+  segments: number;
+  openSegments: number;
+  queueBytes: number;
+  droppedBodies: number;
+  droppedRecords: number;
+  truncatedResponses: number;
+  writeErrors: number;
 }
+
+export type BackupReason = 'scheduled' | 'manual' | 'pre-restore';
 
 export interface Backup {
   id: string;
   createdAt: string;
   bytes: number;
-  reason: string;
-  files: string[];
+  reason: BackupReason;
+  /** Number of files in the archive's manifest. */
+  files: number;
 }
 
 export interface RestoreResult {
   restored: true;
   preRestoreBackupId: string;
+  /** `scheduled`: taproot exits for its supervisor to restart it; `manual`: restart it yourself. */
+  restart: 'scheduled' | 'manual';
+  message: string;
 }
 
-// The editable subset of taproot.yaml; access (A2), request logs (A3), and backups (A4) own the
-// keys, so this stays an open record until those settle.
-export type TaprootSettings = Record<string, unknown>;
+export interface TaprootSettings {
+  access: { enabled: boolean; allowLogins: string[] };
+  requestLogs: {
+    /** Negative disables the age limit. */
+    maxDays: number;
+    /** Negative disables the size limit. */
+    maxBytes: number;
+    excludePaths: string[];
+    keepUnrouted404: boolean;
+  };
+  backups: { dailyAt: string; keep: number };
+  ingest: { pollInterval: string; activePollInterval: string; restartRequired: boolean };
+  info: { configPath: string; dataDir: string; version: string; commit: string; buildDate: string };
+}
+
+/** A `PUT /settings` body: absent sections and fields stay as they are. */
+export interface TaprootSettingsUpdate {
+  access?: { allowLogins?: string[] };
+  requestLogs?: Partial<TaprootSettings['requestLogs']>;
+  backups?: Partial<TaprootSettings['backups']>;
+  ingest?: { pollInterval?: string };
+}
 
 export interface TimeRange {
   from: string;
@@ -198,9 +250,10 @@ export interface UsageEventFilter extends TimeRange, Page {
   failed?: boolean;
 }
 
-export interface RequestLogFilter extends TimeRange, Page {
+export interface RequestLogFilter extends Partial<TimeRange>, Page {
   q?: string;
-  status?: number;
+  /** A status code, `Nxx`, or `error`. */
+  status?: string;
   model?: string;
   authIndex?: string;
   sessionId?: string;
@@ -309,8 +362,8 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       request<RestoreResult>('POST', `/backups/${id(backupId)}/restore`),
 
     settings: () => request<TaprootSettings>('GET', '/settings'),
-    putSettings: (settings: TaprootSettings) =>
-      request<TaprootSettings>('PUT', '/settings', { body: settings }),
+    putSettings: (update: TaprootSettingsUpdate) =>
+      request<TaprootSettings>('PUT', '/settings', { body: update }),
   };
 }
 

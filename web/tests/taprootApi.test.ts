@@ -49,7 +49,7 @@ beforeAll(() => {
           createdAt: '2026-11-02T00:00:00Z',
           bytes: 1,
           reason: 'manual',
-          files: [],
+          files: 6,
         });
       }
       if (url.pathname.startsWith('/denied/')) {
