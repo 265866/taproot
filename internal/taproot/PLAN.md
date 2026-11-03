@@ -184,3 +184,13 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 - **Web.** `bun run verify`. The baseline has 8 timezone test failures on Windows from upstream; those files get deleted or replaced with the old quota timeline.
 - **Real-surface check.** The real binary with an imported copy of server's Usage Keeper database, driven in a browser for every page. Screenshots go in the result.
 - **Review.** A fresh-context review of access first, because it decides who can read OAuth tokens.
+
+## Decisions after phase A
+
+- **Importer.** The importer is a separate binary, `cmd/taproot-import` (`-config`, `-usage-keeper`). The server's flags stay upstream's.
+- **Request log segments.** Segments roll on idle (15m), age (6h), day change, or 64 MiB raw, not hourly. On the real fixture, per-session segments compressed 97x, while per-session-hour segments compressed 73x. The 64 MiB cap keeps the worst lookup under 50 ms.
+- **Plugin resource routes** (`/v0/resource/plugins/*`) are guarded but get no injected key. Upstream serves them unauthenticated and forwards headers to plugin code.
+- **RESP usage queue.** Upstream multiplexes this Redis-protocol queue on the proxy port, outside gin, so the guard never sees it. The generated `MANAGEMENT_PASSWORD` enables it. Accepted risk: AUTH needs the random 256-bit secret, and upstream bans an IP after 5 failures. Taproot does not use the queue. Revisit if upstream adds a switch to disable it.
+- **Poller timeout.** The idle-account poller's 30 s timeout on its read-only usage probe is an intended exception to AGENTS.md's no-timeout rule. That rule targets proxied upstream traffic.
+- **Shutdown drain.** Setup runs on `context.Background()`, so request-log records still queued at shutdown are recovered from the open segment on the next start rather than drained. Usage events still queued are lost. The flush interval is 1 s.
+- **Mounts on server.** On server, `config.yaml` lives in the mounted `/data` directory, which is what restore's atomic rename needs. The tailscaled socket must be mounted at `/var/run/tailscale/tailscaled.sock`. After deploying, `GET /taproot/api/v1/me` from a tailnet client must report `via: "tailnet"`. If it reports loopback, the port forwarding is rewriting source addresses and the guard would admit everyone.
