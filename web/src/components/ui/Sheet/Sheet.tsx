@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { IconX } from '../icons';
 import { FOCUSABLE_SELECTOR, lockScroll, unlockScroll } from '../scrollLock';
 import styles from './Sheet.module.scss';
@@ -56,6 +57,7 @@ export function Sheet({
   children,
 }: PropsWithChildren<SheetProps>) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const titleId = useId();
   const descId = useId();
   const [isVisible, setIsVisible] = useState(false);
@@ -238,7 +240,7 @@ export function Sheet({
             {eyebrow ? <div className={styles.eyebrow}>{eyebrow}</div> : null}
             {title ? (
               <h2 id={titleId} className={styles.title}>
-                {title}
+                {typeof title === 'string' ? mask(title) : title}
               </h2>
             ) : null}
             {description ? (
