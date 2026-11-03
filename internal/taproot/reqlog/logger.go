@@ -95,6 +95,9 @@ func (l *requestLogger) LogRequestWithOptionsAndAllSources(url, method string, r
 		apiResponseTime: apiResponseTimestamp,
 		finishedAt:      l.now(),
 		errorOnly:       !enabled,
+		// Upstream picks the streaming writer from Content-Type at WriteHeader
+		// time and can finish an event stream through this buffered path.
+		streaming: isEventStream(responseHeaders),
 	}
 	c.responseBody, c.decompressErr = decodeResponse(responseHeaders, response)
 	l.engine.submit(c)
@@ -383,4 +386,18 @@ func (c *capture) build() (*recordMeta, frame, error) {
 		return nil, frame{}, err
 	}
 	return meta, f, nil
+}
+
+func isEventStream(headers map[string][]string) bool {
+	for key, values := range headers {
+		if !strings.EqualFold(key, "Content-Type") {
+			continue
+		}
+		for _, v := range values {
+			if strings.Contains(strings.ToLower(v), "text/event-stream") {
+				return true
+			}
+		}
+	}
+	return false
 }

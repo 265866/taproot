@@ -116,6 +116,9 @@ func TestRoundTripInterleavedSessions(t *testing.T) {
 			"Content-Length":  {"0"},
 			"X-Request-Index": {fmt.Sprint(i)},
 		}
+		if !req.streaming {
+			req.respHeaders["Content-Type"] = []string{"application/json"}
+		}
 		sent = append(sent, req)
 	}
 
@@ -824,5 +827,30 @@ func TestStreamingSpooledSections(t *testing.T) {
 	left, _ := os.ReadDir(h.logs.engine.tmpDir())
 	if len(left) != 0 {
 		t.Fatalf("spool files left behind: %d", len(left))
+	}
+}
+
+func TestBufferedEventStreamIsMarkedStreaming(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	ts := h.clock.now()
+	body := []byte(`{"model":"claude-x","stream":true}`)
+	sse := []byte("event: message_start\ndata: {}\n\n")
+	for id, contentType := range map[string]string{"sse": "text/event-stream; charset=utf-8", "json": "application/json"} {
+		err := lg.LogRequest("/v1/messages", "POST", map[string][]string{"Content-Type": {"application/json"}}, body, 200,
+			map[string][]string{"content-type": {contentType}}, sse, nil, apiRequestText(body), nil, nil, nil, id, ts, ts)
+		if err != nil {
+			t.Fatalf("log %s: %v", id, err)
+		}
+	}
+	h.flush()
+	for id, want := range map[string]bool{"sse": true, "json": false} {
+		d, err := h.logs.Get(context.Background(), id)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
+		}
+		if d.Meta.Streaming != want {
+			t.Errorf("%s streaming = %v, want %v", id, d.Meta.Streaming, want)
+		}
 	}
 }
