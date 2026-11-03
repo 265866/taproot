@@ -83,7 +83,7 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 The guard splits the server into two surfaces. The package comment in `internal/taproot/access/access.go` is the code-side copy of this section.
 
 - **Admin surface.** Everything that reads or changes credentials, settings, backups, or plugins:
-  - the dashboard (`GET`/`HEAD /`)
+  - the dashboard (`GET`/`HEAD /`), except that the static page itself loads for every admitted caller (see the note under the table)
   - `/v0/management/**` and `/v8/management/**`, including the plugin management routes upstream serves from `NoRoute`
   - `/taproot/**`
   - plugin pages and assets under `/v0/resource/plugins/**` (the dashboard frames them same-origin)
@@ -110,7 +110,7 @@ The guard splits the server into two surfaces. The package comment in `internal/
     - An entry is a MagicDNS name assigned by control, either full (`desktop.tailnet-0000.ts.net`) or its first label for nodes in server's tailnet (`desktop`).
     - Only whois `Node.Name` is matched. `ComputedName` and the device-reported hostname are not used, because the device controls them.
     - Settings shows and edits the list. A change that drops the caller's own node is refused; loopback callers are exempt.
-    - On server: `desktop`, `laptop`, and `phone`.
+    - On server: `desktop`, `laptop`, and `phone` (checked against `tailscale status` on 2026-11-02; phone reports the hostname `localhost`, which is why only control-assigned names count).
   - **Never publish the port on host loopback.** Publishing `127.0.0.1:8317` could make pasta deliver host connections with a loopback source (inferred from pasta's splice path, not measured), which would make every host process an admin. Keep the `100.64.0.1` and `127.0.1.1` publishes.
 - **Browser hardening.** The admin surface is keyless for admitted callers, so any page the admin visits could otherwise use the admin's tailnet address. Upstream answers every request with `Access-Control-Allow-Origin: *` and its websocket upgraders accept any origin. The guard runs before upstream's CORS middleware on both surfaces, and its 403 carries no CORS headers. It rejects:
   - a `Host` that is not one of the server's names: `localhost`, any loopback address, the server's tailnet addresses, its MagicDNS name with and without the tailnet suffix (`server`, `server.tailnet-0000.ts.net`, with or without a trailing dot), and `extra-hosts`, each with any port. This stops DNS rebinding.
