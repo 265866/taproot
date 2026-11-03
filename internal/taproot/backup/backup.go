@@ -369,17 +369,15 @@ func (b *Backups) collect() ([]source, error) {
 	return sources, nil
 }
 
-// authFiles maps slash-separated paths relative to the auth dir to file paths.
-// It skips the data dir in case it sits inside the auth dir, so backups never
-// contain earlier backups.
+// authFiles maps credential file names to their paths. Upstream loads only
+// top-level *.json files from the auth dir as credentials, so subdirectories
+// (upstream may write app logs to <auth-dir>/logs, and the data dir may sit
+// inside the auth dir) and other files are neither backed up nor touched by a
+// restore.
 func (b *Backups) authFiles() (map[string]string, error) {
 	files := map[string]string{}
 	if b.paths.AuthDir == "" {
 		return files, nil
-	}
-	dataDir, err := filepath.Abs(b.paths.DataDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve data dir: %w", err)
 	}
 	root, err := filepath.Abs(b.paths.AuthDir)
 	if err != nil {
@@ -387,9 +385,6 @@ func (b *Backups) authFiles() (map[string]string, error) {
 	}
 	if resolved, errResolve := filepath.EvalSymlinks(root); errResolve == nil {
 		root = resolved
-	}
-	if resolved, errResolve := filepath.EvalSymlinks(dataDir); errResolve == nil {
-		dataDir = resolved
 	}
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -399,12 +394,12 @@ func (b *Backups) authFiles() (map[string]string, error) {
 			return err
 		}
 		if d.IsDir() {
-			if path == dataDir {
-				return filepath.SkipDir
+			if path == root {
+				return nil
 			}
-			return nil
+			return filepath.SkipDir
 		}
-		if !d.Type().IsRegular() {
+		if !d.Type().IsRegular() || !strings.HasSuffix(strings.ToLower(d.Name()), ".json") {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)

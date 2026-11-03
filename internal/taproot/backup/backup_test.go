@@ -34,9 +34,16 @@ const (
 )
 
 var origAuth = map[string]string{
-	"claude-a.json":     `{"type":"claude","token":"a"}`,
-	"claude-b.json":     `{"type":"claude","token":"b"}`,
+	"claude-a.json": `{"type":"claude","token":"a"}`,
+	"claude-b.json": `{"type":"claude","token":"b"}`,
+}
+
+// otherAuthDirFiles are files upstream does not load as credentials. Backups
+// leave them out and restores leave them alone.
+var otherAuthDirFiles = map[string]string{
 	"nested/codex.json": `{"type":"codex","token":"c"}`,
+	"logs/main.log":     "app log line\n",
+	"notes.txt":         "not a credential\n",
 }
 
 type fixture struct {
@@ -65,8 +72,10 @@ func newFixture(t *testing.T, cfg Config) *fixture {
 	}
 	writeFile(t, f.paths.ConfigFile, origConfig)
 	writeFile(t, f.paths.TaprootFile, origTaproot)
-	for rel, body := range origAuth {
-		writeFile(t, filepath.Join(f.paths.AuthDir, filepath.FromSlash(rel)), body)
+	for _, files := range []map[string]string{origAuth, otherAuthDirFiles} {
+		for rel, body := range files {
+			writeFile(t, filepath.Join(f.paths.AuthDir, filepath.FromSlash(rel)), body)
+		}
 	}
 	f.openDB(t)
 	if _, err := f.db.Exec(`INSERT INTO probe (v) VALUES ('before')`); err != nil {
@@ -207,7 +216,7 @@ func TestCreateListDownloadRestoreRoundTrip(t *testing.T) {
 	f := newFixture(t, Config{})
 
 	e := f.create(t)
-	if e.ID != "20261102T031300Z-manual" || e.Reason != ReasonManual || e.Files != 6 || e.Bytes <= 0 {
+	if e.ID != "20261102T031300Z-manual" || e.Reason != ReasonManual || e.Files != 5 || e.Bytes <= 0 {
 		t.Fatalf("unexpected entry %+v", e)
 	}
 	if got := f.list(t); len(got) != 1 || got[0] != e {
@@ -242,6 +251,11 @@ func TestCreateListDownloadRestoreRoundTrip(t *testing.T) {
 	}
 	if len(wantSums) != 0 || len(members[dbEntry]) == 0 {
 		t.Fatalf("archive missing %v or the database", wantSums)
+	}
+	for rel := range otherAuthDirFiles {
+		if _, ok := members["auth/"+rel]; ok {
+			t.Errorf("archive holds non-credential auth dir file %s", rel)
+		}
 	}
 
 	// Drift from the backed-up state in every covered place.
@@ -278,6 +292,11 @@ func TestCreateListDownloadRestoreRoundTrip(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.paths.AuthDir, "added.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("auth file added after the backup survived restore: %v", err)
+	}
+	for rel, body := range otherAuthDirFiles {
+		if got := readFile(t, filepath.Join(f.paths.AuthDir, filepath.FromSlash(rel))); got != body {
+			t.Errorf("restore changed non-credential file %s: %q", rel, got)
+		}
 	}
 
 	// The pre-restore backup holds the drifted state.
