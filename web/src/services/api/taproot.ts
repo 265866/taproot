@@ -40,6 +40,12 @@ export interface TaprootAccount {
   email: string;
   plan: string;
   disabled: boolean;
+  /**
+   * True when the credential left the server. Removed accounts stay listed so history keeps its
+   * labels, but they belong to no pool. Servers older than this field omit it.
+   */
+  removed?: boolean;
+  removedAt?: string | null;
   firstSeen: string | null;
   lastSeen: string | null;
 }
