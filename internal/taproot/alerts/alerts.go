@@ -297,10 +297,19 @@ func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
 		if idx == "" {
 			continue
 		}
-		broken := disabledBroken || a.RequiresSignIn || coreauth.HasUnauthorizedAuthFailure(a)
+		rejected := coreauth.HasUnauthorizedAuthFailure(a)
+		broken := disabledBroken || a.RequiresSignIn || rejected
 		acct := Account{AuthIndex: idx, Provider: strings.ToLower(strings.TrimSpace(a.Provider)), Label: safeLabel(authLabel(a)), LoginBroken: broken}
 		if broken {
 			acct.LoginReason = loginReason(a, now)
+			// Upstream keeps serving a sign-in-required account while its access
+			// token is valid (canServeWithAccessToken in conductor_lifecycle.go).
+			if !disabledBroken && !rejected && a.HasValidAccessToken(now) {
+				acct.StillServes = true
+				if exp, ok := a.AccessTokenExpirationTime(); ok {
+					acct.ServesUntil = exp
+				}
+			}
 		}
 		out = append(out, acct)
 	}

@@ -156,28 +156,57 @@ func TestServiceLimitAlertSurvivesRestartAndRecovers(t *testing.T) {
 	}
 }
 
+// expiresAt sets when a's access token expires, the way upstream reads it.
+func expiresAt(a *coreauth.Auth, at time.Time) *coreauth.Auth {
+	a.Metadata["expired"] = at.Format(time.RFC3339)
+	return a
+}
+
+// rejected401 marks a terminal 401 with no refresh pending
+// (coreauth.HasUnauthorizedAuthFailure).
+func rejected401(a *coreauth.Auth) *coreauth.Auth {
+	a.Unavailable, a.Status = true, coreauth.StatusError
+	a.LastError = &coreauth.Error{Code: "unauthorized", Message: "unauthorized", HTTPStatus: http.StatusUnauthorized}
+	return a
+}
+
+func (h *harness) setAuths(list ...*coreauth.Auth) {
+	h.auths.mu.Lock()
+	h.auths.list = list
+	h.auths.mu.Unlock()
+}
+
+func (h *harness) body(t *testing.T, i int) string {
+	t.Helper()
+	h.fake.mu.Lock()
+	defer h.fake.mu.Unlock()
+	return string(h.fake.bodies[i])
+}
+
 func TestServicePoolEmptyAndLoginBroken(t *testing.T) {
 	fake := &fakeDiscord{}
-	a, b := claudeAuth("a", "main"), claudeAuth("b", "spare")
+	a, b := claudeAuth("a", "main"), expiresAt(claudeAuth("b", "spare"), t0.Add(-time.Hour))
 	b.RequiresSignIn = true
 	b.Status, b.StatusMessage = coreauth.StatusError, "refresh_token_reused: token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig"
 	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
 
 	h.feed.hook([]ingest.QuotaObservation{{AuthIndex: a.EnsureIndex(), Provider: "claude", Window: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0, AccountWide: true}})
 	h.step(t, 0)
-	got := h.titles(t, 2)
-	if got[0] != "Claude account hit its weekly limit" || got[1] != "Claude pool is empty" {
+	if got := h.titles(t, 1); got[0] != "Claude account hit its weekly limit" {
 		t.Fatalf("titles = %q", got)
 	}
+	// The pool counts b only once its login has stayed broken for the delay.
 	h.step(t, loginDelay)
-	if got := h.titles(t, 3); got[2] != "Claude login broken" {
+	got := h.titles(t, 3)
+	if got[1] != "Claude login broken" || got[2] != "Claude pool is empty" {
 		t.Fatalf("titles = %q", got)
 	}
-	h.fake.mu.Lock()
-	login := string(h.fake.bodies[2])
-	h.fake.mu.Unlock()
+	login := h.body(t, 1)
 	if strings.Contains(login, "eyJhbGci") || !strings.Contains(login, "refresh\\\\_token\\\\_reused") {
 		t.Fatalf("login alert should carry the sanitized reason: %s", login)
+	}
+	if !strings.Contains(login, "serves no requests") {
+		t.Fatalf("an expired token should say the account serves nothing: %s", login)
 	}
 
 	// Signing in again fixes b, which also refills the pool.
@@ -188,6 +217,68 @@ func TestServicePoolEmptyAndLoginBroken(t *testing.T) {
 	h.step(t, settle)
 	got = h.titles(t, 5)
 	if got[3] != "Claude login works again" || got[4] != "Claude pool has capacity again" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// TestPoolWaitsOutTheLoginDelay covers a lone account that upstream marks
+// with a terminal 401 while it retries: a short failure posts nothing.
+func TestPoolWaitsOutTheLoginDelay(t *testing.T) {
+	fake := &fakeDiscord{}
+	codex := func() *coreauth.Auth {
+		return &coreauth.Auth{ID: "x", Provider: "codex", Label: "codex-one", Status: coreauth.StatusActive, Metadata: map[string]any{"access_token": "tok-x"}}
+	}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, rejected401(codex()))
+	h.step(t, 0)
+	h.step(t, time.Minute)
+	h.titles(t, 0)
+
+	h.setAuths(codex())
+	h.step(t, 30*time.Second)
+	h.step(t, settle)
+	h.step(t, cooldown)
+	h.titles(t, 0)
+
+	h.setAuths(rejected401(codex()))
+	h.step(t, 0)
+	h.titles(t, 0)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 2); got[0] != "Codex login broken" || got[1] != "Codex pool is empty" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// TestLoginWithAValidTokenStillServes covers upstream's canServeWithAccessToken:
+// an account that needs sign-in keeps serving until its access token
+// expires, so the pool stays open and the alert says until when.
+func TestLoginWithAValidTokenStillServes(t *testing.T) {
+	fake := &fakeDiscord{}
+	expiry := t0.Add(5 * time.Hour)
+	a, b := claudeAuth("a", "main"), expiresAt(claudeAuth("b", "spare"), expiry)
+	b.RequiresSignIn = true
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	h.feed.hook([]ingest.QuotaObservation{{AuthIndex: a.EnsureIndex(), Provider: "claude", Window: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0, AccountWide: true}})
+
+	h.step(t, 0)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 2); got[1] != "Claude login broken" {
+		t.Fatalf("titles = %q", got)
+	}
+	var p webhookPayload
+	if err := json.Unmarshal([]byte(h.body(t, 1)), &p); err != nil {
+		t.Fatal(err)
+	}
+	login := p.Embeds[0].Description
+	if !strings.Contains(login, "keeps working until") || !strings.Contains(login, "<t:"+itoa(expiry.Unix())+":f>") || strings.Contains(login, "serves no requests") {
+		t.Fatalf("login alert should say b works until its token expires: %s", login)
+	}
+	h.step(t, time.Hour)
+	h.titles(t, 2)
+
+	// Once the token expires, b no longer serves and the pool is empty.
+	h.step(t, 4*time.Hour)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 3); got[2] != "Claude pool is empty" {
 		t.Fatalf("titles = %q", got)
 	}
 }

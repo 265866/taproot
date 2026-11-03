@@ -44,6 +44,10 @@ type Account struct {
 	Label       string
 	LoginBroken bool
 	LoginReason string
+	// StillServes marks a broken login whose current access token upstream
+	// still uses, until ServesUntil when that is known.
+	StillServes bool
+	ServesUntil time.Time
 }
 
 // Grant is one Claude reset grant (cedar_ember) read from the usage endpoint.
@@ -194,6 +198,15 @@ func loginCondition(key string, a Account) Condition {
 		{Name: "Account", Value: a.Label, Inline: true},
 		{Name: "Provider", Value: providerName(a.Provider), Inline: true},
 	}
+	desc := fmt.Sprintf("**%s** can no longer refresh its credential and serves no requests until you sign in again from OAuth Login.", a.Label)
+	if a.StillServes {
+		until := "its current access token expires"
+		if !a.ServesUntil.IsZero() {
+			until += " at " + discordTime(a.ServesUntil)
+		}
+		desc = fmt.Sprintf("**%s** can no longer refresh its credential. It keeps working until %s; sign in again from OAuth Login before then.", a.Label, until)
+		fields = append(fields, Field{Name: "Works until", Value: resetText(a.ServesUntil), Inline: true})
+	}
 	if a.LoginReason != "" {
 		fields = append(fields, Field{Name: "Reason", Value: a.LoginReason})
 	}
@@ -201,7 +214,7 @@ func loginCondition(key string, a Account) Condition {
 		Alert: Message{
 			Key: key, Severity: SeverityWarning,
 			Title:       fmt.Sprintf("%s login broken", providerName(a.Provider)),
-			Description: fmt.Sprintf("**%s** can no longer refresh its credential. Sign in again from OAuth Login.", a.Label),
+			Description: desc,
 			Fields:      fields,
 		},
 		Recovery: &Message{
@@ -214,7 +227,8 @@ func loginCondition(key string, a Account) Condition {
 }
 
 // poolCondition reports a provider whose every account is at an account-wide
-// limit or needs sign-in.
+// limit or needs sign-in and no longer serves. When a broken login is part of
+// the reason, the pool waits out the login delay too.
 func poolCondition(provider string, list []Account, limited map[string]bool, limitedUntil map[string]time.Time) (Condition, bool) {
 	if len(list) == 0 {
 		return Condition{}, false
@@ -224,7 +238,7 @@ func poolCondition(provider string, list []Account, limited map[string]bool, lim
 	broken := 0
 	for _, a := range list {
 		switch {
-		case a.LoginBroken:
+		case a.LoginBroken && !a.StillServes:
 			broken++
 		case limited[a.AuthIndex]:
 			if t := limitedUntil[a.AuthIndex]; !t.IsZero() && (back.IsZero() || t.Before(back)) {
@@ -237,6 +251,10 @@ func poolCondition(provider string, list []Account, limited map[string]bool, lim
 	name := providerName(provider)
 	key := "pool:" + provider
 	desc := fmt.Sprintf("Every %s account is out of quota or needs sign-in, so %s requests fail.", name, name)
+	var delay time.Duration
+	if broken > 0 {
+		delay = loginDelay
+	}
 	backText := "no known reset"
 	if !back.IsZero() {
 		desc += fmt.Sprintf(" The first one back is **%s** at %s.", backLabel, discordTime(back))
@@ -261,6 +279,7 @@ func poolCondition(provider string, list []Account, limited map[string]bool, lim
 			Title:       fmt.Sprintf("%s pool has capacity again", name),
 			Description: fmt.Sprintf("At least one %s account is usable again.", name),
 		},
+		Delay: delay,
 	}, true
 }
 
