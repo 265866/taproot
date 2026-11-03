@@ -92,7 +92,8 @@ function TooltipBody({ props, axis, entries, format, total }: TooltipBodyProps):
   const byId = new Map(payload.map((p) => [String(p.dataKey), p.value]));
   const rows = entries
     .map((entry) => ({ entry, value: byId.get(entry.id) }))
-    .filter((row) => typeof row.value === 'number');
+    // Stacked charts list only the series present in this bucket.
+    .filter((row) => typeof row.value === 'number' && (!total || row.value !== 0));
   if (rows.length === 0) return null;
   const sum = rows.reduce((acc, row) => acc + (row.value as number), 0);
   return (
@@ -243,7 +244,7 @@ export function CostChart({
         entries={entries}
         axis={axis}
         format={formatUSD}
-        tickFormat={(v) => `${formatAxisNumber(v)}`}
+        tickFormat={(v) => `$${formatAxisNumber(v)}`}
         className={styles.chartBoxTall}
         ariaLabel={t('taproot_usage.charts.cost_title')}
       />
