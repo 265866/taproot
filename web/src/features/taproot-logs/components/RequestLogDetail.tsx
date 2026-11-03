@@ -141,7 +141,7 @@ function DetailBody({
           onClick={() => onShowSession(meta.sessionId ?? '')}
           title={t('taproot_logs.detail.show_session')}
         >
-          {meta.sessionId}
+          {mask(meta.sessionId)}
         </button>
       ) : (
         '—'

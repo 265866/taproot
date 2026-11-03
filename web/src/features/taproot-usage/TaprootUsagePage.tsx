@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useShowEmails } from '@/stores';
 import { taprootApi, type UsageGroupBy } from '@/services/api/taproot';
@@ -48,6 +49,7 @@ export function TaprootUsagePage() {
   const [anchorMs, setAnchorMs] = useState(() => Date.now());
   const [refreshKey, setRefreshKey] = useState(0);
   const showEmails = useShowEmails();
+  const { mask: maskEmails } = useEmailMask();
   const [customDraft, setCustomDraft] = useState(() => ({
     from: params.from || toLocalDateInput(Date.now() - 6 * 86_400_000),
     to: params.to || toLocalDateInput(Date.now()),
@@ -136,10 +138,10 @@ export function TaprootUsagePage() {
       if (key === NONE_GROUP) return t('taproot_usage.none_group');
       if (shownGroup === 'account') return accountLabel(key);
       if (shownGroup === 'provider') return providerName(key);
-      if (shownGroup === 'session') return key.slice(0, 8);
+      if (shownGroup === 'session') return maskEmails(key).slice(0, 8);
       return key;
     },
-    [shownGroup, accountLabel, deviceLabel, t]
+    [shownGroup, accountLabel, deviceLabel, maskEmails, t]
   );
 
   const viewRequests = useMemo(() => {

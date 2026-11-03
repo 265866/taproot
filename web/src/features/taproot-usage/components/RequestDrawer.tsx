@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Sheet } from '@/components/ui/Sheet';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type { UsageEvent } from '@/services/api/taproot';
 import { requestLogHref } from '../logic/links';
 import { providerName } from '../logic/accounts';
@@ -30,6 +31,7 @@ export function RequestDrawer({
   onFilterSession,
 }: Props) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const n = (value: number) => value.toLocaleString();
 
   const rows: [string, ReactNode][] = event
@@ -76,11 +78,11 @@ export function RequestDrawer({
         ],
         [
           t('taproot_usage.detail.session'),
-          <span className={styles.mono}>{event.sessionId || DASH}</span>,
+          <span className={styles.mono}>{mask(event.sessionId) || DASH}</span>,
         ],
         [
           t('taproot_usage.detail.parent_session'),
-          <span className={styles.mono}>{event.parentSessionId || DASH}</span>,
+          <span className={styles.mono}>{mask(event.parentSessionId ?? '') || DASH}</span>,
         ],
         [
           t('taproot_usage.detail.trace'),

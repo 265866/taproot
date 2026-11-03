@@ -99,7 +99,7 @@ export function RequestLogTable({
               </td>
               <td className={styles.session} data-label={t('taproot_logs.columns.session')}>
                 {row.sessionId ? (
-                  <span title={row.sessionId}>{shortSessionId(row.sessionId)}</span>
+                  <span title={mask(row.sessionId)}>{shortSessionId(mask(row.sessionId))}</span>
                 ) : (
                   '—'
                 )}

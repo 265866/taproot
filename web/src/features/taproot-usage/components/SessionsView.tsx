@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { taprootApi, type UsageSession } from '@/services/api/taproot';
 import { affinityStats, sessionDurationMs, type AffinityStats } from '../logic/sessions';
 import {
@@ -32,6 +33,7 @@ interface Loaded {
 
 export function SessionsView({ window, refreshKey, accountLabel, onViewRequests }: Props) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const rangeKey = `${window.fromMs}-${window.toMs}-${refreshKey}`;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
@@ -143,12 +145,12 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
                           type="button"
                           className={`${styles.linkButton} ${styles.mono}`}
                           onClick={() => onViewRequests(s.sessionId)}
-                          title={s.sessionId}
+                          title={mask(s.sessionId)}
                           aria-label={t('taproot_usage.sessions.view_requests', {
-                            id: s.sessionId,
+                            id: mask(s.sessionId),
                           })}
                         >
-                          {s.sessionId.slice(0, 8)}
+                          {mask(s.sessionId).slice(0, 8)}
                         </button>
                       </td>
                       <td>{formatDateTime(s.lastAt)}</td>
