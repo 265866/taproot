@@ -77,10 +77,14 @@ type Backups struct {
 	db    *store.DB
 	paths Paths
 	dir   string
-	keep  int
 
+	// schedMu guards the schedule and retention count, which SetSchedule
+	// changes at runtime; wake tells the schedule loop to re-read them.
+	schedMu      sync.Mutex
+	keep         int
 	scheduled    bool
 	hour, minute int
+	wake         chan struct{}
 
 	mu  sync.Mutex
 	now func() time.Time
@@ -102,28 +106,66 @@ func New(cfg Config, db *store.DB, paths Paths) (*Backups, error) {
 		paths:   paths,
 		dir:     filepath.Join(paths.DataDir, "backups"),
 		keep:    cfg.Keep,
+		wake:    make(chan struct{}, 1),
 		now:     time.Now,
 		restart: selfRestart,
 	}
 	if b.keep <= 0 {
 		b.keep = defaultKeep
 	}
-	at := strings.TrimSpace(cfg.DailyAt)
-	if at == "" {
-		at = defaultDailyAt
-	}
-	if !strings.EqualFold(at, "off") {
-		hour, minute, err := parseClock(at)
-		if err != nil {
-			return nil, err
-		}
-		b.scheduled, b.hour, b.minute = true, hour, minute
+	var err error
+	if b.scheduled, b.hour, b.minute, err = parseDailyAt(cfg.DailyAt); err != nil {
+		return nil, err
 	}
 	if err := ensurePrivateDir(b.dir); err != nil {
 		return nil, err
 	}
 	b.removeLeftovers()
 	return b, nil
+}
+
+// parseDailyAt reads daily-at: blank means the default time, "off" disables the schedule.
+func parseDailyAt(raw string) (scheduled bool, hour, minute int, err error) {
+	at := strings.TrimSpace(raw)
+	if at == "" {
+		at = defaultDailyAt
+	}
+	if strings.EqualFold(at, "off") {
+		return false, 0, 0, nil
+	}
+	hour, minute, err = parseClock(at)
+	return err == nil, hour, minute, err
+}
+
+// Schedule returns the active daily time as HH:MM or "off", and the retention count.
+func (b *Backups) Schedule() (dailyAt string, keep int) {
+	b.schedMu.Lock()
+	defer b.schedMu.Unlock()
+	if !b.scheduled {
+		return "off", b.keep
+	}
+	return fmt.Sprintf("%02d:%02d", b.hour, b.minute), b.keep
+}
+
+// SetSchedule changes the daily time and retention count without a restart.
+// A lower count prunes at the next backup. Persisting them to taproot.yaml is
+// the caller's job.
+func (b *Backups) SetSchedule(dailyAt string, keep int) error {
+	if keep < 1 {
+		return fmt.Errorf("backups keep must be at least 1, got %d", keep)
+	}
+	scheduled, hour, minute, err := parseDailyAt(dailyAt)
+	if err != nil {
+		return err
+	}
+	b.schedMu.Lock()
+	b.scheduled, b.hour, b.minute, b.keep = scheduled, hour, minute, keep
+	b.schedMu.Unlock()
+	select {
+	case b.wake <- struct{}{}:
+	default:
+	}
+	return nil
 }
 
 func parseClock(s string) (int, int, error) {
@@ -163,24 +205,40 @@ func (b *Backups) removeLeftovers() {
 	}
 }
 
-// Start runs the schedule until ctx ends.
+// Start runs the schedule until ctx ends. The loop runs even while the
+// schedule is off, so SetSchedule can turn it on.
 func (b *Backups) Start(ctx context.Context) {
-	if !b.scheduled {
+	if at, _ := b.Schedule(); at == "off" {
 		log.Info("taproot backups: schedule off")
-		return
 	}
 	go b.runSchedule(ctx)
 }
 
 func (b *Backups) runSchedule(ctx context.Context) {
 	for {
-		now := b.now()
-		timer := time.NewTimer(nextRun(now, b.hour, b.minute).Sub(now))
+		b.schedMu.Lock()
+		scheduled, hour, minute := b.scheduled, b.hour, b.minute
+		b.schedMu.Unlock()
+		var timer *time.Timer
+		var fire <-chan time.Time
+		if scheduled {
+			now := b.now()
+			timer = time.NewTimer(nextRun(now, hour, minute).Sub(now))
+			fire = timer.C
+		}
+		stop := func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}
 		select {
 		case <-ctx.Done():
-			timer.Stop()
+			stop()
 			return
-		case <-timer.C:
+		case <-b.wake:
+			stop()
+			continue
+		case <-fire:
 		}
 		entry, err := b.Create(ctx, ReasonScheduled)
 		if err != nil {
@@ -368,7 +426,8 @@ func (b *Backups) prune() {
 		log.WithError(err).Warn("taproot backups: list for retention")
 		return
 	}
-	for i := b.keep; i < len(entries); i++ {
+	_, keep := b.Schedule()
+	for i := keep; i < len(entries); i++ {
 		path := filepath.Join(b.dir, entries[i].ID+archiveExt)
 		if errRemove := os.Remove(path); errRemove != nil {
 			log.WithError(errRemove).WithField("id", entries[i].ID).Warn("taproot backups: prune")
