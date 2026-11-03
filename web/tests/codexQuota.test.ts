@@ -4,7 +4,7 @@ import {
   CODEX_CONFIG,
   buildCodexQuotaWindows,
   normalizeCodexAccountCredits,
-} from '@/features/quota/providers/codex/data';
+} from '@/features/taproot-quota/live/providers/codex/data';
 import type { CodexQuotaState, CodexUsagePayload } from '@/types';
 import { apiCallApi, type ApiCallRequest, type ApiCallResult } from '@/services/api';
 import {

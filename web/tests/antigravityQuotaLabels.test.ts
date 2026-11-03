@@ -3,7 +3,7 @@ import {
   resolveAntigravityBucketLabelKey,
   resolveAntigravityGroupLabelKey,
   resolveAntigravityGroupModels,
-} from '@/features/quota/providers/antigravity/labels';
+} from '@/features/taproot-quota/live/providers/antigravity/labels';
 import { buildAntigravityQuotaGroups } from '@/utils/quota/builders';
 
 describe('Antigravity quota label keys', () => {

@@ -1,7 +1,7 @@
 import { normalizePlanType } from './parsers';
 
 /**
- * Codex 套餐档位的纯映射（卡面档位见 features/quota/cardTier.ts）。
+ * Codex 套餐档位的纯映射（卡面档位见 features/taproot-quota/live/cardTier.ts）。
  *
  * - elite   → Pro 500（plan=promax）
  * - premium → Pro 200（plan=pro）、Pro 100（plan=prolite）

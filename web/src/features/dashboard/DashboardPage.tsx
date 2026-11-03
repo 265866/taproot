@@ -185,7 +185,7 @@ export function DashboardPage() {
     {
       to: '/quota',
       icon: <IconSidebarQuota size={20} />,
-      title: t('nav.quota_management'),
+      title: t('nav.quota'),
       description: t('dashboard.cta_quota_desc'),
     },
     {

@@ -1,4 +1,4 @@
-import { selectResetGrant } from '../src/features/quota/providers/claude/selectResetGrant';
+import { selectResetGrant } from '../src/features/taproot-quota/live/providers/claude/selectResetGrant';
 import { en } from '@/i18n/resources';
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
@@ -22,7 +22,7 @@ import {
   ResetGrantPreflightError,
   resetGrantFailureMessageKey,
   RETRY_WINDOW_MS,
-} from '../src/features/quota/providers/claude/resetGrantOperations';
+} from '../src/features/taproot-quota/live/providers/claude/resetGrantOperations';
 
 const organization = '11111111-2222-3333-4444-555555555555';
 const grant = { id: 'test-grant', resets_total: 2, resets_left: 2, usable_now: true };
@@ -668,8 +668,8 @@ test('card selection prefers usable recommendation and has deterministic fallbac
 });
 
 test('Claude card uses Codex count and action styles and shared confirmation, not a grant dialog', async () => {
-  const card = await Bun.file('src/features/quota/components/QuotaCard.tsx').text();
-  const hook = await Bun.file('src/features/quota/providers/claude/ClaudeResetGrants.tsx').text();
+  const card = await Bun.file('src/features/taproot-quota/live/components/QuotaCard.tsx').text();
+  const hook = await Bun.file('src/features/taproot-quota/live/providers/claude/ClaudeResetGrants.tsx').text();
   expect(card).toContain('quotaClasses.codexPlanValue}>{claudeReset.count');
   expect(card).toContain('disabled={claudeReset.blocked}');
   expect(card).toContain('onClick={claudeReset.confirm}');
@@ -680,7 +680,7 @@ test('Claude card uses Codex count and action styles and shared confirmation, no
 });
 
 test('cooldown clear failures reuse existing messages without new locale keys', async () => {
-  const hook = await Bun.file('src/features/quota/providers/claude/ClaudeResetGrants.tsx').text();
+  const hook = await Bun.file('src/features/taproot-quota/live/providers/claude/ClaudeResetGrants.tsx').text();
   expect(hook).toContain("answer.code === 'cooldown_clear_failed'");
   expect(hook).toContain("t('auth_files.cooldown_reset_failed', {");
   expect(hook).toContain("message: t('common.unknown_error')");

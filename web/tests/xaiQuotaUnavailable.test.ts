@@ -11,8 +11,8 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import i18n from '@/i18n';
-import { XaiQuotaBody } from '@/features/quota/providers/xai/XaiQuotaBody';
-import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/quota/types';
+import { XaiQuotaBody } from '@/features/taproot-quota/live/providers/xai/XaiQuotaBody';
+import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
 import {
   buildXaiBillingSummary,
   formatInstantShort,

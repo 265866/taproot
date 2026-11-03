@@ -3,7 +3,7 @@ import {
   createResetGrantReader,
   scheduleResetGrantRead,
   RESET_GRANT_READ_DELAY_MS,
-} from '../src/features/quota/providers/claude/resetGrantReads';
+} from '../src/features/taproot-quota/live/providers/claude/resetGrantReads';
 import type { AnthropicResetGrantStatus } from '../src/services/api/claudeResetGrants';
 
 const status: AnthropicResetGrantStatus = {

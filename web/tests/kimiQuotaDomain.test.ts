@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import i18n from '@/i18n';
-import { KIMI_CONFIG } from '@/features/quota/providers/kimi/data';
+import { KIMI_CONFIG } from '@/features/taproot-quota/live/providers/kimi/data';
 import { apiCallApi, authFilesApi } from '@/services/api';
 import { parseKimiQuotaUrl } from '@/services/api/kimiQuota';
 import { useQuotaStore } from '@/stores/useQuotaStore';

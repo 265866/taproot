@@ -13,10 +13,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/quota/types';
+import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
 
 const HOSTS = {
-  'QuotaBody.module.scss': 'src/features/quota/components/QuotaBody.module.scss',
+  'QuotaBody.module.scss': 'src/features/taproot-quota/live/components/QuotaBody.module.scss',
   'AuthFileQuota.module.scss': 'src/features/authFiles/components/AuthFileQuota.module.scss',
 } as const;
 

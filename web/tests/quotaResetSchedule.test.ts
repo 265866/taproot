@@ -6,11 +6,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   XAI_WEEKLY_ROW_ID,
   collectQuotaRowInstants,
-  nextRecoveryMs,
   pickSoonestRowId,
   pickUrgentRowId,
   resetCreditRowId,
-} from '@/features/quota/resetSchedule';
+} from '@/features/taproot-quota/live/resetSchedule';
 import { DAY_MS, HOUR_MS } from '@/utils/time/durations';
 
 const NOW = new Date(2026, 7, 2, 12).getTime();
@@ -242,23 +241,8 @@ describe('resetCreditRowId', () => {
   });
 });
 
-describe('nextRecoveryMs', () => {
-  test('returns the soonest upcoming instant across windows and credits', () => {
-    expect(nextRecoveryMs('codex', codexQuota, NOW)).toBe(NOW + 3 * HOUR_MS);
-  });
-
-  test('ignores instants already in the past', () => {
-    const quota = {
-      status: 'success',
-      windows: [
-        { id: 'stale', resetAtMs: NOW - DAY_MS },
-        { id: 'live', resetAtMs: NOW + DAY_MS },
-      ],
-    };
-    expect(nextRecoveryMs('claude', quota, NOW)).toBe(NOW + DAY_MS);
-  });
-
-  test('uses the next dollar-balance reset while ignoring elapsed and exactly-now resets', () => {
+describe('pickSoonestRowId with dollar balances', () => {
+  test('picks the next dollar-balance reset while ignoring elapsed and exactly-now resets', () => {
     const quota = {
       status: 'success',
       windows: [{ id: 'expired-plan', resetAtMs: NOW - DAY_MS }],
@@ -268,21 +252,9 @@ describe('nextRecoveryMs', () => {
         { key: 'upcoming-balance', resetsAt: iso(NOW + HOUR_MS) },
       ],
     };
-    expect(nextRecoveryMs('claude', quota, NOW)).toBe(NOW + HOUR_MS);
     expect(pickSoonestRowId(collectQuotaRowInstants('claude', quota), NOW)).toBe(
       'upcoming-balance'
     );
-    expect(nextRecoveryMs('claude', quota, NOW + HOUR_MS)).toBeNull();
-  });
-
-  test('is null for an unloaded credential, so sorting can sink it', () => {
-    expect(nextRecoveryMs('claude', undefined, NOW)).toBeNull();
-    expect(nextRecoveryMs('claude', { status: 'idle' }, NOW)).toBeNull();
-    expect(nextRecoveryMs('claude', { status: 'error' }, NOW)).toBeNull();
-  });
-
-  test('is null when every known instant has passed', () => {
-    const quota = { status: 'success', windows: [{ id: 'stale', resetAtMs: NOW - 1 }] };
-    expect(nextRecoveryMs('claude', quota, NOW)).toBeNull();
+    expect(pickSoonestRowId(collectQuotaRowInstants('claude', quota), NOW + HOUR_MS)).toBeNull();
   });
 });

@@ -5,10 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import i18n from '@/i18n';
 import { normalizeAuthFilesResponse } from '@/services/api/authFiles';
 import { resolveAuthFileQuotaType } from '@/features/authFiles/logic';
-import { classifyQuotaFiles, resolveQuotaProviderType } from '@/features/quota/logic';
-import { QUOTA_ADAPTERS } from '@/features/quota/providers';
-import { PluginQuotaBody } from '@/features/quota/providers/plugin/PluginQuotaBody';
-import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/quota/types';
+import { classifyQuotaFiles, resolveQuotaProviderType } from '@/features/taproot-quota/live/logic';
+import { QUOTA_ADAPTERS } from '@/features/taproot-quota/live/providers';
+import { PluginQuotaBody } from '@/features/taproot-quota/live/providers/plugin/PluginQuotaBody';
+import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
 import type { PluginListEntry, PluginListResponse, PluginQuotaState } from '@/types';
 import { pluginsApi } from '@/services/api/plugins';
 import { getQuotaCacheKey } from '@/utils/quota/identity';
@@ -18,13 +18,13 @@ import {
   buildAntigravityQuotaGroups,
   isPluginQuotaFile,
 } from '@/utils/quota';
-import { QUOTA_TAB_ORDER } from '@/features/quota/constants';
+import { QUOTA_TAB_ORDER } from '@/features/taproot-quota/live/constants';
 import {
   fetchPluginQuota,
   normalizePluginQuotaSummary,
   resetPluginQuotaRouteCache,
   resolveQuotaPluginId,
-} from '@/features/quota/providers/plugin/data';
+} from '@/features/taproot-quota/live/providers/plugin/data';
 
 const quotaPlugin = (overrides: Partial<PluginListEntry> = {}): PluginListEntry => ({
   id: 'kiro-quota',

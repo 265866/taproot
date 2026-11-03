@@ -1,5 +1,5 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
-import { META_CONFIG } from '@/features/quota/providers/meta/data';
+import { META_CONFIG } from '@/features/taproot-quota/live/providers/meta/data';
 import { authFilesApi } from '@/services/api/authFiles';
 import { apiCallApi } from '@/services/api/apiCall';
 import { apiClient } from '@/services/api/client';
