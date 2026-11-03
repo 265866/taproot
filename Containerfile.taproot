@@ -1,0 +1,56 @@
+# Taproot image: the server binary with the dashboard build embedded.
+#
+#   docker build -f Containerfile.taproot \
+#     --build-arg VERSION="$(git describe --tags --always)" \
+#     --build-arg COMMIT="$(git rev-parse --short HEAD)" \
+#     --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t taproot .
+#
+# Mount config.yaml and taproot.yaml as a directory, not as single files:
+# backup restores replace them by rename, which fails on a single-file bind
+# mount. The default command expects /taproot/config/config.yaml. Set TZ for
+# the backup schedule's local time; the image does not pick a zone.
+
+# Matches packageManager in web/package.json.
+ARG BUN_VERSION=1.4.3
+
+FROM oven/bun:${BUN_VERSION} AS web
+WORKDIR /src
+COPY web/package.json web/bun.lock /deps/
+RUN cd /deps && bun install --frozen-lockfile
+COPY web ./web
+COPY scripts/taproot/build-web.sh ./scripts/taproot/build-web.sh
+COPY internal/taproot/web/dist ./internal/taproot/web/dist
+ARG VERSION=dev
+# A node_modules or dist from the build context belongs to another platform.
+RUN rm -rf web/node_modules web/dist \
+	&& mv /deps/node_modules web/node_modules \
+	&& VERSION="${VERSION}" bash scripts/taproot/build-web.sh
+
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=web /src/internal/taproot/web/dist/index.html ./internal/taproot/web/dist/index.html
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
+RUN set -eu; \
+	ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'"; \
+	mkdir -p /out; \
+	CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="${ldflags}" -o /out/taproot ./cmd/server; \
+	if [ -d cmd/taproot-import ]; then \
+		CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="${ldflags}" -o /out/taproot-import ./cmd/taproot-import; \
+	fi; \
+	chmod 0755 /out/*
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/ /taproot/
+COPY config.example.yaml /taproot/config.example.yaml
+RUN chmod 0644 /taproot/config.example.yaml
+WORKDIR /taproot
+EXPOSE 8317
+ENTRYPOINT ["/taproot/taproot"]
+CMD ["--config", "/taproot/config/config.yaml"]
