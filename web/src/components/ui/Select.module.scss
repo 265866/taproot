@@ -34,18 +34,13 @@
     border-color: var(--border-hover);
   }
 
-  &:focus {
-    outline: none;
-    box-shadow:
-      var(--shadow),
-      0 0 0 3px rgba($primary-color, 0.18);
-  }
-
+  &:focus-visible,
   &[aria-expanded='true'] {
-    border-color: var(--primary-color);
+    outline: none;
+    border-color: var(--accent);
     box-shadow:
       var(--shadow),
-      0 0 0 3px rgba($primary-color, 0.18);
+      0 0 0 3px var(--focus-ring);
   }
 }
 
@@ -79,7 +74,7 @@
 
 .dropdown {
   position: fixed;
-  background: var(--bg-primary);
+  background: var(--floating-surface);
   border: 1px solid var(--border-color);
   border-radius: $radius-lg;
   padding: 6px;
@@ -109,16 +104,17 @@
   flex-shrink: 0;
 
   &:hover {
-    background: var(--bg-secondary);
+    background: var(--bg-tertiary);
   }
 }
 
 .optionActive {
-  border-color: rgba($primary-color, 0.5);
-  background: rgba($primary-color, 0.1);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
 .optionHighlighted {
-  background: var(--bg-secondary);
+  background: var(--bg-tertiary);
 }

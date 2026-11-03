@@ -37,11 +37,10 @@ body.modal-open .content {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
+  background: var(--border-primary);
   border-radius: $radius-full;
 
   &:hover {
     background: var(--border-hover);
   }
 }
-
