@@ -73,6 +73,9 @@ type Ingest struct {
 	claudeUsageURL string
 	codexUsageURL  string
 	lastPoll       map[string]time.Time
+
+	refreshMu   sync.Mutex
+	lastRefresh map[string]time.Time
 }
 
 // New prepares the module. It must register its usage sink before the service starts.
@@ -90,9 +93,10 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 		now:            time.Now,
 		wake:           make(chan struct{}, 1),
 		tracker:        newQuotaTracker(),
-		claudeUsageURL: claudeUsageURL,
-		codexUsageURL:  codexUsageURL,
+		claudeUsageURL: devUsageURL(devClaudeUsageURLEnv, claudeUsageURL),
+		codexUsageURL:  devUsageURL(devCodexUsageURLEnv, codexUsageURL),
 		lastPoll:       map[string]time.Time{},
+		lastRefresh:    map[string]time.Time{},
 	}
 	usage.RegisterNamedPlugin("taproot", i)
 	return i, nil
@@ -272,6 +276,7 @@ func (i *Ingest) Routes(r *gin.RouterGroup) {
 	r.GET("/accounts", i.handleAccounts)
 	r.GET("/quota/current", i.handleQuotaCurrent)
 	r.GET("/quota/series", i.handleQuotaSeries)
+	r.POST("/quota/refresh", i.handleQuotaRefresh)
 	r.GET("/usage/summary", i.handleUsageSummary)
 	r.GET("/usage/events", i.handleUsageEvents)
 	r.GET("/usage/sessions", i.handleUsageSessions)

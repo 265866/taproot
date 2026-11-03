@@ -345,6 +345,9 @@ func (q *quotaTracker) shouldWrite(prev *quotaLast, o observation) bool {
 	if o.ObservedAt.Before(prev.ObservedAt) {
 		return false
 	}
+	if o.Source == sourceRefresh {
+		return true
+	}
 	if math.Abs(prev.Utilization-o.Utilization) > 1e-9 || prev.Status != o.Status {
 		return true
 	}
