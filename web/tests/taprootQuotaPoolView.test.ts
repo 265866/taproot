@@ -3,6 +3,7 @@ import type { ProviderGroup, QuotaAccount } from '@/features/taproot-quota/model
 import {
   accountStatus,
   buildPoolView,
+  poolNow,
   projectionHorizon,
   windowColumns,
 } from '@/features/taproot-quota/model/poolView';
@@ -159,5 +160,90 @@ describe('windowColumns', () => {
       ])
     ).toEqual(['five_hour', 'seven_day', 'seven_day_opus']);
     expect(windowColumns([])).toEqual([]);
+  });
+});
+
+describe('poolNow', () => {
+  const used = (authIndex: string, utilization: number, extra: Partial<QuotaAccount> = {}) =>
+    account(authIndex, {
+      windows: [
+        {
+          window: 'seven_day',
+          utilization,
+          resetsAt: NOW + 24 * H,
+          observedAt: NOW,
+          periodMs: WEEK,
+        },
+      ],
+      ...extra,
+    });
+
+  test('counts an account with no observation as full, like the Quota page', () => {
+    // One account 40% used, one not observed yet: 0.6 + 1 = 1.6 of 2.
+    const group: ProviderGroup = {
+      provider: 'claude',
+      accounts: [used('a', 0.4), account('b', {})],
+      hasQuotaData: true,
+    };
+    const now = poolNow(group, NOW);
+    expect(now.capacity).toBe(2);
+    expect(now.remainingNow).toBeCloseTo(1.6, 12);
+    expect(now.unobserved).toBe(1);
+    expect(now.nextReset).toEqual({ t: NOW + 24 * H, gain: expect.closeTo(0.4, 12) });
+    const page = buildPoolView(group, { now: NOW, range, burnWindowMs: 3 * H, future: 'same' });
+    expect(now.remainingNow).toBeCloseTo(page.projection.remainingNow, 12);
+    expect(now.capacity).toBe(page.projection.capacity);
+  });
+
+  test('applies roll-forward, the stale-window filter, and skips disabled accounts', () => {
+    const group: ProviderGroup = {
+      provider: 'claude',
+      accounts: [
+        account('a', {
+          windows: [
+            // Reset passed an hour ago: rolled forward to 0 used.
+            {
+              window: 'five_hour',
+              utilization: 0.9,
+              resetsAt: NOW - H,
+              observedAt: NOW - 2 * H,
+              periodMs: FIVE,
+            },
+            {
+              window: 'seven_day',
+              utilization: 0.2,
+              resetsAt: NOW + 24 * H,
+              observedAt: NOW,
+              periodMs: WEEK,
+            },
+          ],
+        }),
+        account('s', {
+          windows: [
+            // Stopped reporting with no known reset: last seen 31h before 7d, one period is 5h.
+            {
+              window: 'five_hour',
+              utilization: 1,
+              resetsAt: null,
+              observedAt: NOW - 31 * H,
+              periodMs: FIVE,
+            },
+            {
+              window: 'seven_day',
+              utilization: 0.5,
+              resetsAt: NOW + 24 * H,
+              observedAt: NOW,
+              periodMs: WEEK,
+            },
+          ],
+        }),
+        used('off', 0.9, { disabled: true }),
+      ],
+      hasQuotaData: true,
+    };
+    const now = poolNow(group, NOW);
+    expect(now.capacity).toBe(2);
+    expect(now.remainingNow).toBeCloseTo(0.8 + 0.5, 12);
+    expect(now.unobserved).toBe(0);
   });
 });

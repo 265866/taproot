@@ -12,8 +12,9 @@ import {
   type AccountProjection,
   type Point,
   type PoolProjection,
+  type ResetEvent,
 } from './projection';
-import { DAYS_AHEAD, addLocalDays, type DateRange } from './range';
+import { DAYS_AHEAD, addLocalDays, defaultRange, type DateRange } from './range';
 
 export const BURN_WINDOWS_HOURS = [1, 3, 6] as const;
 export type BurnWindowHours = (typeof BURN_WINDOWS_HOURS)[number];
@@ -81,6 +82,32 @@ export function buildPoolView(group: ProviderGroup, options: PoolViewOptions): P
     projectionByAccount,
     burnPerHour: drainAt(recorded, now, burnWindowMs),
     horizon,
+  };
+}
+
+export interface PoolNow {
+  /** Enabled accounts, each 1 (100%). */
+  capacity: number;
+  remainingNow: number;
+  /** Enabled accounts without an account-wide window yet; the pool counts them as full. */
+  unobserved: number;
+  /** First reset that gives capacity back if usage stopped now. */
+  nextReset: ResetEvent | null;
+}
+
+/**
+ * The pool's present state, computed as the Quota page computes it (same enabled accounts,
+ * stale-window filter, and roll-forward), for summaries that load no recorded series.
+ */
+export function poolNow(group: ProviderGroup, now: number): PoolNow {
+  const accounts = group.accounts.filter((a) => !a.disabled);
+  const horizon = projectionHorizon(defaultRange(now), now);
+  const projection = projectPool(accounts, now, horizon, 0, 0);
+  return {
+    capacity: projection.capacity,
+    remainingNow: projection.remainingNow,
+    unobserved: accounts.filter((a) => !a.windows.some(isAccountWide)).length,
+    nextReset: projection.nextReset,
   };
 }
 
