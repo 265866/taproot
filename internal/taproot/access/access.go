@@ -70,6 +70,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -140,6 +141,8 @@ type Identity struct {
 	// unlistedNode is true when Admin is false only because the node is not
 	// in admin-nodes.
 	unlistedNode bool
+	// self is true for a tailnet caller on the server's own node.
+	self bool
 }
 
 // Guard decides whether a request may reach the proxy or the admin surface.
@@ -163,6 +166,8 @@ type Guard struct {
 	selfNode    *selfNode
 	selfExpires time.Time
 	selfRetryAt time.Time
+
+	requests requestDevices
 }
 
 type cacheEntry struct {
@@ -398,6 +403,10 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			return
 		}
 		c.Set(identityKey, id)
+		if requestID := logging.GetGinRequestID(c); requestID != "" {
+			g.requests.start(requestID, g.deviceFor(id))
+			defer func() { g.requests.finish(requestID, g.now()) }()
+		}
 		if surf == surfaceAdmin {
 			c.Header("X-Frame-Options", "SAMEORIGIN")
 		}
@@ -454,6 +463,7 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 		id.notAdmin = "this server's own tailnet node is unknown, so tailnet callers reach the proxy only"
 	case containsAddr(s.IPs, addr) || (p.StableID != "" && p.StableID == s.StableID):
 		id.notAdmin = "this server's own node reaches the proxy only"
+		id.self = true
 	case !matchAdminNode(*g.adminNodes.Load(), p.Node, p.StableID, s):
 		id.notAdmin = "node " + quoteHeader(p.Node) + " not in admin-nodes"
 		id.unlistedNode = true
