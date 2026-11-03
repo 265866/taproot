@@ -43,7 +43,7 @@ describe('credential refresh operations', () => {
     }
   });
 
-  test('separates pending refresh identities for all providers, not only Devin', () => {
+  test('separates pending refresh identities by auth index', () => {
     expect(getAuthFileRefreshKey({ name: 'same.json', type: 'codex', authIndex: '1' })).not.toBe(
       getAuthFileRefreshKey({ name: 'same.json', type: 'codex', authIndex: '2' })
     );

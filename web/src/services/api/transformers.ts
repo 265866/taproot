@@ -373,7 +373,6 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
   config.metaApiKeys = normalizeProviderGroups(at('api-keys.meta')) as ProviderKeyConfig[];
   config.xaiApiKeys = normalizeProviderGroups(at('api-keys.xai')) as ProviderKeyConfig[];
   config.claudeApiKeys = normalizeProviderGroups(at('api-keys.claude')) as ProviderKeyConfig[];
-  config.vertexApiKeys = normalizeProviderGroups(at('api-keys.vertex')) as ProviderKeyConfig[];
   config.openaiCompatibility = normalizeProviderGroups(
     at('api-keys.openai-compatibility'),
     true

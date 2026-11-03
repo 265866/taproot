@@ -205,7 +205,12 @@ describe('Antigravity credits UI and search', () => {
     const advanced = await Bun.file(`${root}/components/sections/SectionAdvanced.tsx`).text();
     const group = advanced.slice(
       advanced.indexOf("label={t('config_management.visual.sections.advanced.antigravity_title')}"),
-      advanced.indexOf("label={t('config_management.visual.sections.advanced.devin_title')}")
+      advanced.indexOf(
+        '<Collapsible',
+        advanced.indexOf(
+          "label={t('config_management.visual.sections.advanced.antigravity_title')}"
+        )
+      )
     );
     expect(group).toContain('fieldId="quotaAntigravityCredits"');
     expect(group).toContain('checked={values.quotaAntigravityCredits}');

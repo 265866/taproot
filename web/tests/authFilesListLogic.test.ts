@@ -88,7 +88,7 @@ describe('matchesAuthFileSearch', () => {
   });
 
   test('matches the project id', () => {
-    expect(search(authFile({ name: 'vertex-x.json', projectId: 'my-proj' }), 'my-proj')).toBe(true);
+    expect(search(authFile({ name: 'gemini-x.json', projectId: 'my-proj' }), 'my-proj')).toBe(true);
   });
 
   test('searches the email on the wildcard path too', () => {

@@ -141,7 +141,7 @@ describe('OAuth provider gallery', () => {
         typeof provider.label === 'string' ? provider.label : i18n.t(provider.label.key);
       expect(markup).toContain(label);
     }
-    expect(markup).not.toMatch(/auth_login.|vertex|siwc|devin|kimi.com|sponsor/i);
+    expect(markup).not.toMatch(/auth_login\.|vertex|siwc|devin|kimi\.com|sponsor/i);
     // Every tile opens the login dialog; nothing else on the page does.
     expect(markup.match(/aria-haspopup="dialog"/g)?.length).toBe(OAUTH_PROVIDERS.length);
     expect(markup).not.toMatch(/href="https?:/);

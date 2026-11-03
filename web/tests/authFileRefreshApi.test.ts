@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from 'bun:test';
 import { authFilesApi } from '@/services/api/authFiles';
 import { apiClient } from '@/services/api/client';
 
-describe('Devin auth-file quota API boundaries', () => {
+describe('auth-file refresh and lookup API boundaries', () => {
   test('discards the complete Auth refresh response and sends the optional auth index', async () => {
     const completeAuth = {
       id: 'credential-id',
@@ -11,12 +11,12 @@ describe('Devin auth-file quota API boundaries', () => {
     };
     const post = spyOn(apiClient, 'post').mockResolvedValue(completeAuth);
     try {
-      const result = await authFilesApi.requestManualRefresh('devin.json', 'auth-7');
+      const result = await authFilesApi.requestManualRefresh('codex.json', 'auth-7');
 
       expect(result).toBeUndefined();
       expect(post).toHaveBeenCalledTimes(1);
       expect(post).toHaveBeenCalledWith('/credentials/refresh', {
-        name: 'devin.json',
+        name: 'codex.json',
         auth_index: 'auth-7',
       });
       expect(result).not.toBe(completeAuth);
@@ -28,8 +28,8 @@ describe('Devin auth-file quota API boundaries', () => {
   test('omits auth_index when refreshing by filename only', async () => {
     const post = spyOn(apiClient, 'post').mockResolvedValue({ access_token: 'secret' });
     try {
-      await expect(authFilesApi.requestManualRefresh('devin.json')).resolves.toBeUndefined();
-      expect(post).toHaveBeenCalledWith('/credentials/refresh', { name: 'devin.json' });
+      await expect(authFilesApi.requestManualRefresh('codex.json')).resolves.toBeUndefined();
+      expect(post).toHaveBeenCalledWith('/credentials/refresh', { name: 'codex.json' });
     } finally {
       post.mockRestore();
     }
@@ -37,13 +37,13 @@ describe('Devin auth-file quota API boundaries', () => {
 
   test('passes an optional identity lookup to list and normalizes its response', async () => {
     const get = spyOn(apiClient, 'get').mockResolvedValue({
-      files: [{ name: 'devin.json', provider: 'devin', auth_index: 12 }],
+      files: [{ name: 'codex.json', provider: 'codex', auth_index: 12 }],
     });
     try {
-      const result = await authFilesApi.list({ name: 'devin.json', authIndex: '12' });
+      const result = await authFilesApi.list({ name: 'codex.json', authIndex: '12' });
 
       expect(get).toHaveBeenCalledWith('/credentials', {
-        params: { name: 'devin.json', auth_index: '12' },
+        params: { name: 'codex.json', auth_index: '12' },
       });
       expect(result.files[0]?.authIndex).toBe('12');
     } finally {
@@ -65,7 +65,7 @@ describe('Devin auth-file quota API boundaries', () => {
     const refreshError = new Error('refresh failed');
     const post = spyOn(apiClient, 'post').mockRejectedValue(refreshError);
     try {
-      await expect(authFilesApi.requestManualRefresh('devin.json', '2')).rejects.toBe(refreshError);
+      await expect(authFilesApi.requestManualRefresh('codex.json', '2')).rejects.toBe(refreshError);
     } finally {
       post.mockRestore();
     }
@@ -73,7 +73,7 @@ describe('Devin auth-file quota API boundaries', () => {
     const listError = new Error('list failed');
     const get = spyOn(apiClient, 'get').mockRejectedValue(listError);
     try {
-      await expect(authFilesApi.list({ name: 'devin.json', authIndex: '2' })).rejects.toBe(
+      await expect(authFilesApi.list({ name: 'codex.json', authIndex: '2' })).rejects.toBe(
         listError
       );
     } finally {

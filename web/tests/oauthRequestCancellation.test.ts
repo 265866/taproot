@@ -20,7 +20,7 @@ describe('OAuth transport cancellation', () => {
       });
       let deliver!: () => void;
       const attempts = createOAuthAttempts({ setTimeout: () => 0, clearTimeout: () => {} });
-      const attempt = attempts.begin('devin');
+      const attempt = attempts.begin('xai');
       try {
         const request = apiClient.get('/oauth/status', {
           signal: attempt.signal,
@@ -45,7 +45,7 @@ describe('OAuth transport cancellation', () => {
         });
         await started;
         attempts.invalidateAll();
-        const current = attempts.begin('devin');
+        const current = attempts.begin('xai');
         deliver();
         await expect(request).rejects.toHaveProperty('code', 'ERR_CANCELED');
         expect(events).toEqual([]);
