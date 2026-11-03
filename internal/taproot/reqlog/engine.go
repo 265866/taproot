@@ -107,6 +107,10 @@ type engine struct {
 	sealQueue []int64
 	sealWake  chan struct{}
 
+	// retries belongs to the compactor: segments whose compaction failed,
+	// with the attempt count and when to try again.
+	retries map[int64]compactRetry
+
 	sweepNeeded atomic.Bool
 	startOnce   sync.Once
 	stopped     chan struct{}
@@ -124,6 +128,7 @@ func newEngine(ctx context.Context, db *store.DB, dir string, cfg Config, now fu
 		readSem:  make(chan struct{}, maxReaders),
 		open:     make(map[string]*segState),
 		sealWake: make(chan struct{}, 1),
+		retries:  make(map[int64]compactRetry),
 		stopped:  make(chan struct{}),
 	}
 	retention := cfg
@@ -347,14 +352,35 @@ func (e *engine) writeOne(ent *entry) {
 	e.pending = append(e.pending, indexRow{meta: meta, segment: seg.id, offset: offset, length: f.size()})
 }
 
-// commitPending indexes written records. On failure the rows stay pending and
-// are retried with the next batch; the bytes are already in the segment.
+// maxPendingRows bounds index rows kept for retry while the database fails.
+const maxPendingRows = 16384
+
+// commitPending indexes written records. On failure, rows for segments still
+// open stay pending and are retried with the next batch. Every frame is
+// re-indexed from the raw file when its segment seals, so rows for segments
+// no longer open are dropped: retrying them is redundant, and a row whose
+// segment retention deleted would fail its foreign key on every attempt.
 func (e *engine) commitPending() {
 	if len(e.pending) == 0 {
 		return
 	}
 	if err := insertRows(context.Background(), e.db, e.pending); err != nil {
 		log.WithError(err).Warn("request logs: index records")
+		openIDs := make(map[int64]bool, len(e.open))
+		for _, seg := range e.open {
+			openIDs[seg.id] = true
+		}
+		kept := e.pending[:0]
+		for _, r := range e.pending {
+			if openIDs[r.segment] {
+				kept = append(kept, r)
+			}
+		}
+		if over := len(kept) - maxPendingRows; over > 0 {
+			kept = append(kept[:0], kept[over:]...)
+		}
+		clear(e.pending[len(kept):])
+		e.pending = kept
 		return
 	}
 	clear(e.pending)
@@ -454,10 +480,21 @@ func (e *engine) runCompactor(ctx context.Context) {
 			return
 		case <-e.sealWake:
 		case <-ticker.C:
+			e.requeueFailed(ctx)
 			e.applyRetention(ctx)
 		}
 	}
 }
+
+type compactRetry struct {
+	attempts int
+	next     time.Time
+}
+
+const (
+	compactRetryBase = time.Minute
+	compactRetryMax  = time.Hour
+)
 
 func (e *engine) compactQueued(ctx context.Context) {
 	for ctx.Err() == nil {
@@ -470,8 +507,43 @@ func (e *engine) compactQueued(ctx context.Context) {
 		e.sealQueue = e.sealQueue[1:]
 		e.sealMu.Unlock()
 		if err := e.compact(ctx, id); err != nil {
-			log.WithError(err).WithField("segment", id).Warn("request logs: seal segment")
+			r := e.retries[id]
+			r.attempts++
+			r.next = e.now().Add(min(compactRetryBase<<min(r.attempts-1, 6), compactRetryMax))
+			e.retries[id] = r
+			log.WithError(err).WithField("segment", id).WithField("attempts", r.attempts).Warn("request logs: seal segment")
+			continue
 		}
+		delete(e.retries, id)
+	}
+}
+
+// requeueFailed queues segments left in the sealing state by a failed
+// compaction once their backoff has passed. Until they seal, retention cannot
+// prune them and their raw bytes count against max-bytes.
+func (e *engine) requeueFailed(ctx context.Context) {
+	if len(e.retries) == 0 {
+		return
+	}
+	now := e.now()
+	var due []int64
+	for id, r := range e.retries {
+		if !now.Before(r.next) {
+			due = append(due, id)
+		}
+	}
+	for _, id := range due {
+		var state string
+		err := e.db.QueryRowContext(ctx, `SELECT state FROM request_log_segments WHERE id = ?`, id).Scan(&state)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && state != segmentSealing) {
+			delete(e.retries, id)
+			continue
+		}
+		if err != nil {
+			log.WithError(err).WithField("segment", id).Warn("request logs: check failed segment")
+			continue
+		}
+		e.enqueueSeal(id)
 	}
 }
 
@@ -677,12 +749,23 @@ func (e *engine) recover(ctx context.Context) error {
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("list segments: %w", err)
 	}
+	// A restored database can be older than the files: segments created
+	// after its snapshot have ids past its sequence. New ids must not collide
+	// with them, and the sweep below then removes them as unowned.
+	if err := e.reserveDiskIDs(ctx); err != nil {
+		return err
+	}
 	for _, s := range segs {
 		if s.state == segmentSealed {
 			continue
 		}
 		zstPath := e.segmentPath(s.day, s.id, ".zst")
 		_ = os.Remove(zstPath + ".tmp")
+		// A restored database may list as open a segment that sealed after
+		// its snapshot; the sealed copy is then the only copy.
+		if err := restoreRawFromSealed(e.segmentPath(s.day, s.id, ".raw"), zstPath); err != nil {
+			log.WithError(err).WithField("segment", s.id).Warn("request logs: recover sealed copy of open segment")
+		}
 		_ = os.Remove(zstPath)
 		if _, err := e.db.ExecContext(ctx, `UPDATE request_log_segments SET state = ? WHERE id = ?`, segmentSealing, s.id); err != nil {
 			return fmt.Errorf("mark segment sealing: %w", err)
@@ -691,6 +774,78 @@ func (e *engine) recover(ctx context.Context) error {
 	}
 	e.sweep(ctx)
 	return nil
+}
+
+// reserveDiskIDs raises the segment id sequence to the largest id on disk.
+func (e *engine) reserveDiskIDs(ctx context.Context) error {
+	var maxDisk int64
+	days, err := os.ReadDir(e.dir)
+	if err != nil {
+		return fmt.Errorf("list request log dir: %w", err)
+	}
+	for _, day := range days {
+		if !day.IsDir() || day.Name() == "tmp" {
+			continue
+		}
+		files, err := os.ReadDir(filepath.Join(e.dir, day.Name()))
+		if err != nil {
+			continue
+		}
+		for _, file := range files {
+			stem, _, _ := strings.Cut(file.Name(), ".")
+			if id, err := strconv.ParseInt(stem, 10, 64); err == nil && id > maxDisk {
+				maxDisk = id
+			}
+		}
+	}
+	if maxDisk == 0 {
+		return nil
+	}
+	var seq int64
+	err = e.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = 'request_log_segments'`).Scan(&seq)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = e.db.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES ('request_log_segments', ?)`, maxDisk)
+	case err == nil && seq < maxDisk:
+		_, err = e.db.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = ? WHERE name = 'request_log_segments'`, maxDisk)
+	}
+	if err != nil {
+		return fmt.Errorf("reserve segment ids: %w", err)
+	}
+	return nil
+}
+
+// restoreRawFromSealed decompresses a sealed file back to its raw name when
+// the raw file is gone, so the segment can be re-indexed and sealed again.
+func restoreRawFromSealed(rawPath, zstPath string) error {
+	if _, err := os.Stat(rawPath); !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	in, err := os.Open(zstPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	dec, err := newDecoder(in)
+	if err != nil {
+		return err
+	}
+	defer dec.Close()
+	tmpPath := rawPath + ".tmp"
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, errCopy := io.Copy(out, dec)
+	errClose := out.Close()
+	if err := errors.Join(errCopy, errClose); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return os.Rename(tmpPath, rawPath)
 }
 
 // sweep removes files that no segment row owns, plus raw copies of sealed
