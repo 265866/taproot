@@ -683,3 +683,9 @@
     padding-block: 4px;
   }
 }
+
+.failedLink {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

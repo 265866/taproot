@@ -969,7 +969,7 @@ export function AppLogsPanel() {
               <div className="hint">{t('taproot_logs.app.error_logs_description')}</div>
 
               <div className="hint">
-                <Link to={`${ROUTES.requestLogs}?status=error`}>
+                <Link className={styles.failedLink} to={`${ROUTES.requestLogs}?status=error`}>
                   {t('taproot_logs.app.error_logs_failed_requests')}
                 </Link>
               </div>
