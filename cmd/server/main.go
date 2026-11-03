@@ -34,6 +34,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/safemode"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/store"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot"
 	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/tui"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
@@ -667,6 +668,14 @@ func main() {
 		matches := safemode.ExampleAPIKeys(cfg.APIKeys)
 		log.WithField("api_keys", strings.Join(matches, ",")).Error("unsafe example API key configured; proxy API endpoints disabled until api-keys is updated")
 		serverOptions = append(serverOptions, api.WithExampleAPIKeySafeMode())
+	}
+	if !commandMode && !cloudConfigMissing && !homeMode && !tuiMode {
+		taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
+		if errTaproot != nil {
+			log.Errorf("taproot setup failed: %v", errTaproot)
+			return
+		}
+		serverOptions = append(serverOptions, taprootOptions...)
 	}
 
 	// Register the shared token store once so all components use the same persistence backend.
