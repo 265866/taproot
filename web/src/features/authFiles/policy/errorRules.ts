@@ -96,12 +96,12 @@ export function validateErrorRule(rule: ErrorRuleDraft): string | null {
   if (isUnchangedRule(rule)) return null;
   const status = rule.status.trim();
   if (!/^\d+$/.test(status) || !Number.isSafeInteger(Number(status)) || Number(status) <= 0) {
-    return 'providersPage.errorRules.invalidStatus';
+    return 'auth_files.error_rules.invalidStatus';
   }
-  if (!isAction(normalizedAction(rule.action))) return 'providersPage.errorRules.invalidAction';
-  if (!rule.matches.length) return 'providersPage.errorRules.missingMatch';
+  if (!isAction(normalizedAction(rule.action))) return 'auth_files.error_rules.invalidAction';
+  if (!rule.matches.length) return 'auth_files.error_rules.missingMatch';
   if (rule.matches.some((match) => isInvalidErrorMatch(rule, match))) {
-    return 'providersPage.errorRules.invalidMatch';
+    return 'auth_files.error_rules.invalidMatch';
   }
   // Match strings are literal (including whitespace/newlines). Go, not JS, interprets regexes.
   return null;
@@ -113,7 +113,7 @@ export function buildErrorRules(rules: ErrorRuleDraft[]): RequestScopedErrorRule
     if (error) throw new Error(error);
     if (isUnchangedRule(rule)) return { ...rule.original! };
     const action = normalizedAction(rule.action);
-    if (!isAction(action)) throw new Error('providersPage.errorRules.invalidAction');
+    if (!isAction(action)) throw new Error('auth_files.error_rules.invalidAction');
     const match = patterns(rule, 'text');
     const matchRegex = patterns(rule, 'regex');
     return {

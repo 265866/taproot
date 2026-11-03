@@ -43,10 +43,6 @@ export function SectionAdvanced({
     (antigravitySensitiveWords: string[]) => onChange({ antigravitySensitiveWords }),
     [onChange]
   );
-  const handleDevinSensitiveWordsChange = useCallback(
-    (devinSensitiveWords: string[]) => onChange({ devinSensitiveWords }),
-    [onChange]
-  );
 
   return (
     <SectionCard
@@ -192,34 +188,6 @@ export function SectionAdvanced({
             />
           </SettingList>
         </FieldStack>
-      </Collapsible>
-
-      <Collapsible
-        label={t('config_management.visual.sections.advanced.devin_title')}
-        defaultOpen={false}
-      >
-        <SettingList
-          title={t('config_management.visual.sections.system.devin_sensitive_words')}
-          description={t('config_management.visual.sections.system.devin_sensitive_words_desc')}
-        >
-          <BlockSetting
-            fieldId="devinSensitiveWords"
-            label={t('config_management.visual.sections.system.devin_sensitive_words_label')}
-            description={t('config_management.visual.sections.system.devin_sensitive_words_hint')}
-          >
-            <StringListEditor
-              value={values.devinSensitiveWords}
-              disabled={disabled}
-              placeholder={t(
-                'config_management.visual.sections.system.devin_sensitive_words_placeholder'
-              )}
-              inputAriaLabel={t(
-                'config_management.visual.sections.system.devin_sensitive_words_label'
-              )}
-              onChange={handleDevinSensitiveWordsChange}
-            />
-          </BlockSetting>
-        </SettingList>
       </Collapsible>
 
       <Collapsible

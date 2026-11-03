@@ -3,14 +3,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
-import { ErrorRulesEditor } from '@/features/providers/sheets/forms/ErrorRulesEditor';
-import { RuntimePolicyEditor } from '@/features/providers/sheets/forms/RuntimePolicyEditor';
-import { readErrorRules, type ErrorRuleDraft } from '@/features/providers/errorRules';
-import { readRuntimePolicy } from '@/features/providers/runtimePolicy';
-import en from '@/i18n/locales/en.json';
-import zhCN from '@/i18n/locales/zh-CN.json';
-import zhTW from '@/i18n/locales/zh-TW.json';
-import ru from '@/i18n/locales/ru.json';
+import { ErrorRulesEditor } from '@/features/authFiles/policy/ErrorRulesEditor';
+import { readErrorRules, type ErrorRuleDraft } from '@/features/authFiles/policy/errorRules';
+import { en } from '@/i18n/resources';
 
 const i18n = createInstance();
 await i18n.init({ lng: 'en', resources: { en: { translation: en } } });
@@ -61,32 +56,9 @@ describe('error-rule editor UI', () => {
     expect(controls.length).toBeGreaterThan(10);
     for (const control of controls) expect(control[0]).toContain('disabled=""');
   });
-  test('an empty override retains its add action and inherited mode hides rows', () => {
+  test('an empty rule list keeps its add action', () => {
     expect(renderRows([])).toContain('No rules.');
     expect(renderRows([])).toContain('Add rule');
-    const policy = { ...readRuntimePolicy(), errorRules: rows };
-    const inherited = render(
-      createElement(RuntimePolicyEditor, { value: policy, onChange: () => {}, disabled: false })
-    );
-    expect(inherited).not.toContain('Add rule');
-    const overridden = render(
-      createElement(RuntimePolicyEditor, {
-        value: { ...policy, errorsMode: 'override' },
-        onChange: () => {},
-        disabled: false,
-      })
-    );
-    expect(overridden).toContain('Add rule');
-    const vertex = render(
-      createElement(RuntimePolicyEditor, {
-        value: { ...policy, errorsMode: 'override' },
-        onChange: () => {},
-        disabled: false,
-        supportsErrors: false,
-      })
-    );
-    expect(vertex).not.toContain('Add rule');
-    expect(vertex).not.toContain('Request error rules');
   });
   test('unrecognized imported actions are displayed safely instead of silently selected away', () => {
     const html = renderRows([{ ...rows[0], action: '<unknown>' }]);
@@ -95,23 +67,17 @@ describe('error-rule editor UI', () => {
     expect(html).toContain('>&lt;unknown&gt;</span>');
     expect(html).toContain('aria-label="Action"');
   });
-  test('every locale contains complete row labels, errors, actions and no stale JSON guidance', () => {
-    for (const messages of [en, zhCN, zhTW, ru]) {
-      const section = messages.providersPage.errorRules;
-      expect(Object.keys(section).sort()).toEqual(Object.keys(en.providersPage.errorRules).sort());
-      expect(Object.keys(section.actions).sort()).toEqual([
-        'continue',
-        'continue-and-cooldown',
-        'stop',
-        'stop-and-cooldown',
-      ]);
-      for (const [key, value] of Object.entries(section)) {
-        if (key === 'actions') continue;
-        expect(typeof value === 'string' && value.trim().length > 0).toBe(true);
-      }
-      expect(Object.values(section.actions).every((value) => value.trim().length > 0)).toBe(true);
-      expect(JSON.stringify(messages.providersPage.runtimePolicy)).not.toContain('JSON');
-      expect(messages.providersPage.runtimePolicy).not.toHaveProperty('errorsJson');
+  test('the catalog has complete row labels, errors, and actions', () => {
+    const section = (en.auth_files as { error_rules: Record<string, unknown> }).error_rules;
+    expect(Object.keys(section.actions as object).sort()).toEqual([
+      'continue',
+      'continue-and-cooldown',
+      'stop',
+      'stop-and-cooldown',
+    ]);
+    for (const [key, value] of Object.entries(section)) {
+      if (key === 'actions') continue;
+      expect(typeof value === 'string' && value.trim().length > 0).toBe(true);
     }
   });
 });

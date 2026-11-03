@@ -5,7 +5,6 @@ import { getValidationMessage } from '../blocks/shared';
 import { SectionCard } from '../SectionCard';
 import { SettingList } from '../fields/FieldPrimitives';
 import {
-  ApiKeysField,
   DebugToggle,
   HostField,
   LoggingToFileToggle,
@@ -42,8 +41,6 @@ export function SectionCommon({
         <PortField {...fieldProps} error={portError} />
         <ProxyUrlField {...fieldProps} wide />
       </SettingList>
-
-      <ApiKeysField {...fieldProps} />
 
       <SettingList>
         <DebugToggle {...fieldProps} />

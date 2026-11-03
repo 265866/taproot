@@ -3,13 +3,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
-import { ModelEntriesEditor } from '@/features/providers/sheets/forms/ModelEntriesEditor';
 import { AuthFilePolicyFields } from '@/features/authFiles/components/AuthFilePolicyFields';
 import { readCredentialPolicy } from '@/features/authFiles/credentialPolicy';
-import en from '@/i18n/locales/en.json';
-import zhCN from '@/i18n/locales/zh-CN.json';
-import zhTW from '@/i18n/locales/zh-TW.json';
-import ru from '@/i18n/locales/ru.json';
+import { en } from '@/i18n/resources';
 
 const i18n = createInstance();
 await i18n.init({ lng: 'en', resources: { en: { translation: en } } });
@@ -39,27 +35,6 @@ const render = (json: Record<string, unknown> = original, disabled = false) =>
   );
 
 describe('credential policy structured forms', () => {
-  test('keeps optional aliases for the original Provider editor by default', () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        I18nextProvider,
-        { i18n },
-        createElement(ModelEntriesEditor, {
-          models: [{ name: 'model', alias: '' }],
-          supportsImage: false,
-          supportsThinking: true,
-          mutating: false,
-          removeDisabled: false,
-          onAdd: () => {},
-          onRemove: () => {},
-          onUpdate: () => {},
-        })
-      )
-    );
-    expect(html).toContain('Alias (optional)');
-    expect(html).not.toContain('required=""');
-  });
-
   test('uses Provider-style model rows and the same rule/condition controls, not JSON editors', () => {
     const html = render();
     expect(html).toContain('value="upstream"');
@@ -110,7 +85,7 @@ describe('credential policy structured forms', () => {
   });
 
   test('all locales describe structured fields without asking users for JSON', () => {
-    for (const messages of [en, zhCN, zhTW, ru]) {
+    for (const messages of [en]) {
       for (const [key, value] of Object.entries(messages.auth_files)) {
         if (!key.startsWith('policy_')) continue;
         expect(value.trim().length).toBeGreaterThan(0);

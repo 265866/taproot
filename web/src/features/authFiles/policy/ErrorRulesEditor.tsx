@@ -10,8 +10,8 @@ import {
   moveErrorRule,
   validateErrorRule,
   type ErrorRuleDraft,
-} from '../../errorRules';
-import form from './sharedForm.module.scss';
+} from './errorRules';
+import form from './policyForm.module.scss';
 import styles from './ErrorRulesEditor.module.scss';
 
 export interface ErrorRulesEditorProps {
@@ -21,7 +21,7 @@ export interface ErrorRulesEditorProps {
 }
 
 const actions: readonly string[] = ERROR_RULE_ACTIONS;
-const key = 'providersPage.errorRules';
+const key = 'auth_files.error_rules';
 
 export function ErrorRulesEditor({ rules, onChange, disabled }: ErrorRulesEditorProps) {
   const { t } = useTranslation();

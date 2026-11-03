@@ -8,9 +8,8 @@ import {
   isInvalidErrorMatch,
   validateErrorRule,
   type ErrorRuleDraft,
-} from '@/features/providers/errorRules';
-import { buildRuntimePolicy, readRuntimePolicy } from '@/features/providers/runtimePolicy';
-import type { ProviderKeyConfig, RequestScopedErrorRule } from '@/types/provider';
+} from '@/features/authFiles/policy/errorRules';
+import type { RequestScopedErrorRule } from '@/types/provider';
 
 const validRule = (id = 'new'): ErrorRuleDraft => ({
   ...createErrorRule(id),
@@ -18,17 +17,11 @@ const validRule = (id = 'new'): ErrorRuleDraft => ({
   matches: [{ ...createErrorMatch(`${id}-text`), value: 'quota' }],
 });
 
-describe('provider error-rule rows', () => {
+describe('credential error-rule rows', () => {
   test('deterministic read IDs do not dirty an untouched form', () => {
-    const config: ProviderKeyConfig = {
-      apiKey: 'fixture-key',
-      requestScopedErrors: [{ status: 429, match: ['quota'], action: 'stop' }],
-    };
-    expect(JSON.stringify(readRuntimePolicy(config))).toBe(
-      JSON.stringify(readRuntimePolicy(config))
-    );
-    const draft = readRuntimePolicy(config);
-    expect(buildRuntimePolicy(draft).requestScopedErrors).toEqual(config.requestScopedErrors);
+    const rules: RequestScopedErrorRule[] = [{ status: 429, match: ['quota'], action: 'stop' }];
+    expect(JSON.stringify(readErrorRules(rules))).toBe(JSON.stringify(readErrorRules(rules)));
+    expect(buildErrorRules(readErrorRules(rules))).toEqual(rules);
   });
 
   test('literal whitespace, commas, backslashes and embedded newlines are not split or trimmed', () => {
@@ -75,23 +68,23 @@ describe('provider error-rule rows', () => {
     expect(isInvalidErrorMatch(changed, { ...changed.matches[0], kind: 'regex' })).toBe(true);
     expect(
       validateErrorRule({ ...changed, matches: [...changed.matches, createErrorMatch('new')] })
-    ).toBe('providersPage.errorRules.invalidMatch');
+    ).toBe('auth_files.error_rules.invalidMatch');
   });
   test('new rows require a positive safe-integer status, action and nonempty conditions', () => {
     expect(validateErrorRule(createErrorRule('blank'))).toBe(
-      'providersPage.errorRules.invalidStatus'
+      'auth_files.error_rules.invalidStatus'
     );
     expect(validateErrorRule({ ...validRule(), action: '' })).toBe(
-      'providersPage.errorRules.invalidAction'
+      'auth_files.error_rules.invalidAction'
     );
     expect(validateErrorRule({ ...validRule(), action: 'retry' })).toBe(
-      'providersPage.errorRules.invalidAction'
+      'auth_files.error_rules.invalidAction'
     );
     expect(validateErrorRule({ ...validRule(), matches: [] })).toBe(
-      'providersPage.errorRules.missingMatch'
+      'auth_files.error_rules.missingMatch'
     );
     expect(validateErrorRule({ ...validRule(), matches: [createErrorMatch('empty')] })).toBe(
-      'providersPage.errorRules.invalidMatch'
+      'auth_files.error_rules.invalidMatch'
     );
     expect(validateErrorRule({ ...validRule(), status: '999' })).toBeNull();
     expect(
@@ -136,20 +129,5 @@ describe('provider error-rule rows', () => {
     expect(buildErrorRules(moved.filter((rule) => rule.id !== rows[0].id))).toEqual([
       { status: 429, match: ['quota'], action: 'continue' },
     ]);
-  });
-
-  test('switching inheritance keeps drafts but does not serialize them', () => {
-    const policy = {
-      ...readRuntimePolicy(),
-      errorsMode: 'override' as const,
-      errorRules: [validRule()],
-    };
-    expect(buildRuntimePolicy(policy).requestScopedErrors).toHaveLength(1);
-    const inherited = { ...policy, errorsMode: 'inherit' as const };
-    expect(buildRuntimePolicy(inherited).requestScopedErrors).toBeUndefined();
-    expect(inherited.errorRules).toBe(policy.errorRules);
-    expect(
-      buildRuntimePolicy({ ...inherited, errorsMode: 'override' }).requestScopedErrors
-    ).toEqual(buildRuntimePolicy(policy).requestScopedErrors);
   });
 });

@@ -4,15 +4,10 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Select } from '@/components/ui/Select';
 
-test('Provider advanced editors consistently use the shared Select instead of native menus', () => {
-  for (const file of [
-    'RuntimePolicyEditor',
-    'ProviderBehaviorEditor',
-    'ModelAdvancedFields',
-    'ErrorRulesEditor',
-  ]) {
+test('credential policy editors use the shared Select instead of native menus', () => {
+  for (const file of ['ErrorRulesEditor']) {
     const source = readFileSync(
-      new URL(`../src/features/providers/sheets/forms/${file}.tsx`, import.meta.url),
+      new URL(`../src/features/authFiles/policy/${file}.tsx`, import.meta.url),
       'utf8'
     );
     expect(source).toContain("import { Select } from '@/components/ui/Select'");

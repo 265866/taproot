@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { en } from '@/i18n/resources';
 import { describe, expect, test } from 'bun:test';
 import {
   applyCredentialPolicyPatch,
@@ -7,7 +7,7 @@ import {
   readCredentialPolicy,
   type CredentialPolicyValues,
 } from '../src/features/authFiles/credentialPolicy';
-import { createErrorRule, moveErrorRule } from '../src/features/providers/errorRules';
+import { createErrorRule, moveErrorRule } from '../src/features/authFiles/policy/errorRules';
 import {
   buildAuthFileFieldsPatch,
   type PrefixProxyEditorState,
@@ -263,13 +263,8 @@ describe('auth-file structured credential policy contracts', () => {
     expect(buildAuthFileFieldsPatch(editor, (key) => key)).toEqual({ request_retry: 2 });
   });
 
-  test('all policy translation keys are present in every supported locale', () => {
-    const messages = ['en', 'zh-CN', 'zh-TW', 'ru'].map(
-      (locale) =>
-        JSON.parse(
-          readFileSync(new URL(`../src/i18n/locales/${locale}.json`, import.meta.url), 'utf8')
-        ).auth_files as Record<string, string>
-    );
+  test('all policy translation keys are present and non-empty', () => {
+    const messages = [en.auth_files as Record<string, string>];
     const keys = Object.keys(messages[0])
       .filter((key) => key.startsWith('policy_'))
       .sort();

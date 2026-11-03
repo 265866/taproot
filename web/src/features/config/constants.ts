@@ -53,7 +53,6 @@ export const CONFIG_TAB_ICONS: Record<ConfigTabId, ComponentType<IconProps>> = {
 export const COMMON_FIELD_IDS = [
   'host',
   'port',
-  'apiKeys',
   'proxyUrl',
   'debug',
   'loggingToFile',
@@ -141,7 +140,6 @@ export const FIELD_VALUE_KEYS: Record<string, readonly string[]> = {
   host: ['host'],
   port: ['port'],
   authDir: ['authDir'],
-  apiKeys: ['apiKeysText'],
   tlsEnable: ['tlsEnable'],
   tlsCert: ['tlsCert'],
   tlsKey: ['tlsKey'],
@@ -183,7 +181,6 @@ export const FIELD_VALUE_KEYS: Record<string, readonly string[]> = {
   pluginStoreSources: ['pluginStoreSources'],
   pluginStoreAuth: ['pluginStoreAuth'],
   antigravitySensitiveWords: ['antigravitySensitiveWords'],
-  devinSensitiveWords: ['devinSensitiveWords'],
   antigravitySignatureCacheEnabled: ['antigravitySignatureCacheEnabled'],
   antigravitySignatureBypassStrict: ['antigravitySignatureBypassStrict'],
   claudeHeaderUserAgent: ['claudeHeaderUserAgent'],

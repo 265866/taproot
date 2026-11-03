@@ -10,7 +10,7 @@ import {
   TextSetting,
   ToggleSetting,
 } from '../fields/FieldPrimitives';
-import { ApiKeysField, HostField, PortField } from '../fields/sharedFields';
+import { HostField, PortField } from '../fields/sharedFields';
 import { getValidationMessage } from '../blocks/shared';
 import { StringListEditor } from '../blocks/StringListEditor';
 import { SectionDiscovery } from './SectionDiscovery';
@@ -50,8 +50,6 @@ export function SectionConnectivity({
           disabled={disabled}
         />
       </SettingList>
-
-      <ApiKeysField {...fieldProps} />
 
       <SettingList>
         <TextSetting

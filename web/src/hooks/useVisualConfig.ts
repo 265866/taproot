@@ -39,17 +39,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function parseApiKeysText(raw: unknown): string {
-  if (!Array.isArray(raw)) return '';
-
-  const keys: string[] = [];
-  for (const item of raw) {
-    const key = typeof item === 'string' ? item.trim() : '';
-    if (key) keys.push(key);
-  }
-  return keys.join('\n');
-}
-
 type YamlDocument = ReturnType<typeof parseDocument>;
 type YamlPath = string[];
 
@@ -1239,7 +1228,6 @@ function getNextDirtyFields(
       'rmDisableControlPanel',
       'rmPanelRepo',
       'authDir',
-      'apiKeysText',
       'debug',
       'commercialMode',
       'loggingToFile',
@@ -1270,12 +1258,6 @@ function getNextDirtyFields(
         nextValues.antigravitySensitiveWords,
         baselineValues.antigravitySensitiveWords
       )
-    );
-  }
-  if (Object.prototype.hasOwnProperty.call(patch, 'devinSensitiveWords')) {
-    updateDirty(
-      'devinSensitiveWords',
-      areStringArraysEqual(nextValues.devinSensitiveWords, baselineValues.devinSensitiveWords)
     );
   }
   if (Object.prototype.hasOwnProperty.call(patch, 'pluginStoreAuth')) {
@@ -1429,7 +1411,6 @@ function parseVisualValuesFromYaml(yamlContent: string): VisualConfigValues {
   const streaming = asRecord(v8Requests?.['streaming']);
   const plugins = asRecord(parsed.plugins);
   const antigravity = asRecord(v8OauthProviders?.['antigravity']);
-  const devin = asRecord(v8OauthProviders?.['devin']);
   const claudeHeaderDefaults = asRecord(v8UpstreamClaude?.['header-defaults']);
   const codexHeaderDefaults = asRecord(v8OauthProvidersCodex?.['header-defaults']);
 
@@ -1454,7 +1435,6 @@ function parseVisualValuesFromYaml(yamlContent: string): VisualConfigValues {
         : '',
 
     authDir: typeof v8Oauth?.['auth-dir'] === 'string' ? v8Oauth?.['auth-dir'] : '',
-    apiKeysText: parseApiKeysText(asRecord(parsed.access)?.['api-keys']),
     pluginsEnabled: Boolean(plugins?.enabled),
     pluginStoreSources: parseStringList(plugins?.['store-sources']),
     pluginStoreAuth: parsePluginStoreAuthRules(plugins?.['store-auth']),
@@ -1486,7 +1466,6 @@ function parseVisualValuesFromYaml(yamlContent: string): VisualConfigValues {
     authAutoRefreshWorkers: String(v8Oauth?.['auth-auto-refresh-workers'] ?? ''),
     wsAuth: Boolean(v8OauthProvidersAistudio?.['ws-auth'] ?? DEFAULT_VISUAL_VALUES.wsAuth),
     antigravitySensitiveWords: parseStringList(antigravity?.['sensitive-words']),
-    devinSensitiveWords: parseStringList(devin?.['sensitive-words']),
     antigravitySignatureCacheEnabled: Boolean(
       v8OauthProvidersAntigravity?.['signature-cache-enabled'] ?? true
     ),
@@ -1726,17 +1705,6 @@ export function useVisualConfig() {
         }
 
         if (dirtyFields.has('authDir')) setStringInDoc(doc, ['oauth', 'auth-dir'], values.authDir);
-        if (dirtyFields.has('apiKeysText')) {
-          const apiKeys = values.apiKeysText
-            .split('\n')
-            .map((key) => key.trim())
-            .filter(Boolean);
-          if (apiKeys.length > 0) {
-            doc.setIn(['access', 'api-keys'], apiKeys);
-          } else if (docHas(doc, ['access', 'api-keys'])) {
-            doc.deleteIn(['access', 'api-keys']);
-          }
-        }
 
         const pluginsDirty =
           dirtyFields.has('pluginsEnabled') ||
@@ -1853,20 +1821,6 @@ export function useVisualConfig() {
             values.antigravitySensitiveWords
           );
           deleteIfMapEmpty(doc, ['oauth', 'providers', 'antigravity']);
-        }
-        if (dirtyFields.has('devinSensitiveWords')) {
-          ensureMapInDoc(doc, ['oauth', 'providers', 'devin']);
-          const devin = doc.getIn(['oauth', 'providers', 'devin'], true);
-          if (isMap(devin)) {
-            syncStringSequence(
-              doc,
-              devin,
-              'sensitive-words',
-              baselineValues.devinSensitiveWords,
-              values.devinSensitiveWords
-            );
-          }
-          deleteIfMapEmpty(doc, ['oauth', 'providers', 'devin']);
         }
         if (dirtyFields.has('antigravitySignatureCacheEnabled')) {
           if (

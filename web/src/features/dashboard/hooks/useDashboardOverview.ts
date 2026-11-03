@@ -8,7 +8,6 @@ import {
   normalizeRecentRequestUsageEntry,
   type RecentRequestBucket,
 } from '@/utils/recentRequests';
-import type { Config } from '@/types';
 import type { AuthFileItem } from '@/types/authFile';
 import {
   TRAFFIC_BUCKET_MINUTES,
@@ -91,17 +90,6 @@ const createAccumulator = (): ProviderAccumulator => ({
   bucketGroups: [],
 });
 
-export const getProviderKeyCounts = (config: Config) => ({
-  gemini: config.geminiApiKeys?.length ?? 0,
-  interactions: config.interactionsApiKeys?.length ?? 0,
-  codex: config.codexApiKeys?.length ?? 0,
-  meta: config.metaApiKeys?.length ?? 0,
-  xai: config.xaiApiKeys?.length ?? 0,
-  claude: config.claudeApiKeys?.length ?? 0,
-  vertex: config.vertexApiKeys?.length ?? 0,
-  openai: config.openaiCompatibility?.length ?? 0,
-});
-
 /**
  * 汇总仪表盘所需的全部数据。
  *
@@ -166,7 +154,6 @@ export function useDashboardOverview() {
     ]);
   }, [connected, fetchConfig, loadAuthFiles, loadModels, refreshRecentRequests]);
 
-  const providerKeyCounts = useMemo(() => (config ? getProviderKeyCounts(config) : null), [config]);
 
   const { traffic, providers } = useMemo(() => {
     const accumulators = new Map<string, ProviderAccumulator>();
@@ -272,14 +259,10 @@ export function useDashboardOverview() {
 
   const counts = useMemo<DashboardCounts>(
     () => ({
-      managementKeys: config ? (config.apiKeys?.length ?? 0) : null,
-      providerKeys: providerKeyCounts
-        ? Object.values(providerKeyCounts).reduce((sum, count) => sum + count, 0)
-        : null,
       credentials: authFiles ? authFiles.length : null,
       models: modelsLoading || modelsError ? null : models.length,
     }),
-    [config, providerKeyCounts, authFiles, models.length, modelsLoading, modelsError]
+    [authFiles, models.length, modelsLoading, modelsError]
   );
 
   return {
@@ -287,7 +270,6 @@ export function useDashboardOverview() {
     connected,
     config,
     counts,
-    providerKeyCounts,
     traffic,
     providers,
     credentials,
