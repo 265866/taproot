@@ -1,0 +1,100 @@
+import { formatCompactNumber } from '@/utils/format';
+import type { UsageBucket } from '@/services/api/taproot';
+
+export const DASH = '—';
+
+/** Dollars with cents, whole dollars past $1,000, and fractions of a cent shown as `<$0.01`. */
+export function formatUSD(value: number): string {
+  if (!Number.isFinite(value) || value === 0) return '$0.00';
+  const abs = Math.abs(value);
+  if (abs < 0.01) return value < 0 ? '-<$0.01' : '<$0.01';
+  const digits = abs >= 1000 ? 0 : 2;
+  return `${value < 0 ? '-' : ''}$${abs.toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
+}
+
+/** Per-request cost: up to four decimals so small requests do not all read `<$0.01`. */
+export function formatUSDPrecise(value: number): string {
+  if (!Number.isFinite(value) || value === 0) return '$0';
+  return `$${value.toLocaleString('en-US', { maximumFractionDigits: value < 1 ? 4 : 2 })}`;
+}
+
+export function formatTokens(value: number): string {
+  return formatCompactNumber(value);
+}
+
+export function formatRatio(value: number | null, digits = 1): string {
+  if (value === null || !Number.isFinite(value)) return DASH;
+  return `${(value * 100).toFixed(digits).replace(/\.0+$/, '')}%`;
+}
+
+export function formatMs(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return DASH;
+  if (value < 1000) return `${Math.round(value)} ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(value < 10_000 ? 2 : 1)} s`;
+  const minutes = Math.floor(value / 60_000);
+  const seconds = Math.round((value % 60_000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+export function formatDuration(ms: number): string {
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+const timeFormat = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
+const dayHourFormat = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
+  hour: 'numeric',
+});
+const dayFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+const dateTimeFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+const fullFormat = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+/**
+ * Axis tick for a bucket start. Daily buckets are UTC days on the server, so they are labelled
+ * by their UTC date; hourly buckets use local time.
+ */
+export function formatBucketTick(ms: number, bucket: UsageBucket, spanMs: number): string {
+  if (bucket === '1d') return dayFormat.format(ms);
+  return spanMs <= 24 * 3_600_000 ? timeFormat.format(ms) : dayHourFormat.format(ms);
+}
+
+export function formatBucketLabel(ms: number, bucket: UsageBucket): string {
+  if (bucket === '1d') return `${dayFormat.format(ms)} (UTC)`;
+  return dateTimeFormat.format(ms);
+}
+
+export function formatDateTime(value: string | number | null): string {
+  if (value === null) return DASH;
+  const ms = typeof value === 'number' ? value : Date.parse(value);
+  return Number.isFinite(ms) ? dateTimeFormat.format(ms) : DASH;
+}
+
+export function formatFullDateTime(value: string | null): string {
+  if (!value) return DASH;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? fullFormat.format(ms) : DASH;
+}

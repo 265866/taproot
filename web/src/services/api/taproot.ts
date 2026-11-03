@@ -33,8 +33,8 @@ export interface TaprootAccount {
   email: string;
   plan: string;
   disabled: boolean;
-  firstSeen: string;
-  lastSeen: string;
+  firstSeen: string | null;
+  lastSeen: string | null;
 }
 
 export interface QuotaWindowState {
@@ -73,10 +73,11 @@ export interface UsageTotals {
   cacheWrite5mTokens: number;
   cacheWrite1hTokens: number;
   costUSD: number;
-  latencyP50Ms: number;
-  latencyP95Ms: number;
-  ttftP50Ms: number;
-  ttftP95Ms: number;
+  /** Percentiles come from log-bucketed histograms (within about 5%); null without samples. */
+  latencyP50Ms: number | null;
+  latencyP95Ms: number | null;
+  ttftP50Ms: number | null;
+  ttftP95Ms: number | null;
 }
 
 export interface UsageSummary {
@@ -84,9 +85,11 @@ export interface UsageSummary {
   buckets: { t: string; groups: Record<string, UsageTotals> }[];
 }
 
-// The plan lists these fields without fixing their JSON names; ingest (A1) owns the final shape.
+/** One row of /usage/events, as internal/taproot/ingest/usage_api.go writes it. */
 export interface UsageEvent {
-  at: string;
+  id: number;
+  eventKey: string;
+  t: string;
   requestId: string;
   traceId: string;
   sessionId: string;
@@ -100,7 +103,7 @@ export interface UsageEvent {
   failed: boolean;
   statusCode: number;
   latencyMs: number;
-  ttftMs: number;
+  ttftMs: number | null;
   inputTokens: number;
   outputTokens: number;
   reasoningTokens: number;
@@ -110,6 +113,9 @@ export interface UsageEvent {
   cacheWrite1hTokens: number;
   serviceTier: string;
   costUSD: number;
+  /** False when no price pattern matches the model, so costUSD is 0. */
+  priced: boolean;
+  source: string;
 }
 
 export interface UsageSession {
@@ -283,7 +289,7 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
         query: { ...filter },
       }),
     usageSessions: (query: TimeRange & Page) =>
-      request<{ sessions: UsageSession[]; nextCursor?: string | null }>('GET', '/usage/sessions', {
+      request<{ sessions: UsageSession[]; nextCursor: string | null }>('GET', '/usage/sessions', {
         query: { ...query },
       }),
 
