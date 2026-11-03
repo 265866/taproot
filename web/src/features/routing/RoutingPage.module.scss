@@ -459,7 +459,7 @@ $label-x: $tier-pad + 1px + $index-size + 10px; // where tier names begin
   color: var(--text-tertiary);
 }
 
-/* Vertical segmented control: a recessed track with one raised selection. */
+/* Vertical segmented control: a recessed track with an accent-tinted selection. */
 .strategyGroup {
   display: flex;
   flex-direction: column;
@@ -498,11 +498,8 @@ $label-x: $tier-pad + 1px + $index-size + 10px; // where tier names begin
 }
 
 .strategyOptionActive {
-  background: var(--floating-surface);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--text-primary) 6%, transparent),
-    0 1px 2px color-mix(in srgb, #000 8%, transparent);
-  color: var(--text-primary);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
   font-weight: 600;
 }
 

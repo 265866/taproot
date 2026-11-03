@@ -222,7 +222,7 @@
 .rowExcluded .checkbox {
   border-color: var(--primary-color);
   background: var(--primary-color);
-  color: var(--bg-primary);
+  color: var(--primary-contrast);
 }
 
 /* 纯规则命中：压暗且不可切换，但仍可聚焦、仍会朗读原因。 */

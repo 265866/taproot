@@ -156,8 +156,8 @@
 
   &[aria-pressed='true'],
   &[aria-selected='true'] {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+    background: var(--accent-subtle);
+    color: var(--accent-text);
     font-weight: 500;
   }
 
@@ -240,7 +240,7 @@
 
   &[aria-selected='true'] {
     color: var(--text-primary);
-    border-bottom-color: var(--text-primary);
+    border-bottom-color: var(--accent);
     font-weight: 500;
   }
 

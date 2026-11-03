@@ -46,9 +46,8 @@
 }
 
 .tabActive {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  box-shadow: 0 1px 3px var(--border-color);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
 }
 
 .container button:focus-visible,
@@ -200,9 +199,9 @@
     display: flex;
   }
   &[aria-pressed='true'] {
-    color: var(--primary-color);
-    border-color: var(--primary-color);
-    background: color-mix(in srgb, var(--primary-color) 10%, var(--bg-primary));
+    color: var(--accent-text);
+    border-color: var(--accent-border);
+    background: var(--accent-subtle);
   }
 }
 
@@ -268,9 +267,9 @@
   }
 }
 .filterChipActive {
-  color: var(--primary-color);
-  border-color: var(--primary-color);
-  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary));
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
 }
 
 .viewerArea {
