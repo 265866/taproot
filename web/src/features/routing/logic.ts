@@ -465,9 +465,7 @@ export function resolveRoute(
 
 /** Credentials whose live model lists the board needs (disabled ones never serve). */
 export function neededCredentialModels(board: RoutingBoard): string[] {
-  return board.members.flatMap((member) =>
-    member.disabled ? [] : [member.credentialName]
-  );
+  return board.members.flatMap((member) => (member.disabled ? [] : [member.credentialName]));
 }
 
 export function clampWeight(value: number): number {

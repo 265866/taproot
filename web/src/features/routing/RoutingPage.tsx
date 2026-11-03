@@ -15,11 +15,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useRevealGroup } from '@/hooks/motion';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
-import {
-  buildRoutingBoard,
-  routingApi,
-  type RoutingApplyResult,
-} from '@/services/api/routing';
+import { buildRoutingBoard, routingApi, type RoutingApplyResult } from '@/services/api/routing';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import type { ResolvedTheme } from '@/types';
 import type {

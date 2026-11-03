@@ -288,7 +288,8 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       }),
 
     prices: () => request<{ prices: Price[] }>('GET', '/prices'),
-    putPrices: (prices: Price[]) => request<{ prices: Price[] }>('PUT', '/prices', { body: { prices } }),
+    putPrices: (prices: Price[]) =>
+      request<{ prices: Price[] }>('PUT', '/prices', { body: { prices } }),
 
     requestLogs: (filter: RequestLogFilter) =>
       request<{ logs: RequestLogMeta[]; nextCursor: string | null }>('GET', '/request-logs', {

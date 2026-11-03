@@ -219,10 +219,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
     };
     // Invalidate at store notification time, not after React commits a new render.
     const unsubscribeAuth = useAuthStore.subscribe((next, previous) => {
-      if (
-        next.apiBase === previous.apiBase &&
-        next.connectionStatus === previous.connectionStatus
-      )
+      if (next.apiBase === previous.apiBase && next.connectionStatus === previous.connectionStatus)
         return;
       invalidateSession();
       resetLogs();

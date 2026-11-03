@@ -141,15 +141,7 @@ export function QuotaPage() {
         plugin: pluginQuota,
         xai: xaiQuota,
       }) as unknown as Record<QuotaProviderType, Record<string, QuotaCardState>>,
-    [
-      antigravityQuota,
-      claudeQuota,
-      codexQuota,
-      kimiQuota,
-      metaQuota,
-      pluginQuota,
-      xaiQuota,
-    ]
+    [antigravityQuota, claudeQuota, codexQuota, kimiQuota, metaQuota, pluginQuota, xaiQuota]
   );
 
   const getQuota = useCallback(

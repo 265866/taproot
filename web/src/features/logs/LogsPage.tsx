@@ -233,10 +233,7 @@ export function LogsPage() {
 
     // Store subscriptions invalidate synchronously, before a response can beat effect cleanup.
     const unsubscribeAuth = useAuthStore.subscribe((next, previous) => {
-      if (
-        next.apiBase === previous.apiBase &&
-        next.connectionStatus === previous.connectionStatus
-      )
+      if (next.apiBase === previous.apiBase && next.connectionStatus === previous.connectionStatus)
         return;
       invalidateSession();
       resetErrors();

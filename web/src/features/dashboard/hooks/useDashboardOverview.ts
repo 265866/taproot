@@ -154,7 +154,6 @@ export function useDashboardOverview() {
     ]);
   }, [connected, fetchConfig, loadAuthFiles, loadModels, refreshRecentRequests]);
 
-
   const { traffic, providers } = useMemo(() => {
     const accumulators = new Map<string, ProviderAccumulator>();
     const allBucketGroups: RecentRequestBucket[][] = [];

@@ -8,7 +8,8 @@ import {
   normalizeManagementOAuthProviderKey,
 } from '@/utils/providerKeys';
 
-export type BuiltInOAuthProvider = 'codex' | 'anthropic' | 'antigravity' | 'kimi-ai' | 'xai' | 'meta';
+export type BuiltInOAuthProvider =
+  'codex' | 'anthropic' | 'antigravity' | 'kimi-ai' | 'xai' | 'meta';
 
 export interface OAuthStartResponse {
   url: string;
@@ -60,4 +61,3 @@ export const oauthApi = {
     );
   },
 };
-

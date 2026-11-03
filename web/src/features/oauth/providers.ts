@@ -93,12 +93,7 @@ export const OAUTH_PROVIDERS: BuiltInOAuthProviderCard[] = [
 const BUILTIN_PROVIDER_IDS = new Set<string>(OAUTH_PROVIDERS.map((provider) => provider.id));
 
 /** 后端接受手动回调提交的内置提供商；插件提供商一律允许。 */
-export const CALLBACK_SUPPORTED = new Set<string>([
-  'codex',
-  'anthropic',
-  'antigravity',
-  'xai',
-]);
+export const CALLBACK_SUPPORTED = new Set<string>(['codex', 'anthropic', 'antigravity', 'xai']);
 
 export const supportsManualCallback = (provider: OAuthProviderCard): boolean =>
   provider.kind === 'plugin' || CALLBACK_SUPPORTED.has(provider.id);

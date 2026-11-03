@@ -374,7 +374,6 @@ export const buildAuthFileFieldsPatch = (
     }
   }
 
-
   if (editor.headersTouched) {
     const { value: parsedHeaders, errorKey } = parseHeadersText(editor.headersText);
     if (errorKey) {
@@ -463,7 +462,6 @@ const buildPrefixProxyUpdatedText = (
   if (patch.using_api !== undefined) {
     next = applyAuthFileUsingApi(next, patch.using_api);
   }
-
 
   return JSON.stringify(next);
 };

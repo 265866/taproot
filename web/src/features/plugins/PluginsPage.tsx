@@ -151,8 +151,7 @@ export function PluginsPage() {
     };
   }, [connected, apiBase, data]);
 
-  const logoEntries =
-    connected && storeLogos?.apiBase === apiBase ? storeLogos.entries : [];
+  const logoEntries = connected && storeLogos?.apiBase === apiBase ? storeLogos.entries : [];
 
   const pluginStats = useMemo(() => {
     const plugins = data?.plugins ?? [];

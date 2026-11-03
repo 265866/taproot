@@ -50,13 +50,7 @@ export const CONFIG_TAB_ICONS: Record<ConfigTabId, ComponentType<IconProps>> = {
 };
 
 /** 常用 tab 的 6 个字段（原简单模式），渲染源与正典分区共享（fields/sharedFields.tsx）。 */
-export const COMMON_FIELD_IDS = [
-  'host',
-  'port',
-  'proxyUrl',
-  'debug',
-  'loggingToFile',
-] as const;
+export const COMMON_FIELD_IDS = ['host', 'port', 'proxyUrl', 'debug', 'loggingToFile'] as const;
 
 /**
  * 每个分区承载的校验字段路径（tab 错误徽章的分桶依据）。

@@ -146,7 +146,6 @@ export function OAuthPage() {
           onClose={closeDialog}
         />
       )}
-
     </div>
   );
 }
