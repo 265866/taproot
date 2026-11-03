@@ -1,47 +1,29 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+  THEMES,
+  contrast,
+  deltaE,
+  hex,
+  mustColor,
+  oklch,
+  rawTokens,
+  readWeb,
+  type Rgba,
+} from './helpers/themeTokens';
 
-const read = (path: string) => readFileSync(join(import.meta.dir, '..', path), 'utf8');
-const themes = read('src/styles/themes.scss');
-const usage = read('src/features/taproot-usage/TaprootUsage.module.scss');
-
-function hexTokens(source: string, selector: string): Record<string, string> {
-  const tokens: Record<string, string> = {};
-  let from = 0;
-  for (;;) {
-    // Anchored at a line start, so `.vizRoot` does not also match the dark-scoped block.
-    const start = source.indexOf(`\n${selector} {`, from);
-    if (start < 0) break;
-    const body = source.slice(start, source.indexOf('\n}', start));
-    for (const [, name, value] of body.matchAll(/^\s*--([\w-]+):\s*(#[0-9a-f]{6});/gim)) {
-      tokens[name] = value.toLowerCase();
-    }
-    from = start + 1;
-  }
-  return tokens;
-}
-
-function oklab(hex: string): [number, number, number] {
-  const [r, g, b] = [1, 3, 5].map((i) => {
-    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-  return [
-    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
-    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
-  ];
-}
-
-const deltaE = (a: string, b: string) => {
-  const [x, y] = [oklab(a), oklab(b)];
-  return 100 * Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+const usage = readWeb('src/features/taproot-usage/TaprootUsage.module.scss');
+const lightSeries = rawTokens(usage, '.vizRoot');
+const series = {
+  light: lightSeries,
+  white: lightSeries,
+  dark: { ...lightSeries, ...rawTokens(usage, ":global([data-theme='dark']) .vizRoot") },
 };
 
+const slots = (mode: keyof typeof series): Rgba[] =>
+  Array.from({ length: 8 }, (_, i) => hex(series[mode][`usage-series-${i + 1}`]));
+
+// A series must never read as one of these: the provider hues identify provider data, the status
+// colors carry success, failure, and warning, and the accent and primary button mark interface.
 const RESERVED = [
   'accent',
   'button-primary-bg',
@@ -49,43 +31,72 @@ const RESERVED = [
   'provider-codex',
   'viz-success',
   'viz-failure',
+  'amber-color',
+  'quota-medium-color',
 ];
 
-const light = hexTokens(themes, ':root');
-const modes = {
-  light,
-  white: { ...light, ...hexTokens(themes, "[data-theme='white']") },
-  dark: { ...light, ...hexTokens(themes, "[data-theme='dark']") },
-};
-const series = {
-  light: hexTokens(usage, '.vizRoot'),
-  dark: hexTokens(usage, ":global([data-theme='dark']) .vizRoot"),
-};
-
 describe('usage series palette', () => {
-  test('defines eight slots in both modes', () => {
-    for (const slots of Object.values(series)) {
-      expect(Object.keys(slots).filter((k) => /^usage-series-\d$/.test(k))).toHaveLength(8);
+  test('defines eight literal slots in both palettes', () => {
+    for (const tokens of [series.light, series.dark]) {
+      const names = Object.keys(tokens).filter((k) => /^usage-series-\d$/.test(k));
+      expect(names).toHaveLength(8);
+      for (const name of names) expect(tokens[name]).toMatch(/^#[0-9a-f]{6}$/i);
     }
   });
 
-  for (const [mode, tokens] of Object.entries(modes)) {
-    test(`no ${mode} series reads as the accent, a provider, or a status color`, () => {
-      const slots = mode === 'dark' ? series.dark : series.light;
-      for (let i = 1; i <= 8; i++) {
-        const color = slots[`usage-series-${i}`];
-        for (const name of RESERVED) {
-          // The light themes define the primary button fill as var(--accent).
-          const reserved =
-            tokens[name] ?? (name === 'button-primary-bg' ? tokens.accent : undefined);
-          if (!reserved) throw new Error(`${mode} theme has no --${name}`);
-          expect({ slot: i, name, far: deltaE(color, reserved) >= 12 }).toEqual({
-            slot: i,
-            name,
-            far: true,
+  for (const mode of ['light', 'white', 'dark'] as const) {
+    describe(`${mode} theme`, () => {
+      const tokens = THEMES[mode];
+      const colors = slots(mode);
+
+      test('no series reads as the accent, a provider, or a status color', () => {
+        colors.forEach((color, i) => {
+          for (const name of RESERVED) {
+            const far = deltaE(color, mustColor(tokens, name)) >= 12;
+            expect({ slot: i + 1, name, far }).toEqual({ slot: i + 1, name, far: true });
+          }
+        });
+      });
+
+      test('neighbouring series stay apart for full-color and color-blind readers', () => {
+        // The dataviz checker's gates: stacked bars and legends put neighbours side by side.
+        for (let i = 0; i < colors.length - 1; i++) {
+          const [a, b] = [colors[i], colors[i + 1]];
+          const cvd = Math.min(deltaE(a, b, 'protan'), deltaE(a, b, 'deutan'));
+          expect({ pair: i + 1, normal: deltaE(a, b) >= 15, cvd: cvd >= 8 }).toEqual({
+            pair: i + 1,
+            normal: true,
+            cvd: true,
           });
         }
-      }
+      });
+
+      test('every pair of series differs, and the first four token kinds clearly', () => {
+        colors.forEach((a, i) =>
+          colors.slice(i + 1).forEach((b, k) => {
+            const pair = `${i + 1}-${i + 2 + k}`;
+            const min = i + 2 + k <= 4 ? 15 : 8;
+            expect({ pair, apart: deltaE(a, b) >= min }).toEqual({ pair, apart: true });
+          })
+        );
+      });
+
+      test('series are muted, cool, and visible on the chart surface', () => {
+        const surface = mustColor(tokens, 'bg-primary');
+        colors.forEach((color, i) => {
+          const { c, h } = oklch(color);
+          // Claude orange stays the only warm series: no slot sits in the red-to-yellow hues.
+          const cool = h >= 110 && h < 350;
+          const muted = c >= 0.1 && c <= 0.12;
+          const visible = contrast(color, surface) >= 3;
+          expect({ slot: i + 1, cool, muted, visible }).toEqual({
+            slot: i + 1,
+            cool: true,
+            muted: true,
+            visible: true,
+          });
+        });
+      });
     });
   }
 });

@@ -33,7 +33,7 @@ import {
   IconSidebarUsage,
   IconChevronDown,
 } from '@/components/ui/icons';
-import { TAPROOT_MARK_DATA_URL } from '@/assets/taprootMark';
+import { TaprootMark } from '@/components/common/TaprootMark';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import { AUTH_FILES_CHANGED_EVENT } from '@/features/authFiles/authFilesEvents';
 import {
@@ -247,10 +247,10 @@ const THEME_CARDS: Array<{
     labelKey: 'theme.auto',
     colors: {
       bg: 'linear-gradient(135deg, #ffffff 0 50%, #000000 50% 100%)',
-      card: 'linear-gradient(135deg, #ffffff 0 50%, #0c0c0c 50% 100%)',
+      card: 'linear-gradient(135deg, #ffffff 0 50%, #000000 50% 100%)',
       border: '#bdbdbd',
       text: '#2d2a26',
-      textMuted: 'linear-gradient(135deg, #c9c9c9 0 50%, #5a5a5a 50% 100%)',
+      textMuted: 'linear-gradient(135deg, #6a645e 0 50%, #5a5a5a 50% 100%)',
     },
   },
   {
@@ -261,7 +261,7 @@ const THEME_CARDS: Array<{
       card: '#ffffff',
       border: '#e5e5e5',
       text: '#2d2a26',
-      textMuted: '#a29c95',
+      textMuted: '#6a645e',
     },
   },
   {
@@ -272,7 +272,7 @@ const THEME_CARDS: Array<{
       card: '#f0eee8',
       border: '#e3e1db',
       text: '#2d2a26',
-      textMuted: '#a29c95',
+      textMuted: '#6a645e',
     },
   },
   {
@@ -280,7 +280,7 @@ const THEME_CARDS: Array<{
     labelKey: 'theme.dark',
     colors: {
       bg: '#000000',
-      card: '#0c0c0c',
+      card: '#000000',
       border: '#2a2a2a',
       text: '#ededed',
       textMuted: '#808080',
@@ -1009,7 +1009,7 @@ export function MainLayout() {
         >
           <div className="sidebar-header">
             <div className="sidebar-brand" title={brandName}>
-              <img src={TAPROOT_MARK_DATA_URL} alt="" className="sidebar-brand-logo" />
+              <TaprootMark className="sidebar-brand-logo" />
               {showSidebarLabels && (
                 <span className="sidebar-brand-text">
                   <span className="sidebar-brand-title">{brandName}</span>

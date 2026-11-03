@@ -89,12 +89,14 @@
 }
 
 .settingsLink {
-  color: var(--primary-color);
+  color: var(--text-primary);
   font-weight: 600;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--border-hover);
+  text-underline-offset: 3px;
 
   &:hover {
-    text-decoration: underline;
+    text-decoration-color: currentColor;
   }
 
   &:focus-visible {

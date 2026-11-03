@@ -1,30 +1,31 @@
-// Categorical series colors, validated with the dataviz palette checker against --bg-primary in
-// every theme; the order keeps neighbours apart for color-blind readers. Every slot stays at least
-// OKLab ΔE 12 from the blue accent, the provider colors, and the success and failure colors, so a
-// series never reads as one of them. Defined on every usage root so the dashboard summary can use
-// them too.
+// Categorical series colors: muted cool blues, teals, olives, and plums at the dataviz checker's
+// chroma floor (OKLCH C about 0.10), so the charts sit quietly in the neutral theme. Validated with
+// the dataviz palette checker against each theme's chart surface; the order keeps neighbours apart
+// for color-blind readers. No slot is warm, so Claude orange stays the only warm series, and every
+// slot stays at least OKLab ΔE 12 from the provider colors and the success and failure colors.
+// Defined on every usage root so the dashboard summary can use them too.
 .vizRoot {
-  --usage-series-1: #008d65;
-  --usage-series-2: #b742e3;
-  --usage-series-3: #f61e67;
-  --usage-series-4: #b39b0e;
-  --usage-series-5: #c11a8e;
-  --usage-series-6: #42cf06;
-  --usage-series-7: #3e6102;
-  --usage-series-8: #ed946c;
+  --usage-series-1: #146a9a;
+  --usage-series-2: #7e8f40;
+  --usage-series-3: #a66fab;
+  --usage-series-4: #345f23;
+  --usage-series-5: #009296;
+  --usage-series-6: #5c4384;
+  --usage-series-7: #5d87c6;
+  --usage-series-8: #924e7a;
   --usage-series-other: var(--text-tertiary);
   --usage-grid: var(--border-color);
 }
 
 :global([data-theme='dark']) .vizRoot {
-  --usage-series-1: #288463;
-  --usage-series-2: #b03adc;
-  --usage-series-3: #fb2b7b;
-  --usage-series-4: #9b7802;
-  --usage-series-5: #ba0c88;
-  --usage-series-6: #1a7426;
-  --usage-series-7: #959609;
-  --usage-series-8: #8d4d27;
+  --usage-series-1: #026991;
+  --usage-series-2: #379dbc;
+  --usage-series-3: #884671;
+  --usage-series-4: #b875a8;
+  --usage-series-5: #596914;
+  --usage-series-6: #547ebc;
+  --usage-series-7: #76863b;
+  --usage-series-8: #8c64a5;
 }
 
 .page {
