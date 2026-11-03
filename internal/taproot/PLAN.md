@@ -61,7 +61,7 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 ### Access
 
 - **Identifying callers.** For every request, the guard resolves the caller from its source IP:
-  - Loopback addresses and `trusted-cidrs` are trusted.
+  - Loopback addresses and `trusted-cidrs` are trusted, with the limits in "Security model".
   - Tailnet addresses (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) are resolved with tailscaled's LocalAPI `whois` over its unix socket (default `/var/run/tailscale/tailscaled.sock`, mounted into the container). The result is cached for one minute.
   - The caller is admitted when the login is in `allow-logins`. The default list holds only `alice@github`.
   - Everything else gets a 403, including whois failures. `/healthz` is exempt.
@@ -69,7 +69,44 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 - **Keyless management.** At setup, the guard puts a random secret in `MANAGEMENT_PASSWORD`, unless an operator already set one. Upstream's management handler reads that at construction. For admitted callers, the guard injects `Authorization: Bearer <secret>` on `/v0/management/*`, `/v8/management/*`, and plugin resource routes. The secret never leaves the process. A `secret-key` in `config.yaml` keeps working for scripts.
 - **Proxy keys.** Proxy API keys (`access.api-keys`) are irrelevant once the guard admits callers by identity. They stay empty.
 - **Development.** On Windows there's no tailscaled socket, so only loopback is admitted.
-- `GET /taproot/api/v1/me` returns `{login, displayName, node, via: "loopback"|"tailnet"|"cidr"}`.
+- `GET /taproot/api/v1/me` returns `{login, displayName, node, via: "loopback"|"tailnet"|"cidr", admin}`.
+
+### Security model
+
+The guard splits the server into two surfaces. The package comment in `internal/taproot/access/access.go` is the code-side copy of this section.
+
+- **Admin surface.** Everything that reads or changes credentials, settings, backups, or plugins:
+  - the dashboard (`GET`/`HEAD /`)
+  - `/v0/management/**` and `/v8/management/**`, including the plugin management routes upstream serves from `NoRoute`
+  - `/taproot/**`
+  - plugin pages and assets under `/v0/resource/plugins/**` (the dashboard frames them same-origin)
+  - the OAuth callbacks on the main port (`/anthropic/callback`, `/codex/callback`, `/antigravity/callback`, `/callback`, `/devin/callback`), which write the code for a pending login
+  - `/v1/ws`, which registers a websocket client as an AI Studio credential
+- **Proxy surface.** Everything else, such as `/v1/messages`, `/v1/responses`, `/backend-api/codex/**`, and `/v1/models`.
+- **Who reaches what.**
+
+  | Caller | Proxy | Admin |
+  |---|---|---|
+  | Loopback (inside the container, or local development) | yes | yes |
+  | `trusted-cidrs` | yes | no |
+  | Allowlisted login on the server's own node (server, `100.64.0.1`) | yes | no |
+  | Allowlisted login on another node, listed in `admin-nodes` if that is set | yes | yes |
+  | Anyone else | no | no |
+
+  - **The server's own node is proxy-only.** Rootless containers and local users on server reach the published `100.64.0.1:8317` with that source address (measured through pasta), and whois says that node belongs to `alice@github`. the owner's agents on server need the proxy, so the node keeps it, but none of those processes gets credentials or settings.
+  - **The server's own node comes from tailscaled.** The guard reads `Self` from `GET /localapi/v0/status?peers=false` and treats a caller as the server when its address is in `Self.TailscaleIPs` or its whois `Node.StableID` equals `Self.ID`. It refreshes every cache TTL and keeps the last known node when a refresh fails. Until the first read succeeds, tailnet callers get no admin access, only local Host names pass the Host check, and a warning is logged.
+  - **`trusted-cidrs` are proxy-only.** They hold host-local addresses that every local process shares. A server-local client that uses the `127.0.1.1:8317` publish arrives as server's LAN address `192.168.0.88` (measured). If such a client needs the proxy, add `192.168.0.88/32`, never `192.168.0.0/24`, which would admit the whole LAN. Local clients can also use `100.64.0.1:8317` instead.
+  - **`admin-nodes`** (optional) limits the admin surface to the listed nodes. An entry is a MagicDNS name assigned by control, either full (`desktop.tailnet-0000.ts.net`) or its first label for nodes in server's tailnet (`desktop`). The device-reported hostname is not used, because the device controls it. Without `admin-nodes`, every other untagged node of an allowlisted login is an admin.
+  - **Never publish the port on host loopback.** Publishing `127.0.0.1:8317` could make pasta deliver host connections with a loopback source (inferred from pasta's splice path, not measured), which would make every host process an admin. Keep the `100.64.0.1` and `127.0.1.1` publishes.
+- **Browser hardening.** The admin surface is keyless for admitted callers, so any page the admin visits could otherwise use the admin's tailnet address. Upstream answers every request with `Access-Control-Allow-Origin: *` and its websocket upgraders accept any origin. The guard runs before upstream's CORS middleware on both surfaces, and its 403 carries no CORS headers. It rejects:
+  - a `Host` that is not one of the server's names: `localhost`, any loopback address, the server's tailnet addresses, its MagicDNS name with and without the tailnet suffix (`server`, `server.tailnet-0000.ts.net`, with or without a trailing dot), and `extra-hosts`, each with any port. This stops DNS rebinding.
+  - an `Origin` whose host and port differ from the request's `Host`, or that is not http or https (including `null`). This covers CORS preflights and websocket upgrades.
+  - `Sec-Fetch-Site: cross-site` or `same-site`, except top-level `GET` navigations (`Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`) to the dashboard and the OAuth callbacks. Following a link to the dashboard or a provider redirect still works; framing, fetches, and form posts from other sites, including other services on server, do not.
+  - The proxy surface gets the same checks, so a web page cannot spend quota either.
+- **Command-line clients are unaffected.** Claude Code 2.1.316 and Codex 0.159.3 (HTTP and websocket) send no `Origin` or `Sec-Fetch-*` headers, and `Host` is the base URL's authority (measured against a header-capture server on 2026-11-02). Over the 3,000 most recent request logs of the current cliproxyapi on server, no request carried `Origin`, `Sec-Fetch-Site`, or `Referer`.
+- **Framing.** The dashboard response sets `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`. Other admin responses get `X-Frame-Options: SAMEORIGIN`, so only the dashboard can frame plugin pages.
+- **Upstream control panel.** The guard answers `/management.html` with 404 for every caller, so upstream's auto-downloaded panel never runs same-origin with keyless management, whatever `remote-management.disable-control-panel` says.
+- **Accepted:** a plugin page under `/v0/resource/plugins/**` runs same-origin with keyless management. Plugins already run in the server process with full access, so this adds nothing.
 
 ### Ingest
 
@@ -119,7 +156,7 @@ Each module owns its tables and registers migrations with `store.Register`, so n
   - A committed placeholder keeps `go build` working without a web build.
 - The dashboard calls the management API at same-origin `/v8/management` with no key, and taproot at `/taproot/api/v1`.
 - The login screen and the management-key flow are removed.
-- Upstream's `/management.html` is turned off in deployment with `remote-management.disable-control-panel: true`.
+- Upstream's `/management.html` returns 404 from the guard. Deployment also sets `remote-management.disable-control-panel: true` so the panel is not downloaded.
 
 ## Taproot API contract (`/taproot/api/v1`)
 
@@ -201,4 +238,4 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 - **RESP usage queue.** Upstream multiplexes this Redis-protocol queue on the proxy port, outside gin, so the guard never sees it. The generated `MANAGEMENT_PASSWORD` enables it. Accepted risk: AUTH needs the random 256-bit secret, and upstream bans an IP after 5 failures. Taproot does not use the queue. Revisit if upstream adds a switch to disable it.
 - **Poller timeout.** The idle-account poller's 30 s timeout on its read-only usage probe is an intended exception to AGENTS.md's no-timeout rule. That rule targets proxied upstream traffic.
 - **Shutdown drain.** Setup runs on `context.Background()`, so request-log records still queued at shutdown are recovered from the open segment on the next start rather than drained. Usage events still queued are lost. The flush interval is 1 s.
-- **Mounts on server.** On server, `config.yaml` lives in the mounted `/data` directory, which is what restore's atomic rename needs. The tailscaled socket must be mounted at `/var/run/tailscale/tailscaled.sock`. After deploying, `GET /taproot/api/v1/me` from a tailnet client must report `via: "tailnet"`. If it reports loopback, the port forwarding is rewriting source addresses and the guard would admit everyone.
+- **Mounts on server.** On server, `config.yaml` lives in the mounted `/data` directory, which is what restore's atomic rename needs. The tailscaled socket must be mounted at `/var/run/tailscale/tailscaled.sock`. After deploying, `GET /taproot/api/v1/me` from a tailnet client must report `via: "tailnet"` and `admin: true`. If it reports loopback, the port forwarding is rewriting source addresses and the guard would admit everyone. From server itself, `curl http://100.64.0.1:8317/taproot/api/v1/me` must return 403 and `curl http://100.64.0.1:8317/v1/models` must not, which shows the server's own node is proxy-only. `127.0.1.1:8317` from server gets 403 on both unless `192.168.0.88/32` is in `trusted-cidrs` (see "Security model").
