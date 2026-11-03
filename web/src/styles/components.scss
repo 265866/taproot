@@ -16,13 +16,13 @@
   color: var(--text-primary);
 
   &.btn-primary {
-    background-color: var(--primary-color);
-    color: var(--primary-contrast, #fff);
-    border-color: var(--primary-color);
+    background-color: var(--button-primary-bg);
+    color: var(--button-primary-text);
+    border-color: var(--button-primary-bg);
 
     &:hover {
-      background-color: var(--primary-hover);
-      border-color: var(--primary-hover);
+      background-color: var(--button-primary-hover);
+      border-color: var(--button-primary-hover);
     }
   }
 
@@ -74,12 +74,17 @@
 }
 
 [data-theme='dark'] {
-  .btn {
-    color: #fff;
-  }
-
+  .btn,
   .btn.btn-secondary,
   .btn.btn-ghost {
+    color: var(--text-primary);
+  }
+
+  .btn.btn-primary {
+    color: var(--button-primary-text);
+  }
+
+  .btn.btn-danger {
     color: #fff;
   }
 }
@@ -552,4 +557,58 @@ textarea {
 
 .hint {
   color: var(--text-secondary);
+}
+
+// Headline figures (quota pools, usage totals): large, tabular, tight.
+.numeral-xl,
+.numeral-lg {
+  font-weight: var(--font-weight-numeral);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--letter-spacing-numeral);
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.numeral-xl {
+  font-size: var(--font-size-numeral-xl);
+}
+
+.numeral-lg {
+  font-size: var(--font-size-numeral-lg);
+}
+
+// Full-screen state shown until the management API answers.
+.connection-gate {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: var(--space-page);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.connection-gate-card {
+  display: flex;
+  max-width: 420px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: var(--space-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+}
+
+.connection-gate-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.connection-gate-body {
+  margin: 0;
+  line-height: 1.5;
 }

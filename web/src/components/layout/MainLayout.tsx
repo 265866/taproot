@@ -279,11 +279,11 @@ const THEME_CARDS: Array<{
     key: 'dark',
     labelKey: 'theme.dark',
     colors: {
-      bg: '#151412',
-      card: '#1d1b18',
-      border: '#3a3530',
-      text: '#f6f4f1',
-      textMuted: '#9c958d',
+      bg: '#0a0a0a',
+      card: '#111111',
+      border: '#2a2a2a',
+      text: '#ededed',
+      textMuted: '#737373',
     },
   },
 ];

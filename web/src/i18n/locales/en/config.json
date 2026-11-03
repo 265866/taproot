@@ -1,6 +1,6 @@
 {
   "config_management": {
-    "title": "Config Panel",
+    "title": "Config",
     "meta_fields": "{{count}} settings",
     "meta_dirty": "{{count}} unsaved",
     "meta_dirty_source": "Unsaved source edits",

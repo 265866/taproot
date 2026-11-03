@@ -57,6 +57,6 @@
   "footer": {
     "api_version": "CLI Proxy API Version",
     "build_date": "Build Time",
-    "version": "Management UI Version"
+    "version": "Dashboard Version"
   }
 }

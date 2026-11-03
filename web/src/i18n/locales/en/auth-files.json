@@ -1,6 +1,6 @@
 {
   "auth_files": {
-    "title": "Auth Files Management",
+    "title": "Auth Files",
     "meta_total": "{{count}} credentials",
     "meta_active": "{{count}} active",
     "meta_problem": "{{count}} problem",
@@ -295,7 +295,7 @@
     "add": "Add Alias",
     "add_title": "Add provider model aliases",
     "provider_label": "Provider",
-    "provider_placeholder": "e.g. codex / vertex",
+    "provider_placeholder": "e.g. codex / claude",
     "provider_hint": "Defaults to the current filter; pick an existing provider or type a new name.",
     "model_source_loading": "Loading models...",
     "model_source_unsupported": "The current CPA version does not support fetching model lists (manual input still works).",

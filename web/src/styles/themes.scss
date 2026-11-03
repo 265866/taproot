@@ -1,8 +1,32 @@
 /**
- * 主题样式
+ * Theme tokens. Dark is the default theme; the light, white, and auto themes stay supported.
+ * Components read these custom properties instead of hard-coding colors.
  */
 
-// 浅色主题（默认）
+:root {
+  // Provider accents for charts, tabs, and badges.
+  --provider-claude: #c4643f;
+  --provider-codex: #3d63dd;
+  --provider-claude-soft: color-mix(in srgb, var(--provider-claude) 14%, transparent);
+  --provider-codex-soft: color-mix(in srgb, var(--provider-codex) 14%, transparent);
+
+  // Display type: headline figures are large, light, and tabular.
+  --font-size-page-title: 26px;
+  --font-size-numeral-xl: 56px;
+  --font-size-numeral-lg: 36px;
+  --font-weight-numeral: 500;
+  --letter-spacing-numeral: -0.03em;
+
+  --button-primary-bg: var(--primary-color);
+  --button-primary-hover: var(--primary-hover);
+  --button-primary-text: var(--primary-contrast, #fff);
+
+  --radius-lg: 12px;
+  --space-page: 32px;
+  --space-card: 24px;
+}
+
+// 浅色主题
 :root {
   // 极简暖灰：浅色模式
   --bg-secondary: #faf9f5; // 页面背景（纸感）
@@ -162,33 +186,40 @@
   --accent-bg: var(--bg-tertiary);
 }
 
-// 深色主题（#191919）
+// Dark theme (default): near-black surfaces, quiet 1px borders.
 [data-theme='dark'] {
-  // 极简暖灰：深色模式（提升对比度与层级）
-  --bg-secondary: #151412; // 页面背景
-  --bg-primary: #1d1b18; // 容器/卡片背景
-  --bg-tertiary: #262320; // hover/次级背景
-  --bg-hover: #2e2a26;
-  --bg-quinary: #191714;
+  --bg-secondary: #0a0a0a; // page
+  --bg-primary: #111111; // cards and panels
+  --bg-tertiary: #191919; // hover and secondary fills
+  --bg-hover: #202020;
+  --bg-quinary: #0e0e0e;
   --bg-error-light: rgba(198, 87, 70, 0.18);
-  --floating-surface: #2a2723;
-  --floating-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+  --floating-surface: #161616;
+  --floating-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
 
-  --text-primary: #f6f4f1;
-  --text-secondary: #c9c3bb;
-  --text-tertiary: #9c958d;
-  --text-quaternary: #6f6962;
+  --text-primary: #ededed;
+  --text-secondary: #a1a1a1;
+  --text-tertiary: #737373;
+  --text-quaternary: #525252;
   --text-muted: var(--text-tertiary);
 
-  --border-color: #3a3530;
+  --border-color: #1f1f1f;
   --border-secondary: var(--border-color);
-  --border-primary: #4a453f;
-  --border-hover: #5a544d;
+  --border-primary: #2a2a2a;
+  --border-hover: #363636;
 
-  --primary-color: #8b8680;
-  --primary-hover: #9a948e;
-  --primary-active: #a6a099;
+  // Accent fills (toggles, checkboxes, focus) stay mid-gray so white glyphs on them remain
+  // legible; the primary button gets its own near-white fill.
+  --primary-color: #8f8f8f;
+  --primary-hover: #a3a3a3;
+  --primary-active: #b8b8b8;
   --primary-contrast: #ffffff;
+  --button-primary-bg: #ededed;
+  --button-primary-hover: #ffffff;
+  --button-primary-text: #0a0a0a;
+
+  --provider-claude: #d97757;
+  --provider-codex: #7b9cff;
 
   --success-color: #10b981;
   --quota-medium-color: #ffd862;
@@ -209,11 +240,11 @@
   --failure-badge-text: #f1b0a6;
   --failure-badge-border: rgba(198, 87, 70, 0.5);
 
-  --count-badge-bg: rgba(139, 134, 128, 0.28);
-  --count-badge-text: var(--primary-active);
+  --count-badge-bg: rgba(255, 255, 255, 0.08);
+  --count-badge-text: var(--text-secondary);
 
-  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+  --shadow: none;
+  --shadow-lg: 0 12px 28px -6px rgb(0 0 0 / 0.6);
 
   --radius-md: 8px;
 
@@ -232,7 +263,9 @@
   --muted-foreground: var(--text-secondary);
   --accent-bg: var(--bg-tertiary);
 
-  --glass-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  --glass-bg: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+  --glass-bg-secondary: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+  --glass-border: var(--border-color);
 
   // 深色卡面上 #10b981 亮度超出 OKLCH 0.48–0.67 区间，且与失败色的色盲分离度不足，
   // 因此深色单独降一档。三套主题均已通过对比度/色盲/亮度校验。

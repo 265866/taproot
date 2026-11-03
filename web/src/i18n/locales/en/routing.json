@@ -7,7 +7,7 @@
     "load_failed": "Failed to load routing: {{message}}",
     "retry": "Retry",
     "empty_title": "Nothing to route yet",
-    "empty_desc": "Add an API key or OAuth credential under AI Providers or Auth Files first.",
+    "empty_desc": "Sign in to an account under OAuth Login, or add a credential under Auth Files, first.",
     "entry": "Request in",
     "model_placeholder": "All models (type a model to preview its route)",
     "models_loading": "Loading models {{done}}/{{total}}",

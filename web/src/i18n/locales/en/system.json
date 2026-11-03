@@ -1,7 +1,7 @@
 {
   "system_info": {
-    "title": "Management Center Info",
-    "about_title": "CLI Proxy API Management Center",
+    "title": "System",
+    "about_title": "Taproot",
     "models_title": "Available Models",
     "models_desc": "Shows the /models response and uses saved API keys for auth automatically.",
     "models_loading": "Loading available models...",
