@@ -1,0 +1,495 @@
+{
+  "config_management": {
+    "title": "Config",
+    "meta_fields": "{{count}} settings",
+    "meta_dirty": "{{count}} unsaved",
+    "meta_dirty_source": "Unsaved source edits",
+    "meta_errors": "{{count}} validation errors",
+    "meta_synced": "In sync",
+    "actions": {
+      "discard": "Discard changes",
+      "save": "Save changes"
+    },
+    "discard_confirm_message": "Discard all unsaved changes and restore the last server version?",
+    "mode": {
+      "label": "Editor mode",
+      "visual": "Visual",
+      "source": "Source"
+    },
+    "reload": "Reload",
+    "reload_confirm_message": "Reloading will discard your unsaved changes. Do you want to continue?",
+    "save": "Save",
+    "status_loading": "Loading configuration...",
+    "status_loading_short": "Loading",
+    "status_loaded": "Configuration loaded",
+    "status_loaded_short": "Loaded",
+    "status_dirty": "Unsaved changes",
+    "status_dirty_short": "Unsaved",
+    "status_disconnected": "Connect to the server to load the configuration",
+    "status_disconnected_short": "Disconnected",
+    "status_load_failed": "Load failed",
+    "status_load_failed_short": "Failed",
+    "status_saving": "Saving configuration...",
+    "status_saving_short": "Saving",
+    "save_success": "Configuration saved successfully",
+    "visual_mode_unavailable": "Visual editor unavailable until YAML syntax is fixed",
+    "visual_mode_unavailable_short": "YAML issue",
+    "validation_blocked_short": "Fix errors",
+    "visual_mode_unavailable_detail": "Visual editor is unavailable because the configuration contains invalid YAML: {{message}}",
+    "visual_mode_save_blocked": "Cannot save from visual mode until the YAML syntax is fixed",
+    "source_changes_before_visual": "Save or discard your unsaved source edits before switching to visual mode.",
+    "precise_save_incomplete": "The precise save did not finish; some changes may already be applied. Your draft is retained. Save again to review the remaining server differences.",
+    "concurrent_list_conflict": "The server list {{path}} changed after your draft baseline. Saving was blocked to avoid overwriting those changes. Your draft is retained; note your edits, then reload the configuration and reconcile them.",
+    "precise_save_recovery_required": "Could not read back the save result. Editing is paused. Save again to recover the draft baseline, or reload the configuration.",
+    "visual_mode_latest_yaml_invalid": "The latest server configuration contains invalid YAML. Review it in source mode before saving visual changes: {{message}}",
+    "editor_placeholder": "key: value",
+    "search_placeholder": "Search config...",
+    "search_button": "Search",
+    "search_no_results": "No results",
+    "search_prev": "Previous",
+    "search_next": "Next",
+    "diff": {
+      "title": "Review Changes",
+      "confirm": "Confirm Save",
+      "no_changes": "No changes detected"
+    },
+    "visual": {
+      "serverExtras": {
+        "trustedProxies": {
+          "label": "Trusted proxies",
+          "hint": "IP addresses or CIDRs; empty means forwarded headers are not trusted. Trusting all-address ranges risks client IP spoofing. Requires a backend restart."
+        },
+        "discoveryEnabled": {
+          "label": "Enable discovery",
+          "hint": "Broadcast via mDNS / DNS-SD on the LAN. Off by default; changes apply without a restart."
+        },
+        "discoveryServiceName": {
+          "label": "Service name prefix",
+          "hint": "The backend appends a short ID. Empty uses CPA-<ShortID>."
+        },
+        "discoveryServiceType": {
+          "label": "Service type",
+          "hint": "Empty uses _ai-gateway._tcp."
+        },
+        "discoverySubtypes": {
+          "label": "Protocol subtypes",
+          "hint": "Empty uses the five default protocols. Missing leading _ is added; invalid entries are ignored."
+        },
+        "discoveryInterfacesInclude": {
+          "label": "Include interfaces",
+          "hint": "Empty auto-selects physical LAN interfaces. Use names or prefix patterns ending in *."
+        },
+        "discoveryInterfacesExclude": {
+          "label": "Exclude interfaces",
+          "hint": "Use names or prefix patterns ending in *. Exclusions take priority over inclusions."
+        },
+        "discoveryAuthRequired": {
+          "label": "Advertise authentication requirement",
+          "hint": "On by default. Broadcast metadata only; does not change actual API authentication."
+        },
+        "discoveryAdvertiseManagement": {
+          "label": "Advertise management service",
+          "hint": "Off by default. Only announces the management service exists; does not change remote access permissions."
+        },
+        "discoveryTitle": "LAN discovery",
+        "discoveryHint": "Requires multicast-capable physical interfaces and a non-loopback listener. Docker usually needs host networking; reachability is not guaranteed."
+      },
+      "additions": {
+        "oauthTitle": "OAuth provider behavior",
+        "oauthHint": "These provider settings apply only to OAuth/file-backed credentials, not API-key credentials.",
+        "claudeTitle": "Claude",
+        "codexTitle": "Codex",
+        "antigravityTitle": "Antigravity",
+        "xaiTitle": "xAI",
+        "liveRelayTitle": "Codex Live media relay",
+        "liveRelayHint": "Relay WebRTC audio and DataChannel traffic in the proxy process. Inbound UDP must be reachable. Keep ICE credentials out of screenshots and logs.",
+        "iceAdd": "Add ICE server",
+        "iceRemove": "Remove ICE server {{index}}",
+        "iceURLs": "STUN/TURN URLs",
+        "iceUsername": "TURN username",
+        "iceCredential": "TURN password",
+        "iceServer": "ICE server {{index}}",
+        "routingSessionAffinitySubagents": {
+          "label": "Subagent session affinity",
+          "hint": "Enabled by default; only effective when session affinity is enabled. Subagents inherit their parent's credential to reuse caches. Disable to distribute subagents across the credential pool for greater concurrency."
+        },
+        "saveCooldownStatus": {
+          "label": "Persist cooldown status",
+          "hint": "Save per-credential cooldown status in .cds files beside auth files. Disabled by default; otherwise status is kept only in memory."
+        },
+        "transientErrorCooldownSeconds": {
+          "label": "Transient error cooldown (seconds)",
+          "hint": "Cooldown for upstream 408/500/502/503/504/520–526 errors. 0 uses the default 60 seconds; a negative value disables this cooldown."
+        },
+        "videoResultAuthCacheTTL": {
+          "label": "Video result credential cache TTL",
+          "hint": "How long video IDs remain bound to the credential that created them. Use a duration such as 30m or 3h; default: 3h."
+        },
+        "claudeHeaderTimezone": {
+          "label": "Fallback timezone",
+          "hint": "IANA timezone for the cloaked currentDate, e.g. Asia/Singapore, or Local for the backend host's timezone. The credential JSON's timezone takes priority."
+        },
+        "claudeModelLevelCooling": {
+          "label": "Model-level cooldown",
+          "hint": "Apply Claude quota cooldowns only to the requested model, rather than all models sharing the credential. Disabled by default."
+        },
+        "claudeDisableCloakMode": {
+          "label": "Disable request cloaking",
+          "hint": "Disable the Claude Code CLI disguise and system prompt replacement; pass through the original system prompt. Credential files can override this with cloak_mode. Default: false (automatic cloaking for non-Claude-Code clients)."
+        },
+        "claudeCodeDisableCloakingModelList": {
+          "label": "Disable model ID cloaking",
+          "hint": "Return original model IDs in Anthropic model list responses instead of cloaked IDs. Disabled by default."
+        },
+        "codexDisableCloaking": {
+          "label": "Disable request cloaking",
+          "hint": "Stop forcing official Codex User-Agent and Originator headers on HTTP/SSE and WebSocket requests. Disabled by default."
+        },
+        "codexModelLevelCooling": {
+          "label": "Model-level cooldown",
+          "hint": "Apply usage_limit_reached quota cooldowns only to the requested model, rather than all models sharing the credential. Disabled by default."
+        },
+        "codexStreamBootstrapBuffering": {
+          "label": "Buffer stream bootstrap",
+          "hint": "Hold initial empty events and heartbeats to allow credential failover on early overload or rate-limit rejections. Disabled by default. Delays response headers and may trigger client or reverse-proxy timeouts; buffering has frame and byte budgets."
+        },
+        "codexStreamBootstrapTimeout": {
+          "label": "Stream bootstrap timeout",
+          "hint": "Optional buffering time limit, e.g. 20s. Default: 0 (unlimited time; frame and byte budgets still apply). Checked as upstream frames arrive; not a hard deadline for every network stall. Headers may still wait for translated output."
+        },
+        "codexOptimizeMultiAgentV2": {
+          "label": "Optimize multi-agent v2",
+          "hint": "Optimize official Codex multi-agent requests: refresh spawn_agent model details, remove message parameter encryption, normalize agent_message content, and convert it to user messages for non-Codex protocols. Disabled by default."
+        },
+        "codexOrphanDelegationCompatibility": {
+          "label": "Orphan delegation compatibility",
+          "hint": "For X-Openai-Subagent: collab_spawn requests, convert orphan codex_app/create_thread and codex_app/send_message_to_thread outputs without a valid matching call into user messages. Disabled by default."
+        },
+        "codexResponseSteering": {
+          "label": "Response steering",
+          "hint": "Experimental full-duplex Codex Responses WebSockets. Each socket stays bound to one upstream account and model; accepted input is never replayed. Disabled by default."
+        },
+        "antigravityConnectionPoolEnabled": {
+          "label": "Enable connection pooling",
+          "hint": "Reuse upstream HTTP/1.1 connections. Default: false (short-lived connections)."
+        },
+        "antigravityConnectionPoolIdleTimeout": {
+          "label": "Idle connection timeout",
+          "hint": "How long idle connections remain in the pool. Default: 30s; capped at 210s. Zero or a negative duration switches to short-lived connections."
+        },
+        "antigravityConnectionPoolMaxIdleConnsPerHost": {
+          "label": "Maximum idle connections per host",
+          "hint": "Maximum idle connections retained per upstream host per credential. Default: 2; capped at 100. Zero uses Go's default of 2; a negative value switches to short-lived connections."
+        },
+        "xaiInjectXSearch": {
+          "label": "Inject x_search",
+          "hint": "Add xAI's native x_search tool when absent from the request, including tool_choice.allowed_tools when applicable. Disabled by default."
+        },
+        "codexLiveMediaRelayEnabled": {
+          "label": "Enable media relay",
+          "hint": "Terminate and relay Codex Live WebRTC media in this process. Requires inbound UDP reachability. Disabled by default to preserve direct media connections."
+        },
+        "codexLiveMediaRelayMaxSessions": {
+          "label": "Maximum concurrent media sessions",
+          "hint": "Blank or 0 uses the default of 32 sessions. A custom UDP range must provide at least two ports per session."
+        },
+        "codexLiveMediaRelayDisablePrivateRemoteIPs": {
+          "label": "Block private remote IP candidates",
+          "hint": "Default: false, allowing private candidates for local or trusted-network clients. Enable to reject downstream SDP candidates targeting private, loopback, link-local, or unspecified IPs and reduce internal-network exposure; local connections may fail."
+        },
+        "codexLiveMediaRelayPublicIP": {
+          "label": "Advertised public IP",
+          "hint": "Optional public IPv4 or IPv6 address to advertise when the proxy is behind 1:1 NAT. Enter an IP address, not a hostname."
+        },
+        "codexLiveMediaRelayUDPPortMin": {
+          "label": "Minimum UDP port",
+          "hint": "Set both UDP bounds to 0 for system allocation, or specify an inclusive continuous range with at least twice the effective session limit in ports."
+        },
+        "codexLiveMediaRelayUDPPortMax": {
+          "label": "Maximum UDP port",
+          "hint": "Must be at least the minimum port. Both bounds must be 0 or both nonzero; a custom range needs at least two ports per session (64 with the default 32 sessions)."
+        },
+        "codexLiveMediaRelayICEServers": {
+          "label": "ICE servers",
+          "hint": "Optional STUN/TURN servers using stun:, stuns:, turn:, or turns: URLs. TURN credentials are omitted from the JSON config API. Enter the credential as a password and keep secrets out of screenshots and logs."
+        }
+      },
+      "search": {
+        "placeholder": "Search settings (label or YAML key)",
+        "no_results": "No matching settings"
+      },
+      "sections": {
+        "common": {
+          "title": "Common",
+          "description": "The most-used settings, backed by the same data as the full sections"
+        },
+        "connectivity": {
+          "title": "Access & Authentication",
+          "description": "Server address, port, auth directory, and API keys"
+        },
+        "logging": {
+          "title": "Logging & Diagnostics",
+          "description": "Debug, log output, and usage statistics"
+        },
+        "advanced": {
+          "antigravity_credits": "Use Antigravity Credits",
+          "title": "Advanced & Experimental",
+          "description": "Header spoofing, signature cache, plugin sources, and other rarely changed settings",
+          "plugins_title": "Plugins",
+          "antigravity_title": "Antigravity",
+          "signature_title": "Signature Validation"
+        },
+        "server": {
+          "github_token": "Global GitHub Token",
+          "github_token_hint": "Used for server-side GitHub requests, such as panel updates and plugin downloads. Takes precedence over GITHUB_TOKEN; leave empty to use environment credentials, or unauthenticated requests if none are set. Matching plugin store authentication rules take precedence.",
+          "host": "Host Address",
+          "port": "Port"
+        },
+        "tls": {
+          "title": "TLS/SSL Configuration",
+          "description": "HTTPS secure connection settings",
+          "enable": "Enable TLS",
+          "enable_desc": "Enable HTTPS secure connection",
+          "cert": "Certificate File Path",
+          "key": "Private Key File Path"
+        },
+        "remote": {
+          "title": "Remote Management",
+          "description": "Remote access and control panel settings",
+          "allow_remote": "Allow Remote Access",
+          "allow_remote_desc": "Allow management access from other hosts",
+          "disable_panel": "Disable Control Panel",
+          "disable_panel_desc": "Disable the built-in web control panel",
+          "disable_auto_update_panel": "Disable Panel Auto Updates",
+          "disable_auto_update_panel_desc": "Download the panel when first missing, but never auto-update it from GitHub",
+          "secret_key": "Management Key",
+          "secret_key_placeholder": "Set management key",
+          "panel_repo": "Panel Repository"
+        },
+        "auth": {
+          "auth_dir": "OAuth Credential Directory (oauth.auth-dir)",
+          "auth_dir_hint": "Directory path for authentication files (supports ~)"
+        },
+        "system": {
+          "debug": "Debug Mode",
+          "debug_desc": "Enable verbose debug logging",
+          "commercial_mode": "Commercial Mode",
+          "commercial_mode_desc": "Disable high-overhead middleware to support high concurrency",
+          "logging_to_file": "Log to File",
+          "logging_to_file_desc": "Save logs to files",
+          "plugins_enabled": "Enable Plugin System",
+          "plugins_enabled_desc": "Enable standard dynamic-library plugin loading; individual plugin instances are still managed on the Plugins page",
+          "plugin_store_sources": "Third-party Plugin Sources",
+          "plugin_store_sources_desc": "Append plugin-store registry sources; the built-in official source is always kept",
+          "plugin_store_sources_label": "Plugin source registry URL (plugins.store-sources)",
+          "plugin_store_sources_placeholder": "https://example.com/cliproxy-plugins/registry.json",
+          "plugin_store_sources_hint": "One registry.json URL per row. Empty rows are filtered on save",
+          "plugin_store_auth": "Plugin Store Auth Rules",
+          "plugin_store_auth_desc": "Configure auth headers for private registries, GitHub Release metadata, or artifact downloads",
+          "plugin_store_auth_hint": "Enter environment variable names only, not actual tokens. The backend reads the values from its runtime environment.",
+          "store_auth_empty": "No auth rules are configured. Public plugin sources do not need one.",
+          "store_auth_rule": "Auth rule",
+          "store_auth_add": "Add auth rule",
+          "store_auth_match": "Matching URL prefix",
+          "store_auth_type": "Auth type",
+          "store_auth_apply_to": "Apply to",
+          "store_auth_apply_to_hint": "When nothing is selected, the rule applies to all request types.",
+          "store_auth_apply_registry": "Registry",
+          "store_auth_apply_metadata": "Metadata",
+          "store_auth_apply_artifact": "Artifact",
+          "store_auth_type_none": "None",
+          "store_auth_type_bearer": "Bearer",
+          "store_auth_type_basic": "Basic",
+          "store_auth_type_header": "Custom header",
+          "store_auth_type_github_token": "GitHub token",
+          "store_auth_token_env": "Token env var",
+          "store_auth_username_env": "Username env var",
+          "store_auth_password_env": "Password env var",
+          "store_auth_header_name": "Header name",
+          "store_auth_header_value_env": "Header value env var",
+          "store_auth_allow_insecure": "Allow insecure HTTP URLs",
+          "logs_max_size": "Log File Size Limit (MB)",
+          "error_logs_max_files": "Retained Error Log Files",
+          "usage_statistics_enabled": "Enable In-memory Usage Statistics",
+          "usage_statistics_enabled_desc": "Aggregate request usage statistics in memory",
+          "redis_usage_retention": "Redis Usage Queue Retention (seconds)",
+          "redis_usage_retention_hint": "In-memory retention for RESP LPOP/RPOP usage output, max 3600 seconds",
+          "antigravity_sensitive_words": "Sensitive Word Obfuscation",
+          "antigravity_sensitive_words_desc": "Insert zero-width characters into matching words in Antigravity system instructions to reduce exact keyword matching upstream",
+          "antigravity_sensitive_words_label": "OAuth sensitive words (oauth.providers.antigravity.sensitive-words)",
+          "antigravity_sensitive_words_placeholder": "proxy",
+          "antigravity_sensitive_words_hint": "One word or phrase per row. Matching is case-insensitive; empty entries are removed and entries shorter than 2 characters are ignored by the backend",
+          "antigravity_signature_cache": "Enable Antigravity Signature Cache",
+          "antigravity_signature_cache_desc": "Prefer and validate cached thinking-block signatures",
+          "antigravity_signature_strict": "Strict Bypass Signature Validation",
+          "antigravity_signature_strict_desc": "Only applies when the signature cache is disabled; validates the full Claude protobuf tree"
+        },
+        "headers": {
+          "title": "Header Defaults",
+          "description": "Default headers for Claude and Codex OAuth requests when the client omits them",
+          "claude_title": "Claude OAuth Header Defaults",
+          "codex_title": "Codex OAuth Header Defaults",
+          "user_agent": "User-Agent",
+          "package_version": "Package Version",
+          "runtime_version": "Runtime Version",
+          "os": "OS",
+          "arch": "Arch",
+          "timeout": "Timeout",
+          "stabilize_device": "Stabilize Device Profile",
+          "stabilize_device_desc": "Pin OS/Arch and stabilize the software fingerprint per credential/API key",
+          "beta_features": "Beta Features"
+        },
+        "network": {
+          "title": "Network Configuration",
+          "description": "Proxy, retry, and routing settings",
+          "proxy_url": "Proxy URL",
+          "request_retry": "Request Retry Count",
+          "max_retry_credentials": "Max Retry Credentials",
+          "max_retry_credentials_hint": "Leave empty to keep it unset. Set to 0 or a negative integer to try all available credentials.",
+          "max_retry_interval": "Max Retry Interval (seconds)",
+          "max_retry_interval_hint": "Set to 0 or a negative integer to skip cooldown waits between retry rounds.",
+          "auth_auto_refresh_workers": "Auth Auto-refresh Workers",
+          "auth_auto_refresh_workers_hint": "A positive integer overrides the worker count; 0, a negative integer, or an empty field uses the default (16)",
+          "disable_image_generation": "Disable Image Generation",
+          "disable_image_generation_hint": "false enables it; true disables all image generation; chat disables non-image endpoint injection; passthrough preserves the client tool list without injecting one",
+          "disable_image_generation_false": "false (enabled)",
+          "disable_image_generation_true": "true (disabled everywhere)",
+          "disable_image_generation_chat": "chat (disable chat injection only)",
+          "disable_image_generation_passthrough": "passthrough (preserve the client tool list)",
+          "gpt_image_2_base_model": "GPT Image 2 Base Model",
+          "gpt_image_2_base_model_hint": "Mainline model used when proxying gpt-image-2 image requests; backend uses its default when empty or invalid",
+          "routing_strategy": "Routing Strategy",
+          "routing_strategy_hint": "Select credential selection strategy",
+          "strategy_round_robin": "Round Robin",
+          "strategy_weighted_round_robin": "Weighted Round Robin",
+          "strategy_fill_first": "Fill First",
+          "session_affinity_ttl": "Session Affinity TTL",
+          "force_model_prefix": "Force Model Prefix",
+          "force_model_prefix_desc": "Unprefixed model requests only use credentials without prefix",
+          "passthrough_headers": "Pass Through Upstream Headers",
+          "passthrough_headers_desc": "Forward filtered upstream response headers to downstream clients",
+          "disable_cooling": "Disable Cooling",
+          "disable_cooling_desc": "Globally disable auth/model cooldown windows after failures",
+          "session_affinity": "Session Affinity Routing",
+          "ws_auth": "WebSocket Authentication",
+          "ws_auth_desc": "Require authentication for AI Studio WebSocket connections (oauth.providers.aistudio.ws-auth)"
+        },
+        "streaming": {
+          "title": "Streaming Configuration",
+          "description": "Keepalive and bootstrap retry settings",
+          "keepalive_seconds": "Keepalive Seconds",
+          "keepalive_hint": "Set to 0, a negative integer, or leave empty to disable keepalive",
+          "bootstrap_retries": "Bootstrap Retries",
+          "bootstrap_hint": "Retries before the first byte; 0, a negative integer, or an empty field disables bootstrap retries",
+          "nonstream_keepalive": "Non-stream Keepalive Interval (seconds)",
+          "nonstream_keepalive_hint": "Send blank lines every N seconds for non-streaming responses; 0, a negative integer, or an empty field disables keepalive",
+          "disabled": "Disabled"
+        },
+        "payload": {
+          "title": "Payload Configuration",
+          "description": "Default values, raw JSON rules, override rules, and filter rules",
+          "default_rules": "Default Rules",
+          "default_rules_desc": "Use these default values when parameters are not specified in the request",
+          "default_raw_rules": "Default Raw Rules",
+          "default_raw_rules_desc": "When parameters are missing, write these values as raw JSON fragments such as true, 123, \"high\", or {\"type\":\"object\"}",
+          "override_rules": "Override Rules",
+          "override_rules_desc": "Force override parameter values in the request",
+          "override_raw_rules": "Override Raw Rules",
+          "override_raw_rules_desc": "Always overwrite parameter values as raw JSON fragments, useful for response_format, schemas, and other complex fields",
+          "filter_rules": "Filter Rules",
+          "filter_rules_desc": "Pre-filter upstream request body via JSON Path, automatically remove non-compliant/redundant parameters (Request Sanitization)"
+        }
+      },
+      "payload_rules": {
+        "rule": "Rule",
+        "models": "Applicable Models",
+        "model_name": "Model Name",
+        "provider_type": "Provider Type",
+        "add_model": "Add Model",
+        "params": "Parameter Settings",
+        "remove_params": "Remove Parameters",
+        "json_path": "JSON Path (e.g., temperature)",
+        "json_path_filter": "JSON Path (gjson/sjson), e.g., generationConfig.thinkingConfig.thinkingBudget",
+        "param_type": "Parameter Type",
+        "param_value": "Parameter Value",
+        "add_param": "Add Parameter",
+        "no_rules": "No rules",
+        "add_rule": "Add Rule",
+        "provider_default": "Default",
+        "provider_openai": "OpenAI",
+        "provider_openai_response": "OpenAI Response",
+        "provider_responses": "Responses",
+        "provider_gemini": "Gemini",
+        "provider_claude": "Claude",
+        "provider_codex": "Codex",
+        "provider_antigravity": "Antigravity",
+        "advanced": "Advanced",
+        "hide_advanced": "Hide Advanced",
+        "from_protocol": "Source Protocol (from-protocol)",
+        "headers": "Request Header Matches",
+        "header_name": "Header Name",
+        "header_value": "Header Value",
+        "add_header": "Add Header",
+        "match": "Required Matches (match)",
+        "notMatch": "Forbidden Matches (not-match)",
+        "exist": "Required Paths (exist)",
+        "notExist": "Forbidden Paths (not-exist)",
+        "condition_path": "Match Path",
+        "condition_value": "Match Value",
+        "add_condition": "Add Condition",
+        "value_type_string": "String",
+        "value_type_number": "Number",
+        "value_type_boolean": "Boolean",
+        "value_type_json": "JSON",
+        "value_string": "String value",
+        "value_number": "Number value (e.g., 0.7)",
+        "value_boolean": "true or false",
+        "value_json": "JSON value",
+        "value_raw_json": "Raw JSON fragment, e.g. true, 123, \"high\", or {\"type\":\"object\"}",
+        "value_default": "Value",
+        "boolean_true": "true",
+        "boolean_false": "false"
+      },
+      "validation": {
+        "invalid_trusted_proxies": "Each trusted proxy must be a valid IP address or CIDR.",
+        "invalid_discovery_service_type": "Use _name._tcp: name must be 1–15 letters, digits or hyphens, with no leading or trailing hyphen.",
+        "validation_blocked": "Fix validation errors before saving",
+        "invalid_duration": "Enter a valid duration, such as 30s or 3h",
+        "positive_duration": "Enter a duration greater than zero",
+        "invalid_timezone": "Enter a valid IANA timezone, such as Asia/Singapore",
+        "invalid_ip": "Enter a valid IPv4 or IPv6 address",
+        "udp_port_pair": "Set both UDP ports to 0, or set both with the minimum not exceeding the maximum",
+        "udp_port_capacity": "The UDP range must contain at least twice the effective maximum session count in ports (0 sessions uses 32)",
+        "invalid_ice_servers": "Each ICE server needs at least one valid stun:, stuns:, turn:, or turns: URL",
+        "integer_range_0_65535": "Enter a whole number between 0 and 65535",
+        "port_range": "Enter a valid port between 1 and 65535",
+        "integer": "Enter a whole number",
+        "non_negative_integer": "Enter a non-negative whole number",
+        "integer_range_1_3600": "Enter a whole number between 1 and 3600",
+        "payload_invalid_number": "Enter a valid number",
+        "payload_invalid_boolean": "Choose true or false",
+        "payload_invalid_json": "Enter valid JSON"
+      },
+      "common": {
+        "edit": "Edit",
+        "delete": "Delete",
+        "cancel": "Cancel",
+        "update": "Update",
+        "add": "Add"
+      }
+    }
+  },
+  "basic_settings": {
+    "debug_enable": "Enable Debug Mode",
+    "proxy_url_label": "Proxy URL:",
+    "retry_count_label": "Retry Count:",
+    "logging_to_file_enable": "Enable logging to file",
+    "request_log_title": "Request Logging",
+    "request_log_enable": "Enable request logging",
+    "request_log_warning": "Keep this off unless you need detailed troubleshooting.",
+    "ws_auth_enable": "Require auth for /ws/*",
+    "routing_strategy_round_robin": "round-robin (cycle)",
+    "routing_strategy_weighted_round_robin": "weighted-round-robin (weighted cycle)",
+    "routing_strategy_fill_first": "fill-first (prioritize)"
+  }
+}

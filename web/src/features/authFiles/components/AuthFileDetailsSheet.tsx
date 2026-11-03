@@ -13,7 +13,6 @@ import type {
   PrefixProxyEditorState,
 } from '@/features/authFiles/hooks/useAuthFilesPrefixProxyEditor';
 import {
-  supportsAuthFileSiwc,
   supportsAuthFileUsingApi,
   supportsAuthFileWebsockets,
 } from '@/features/authFiles/constants';
@@ -62,11 +61,11 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
     if (!dirty || editor?.saving === true) return true;
     return new Promise<boolean>((resolve) => {
       showConfirmation({
-        title: t('providersPage.unsavedChanges.title'),
-        message: t('providersPage.unsavedChanges.message'),
+        title: t('auth_files.unsaved_changes.title'),
+        message: t('auth_files.unsaved_changes.message'),
         variant: 'danger',
-        confirmText: t('providersPage.unsavedChanges.discard'),
-        cancelText: t('providersPage.unsavedChanges.keepEditing'),
+        confirmText: t('auth_files.unsaved_changes.discard'),
+        cancelText: t('auth_files.unsaved_changes.keepEditing'),
         onConfirm: () => resolve(true),
         onCancel: () => resolve(false),
       });
@@ -259,18 +258,6 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
                         ariaLabel={t('auth_files.websockets_label')}
                       />
                       <div className="hint">{t('auth_files.websockets_hint')}</div>
-                    </div>
-                  )}
-                  {supportsAuthFileSiwc(editor.providerKey) && (
-                    <div className="form-group">
-                      <label>{t('auth_files.use_siwc_label')}</label>
-                      <ToggleSwitch
-                        checked={editor.useSiwc}
-                        onChange={(value) => onChange('useSiwc', value)}
-                        disabled={disableControls || editor.saving || !editor.json}
-                        ariaLabel={t('auth_files.use_siwc_label')}
-                      />
-                      <div className="hint">{t('auth_files.use_siwc_hint')}</div>
                     </div>
                   )}
                   {supportsAuthFileUsingApi(editor.providerKey) && (

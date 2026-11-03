@@ -60,7 +60,7 @@ describe('auth-files response normalization', () => {
 
   test('normalizes project_id to projectId while keeping the raw key', () => {
     const result = normalizeAuthFilesResponse(
-      responseWithRawFiles([{ name: 'vertex-a.json', project_id: ' my-proj ' }])
+      responseWithRawFiles([{ name: 'gemini-a.json', project_id: ' my-proj ' }])
     );
 
     expect(result.files[0]?.projectId).toBe('my-proj');

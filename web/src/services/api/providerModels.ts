@@ -58,25 +58,3 @@ export function serializeModelThinking(value: Record<string, unknown>): Record<s
   }
   return result;
 }
-
-export function serializeModelOptions(
-  model: ModelAlias,
-  openai = false,
-  vertex = false
-): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  if (model.displayName !== undefined) result['display-name'] = model.displayName;
-  if (!vertex && model.maxContextLength !== undefined)
-    result['max-context-length'] = model.maxContextLength;
-  for (const [key, wire] of MODEL_BOOLEAN_FIELDS) {
-    if (vertex && key !== 'forceMapping') continue;
-    if (!openai && key === 'useMaxCompletionTokens') continue;
-    if (model[key] !== undefined) result[wire] = model[key];
-  }
-  if (openai) {
-    if (model.inputModalities !== undefined) result['input-modalities'] = model.inputModalities;
-    if (model.outputModalities !== undefined) result['output-modalities'] = model.outputModalities;
-  }
-  if (model.thinking !== undefined) result.thinking = serializeModelThinking(model.thinking);
-  return result;
-}

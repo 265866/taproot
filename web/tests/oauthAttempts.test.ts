@@ -144,12 +144,12 @@ describe('OAuth attempt lifecycle', () => {
     expect(next.isCurrent()).toBe(true);
   });
 
-  test('Devin cancellation invalidates an in-flight poll and callback before DELETE settles', async () => {
+  test('cancellation invalidates an in-flight poll and callback before DELETE settles', async () => {
     const { attempts, tasks, tick } = setup();
     const response = deferred<string>();
     const callback = deferred<void>();
     let effects = 0;
-    const login = attempts.begin('devin');
+    const login = attempts.begin('xai');
     login.poll(
       () => response.promise,
       () => {
@@ -163,7 +163,7 @@ describe('OAuth attempt lifecycle', () => {
       if (login.isCurrent()) effects++;
     });
     tick();
-    const cancellation = attempts.begin('devin');
+    const cancellation = attempts.begin('xai');
     response.resolve('ok');
     callback.resolve();
     await submission;
@@ -176,7 +176,7 @@ describe('OAuth attempt lifecycle', () => {
 
     // A connection switch or a later login also makes an outstanding DELETE inert.
     attempts.invalidateAll();
-    const next = attempts.begin('devin');
+    const next = attempts.begin('xai');
     expect(cancellation.isCurrent()).toBe(false);
     expect(cancellation.signal.aborted).toBe(true);
     cancellation.invalidate();
@@ -184,18 +184,18 @@ describe('OAuth attempt lifecycle', () => {
     expect(next.signal.aborted).toBe(false);
   });
 
-  test('Devin terminal status stops polling without disturbing another provider', async () => {
+  test('a terminal status stops polling without disturbing another provider', async () => {
     for (const status of ['ok', 'error']) {
       const { attempts, tasks, tick } = setup();
       const other = attempts.begin('codex');
       other.schedule(() => {}, 3000);
-      const devin = attempts.begin('devin');
+      const login = attempts.begin('xai');
       const results: string[] = [];
-      devin.poll(
+      login.poll(
         async () => status,
         (result) => {
           results.push(result);
-          devin.invalidate();
+          login.invalidate();
           return false;
         },
         () => {},
@@ -206,7 +206,7 @@ describe('OAuth attempt lifecycle', () => {
       expect(results).toEqual([status]);
       expect(tasks.size).toBe(0);
       expect(other.isCurrent()).toBe(true);
-      expect(devin.isCurrent()).toBe(false);
+      expect(login.isCurrent()).toBe(false);
     }
   });
 

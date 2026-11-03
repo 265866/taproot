@@ -403,9 +403,9 @@
   gap: $spacing-sm;
   flex-shrink: 0;
   overflow-y: auto;
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   border: 0;
-  border-right: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  border-right: 1px solid var(--border-color);
   border-radius: 0;
   box-shadow: none;
   scrollbar-width: none;
@@ -548,12 +548,12 @@
   }
 
   .nav-group-label {
-    padding: 0 10px 2px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    padding: 6px 10px 2px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--text-primary) 42%, transparent);
+    color: var(--text-tertiary);
     user-select: none;
   }
 
@@ -599,12 +599,12 @@
   }
 
   .nav-item {
-    padding: 6px 10px;
-    border-radius: 9px;
+    padding: 8px 10px;
+    border-radius: 8px;
     border: 1px solid transparent;
-    color: var(--text-primary);
-    font-size: 13px;
-    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
     text-decoration: none;
     display: flex;
     align-items: center;
@@ -685,23 +685,20 @@
     }
 
     &:hover {
-      background: color-mix(in srgb, var(--text-primary) 7%, transparent);
-      border-color: color-mix(in srgb, var(--border-color) 58%, transparent);
-      transform: translateX(1px);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
 
       .nav-icon {
-        color: color-mix(in srgb, var(--text-primary) 82%, transparent);
+        color: var(--text-primary);
       }
     }
 
     &.active {
-      background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+      background: var(--bg-tertiary);
       color: var(--text-primary);
-      border-color: color-mix(in srgb, var(--border-hover) 70%, transparent);
-      box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 
       .nav-icon {
-        color: var(--primary-active);
+        color: var(--text-primary);
       }
     }
 

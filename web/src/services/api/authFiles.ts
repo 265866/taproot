@@ -44,7 +44,6 @@ export type AuthFileFieldsPatch = {
   'disable-cooling'?: boolean;
   websockets?: boolean;
   using_api?: boolean;
-  use_siwc?: boolean;
   note?: string;
   excluded_models?: string[];
   'excluded-models'?: string[];
@@ -288,10 +287,6 @@ const normalizeAuthFileEntry = (
 
   return {
     ...entry,
-    siwcBindSupported: entry.siwc_bind_supported === true,
-    useSiwc: entry.use_siwc === true,
-    siwcBound: entry.siwc_bound === true,
-    siwcExpiresAt: readTextField(entry, 'siwc_expires_at') || undefined,
     cooldownSnapshot: normalizeAuthFileCooldowns(entry.cooldowns, observedAt, receivedAtMs),
     runtimeOnly: readRuntimeOnlyField(entry),
     authIndex: normalizeRecentRequestAuthIndex(entry['auth_index'] ?? entry.authIndex),

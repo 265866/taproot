@@ -1,0 +1,7 @@
+{
+  "taproot_logs": {
+    "title": "Request Logs",
+    "placeholder": "Compressed, searchable request logs land here next.",
+    "legacy_link": "Open the previous logs viewer"
+  }
+}

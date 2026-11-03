@@ -2,14 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { createProviderRecentRequestsCacheController } from '../src/components/providers/hooks/useProviderRecentRequests';
 
 describe('provider recent request cache isolation', () => {
-  test('creates a fresh cache when the backend or management key changes', () => {
+  test('creates a fresh cache when the backend changes', () => {
     const controller = createProviderRecentRequestsCacheController();
-    const serverA = controller.forScope('https://server-a.example', 'key-a');
+    const serverA = controller.forScope('https://server-a.example');
     serverA.cachedUsageByProvider = new Map([['provider-a', new Map()]]);
     serverA.cachedAt = Date.now();
     serverA.inFlightRequest = Promise.resolve(serverA.cachedUsageByProvider);
 
-    const serverB = controller.forScope('https://server-b.example', 'key-b');
+    const serverB = controller.forScope('https://server-b.example');
 
     expect(serverB).not.toBe(serverA);
     expect(serverB.cachedUsageByProvider.size).toBe(0);
@@ -17,15 +17,15 @@ describe('provider recent request cache isolation', () => {
     expect(serverB.inFlightRequest).toBeNull();
 
     serverA.cachedUsageByProvider = new Map([['late-provider-a', new Map()]]);
-    expect(controller.forScope('https://server-b.example', 'key-b')).toBe(serverB);
+    expect(controller.forScope('https://server-b.example')).toBe(serverB);
     expect(serverB.cachedUsageByProvider.size).toBe(0);
   });
 
-  test('reuses the cache only within the same connection scope', () => {
+  test('reuses the cache only within the same backend', () => {
     const controller = createProviderRecentRequestsCacheController();
-    const first = controller.forScope('https://server.example', 'key-a');
+    const first = controller.forScope('https://server.example');
 
-    expect(controller.forScope('https://server.example', 'key-a')).toBe(first);
-    expect(controller.forScope('https://server.example', 'key-b')).not.toBe(first);
+    expect(controller.forScope('https://server.example')).toBe(first);
+    expect(controller.forScope('https://other.example')).not.toBe(first);
   });
 });

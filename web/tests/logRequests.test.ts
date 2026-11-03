@@ -179,9 +179,7 @@ describe('logs controller lifecycle wiring', () => {
     for (const owner of [page, source]) {
       expect(owner).toContain('useAuthStore.subscribe');
       expect(owner).toContain('next.apiBase === previous.apiBase');
-      expect(owner).toContain('next.managementKey === previous.managementKey');
       expect(owner).toContain('next.connectionStatus === previous.connectionStatus');
-      expect(owner).toContain('next.isAuthenticated === previous.isAuthenticated');
       expect(owner).toContain(
         'unsubscribeAuth();\n      unsubscribeConfig();\n      invalidateSession();'
       );

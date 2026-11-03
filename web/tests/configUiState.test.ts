@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { en } from '@/i18n/resources';
 import {
   COMMON_FIELD_IDS,
   CONFIG_SECTION_IDS,
@@ -22,7 +23,6 @@ import {
   type ConfigStatusInput,
 } from '@/features/config/uiState';
 import type { VisualConfigValidationErrors } from '@/types/visualConfig';
-import { LANGUAGE_ORDER } from '@/utils/constants';
 
 const statusInput = (overrides: Partial<ConfigStatusInput> = {}): ConfigStatusInput => ({
   disconnected: false,
@@ -63,8 +63,7 @@ describe('resolveStatus', () => {
     expect(status.tone).toBe('error');
   });
 
-  test('every status resolves label keys that exist in all supported locales', async () => {
-    const locales = LANGUAGE_ORDER;
+  test('every status resolves label keys that exist in the catalog', async () => {
     const inputs: Partial<ConfigStatusInput>[] = [
       { disconnected: true },
       { loading: true },
@@ -75,21 +74,15 @@ describe('resolveStatus', () => {
       { dirty: true },
       {},
     ];
-    for (const locale of locales) {
-      const json = (await Bun.file(`src/i18n/locales/${locale}.json`).json()) as Record<
-        string,
-        unknown
-      >;
-      const resolveKey = (path: string): unknown =>
-        path.split('.').reduce<unknown>((node, part) => {
-          if (node && typeof node === 'object') return (node as Record<string, unknown>)[part];
-          return undefined;
-        }, json);
-      for (const overrides of inputs) {
-        const status = resolveStatus(statusInput(overrides));
-        expect(typeof resolveKey(status.labelKey)).toBe('string');
-        expect(typeof resolveKey(status.shortLabelKey)).toBe('string');
-      }
+    const resolveKey = (path: string): unknown =>
+      path.split('.').reduce<unknown>((node, part) => {
+        if (node && typeof node === 'object') return (node as Record<string, unknown>)[part];
+        return undefined;
+      }, en);
+    for (const overrides of inputs) {
+      const status = resolveStatus(statusInput(overrides));
+      expect(typeof resolveKey(status.labelKey)).toBe('string');
+      expect(typeof resolveKey(status.shortLabelKey)).toBe('string');
     }
   });
 });
@@ -151,7 +144,7 @@ describe('resolveDirtyTabs', () => {
   });
 
   test('a common field lights both the common tab and its canonical section', () => {
-    const tabs = resolveDirtyTabs(new Set(['apiKeysText']));
+    const tabs = resolveDirtyTabs(new Set(['host']));
     expect(tabs.has('common')).toBe(true);
     expect(tabs.has('connectivity')).toBe(true);
     expect(tabs.size).toBe(2);
@@ -196,16 +189,14 @@ describe('Antigravity credits UI and search', () => {
     const entry = findConfigFieldById('quotaAntigravityCredits');
     expect(entry?.sectionId).toBe('advanced');
     expect(entry?.labelKey).toBe('config_management.visual.sections.advanced.antigravity_credits');
-    for (const locale of LANGUAGE_ORDER) {
-      const json = await Bun.file(`src/i18n/locales/${locale}.json`).json();
-      const sections = json.config_management.visual.sections;
-      expect(sections).not.toHaveProperty('quota');
-      expect(typeof sections.advanced.antigravity_credits).toBe('string');
-      const translate = (key: string): string =>
-        key === entry?.labelKey ? sections.advanced.antigravity_credits : key;
-      for (const query of [sections.advanced.antigravity_credits, 'antigravity-credits']) {
-        expect(searchConfigFields(query, translate)).toContainEqual(entry);
-      }
+    const json = en;
+    const sections = json.config_management.visual.sections;
+    expect(sections).not.toHaveProperty('quota');
+    expect(typeof sections.advanced.antigravity_credits).toBe('string');
+    const translate = (key: string): string =>
+      key === entry?.labelKey ? sections.advanced.antigravity_credits : key;
+    for (const query of [sections.advanced.antigravity_credits, 'antigravity-credits']) {
+      expect(searchConfigFields(query, translate)).toContainEqual(entry);
     }
   });
 
@@ -214,7 +205,12 @@ describe('Antigravity credits UI and search', () => {
     const advanced = await Bun.file(`${root}/components/sections/SectionAdvanced.tsx`).text();
     const group = advanced.slice(
       advanced.indexOf("label={t('config_management.visual.sections.advanced.antigravity_title')}"),
-      advanced.indexOf("label={t('config_management.visual.sections.advanced.devin_title')}")
+      advanced.indexOf(
+        '<Collapsible',
+        advanced.indexOf(
+          "label={t('config_management.visual.sections.advanced.antigravity_title')}"
+        )
+      )
     );
     expect(group).toContain('fieldId="quotaAntigravityCredits"');
     expect(group).toContain('checked={values.quotaAntigravityCredits}');

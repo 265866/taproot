@@ -3,8 +3,6 @@ import iconAntigravity from '@/assets/icons/antigravity.svg';
 import iconClaude from '@/assets/icons/claude.svg';
 import iconCodex from '@/assets/icons/codex.svg';
 import iconMeta from '@/assets/icons/meta.svg';
-import iconDevin from '@/assets/icons/devin.svg';
-import iconDevinDark from '@/assets/icons/devin-dark.svg';
 import iconGemini from '@/assets/icons/gemini.svg';
 import iconGrok from '@/assets/icons/grok.svg';
 import iconGrokDark from '@/assets/icons/grok-dark.svg';
@@ -12,7 +10,6 @@ import iconIflow from '@/assets/icons/iflow.svg';
 import iconKimiDark from '@/assets/icons/kimi-dark.svg';
 import iconKimiLight from '@/assets/icons/kimi-light.svg';
 import iconQwen from '@/assets/icons/qwen.svg';
-import iconVertex from '@/assets/icons/vertex.svg';
 import type { AuthFileItem, ResolvedTheme, ThemeColors } from '@/types';
 import { normalizeOAuthProviderKey } from '@/utils/providerKeys';
 import { parseTimestamp } from '@/utils/timestamp';
@@ -31,7 +28,6 @@ export type QuotaProviderType =
   | 'antigravity'
   | 'claude'
   | 'codex'
-  | 'devin'
   | 'kimi'
   | 'meta'
   | 'plugin'
@@ -44,7 +40,6 @@ export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
   'antigravity',
   'claude',
   'codex',
-  'devin',
   'kimi',
   'plugin',
   'xai',
@@ -52,13 +47,11 @@ export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
 
 export const OAUTH_PROVIDER_PRESETS = [
   'meta',
-  'vertex',
   'aistudio',
   'antigravity',
   'xai',
   'claude',
   'codex',
-  'devin',
   'kimi',
 ];
 
@@ -90,13 +83,11 @@ export const AUTH_FILE_ICONS: Record<string, AuthFileIconAsset> = {
   claude: iconClaude,
   codex: iconCodex,
   meta: iconMeta,
-  devin: { light: iconDevin, dark: iconDevinDark },
   gemini: iconGemini,
   xai: { light: iconGrok, dark: iconGrokDark },
   iflow: iconIflow,
   kimi: { light: iconKimiDark, dark: iconKimiLight },
   qwen: iconQwen,
-  vertex: iconVertex,
 };
 
 export const clampCardPageSize = (value: number) =>
@@ -235,12 +226,6 @@ export const applyAuthFileWebsockets = (
   next.websockets = websockets;
   return next;
 };
-
-export const supportsAuthFileSiwc = (providerKey: string): boolean =>
-  normalizeProviderKey(providerKey) === 'codex';
-
-export const readAuthFileUseSiwc = (value: Record<string, unknown>): boolean =>
-  parseDisableCoolingValue(value.use_siwc) ?? false;
 
 export const supportsAuthFileUsingApi = (providerKey: string): boolean =>
   AUTH_FILE_USING_API_PROVIDERS.has(normalizeProviderKey(providerKey));

@@ -58,15 +58,6 @@ describe('buildConfigPatch', () => {
     });
   });
 
-  test('editing client keys replaces only the key list, not the access section', () => {
-    const before = 'access: {api-keys: [fixture-old], future-setting: keep}\n';
-    const visual = runVisualConfig(before, [{ apiKeysText: 'fixture-new\nfixture-second' }]);
-    expect(buildConfigPatch(before, visual.applyVisualChangesToYaml(before))).toEqual({
-      patch: { access: { 'api-keys': ['fixture-new', 'fixture-second'] } },
-      deletions: [],
-    });
-  });
-
   test('nested edits keep siblings out of payload, and pruning deletes original leaves', () => {
     expect(
       buildConfigPatch(

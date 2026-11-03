@@ -4,10 +4,9 @@
  * The operator arranges tiers; priorities are derived here, changing as few stored numbers as
  * the new order allows. Previews mirror CPA's scheduler (highest available priority first, the
  * strategy spreads load inside that tier) but cannot see runtime state CPA does not expose, such
- * as API-key cooldowns, session pinning or WebSocket preference.
+ * as session pinning or WebSocket preference.
  */
 
-import { isModelExcluded } from '@/components/excludedModels/excludedModelRules';
 import type {
   RouteMember,
   RouteMemberState,
@@ -331,40 +330,16 @@ export function buildRoutingPlan(board: RoutingBoard, draft: RoutingDraft): Rout
 
 /** Model ids, or null while unknown. Credential catalogs already contain final callable ids. */
 export function memberModels(member: RoutingMember, catalog: RoutingModelCatalog): string[] | null {
-  const source = member.modelSource;
-  let models: string[] | null;
-  if (source.type === 'list') models = source.models;
-  else if (source.type === 'none') models = [];
-  else if (source.type === 'channel') models = catalog.channels[source.channel] ?? null;
-  else models = catalog.credentials[source.name] ?? null;
-  if (!models) return null;
-  return member.excludedModels.length
-    ? models.filter((model) => !isModelExcluded(member.excludedModels, model))
-    : models;
+  return catalog.credentials[member.credentialName] ?? null;
 }
 
 /**
- * Whether a request for `model` may land on this member. A prefixed member also answers the
- * prefixed name; with `force-model-prefix`, it answers only that.
+ * Whether a request for `model` may land on this member. The credential endpoint returns
+ * registry ids with prefix policy already applied.
  */
-export function memberServesModel(
-  member: RoutingMember,
-  models: readonly string[],
-  model: string,
-  forceModelPrefix: boolean
-): boolean {
+export function memberServesModel(models: readonly string[], model: string): boolean {
   const requested = model.trim().toLowerCase();
-  const known = (id: string) => models.some((entry) => entry.toLowerCase() === id);
-  // The credential endpoint returns registry ids with prefix policy already applied.
-  if (member.modelSource.type === 'credential') return known(requested);
-  const prefix = member.prefix.toLowerCase();
-  if (prefix) {
-    if (requested.startsWith(`${prefix}/`) && known(requested.slice(prefix.length + 1))) {
-      return true;
-    }
-    if (forceModelPrefix && requested !== prefix) return false;
-  }
-  return known(requested);
+  return models.some((entry) => entry.toLowerCase() === requested);
 }
 
 export function collectModelOptions(board: RoutingBoard, catalog: RoutingModelCatalog): string[] {
@@ -376,14 +351,7 @@ export function collectModelOptions(board: RoutingBoard, catalog: RoutingModelCa
     if (member.disabled) continue;
     const models = memberModels(member, catalog);
     if (!models) continue;
-    for (const model of models) {
-      if (member.modelSource.type === 'credential') {
-        add(model);
-        continue;
-      }
-      if (!member.prefix || !board.forceModelPrefix) add(model);
-      if (member.prefix) add(`${member.prefix}/${model}`);
-    }
+    for (const model of models) add(model);
   }
   return [...options.values()].sort((left, right) => left.localeCompare(right));
 }
@@ -428,8 +396,8 @@ const memberUnits = (
   weights: readonly (number | null)[],
   strategy: RoutingStrategy
 ): number => {
-  if (strategy !== 'weighted-round-robin') return member.keyCount;
-  if (member.weights.length === 0) return member.keyCount;
+  if (strategy !== 'weighted-round-robin') return 1;
+  if (member.weights.length === 0) return 1;
   return member.weights.reduce((sum, _, index) => sum + Math.max(0, weights[index] ?? 1), 0);
 };
 
@@ -456,7 +424,7 @@ export function resolveRoute(
       const models = model ? memberModels(member, catalog) : [];
       if (member.disabled) state = 'disabled';
       else if (model && models === null) state = 'unknown';
-      else if (model && !memberServesModel(member, models ?? [], model, board.forceModelPrefix)) {
+      else if (model && !memberServesModel(models ?? [], model)) {
         state = 'ineligible';
       } else if (activeCooldownSeconds(member, model, nowMs) > 0) state = 'cooling';
       else if (member.unavailable && !member.cooldowns?.records) state = 'blocked';
@@ -495,20 +463,9 @@ export function resolveRoute(
   return { tiers, hasActive };
 }
 
-/** Channels whose built-in model lists the board needs. */
-export function neededChannels(board: RoutingBoard): string[] {
-  const channels = new Set<string>();
-  for (const member of board.members) {
-    if (member.modelSource.type === 'channel') channels.add(member.modelSource.channel);
-  }
-  return [...channels].sort();
-}
-
 /** Credentials whose live model lists the board needs (disabled ones never serve). */
 export function neededCredentialModels(board: RoutingBoard): string[] {
-  return board.members.flatMap((member) =>
-    member.modelSource.type === 'credential' && !member.disabled ? [member.modelSource.name] : []
-  );
+  return board.members.flatMap((member) => (member.disabled ? [] : [member.credentialName]));
 }
 
 export function clampWeight(value: number): number {

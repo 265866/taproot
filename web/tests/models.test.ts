@@ -69,24 +69,13 @@ describe('classifyModels', () => {
     expect(namesIn(groups, 'other')).toEqual(['unknown-local-model']);
   });
 
-  test('keeps Devin namespaces and existing families ahead of the new matches', () => {
+  test('keeps existing families ahead of the new matches', () => {
     const groups = classifyModels(
-      [
-        { name: 'devin/mimo-v2.6-pro' },
-        { name: 'devin/step-3.7-flash' },
-        { name: 'devin/codex-auto-review' },
-        { name: 'muse-spark-1.3' },
-        { name: 'minimax-m2' },
-        { name: 'abab6.5s' },
-      ],
+      [{ name: 'muse-spark-1.3' }, { name: 'minimax-m2' }, { name: 'abab6.5s' }],
       { otherLabel: '其他' }
     );
 
-    expect(namesIn(groups, 'devin')).toEqual([
-      'devin/mimo-v2.6-pro',
-      'devin/step-3.7-flash',
-      'devin/codex-auto-review',
-    ]);
+    expect(groups.find((group) => group.id === 'devin')).toBeUndefined();
     expect(namesIn(groups, 'meta')).toEqual(['muse-spark-1.3']);
     expect(namesIn(groups, 'minimax')).toEqual(['minimax-m2', 'abab6.5s']);
     expect(groups.find((group) => group.id === 'xiaomi')).toBeUndefined();

@@ -81,20 +81,20 @@ describe('deriveAuthFileIdentity', () => {
   test('uses the project id when there is no email', () => {
     expect(
       deriveAuthFileIdentity(
-        authFile({ name: 'vertex-my-proj.json', type: 'vertex', projectId: 'my-proj' })
+        authFile({ name: 'gemini-my-proj.json', type: 'gemini', projectId: 'my-proj' })
       )
     ).toEqual({
       primary: 'my-proj',
       kind: 'projectId',
-      secondary: 'vertex-my-proj',
-      fullName: 'vertex-my-proj.json',
+      secondary: 'gemini-my-proj',
+      fullName: 'gemini-my-proj.json',
     });
   });
 
   test('prefers the email over the project id', () => {
     const identity = deriveAuthFileIdentity(
       authFile({
-        name: 'vertex-my-proj.json',
+        name: 'gemini-my-proj.json',
         email: 'sa@project.iam.gserviceaccount.com',
         projectId: 'my-proj',
       })

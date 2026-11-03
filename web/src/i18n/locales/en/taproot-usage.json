@@ -1,0 +1,6 @@
+{
+  "taproot_usage": {
+    "title": "Usage",
+    "placeholder": "Cost, requests, tokens, latency, and failures by account, model, and session land here next."
+  }
+}

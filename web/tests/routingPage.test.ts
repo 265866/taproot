@@ -27,18 +27,12 @@ test('language changes do not trigger board reloads or reset the draft', () => {
   expect(source).toContain("message: error || t('common.unknown_error')");
 });
 
-const RAW = {
-  routing: { strategy: 'round-robin' },
-  'api-keys': {
-    codex: [{ name: 'opencode', priority: 20, keys: [{ 'api-key': 'sk-codex-aaaa' }] }],
-    claude: [
-      { name: 'claude-off', keys: [{ 'api-key': 'sk-claude-bbbb', 'excluded-models': ['*'] }] },
-    ],
-  },
-};
+const RAW = { routing: { strategy: 'round-robin' } };
 const FILES: AuthFileItem[] = [
+  { name: 'top.json', type: 'claude', email: 'top@example.com', priority: 20 },
   { name: 'main.json', type: 'codex', email: 'main@example.com', priority: 0 },
   { name: 'runtime', type: 'gemini', runtimeOnly: true },
+  { name: 'off.json', type: 'claude', email: 'off@example.com', priority: 0, disabled: true },
 ];
 
 /** One card's markup: from its key to the next card. */
@@ -61,20 +55,15 @@ afterAll(async () => {
 
 describe('routing board rendering', () => {
   test('renders tiers on a rail with drop gaps, states and accessible controls', async () => {
-    await i18n.changeLanguage('zh-CN');
+    await i18n.changeLanguage('en');
     const board = buildRoutingBoard(RAW, FILES);
     const draft = draftFromBoard(board);
     const html = renderToStaticMarkup(
       createElement(TierLadder, {
         members: new Map(board.members.map((member) => [member.key, member])),
         draft,
-        preview: resolveRoute(board, draft, { channels: {}, credentials: {} }, null, 0),
-        priorities: {
-          'key:codex:0:0': 20,
-          'key:claude:0:0': 0,
-          'cred:main.json': 0,
-          'cred:runtime': 0,
-        },
+        preview: resolveRoute(board, draft, { credentials: {} }, null, 0),
+        priorities: { 'cred:top.json': 20, 'cred:main.json': 0, 'cred:runtime': 0 },
         model: null,
         nowMs: 0,
         theme: 'light',
@@ -84,27 +73,26 @@ describe('routing board rendering', () => {
         onEditWeights: () => {},
       })
     );
-    expect(html).toContain('请求进入');
-    expect(html).toContain('首选');
-    expect(html).toContain('备用 1');
-    expect(html).toContain('正在承接请求');
-    expect(html).toContain('整层不可用时转入下一层');
+    expect(html).toContain('Request in');
+    expect(html).toContain('Preferred');
+    expect(html).toContain('Fallback 1');
+    expect(html).toContain('Serving requests');
+    expect(html).toContain('Falls to the next tier when the whole tier is unavailable');
     expect(html).toContain('main@example.com');
     expect(html).toContain('aria-haspopup="menu"');
     // Runtime-only credentials show a lock instead of a drag handle and are not draggable.
     expect(html).toMatch(/draggable="false"[^>]*data-member-key="cred:runtime"/);
-    expect(html).not.toContain('sk-codex-aaaa');
   });
 
-  test('API keys show their configured disabled state; only enabled ones note missing cooldowns', async () => {
-    await i18n.changeLanguage('zh-CN');
+  test('disabled credentials are marked and dimmed; enabled ones are not', async () => {
+    await i18n.changeLanguage('en');
     const board = buildRoutingBoard(RAW, FILES);
     const draft = draftFromBoard(board);
     const html = renderToStaticMarkup(
       createElement(TierLadder, {
         members: new Map(board.members.map((member) => [member.key, member])),
         draft,
-        preview: resolveRoute(board, draft, { channels: {}, credentials: {} }, null, 0),
+        preview: resolveRoute(board, draft, { credentials: {} }, null, 0),
         priorities: {},
         model: null,
         nowMs: 0,
@@ -118,25 +106,10 @@ describe('routing board rendering', () => {
     // CSS Modules are not compiled under bun:test; the route state drives the dimmed style.
     const cardState = (key: string) =>
       html.match(new RegExp(`data-member-key="${key}" data-state="([^"]*)"`))?.[1] ?? '';
-
-    // Disabled in configuration: reliable, so marked and dimmed, with no cooldown note.
-    const disabledKey = cardMarkup(html, 'key:claude:0:0');
-    expect(disabledKey).toContain('已停用');
-    expect(disabledKey).not.toContain('无冷却信息');
-    expect(cardState('key:claude:0:0')).toBe('disabled');
-
-    // Enabled API key: normal; the missing-runtime-state note lives in its tooltip, not inline.
-    const enabledKey = cardMarkup(html, 'key:codex:0:0');
-    const cardTitle = (key: string) =>
-      html.match(new RegExp(`title="([^"]*)" data-member-key="${key}"`))?.[1] ?? '';
-    expect(cardTitle('key:codex:0:0')).toContain('无冷却信息');
-    expect(enabledKey).not.toContain('无冷却信息');
-    expect(cardTitle('key:claude:0:0')).not.toContain('无冷却信息');
-    expect(enabledKey).not.toContain('已停用');
-    expect(cardState('key:codex:0:0')).toBe('serving');
-
-    // Credentials report real runtime state and never carry the note.
-    expect(cardMarkup(html, 'cred:main.json')).not.toContain('无冷却信息');
+    expect(cardMarkup(html, 'cred:off.json')).toContain('Disabled');
+    expect(cardState('cred:off.json')).toBe('disabled');
+    expect(cardMarkup(html, 'cred:main.json')).not.toContain('Disabled');
+    expect(cardState('cred:main.json')).toBe('serving');
     const card = readFileSync('src/features/routing/components/MemberCard.tsx', 'utf8');
     expect(card).toContain("const muted = state === 'disabled' || state === 'ineligible';");
   });
@@ -167,10 +140,10 @@ describe('routing board rendering', () => {
     expect(card).toContain('@media (prefers-reduced-motion: reduce)');
     expect(bar).toContain('@media (prefers-reduced-motion: reduce)');
     expect(readFileSync('src/router/MainRoutes.tsx', 'utf8')).toContain(
-      "{ path: '/routing', element: <RoutingPage /> }"
+      '{ path: ROUTES.routing, element: <RoutingPage /> }'
     );
     expect(readFileSync('src/components/layout/MainLayout.tsx', 'utf8')).toContain(
-      "labelKey: 'nav.routing'"
+      "link('routing', 'nav.routing')"
     );
   });
 });
@@ -195,13 +168,11 @@ describe('applying a routing plan', () => {
     const board = buildRoutingBoard(RAW, FILES);
     const draft = draftFromBoard(board);
     draft.tiers = moveMember(draft.tiers, 'cred:main.json', { kind: 'gap', index: 0 });
-    // Joining the runtime-only credential's tier takes its fixed priority.
-    draft.tiers = moveMember(draft.tiers, 'key:codex:0:0', { kind: 'tier', tierId: 'p0' });
     draft.settings = { ...draft.settings, sessionAffinity: true };
     return { board, plan: buildRoutingPlan(board, draft) };
   };
 
-  test('writes credentials first, then the configuration once against a fresh read', async () => {
+  test('writes credentials first, then the settings once', async () => {
     const calls: string[] = [];
     const patchFields = mock(async (name: string) => {
       calls.push(`fields:${name}`);
@@ -223,13 +194,11 @@ describe('applying a routing plan', () => {
     const { board, plan } = planFor();
     const result = await routingApi.applyPlan(board, plan);
 
-    expect(calls).toEqual(['fields:main.json', 'get:/config', 'patch:/config']);
+    expect(calls).toEqual(['fields:main.json', 'patch:/config']);
     expect(result.failed).toBeNull();
-    expect(result.applied).toEqual(['cred:main.json', 'key:codex:0:0', 'settings']);
-    const body = patch.mock.calls[0][1] as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-    expect(body.routing).toEqual({ 'session-affinity': true });
-    expect(plan.priorities).toEqual({ 'cred:main.json': 10, 'key:codex:0:0': 0 });
-    expect(body['api-keys'].codex[0].keys[0].priority).toBe(0);
+    expect(result.applied).toEqual(['cred:main.json', 'settings']);
+    expect(patch.mock.calls[0][1]).toEqual({ routing: { 'session-affinity': true } });
+    expect(plan.priorities['cred:main.json']).toBeGreaterThan(20);
   });
 
   test('stops at the first failed credential and reports what was not attempted', async () => {
@@ -246,7 +215,7 @@ describe('applying a routing plan', () => {
 
     expect(result.failed?.key).toBe('cred:main.json');
     expect(result.applied).toEqual([]);
-    expect(result.notAttempted).toEqual(['key:codex:0:0', 'settings']);
+    expect(result.notAttempted).toEqual(['settings']);
     expect(patch).not.toHaveBeenCalled();
   });
 });

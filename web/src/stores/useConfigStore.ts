@@ -125,9 +125,6 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         case 'claude-api-key':
           nextConfig.claudeApiKeys = value as Config['claudeApiKeys'];
           break;
-        case 'vertex-api-key':
-          nextConfig.vertexApiKeys = value as Config['vertexApiKeys'];
-          break;
         case 'openai-compatibility':
           nextConfig.openaiCompatibility = value as Config['openaiCompatibility'];
           break;

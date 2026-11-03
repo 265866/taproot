@@ -1,5 +1,4 @@
 @use '../../../styles/mixins' as *;
-@use '../sponsor' as *;
 
 /* ============================================================
  * 授权对话框：品牌头 → 步骤（打开授权页 / 设备码 / 回调）→ 底部实时状态条。
@@ -138,29 +137,6 @@
   font-size: 13px;
   line-height: 1.65;
   color: var(--text-secondary);
-}
-
-.signUpPrompt {
-  color: var(--text-tertiary);
-}
-
-.inlineLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: 2px;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--text-primary) 30%, transparent);
-  text-underline-offset: 3px;
-  border-radius: 4px;
-  transition: text-decoration-color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out);
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
 }
 
 .alert {
@@ -468,10 +444,6 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
   }
-
-  .inlineLink:hover {
-    text-decoration-color: currentColor;
-  }
 }
 
 .spinning {
@@ -631,47 +603,6 @@
   justify-content: center;
   gap: 8px;
   margin-top: 14px;
-}
-
-/* ---------- 赞助商对话框（Kimi）：延续卡片的品牌蓝 ---------- */
-
-:global(.modal).sponsorDialog {
-  background:
-    radial-gradient(90% 60% at 100% 0%, sponsor-tint(12%), transparent 60%), var(--bg-primary);
-
-  /* 与赞助卡一致：图标自带圆角方块，直接铺满，不再套一层描边容器 */
-  .headingGlyph {
-    border: 0;
-    background: none;
-    overflow: hidden;
-  }
-
-  .headingImage {
-    width: 44px;
-    height: 44px;
-  }
-
-  .primary {
-    background: #{$sponsor-blue-strong};
-    color: #fff;
-  }
-
-  .primary:focus-visible,
-  .inlineLink:focus-visible {
-    outline-color: #{$sponsor-blue};
-  }
-
-  .inlineLink {
-    color: sponsor-ink();
-    text-decoration-color: sponsor-tint(40%);
-  }
-}
-
-@media (hover: hover) and (pointer: fine) {
-  :global(.modal).sponsorDialog .primary:hover:not(:disabled) {
-    background: #{$sponsor-blue-strong-hover};
-    box-shadow: 0 10px 22px -10px sponsor-tint(70%);
-  }
 }
 
 /* ---------- 窄屏 ---------- */

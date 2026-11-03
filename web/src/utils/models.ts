@@ -12,7 +12,6 @@ export interface ModelInfo {
 }
 
 const MODEL_CATEGORIES = [
-  { id: 'devin', label: 'Devin', patterns: [] },
   { id: 'meta', label: 'Muse', patterns: [/\bmuse(?:[-/\s]|$)/i] },
   {
     id: 'gpt',
@@ -117,7 +116,7 @@ export function classifyModels(
     const name = (model?.name || '').toString();
     const alias = (model?.alias || '').toString();
     const haystack = `${name} ${alias}`.toLowerCase();
-    const matchedId = /^devin\//i.test(name) ? 'devin' : matchCategory(haystack);
+    const matchedId = matchCategory(haystack);
     const target = matchedId ? groups.find((group) => group.id === matchedId) : null;
 
     if (target) {

@@ -1,0 +1,62 @@
+{
+  "title": {
+    "main": "Taproot"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "auth_files": "Auth Files",
+    "oauth": "OAuth Login",
+    "routing": "Routing",
+    "quota_management": "Quota (previous)",
+    "plugins": "Plugins",
+    "plugin_store": "Plugin Store",
+    "config_management": "Config",
+    "logs": "Logs (previous)",
+    "system_info": "System",
+    "quota": "Quota",
+    "usage": "Usage",
+    "request_logs": "Request Logs",
+    "backups": "Backups",
+    "settings": "Settings"
+  },
+  "nav_groups": {
+    "observe": "Observe",
+    "plugin_pages": "Plugins",
+    "accounts": "Accounts",
+    "server": "Server"
+  },
+  "sidebar": {
+    "toggle_expand": "Expand sidebar",
+    "toggle_collapse": "Collapse sidebar",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "subtitle": "Claude and Codex pool",
+    "auth_files_count": "Authentication files: {{count}}"
+  },
+  "header": {
+    "refresh_all": "Refresh All"
+  },
+  "theme": {
+    "switch": "Theme",
+    "light": "Wool Paper",
+    "white": "Pure White",
+    "dark": "Dark",
+    "auto": "Follow system"
+  },
+  "connection": {
+    "status": "Connection Status:"
+  },
+  "connection_gate": {
+    "connecting": "Connecting to the server…",
+    "forbidden_title": "Access denied",
+    "forbidden_body": "This server only admits allowlisted Tailscale accounts. Connect from a device signed in to an allowed account.",
+    "unreachable_title": "Server unreachable",
+    "unreachable_body": "The management API did not answer. Check that the server is running.",
+    "retry": "Try again"
+  },
+  "footer": {
+    "api_version": "CLI Proxy API Version",
+    "build_date": "Build Time",
+    "version": "Dashboard Version"
+  }
+}

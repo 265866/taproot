@@ -59,8 +59,6 @@ oauth:
       signature-bypass-strict: false
       antigravity-credits: false
       sensitive-words: [fixture-word]
-    devin:
-      sensitive-words: [fixture-devin]
 multimedia:
   disable-image-generation: false
   gpt-image-2-base-model: fixture-base

@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  IconBot,
   IconFileText,
   IconSidebarConfig,
   IconSidebarLogs,
@@ -140,14 +139,6 @@ export function DashboardPage() {
       tone: undefined,
     },
     {
-      key: 'providerKeys',
-      label: t('dashboard.stat_provider_keys'),
-      value: counts.providerKeys === null ? DASH : counts.providerKeys.toLocaleString(),
-      hint: t('dashboard.stat_provider_keys_hint'),
-      meter: null,
-      tone: undefined,
-    },
-    {
       key: 'models',
       label: t('dashboard.stat_models'),
       value: counts.models === null ? DASH : counts.models.toLocaleString(),
@@ -160,10 +151,6 @@ export function DashboardPage() {
   const runtimeRows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: t('dashboard.runtime_routing'), value: routingStrategy },
     { label: t('dashboard.runtime_retry'), value: String(config?.requestRetry ?? 0) },
-    {
-      label: t('dashboard.runtime_management_keys'),
-      value: counts.managementKeys === null ? DASH : String(counts.managementKeys),
-    },
     { label: t('dashboard.runtime_version'), value: serverVersion?.trim() || DASH },
     {
       label: t('dashboard.runtime_build'),
@@ -183,12 +170,6 @@ export function DashboardPage() {
     : [];
 
   const ctaCards = [
-    {
-      to: '/ai-providers',
-      icon: <IconBot size={20} />,
-      title: t('nav.ai_providers'),
-      description: t('dashboard.cta_providers_desc'),
-    },
     {
       to: '/auth-files',
       icon: <IconFileText size={20} />,
@@ -244,8 +225,8 @@ export function DashboardPage() {
             {heroMetaLine}
           </p>
           <div className={styles.heroActions} data-reveal>
-            <Link to="/ai-providers" className={styles.primaryAction}>
-              {t('dashboard.cta_manage_providers')}
+            <Link to="/auth-files" className={styles.primaryAction}>
+              {t('dashboard.cta_manage_credentials')}
             </Link>
             <Link to="/logs" className={styles.ghostAction}>
               {t('dashboard.cta_inspect_logs')}{' '}

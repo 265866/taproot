@@ -313,13 +313,6 @@ export const CONFIG_FIELD_SEARCH_INDEX: ConfigFieldSearchEntry[] = [
     yamlKeys: ['oauth', 'auth-dir'],
   },
   {
-    fieldId: 'apiKeys',
-    sectionId: 'connectivity',
-    labelKey: L('api_keys.label'),
-    yamlKeys: ['access', 'api-keys'],
-    keywords: ['api key', 'apikey', 'token'],
-  },
-  {
     fieldId: 'tlsEnable',
     sectionId: 'connectivity',
     labelKey: L('sections.tls.enable'),
@@ -575,14 +568,6 @@ export const CONFIG_FIELD_SEARCH_INDEX: ConfigFieldSearchEntry[] = [
     hintKey: L('sections.system.antigravity_sensitive_words_desc'),
     yamlKeys: ['oauth', 'providers', 'antigravity', 'sensitive-words'],
     keywords: ['antigravity', 'obfuscate', 'zero-width'],
-  },
-  {
-    fieldId: 'devinSensitiveWords',
-    sectionId: 'advanced',
-    labelKey: L('sections.system.devin_sensitive_words'),
-    hintKey: L('sections.system.devin_sensitive_words_desc'),
-    yamlKeys: ['oauth', 'providers', 'devin', 'sensitive-words'],
-    keywords: ['devin', 'system prompt', 'remove line', 'obfuscate', 'zero-width'],
   },
   {
     fieldId: 'antigravitySignatureCacheEnabled',

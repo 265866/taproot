@@ -2,7 +2,7 @@
  * 手动回调输入 → 提交给后端的 redirect_url。
  *
  * 只有 xAI 需要拼装：Grok 有时只在页面显示 code，此时用本次登录的 state
- * 拼回固定的回环地址。其余提供商原样提交（Devin 另有严格校验，见 devinOAuth.ts）。
+ * 拼回固定的回环地址。其余提供商原样提交。
  */
 
 export const XAI_CALLBACK_URL = 'http://127.0.0.1:56121/callback';

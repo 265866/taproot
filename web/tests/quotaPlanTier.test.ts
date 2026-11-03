@@ -1,34 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import en from '@/i18n/locales/en.json';
-import zhCN from '@/i18n/locales/zh-CN.json';
-import zhTW from '@/i18n/locales/zh-TW.json';
-import ru from '@/i18n/locales/ru.json';
-import vi from '@/i18n/locales/vi.json';
-import ko from '@/i18n/locales/ko.json';
-import tr from '@/i18n/locales/tr.json';
+import { en } from '@/i18n/resources';
 import { resolvePlanTier } from '@/utils/quota';
 
 describe('Codex Pro display names', () => {
-  for (const [locale, messages] of Object.entries({ en, 'zh-CN': zhCN, 'zh-TW': zhTW, ru })) {
-    test(`${locale} labels Pro plans as Pro 100 and Pro 200`, () => {
-      expect(messages.codex_quota.plan_prolite).toBe('Pro 100');
-      expect(messages.codex_quota.plan_pro).toBe('Pro 200');
-    });
-  }
-
-  for (const [locale, messages] of Object.entries({
-    en,
-    'zh-CN': zhCN,
-    'zh-TW': zhTW,
-    ru,
-    vi,
-    ko,
-    tr,
-  })) {
-    test(`${locale} labels Pro Max as Pro 500`, () => {
-      expect(messages.codex_quota.plan_promax).toBe('Pro 500');
-    });
-  }
+  test('labels Pro plans as Pro 100, Pro 200, and Pro 500', () => {
+    const messages = en.codex_quota as Record<string, string>;
+    expect(messages.plan_prolite).toBe('Pro 100');
+    expect(messages.plan_pro).toBe('Pro 200');
+    expect(messages.plan_promax).toBe('Pro 500');
+  });
 });
 
 describe('resolvePlanTier', () => {

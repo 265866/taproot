@@ -13,7 +13,7 @@ import {
   readErrorRules,
   validateErrorRule,
   type ErrorRuleDraft,
-} from '@/features/providers/errorRules';
+} from './policy/errorRules';
 
 export type PolicyMode = 'inherit' | 'custom';
 export interface CredentialPolicyValues {

@@ -36,10 +36,7 @@ export interface OAuthFlowDialogProps {
   /** 提供商专属文案：`auth_login.<id>_<suffix>` 或插件模板。 */
   text: (suffix: string) => string;
   supportsCallback: boolean;
-  /** 赞助商：品牌蓝主按钮 + 提示行里的注册链接。 */
-  sponsor?: { url: string; label: string };
   onStart: () => void;
-  onCancel: () => void;
   onCallbackChange: (value: string) => void;
   onCallbackSubmit: () => void;
   onViewAuthFiles: () => void;
@@ -55,7 +52,7 @@ export function OAuthFlowDialog(props: OAuthFlowDialogProps) {
       open={open}
       onClose={onClose}
       width={500}
-      className={props.sponsor ? `${styles.dialog} ${styles.sponsorDialog}` : styles.dialog}
+      className={styles.dialog}
       title={<DialogTitle {...heading} />}
       footer={view === 'flow' ? <FlowStatusBar {...props} /> : undefined}
     >
@@ -66,39 +63,18 @@ export function OAuthFlowDialog(props: OAuthFlowDialogProps) {
   );
 }
 
-function ProviderHint({ text, sponsor }: Pick<OAuthFlowDialogProps, 'text' | 'sponsor'>) {
-  const { t } = useTranslation();
-  return (
-    <p className={styles.hint}>
-      {text('oauth_hint')}
-      {sponsor && (
-        <>
-          {' '}
-          <span className={styles.signUpPrompt}>{t('auth_login.sign_up_prompt')}</span>
-          <a
-            className={styles.inlineLink}
-            href={sponsor.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {sponsor.label}
-            <IconExternalLink size={11} aria-hidden="true" />
-          </a>
-        </>
-      )}
-    </p>
-  );
+function ProviderHint({ text }: Pick<OAuthFlowDialogProps, 'text'>) {
+  return <p className={styles.hint}>{text('oauth_hint')}</p>;
 }
 
 function FlowBody(props: OAuthFlowDialogProps & { view: Exclude<FlowView, 'success'> }) {
   const { t } = useTranslation();
-  const { view, providerId, state, text, onStart } = props;
-  const isDevin = providerId === 'devin';
+  const { view, state, text, onStart } = props;
 
   if (view !== 'flow') {
     return (
       <div className={styles.stack}>
-        <ProviderHint text={text} sponsor={props.sponsor} />
+        <ProviderHint text={text} />
         {view === 'failed' && (
           <div className={styles.alert} role="alert">
             {text('oauth_status_error')} {state.error || ''}
@@ -115,17 +91,7 @@ function FlowBody(props: OAuthFlowDialogProps & { view: Exclude<FlowView, 'succe
 
   return (
     <div className={styles.stack}>
-      <ProviderHint text={text} sponsor={props.sponsor} />
-      {isDevin && state.state && state.status === 'error' && (
-        <div className={styles.alert} role="alert">
-          {t('auth_login.devin_oauth_retry_hint')}
-        </div>
-      )}
-      {state.cancelError && (
-        <div className={styles.alert} role="alert">
-          {t('auth_login.devin_oauth_cancel_error')} {state.cancelError}
-        </div>
-      )}
+      <ProviderHint text={text} />
       <ol className={styles.steps}>
         <OpenStep {...props} />
         {state.userCode && (
@@ -223,18 +189,11 @@ function CallbackStep({
   const hintId = useId();
   const feedbackId = useId();
   const isXai = providerId === 'xai';
-  const isDevin = providerId === 'devin';
-  const disabled = !state.url || (isDevin && (state.cancelling || state.status !== 'waiting'));
-  const hintKey = isXai
-    ? 'auth_login.xai_callback_hint'
-    : isDevin
-      ? 'auth_login.devin_callback_hint'
-      : 'auth_login.oauth_callback_hint';
+  const disabled = !state.url;
+  const hintKey = isXai ? 'auth_login.xai_callback_hint' : 'auth_login.oauth_callback_hint';
   const placeholderKey = isXai
     ? 'auth_login.xai_callback_placeholder'
-    : isDevin
-      ? 'auth_login.devin_callback_placeholder'
-      : 'auth_login.oauth_callback_placeholder';
+    : 'auth_login.oauth_callback_placeholder';
 
   const feedback = state.callbackValidation
     ? { tone: 'error' as const, message: state.callbackValidation }
@@ -299,13 +258,10 @@ function CallbackStep({
   );
 }
 
-function FlowStatusBar({ providerId, state, text, onStart, onCancel }: OAuthFlowDialogProps) {
+function FlowStatusBar({ state, text, onStart }: OAuthFlowDialogProps) {
   const { t } = useTranslation();
-  const isDevin = providerId === 'devin';
   const failed = state.status === 'error';
   const generating = !failed && !state.url;
-  // Devin 会话在服务端可能仍挂着：必须先取消才能重开
-  const canCancel = isDevin && Boolean(state.state);
 
   return (
     <div className={styles.statusBar} data-tone={failed ? 'error' : 'waiting'}>
@@ -323,19 +279,7 @@ function FlowStatusBar({ providerId, state, text, onStart, onCancel }: OAuthFlow
               : text('oauth_status_waiting')}
         </span>
       </p>
-      {canCancel ? (
-        <button
-          type="button"
-          className={styles.ghost}
-          onClick={onCancel}
-          disabled={state.cancelling}
-        >
-          {state.cancelling && (
-            <IconLoader2 size={13} className={styles.spinning} aria-hidden="true" />
-          )}
-          {t('auth_login.devin_oauth_cancel')}
-        </button>
-      ) : failed ? (
+      {failed ? (
         <button type="button" className={styles.ghost} onClick={onStart}>
           {t('auth_login.restart_login')}
         </button>

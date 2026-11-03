@@ -5,6 +5,7 @@
 // 任何一方增删字段而漏改其余两方，本套件即红。
 
 import { readFileSync, readdirSync } from 'node:fs';
+import { en } from '@/i18n/resources';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import {
@@ -57,7 +58,7 @@ describe('search index integrity', () => {
   });
 
   test('label / qualifier / hint keys resolve to strings in en.json', async () => {
-    const json = (await Bun.file('src/i18n/locales/en.json').json()) as Record<string, unknown>;
+    const json = en as Record<string, unknown>;
     const resolveKey = (path: string): unknown =>
       path.split('.').reduce<unknown>((node, part) => {
         if (node && typeof node === 'object') return (node as Record<string, unknown>)[part];
@@ -147,7 +148,6 @@ describe('v8 YAML search paths', () => {
   });
 
   for (const [fieldId, path] of [
-    ['apiKeys', 'access.api-keys'],
     ['commercialMode', 'server.commercial-mode'],
     ['requestRetry', 'routing.retry.request-retry'],
     ['routingStrategy', 'routing.strategy'],

@@ -50,14 +50,7 @@ export const CONFIG_TAB_ICONS: Record<ConfigTabId, ComponentType<IconProps>> = {
 };
 
 /** 常用 tab 的 6 个字段（原简单模式），渲染源与正典分区共享（fields/sharedFields.tsx）。 */
-export const COMMON_FIELD_IDS = [
-  'host',
-  'port',
-  'apiKeys',
-  'proxyUrl',
-  'debug',
-  'loggingToFile',
-] as const;
+export const COMMON_FIELD_IDS = ['host', 'port', 'proxyUrl', 'debug', 'loggingToFile'] as const;
 
 /**
  * 每个分区承载的校验字段路径（tab 错误徽章的分桶依据）。
@@ -141,7 +134,6 @@ export const FIELD_VALUE_KEYS: Record<string, readonly string[]> = {
   host: ['host'],
   port: ['port'],
   authDir: ['authDir'],
-  apiKeys: ['apiKeysText'],
   tlsEnable: ['tlsEnable'],
   tlsCert: ['tlsCert'],
   tlsKey: ['tlsKey'],
@@ -183,7 +175,6 @@ export const FIELD_VALUE_KEYS: Record<string, readonly string[]> = {
   pluginStoreSources: ['pluginStoreSources'],
   pluginStoreAuth: ['pluginStoreAuth'],
   antigravitySensitiveWords: ['antigravitySensitiveWords'],
-  devinSensitiveWords: ['devinSensitiveWords'],
   antigravitySignatureCacheEnabled: ['antigravitySignatureCacheEnabled'],
   antigravitySignatureBypassStrict: ['antigravitySignatureBypassStrict'],
   claudeHeaderUserAgent: ['claudeHeaderUserAgent'],

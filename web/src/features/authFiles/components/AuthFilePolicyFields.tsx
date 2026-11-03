@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
-import { ErrorRulesEditor } from '@/features/providers/sheets/forms/ErrorRulesEditor';
-import { ModelEntriesEditor } from '@/features/providers/sheets/forms/ModelEntriesEditor';
+import { AliasEntriesEditor } from '../policy/AliasEntriesEditor';
+import { ErrorRulesEditor } from '../policy/ErrorRulesEditor';
 import styles from './AuthFilePolicyFields.module.scss';
 import {
   credentialPolicyError,
@@ -81,13 +81,9 @@ export function AuthFilePolicyFields({
                   </Button>
                 </div>
               ) : field === 'modelAliases' ? (
-                <ModelEntriesEditor
-                  oauthAliasOnly
-                  models={draft.modelAliases.rows ?? []}
-                  supportsImage={false}
-                  supportsThinking={false}
-                  mutating={disabled}
-                  removeDisabled={false}
+                <AliasEntriesEditor
+                  rows={draft.modelAliases.rows ?? []}
+                  disabled={disabled}
                   onUpdate={(index, patch) =>
                     onChange('modelAliases', {
                       mode: 'custom',

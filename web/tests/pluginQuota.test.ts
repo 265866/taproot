@@ -91,9 +91,7 @@ describe('generic plugin quota', () => {
           expect(resolveAuthFileQuotaType(candidate, type)).toBe(type);
           expect(resolveAuthFileQuotaType(candidate, 'plugin')).toBeNull();
         }
-        expect(getQuotaCacheKey(file)).toBe(
-          type === 'devin' ? `${type}.json${String.fromCharCode(0)}7` : `${type}.json`
-        );
+        expect(getQuotaCacheKey(file)).toBe(`${type}.json`);
         expect(classifyQuotaFiles([file]).map((entry) => entry.type)).toEqual([type]);
       }
     }

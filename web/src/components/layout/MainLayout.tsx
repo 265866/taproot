@@ -19,28 +19,22 @@ import { MainRoutes } from '@/router/MainRoutes';
 import { authFilesApi, pluginsApi } from '@/services/api';
 import {
   IconSidebarAuthFiles,
+  IconSidebarBackups,
   IconSidebarConfig,
   IconSidebarDashboard,
   IconSidebarLogs,
   IconSidebarOauth,
   IconSidebarPlugins,
-  IconSidebarProviders,
-  IconSidebarQuickStart,
   IconSidebarQuota,
   IconSidebarRouting,
+  IconSidebarSettings,
   IconSidebarStore,
   IconSidebarSystem,
+  IconSidebarUsage,
   IconChevronDown,
 } from '@/components/ui/icons';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
-import {
-  useAuthStore,
-  useLoginTransitionStore,
-  useConfigStore,
-  useLanguageStore,
-  useNotificationStore,
-  useThemeStore,
-} from '@/stores';
+import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import { AUTH_FILES_CHANGED_EVENT } from '@/features/authFiles/authFilesEvents';
 import {
   collectPluginResourceEntries,
@@ -48,27 +42,26 @@ import {
   resolvePluginAssetURL,
   type PluginResourceEntry,
 } from '@/features/plugins/pluginResources';
-import { APIKEY_FUN_DISPLAY_NAME, hasApiKeyFunConfig } from '@/features/providers/sponsor';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
-import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
-import { isSupportedLanguage } from '@/utils/language';
+import { ROUTES } from '@/router/routes';
 import { getSidebarShortcutLabel, isSidebarToggleShortcut } from '@/utils/sidebarShortcut';
 import type { Theme } from '@/types';
 
-const sidebarIcons: Record<string, ReactNode> = {
+const sidebarIcons = {
   dashboard: <IconSidebarDashboard size={18} />,
-  quickStart: <IconSidebarQuickStart size={18} />,
-  aiProviders: <IconSidebarProviders size={18} />,
+  quota: <IconSidebarQuota size={18} />,
+  usage: <IconSidebarUsage size={18} />,
+  requestLogs: <IconSidebarLogs size={18} />,
   authFiles: <IconSidebarAuthFiles size={18} />,
   oauth: <IconSidebarOauth size={18} />,
-  quota: <IconSidebarQuota size={18} />,
   routing: <IconSidebarRouting size={18} />,
+  config: <IconSidebarConfig size={18} />,
   plugins: <IconSidebarPlugins size={18} />,
   pluginStore: <IconSidebarStore size={18} />,
-  config: <IconSidebarConfig size={18} />,
-  logs: <IconSidebarLogs size={18} />,
+  backups: <IconSidebarBackups size={18} />,
+  settings: <IconSidebarSettings size={18} />,
   system: <IconSidebarSystem size={18} />,
-};
+} satisfies Partial<Record<keyof typeof ROUTES, ReactNode>>;
 
 interface SidebarNavLinkItem {
   kind?: 'link';
@@ -193,13 +186,6 @@ const headerIcons = {
       <path d="m10 6 6 6-6 6" />
     </svg>
   ),
-  language: (
-    <svg {...headerIconProps}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M2 12h20" />
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-    </svg>
-  ),
   sun: (
     <svg {...headerIconProps}>
       <circle cx="12" cy="12" r="4" />
@@ -249,13 +235,6 @@ const headerIcons = {
       <path d="M19.07 4.93l-1.41 1.41" />
     </svg>
   ),
-  logout: (
-    <svg {...headerIconProps}>
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <path d="m16 17 5-5-5-5" />
-      <path d="M21 12H9" />
-    </svg>
-  ),
 };
 
 const THEME_CARDS: Array<{
@@ -300,11 +279,11 @@ const THEME_CARDS: Array<{
     key: 'dark',
     labelKey: 'theme.dark',
     colors: {
-      bg: '#151412',
-      card: '#1d1b18',
-      border: '#3a3530',
-      text: '#f6f4f1',
-      textMuted: '#9c958d',
+      bg: '#0a0a0a',
+      card: '#111111',
+      border: '#2a2a2a',
+      text: '#ededed',
+      textMuted: '#737373',
     },
   },
 ];
@@ -314,19 +293,15 @@ export function MainLayout() {
   const { showNotification } = useNotificationStore();
   const location = useLocation();
 
-  const logout = useAuthStore((state) => state.logout);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
   const supportsPlugin = useAuthStore((state) => state.supportsPlugin);
 
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
-  const config = useConfigStore((state) => state.config);
 
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
-  const language = useLanguageStore((state) => state.language);
-  const setLanguage = useLanguageStore((state) => state.setLanguage);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -338,7 +313,6 @@ export function MainLayout() {
     anchorTop: number;
     top: number;
   } | null>(null);
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [pluginResources, setPluginResources] = useState<PluginResourceEntry[]>([]);
   const [expandedPluginResourceIDs, setExpandedPluginResourceIDs] = useState<Set<string>>(
@@ -348,14 +322,11 @@ export function MainLayout() {
   const authFilesCountRequestRef = useRef(0);
   const railTooltipRef = useRef<HTMLDivElement | null>(null);
   const focusedRailItemRef = useRef<HTMLElement | null>(null);
-  const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
 
-  const fullBrandName = 'CLI Proxy API Management Center';
-  const abbrBrandName = t('title.abbr');
-  const arrivingFromLogin = useLoginTransitionStore((state) => state.phase === 'revealing');
-  const isLogsPage = location.pathname.startsWith('/logs');
+  const brandName = t('title.main');
+  const isLogsPage = location.pathname.startsWith(ROUTES.legacyLogs);
   const isPluginResourcePage = location.pathname.startsWith('/plugin-pages');
   const showSidebarLabels = !sidebarCollapsed || sidebarOpen;
 
@@ -448,19 +419,11 @@ export function MainLayout() {
     };
   }, []);
 
-  const closeLanguageMenu = useCallback(() => setLanguageMenuOpen(false), []);
   const closeThemeMenu = useCallback(() => setThemeMenuOpen(false), []);
-  useMenuDismiss(languageMenuOpen, languageMenuRef, closeLanguageMenu);
   useMenuDismiss(themeMenuOpen, themeMenuRef, closeThemeMenu);
-
-  const toggleLanguageMenu = useCallback(() => {
-    setLanguageMenuOpen((prev) => !prev);
-    setThemeMenuOpen(false);
-  }, []);
 
   const toggleThemeMenu = useCallback(() => {
     setThemeMenuOpen((prev) => !prev);
-    setLanguageMenuOpen(false);
   }, []);
 
   const handleThemeSelect = useCallback(
@@ -470,23 +433,6 @@ export function MainLayout() {
     },
     [setTheme]
   );
-
-  const handleLanguageSelect = useCallback(
-    (nextLanguage: string) => {
-      if (!isSupportedLanguage(nextLanguage)) {
-        return;
-      }
-      setLanguage(nextLanguage);
-      setLanguageMenuOpen(false);
-    },
-    [setLanguage]
-  );
-
-  useEffect(() => {
-    fetchConfig().catch(() => {
-      // Ignore the initial failure; the login flow shows the user-facing prompt.
-    });
-  }, [fetchConfig]);
 
   const loadPluginResources = useCallback(async () => {
     if (connectionStatus !== 'connected' || !supportsPlugin) {
@@ -587,115 +533,50 @@ export function MainLayout() {
       })
     : [];
 
-  const isApiKeyFunConfigured = hasApiKeyFunConfig(config);
-  const quickStartNavItem: SidebarNavLinkItem = {
-    path: '/quick-start',
-    label: isApiKeyFunConfigured ? APIKEY_FUN_DISPLAY_NAME : undefined,
-    labelKey: isApiKeyFunConfigured ? undefined : 'nav.quick_start',
-    metaKey: 'nav_meta.quick_start',
-    icon: sidebarIcons.quickStart,
-  };
+  const link = (key: keyof typeof sidebarIcons, labelKey: string): SidebarNavLinkItem => ({
+    path: ROUTES[key],
+    labelKey,
+    icon: sidebarIcons[key],
+  });
 
   const navGroups: SidebarNavGroup[] = [
     {
-      id: 'operate',
-      labelKey: 'nav_groups.operate',
+      id: 'observe',
+      labelKey: 'nav_groups.observe',
       items: [
-        {
-          path: '/',
-          labelKey: 'nav.dashboard',
-          metaKey: 'nav_meta.dashboard',
-          icon: sidebarIcons.dashboard,
-        },
-        ...(!isApiKeyFunConfigured ? [quickStartNavItem] : []),
+        link('dashboard', 'nav.dashboard'),
+        link('quota', 'nav.quota'),
+        link('usage', 'nav.usage'),
+        link('requestLogs', 'nav.request_logs'),
       ],
     },
     {
-      id: 'gateway',
-      labelKey: 'nav_groups.gateway',
+      id: 'accounts',
+      labelKey: 'nav_groups.accounts',
       items: [
         {
-          path: '/ai-providers',
-          labelKey: 'nav.ai_providers',
-          metaKey: 'nav_meta.ai_providers',
-          icon: sidebarIcons.aiProviders,
-        },
-        {
-          path: '/auth-files',
-          labelKey: 'nav.auth_files',
-          metaKey: 'nav_meta.auth_files',
+          ...link('authFiles', 'nav.auth_files'),
           badge: authFilesCount ?? undefined,
           badgeLabel:
             typeof authFilesCount === 'number'
               ? t('sidebar.auth_files_count', { count: authFilesCount })
               : undefined,
-          icon: sidebarIcons.authFiles,
         },
-        {
-          path: '/oauth',
-          labelKey: 'nav.oauth',
-          metaKey: 'nav_meta.oauth',
-          icon: sidebarIcons.oauth,
-        },
-        {
-          path: '/routing',
-          labelKey: 'nav.routing',
-          metaKey: 'nav_meta.routing',
-          icon: sidebarIcons.routing,
-        },
-        ...(isApiKeyFunConfigured ? [quickStartNavItem] : []),
+        link('oauth', 'nav.oauth'),
+        link('routing', 'nav.routing'),
       ],
     },
     {
-      id: 'observe',
-      labelKey: 'nav_groups.observe',
+      id: 'server',
+      labelKey: 'nav_groups.server',
       items: [
-        {
-          path: '/quota',
-          labelKey: 'nav.quota_management',
-          metaKey: 'nav_meta.quota_management',
-          icon: sidebarIcons.quota,
-        },
-        {
-          path: '/logs',
-          labelKey: 'nav.logs',
-          metaKey: 'nav_meta.logs',
-          icon: sidebarIcons.logs,
-        },
-      ],
-    },
-    {
-      id: 'control',
-      labelKey: 'nav_groups.control',
-      items: [
-        {
-          path: '/config',
-          labelKey: 'nav.config_management',
-          metaKey: 'nav_meta.config_management',
-          icon: sidebarIcons.config,
-        },
+        link('config', 'nav.config_management'),
         ...(supportsPlugin
-          ? [
-              {
-                path: '/plugins',
-                labelKey: 'nav.plugins',
-                metaKey: 'nav_meta.plugins',
-                icon: sidebarIcons.plugins,
-              },
-              {
-                path: '/plugin-store',
-                labelKey: 'nav.plugin_store',
-                metaKey: 'nav_meta.plugin_store',
-                icon: sidebarIcons.pluginStore,
-              },
-            ]
+          ? [link('plugins', 'nav.plugins'), link('pluginStore', 'nav.plugin_store')]
           : []),
-        {
-          path: '/system',
-          labelKey: 'nav.system_info',
-          metaKey: 'nav_meta.system_info',
-          icon: sidebarIcons.system,
-        },
+        link('backups', 'nav.backups'),
+        link('settings', 'nav.settings'),
+        link('system', 'nav.system_info'),
       ],
     },
     ...(pluginPageNavItems.length > 0
@@ -715,7 +596,7 @@ export function MainLayout() {
       pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
     const normalizedPath = trimmedPath === '/dashboard' ? '/' : trimmedPath;
 
-    const authFilesIndex = navOrder.indexOf('/auth-files');
+    const authFilesIndex = navOrder.indexOf(ROUTES.authFiles);
     if (authFilesIndex !== -1) {
       if (normalizedPath === '/auth-files') return authFilesIndex;
       if (normalizedPath.startsWith('/auth-files/')) {
@@ -984,7 +865,7 @@ export function MainLayout() {
     <div
       className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''} ${
         isPluginResourcePage ? 'plugin-resource-shell' : ''
-      } ${arrivingFromLogin ? 'app-shell--arriving' : ''}`}
+      }`}
     >
       <div className="top-gradient-blur" aria-hidden="true" />
 
@@ -1034,40 +915,6 @@ export function MainLayout() {
           >
             {headerIcons.refresh}
           </Button>
-          <div className={`language-menu ${languageMenuOpen ? 'open' : ''}`} ref={languageMenuRef}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleLanguageMenu}
-              title={t('language.switch')}
-              aria-label={t('language.switch')}
-              aria-haspopup="menu"
-              aria-expanded={languageMenuOpen}
-            >
-              {headerIcons.language}
-            </Button>
-            {languageMenuOpen && (
-              <div
-                className="notification entering language-menu-popover"
-                role="menu"
-                aria-label={t('language.switch')}
-              >
-                {LANGUAGE_ORDER.map((lang) => (
-                  <button
-                    key={lang}
-                    type="button"
-                    className={`language-menu-option ${language === lang ? 'active' : ''}`}
-                    onClick={() => handleLanguageSelect(lang)}
-                    role="menuitemradio"
-                    aria-checked={language === lang}
-                  >
-                    <span>{t(LANGUAGE_LABEL_KEYS[lang])}</span>
-                    {language === lang ? <span className="language-menu-check">✓</span> : null}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
           <div className={`theme-menu ${themeMenuOpen ? 'open' : ''}`} ref={themeMenuRef}>
             <Button
               variant="ghost"
@@ -1141,9 +988,6 @@ export function MainLayout() {
               </div>
             )}
           </div>
-          <Button variant="ghost" size="sm" onClick={logout} title={t('header.logout')}>
-            {headerIcons.logout}
-          </Button>
         </div>
       </header>
 
@@ -1161,11 +1005,11 @@ export function MainLayout() {
           className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}
         >
           <div className="sidebar-header">
-            <div className="sidebar-brand" title={fullBrandName}>
-              <img src={INLINE_LOGO_JPEG} alt="CPAMC logo" className="sidebar-brand-logo" />
+            <div className="sidebar-brand" title={brandName}>
+              <img src={INLINE_LOGO_JPEG} alt="" className="sidebar-brand-logo" />
               {showSidebarLabels && (
                 <span className="sidebar-brand-text">
-                  <span className="sidebar-brand-title">{abbrBrandName}</span>
+                  <span className="sidebar-brand-title">{brandName}</span>
                   <span className="sidebar-brand-subtitle">{t('sidebar.subtitle')}</span>
                 </span>
               )}

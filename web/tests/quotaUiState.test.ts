@@ -51,9 +51,14 @@ describe('quota ui state', () => {
     expect(readQuotaUiState()).toEqual({ tab: 'codex', sortMode: 'soonest' });
   });
 
-  test('retains the Devin tab across visits', () => {
-    writeQuotaUiState({ tab: 'devin', sortMode: 'soonest' });
-    expect(readQuotaUiState()).toEqual({ tab: 'devin', sortMode: 'soonest' });
+  test('retains a provider tab across visits', () => {
+    writeQuotaUiState({ tab: 'codex', sortMode: 'soonest' });
+    expect(readQuotaUiState()).toEqual({ tab: 'codex', sortMode: 'soonest' });
+  });
+
+  test('drops a stored tab for a removed provider', () => {
+    storage.setItem(KEY, JSON.stringify({ tab: 'devin', sortMode: 'soonest' }));
+    expect(readQuotaUiState()).toEqual({ tab: undefined, sortMode: 'soonest' });
   });
 
   test('writing one preference preserves the other', () => {

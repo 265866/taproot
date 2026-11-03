@@ -1,0 +1,7 @@
+{
+  "taproot_quota": {
+    "title": "Quota",
+    "placeholder": "Pooled remaining quota per provider, with recorded and projected burn, lands here next.",
+    "legacy_link": "Open the previous quota page"
+  }
+}

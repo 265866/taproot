@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { en } from '@/i18n/resources';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parse as parseYaml } from 'yaml';
@@ -175,12 +176,10 @@ oauth:
   });
 
   test('integer validation and sentinel hints exist in all four locales', async () => {
-    for (const locale of ['en', 'zh-CN', 'zh-TW', 'ru']) {
-      const json = await Bun.file(`src/i18n/locales/${locale}.json`).json();
-      const visual = json.config_management.visual;
-      expect(visual.validation.integer).toBeString();
-      expect(visual.sections.network.max_retry_interval_hint).toBeString();
-    }
+    const json = en;
+    const visual = json.config_management.visual;
+    expect(visual.validation.integer).toBeString();
+    expect(visual.sections.network.max_retry_interval_hint).toBeString();
   });
 
   test('requires Redis usage retention to be empty or within 1..3600', () => {
