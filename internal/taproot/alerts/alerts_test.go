@@ -302,3 +302,31 @@ func TestParseGrantStatus(t *testing.T) {
 		t.Fatal("a response without cedar_ember should fail")
 	}
 }
+
+func TestDiscordOriginOverrideIsLoopbackOnlyAndLogged(t *testing.T) {
+	logs := captureLogs(t)
+	t.Setenv(OriginEnv, "http://not-loopback.example.invalid")
+	svc, err := New(Config{DiscordWebhook: testWebhook}, openDB(t, t.TempDir()), &fakeFeed{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target, _ := svc.sender.target(testWebhook); target != testWebhook {
+		t.Fatalf("a non-loopback origin must be ignored, target = %q", target)
+	}
+	if !strings.Contains(logs.String(), "ignoring non-loopback") {
+		t.Fatalf("ignored override should be logged:\n%s", logs)
+	}
+
+	t.Setenv(OriginEnv, "http://127.0.0.1:9999")
+	svc, err = New(Config{DiscordWebhook: testWebhook}, openDB(t, t.TempDir()), &fakeFeed{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target, _ := svc.sender.target(testWebhook); target != "http://127.0.0.1:9999/api/webhooks/123456789/"+fakeToken {
+		t.Fatalf("loopback target = %q", target)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "local Discord origin in use") || strings.Contains(out, fakeToken) {
+		t.Fatalf("active override should be logged without the webhook:\n%s", out)
+	}
+}

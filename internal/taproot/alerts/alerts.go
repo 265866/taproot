@@ -100,9 +100,24 @@ func New(cfg Config, db *store.DB, feed QuotaFeed) (*Service, error) {
 		quota:      map[quotaKey]ingest.QuotaObservation{},
 		grantReads: map[string]grantRead{},
 	}
-	s.sender = NewSender(s.webhook, os.Getenv(OriginEnv))
+	s.sender = NewSender(s.webhook, discordOrigin())
 	feed.OnQuota(s.observe)
 	return s, nil
+}
+
+// discordOrigin reads OriginEnv. Only a loopback origin is accepted, because
+// the webhook token travels in the path and must not leave the machine.
+func discordOrigin() string {
+	raw := strings.TrimSpace(os.Getenv(OriginEnv))
+	if raw == "" {
+		return ""
+	}
+	if !ingest.IsLoopbackURL(raw) {
+		log.WithField("env", OriginEnv).Warn("taproot alerts: ignoring non-loopback Discord origin")
+		return ""
+	}
+	log.WithField("env", OriginEnv).WithField("origin", raw).Warn("taproot alerts: local Discord origin in use; alerts do not reach Discord")
+	return raw
 }
 
 // Config returns the alerts section as taproot.yaml should hold it.
