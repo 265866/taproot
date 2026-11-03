@@ -14,6 +14,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/alerts"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/backup"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/reqlog"
@@ -39,6 +40,7 @@ type Config struct {
 	Ingest      ingest.Config `yaml:"ingest"`
 	RequestLogs reqlog.Config `yaml:"request-logs"`
 	Backups     backup.Config `yaml:"backups"`
+	Alerts      alerts.Config `yaml:"alerts"`
 }
 
 // LoadConfig reads taproot.yaml. A missing file yields defaults.
@@ -121,11 +123,16 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, fmt.Errorf("taproot backups: %w", err)
 	}
+	notify, err := alerts.New(tp.Alerts, db, usage)
+	if err != nil {
+		return nil, fmt.Errorf("taproot alerts: %w", err)
+	}
 	editable, err := settings.New(settings.Deps{
 		Access:        guard,
 		AccessEnabled: tp.Access.Enabled == nil || *tp.Access.Enabled,
 		Logs:          logs,
 		Backups:       backups,
+		Alerts:        notify,
 		PollInterval:  tp.Ingest.PollInterval,
 		ConfigPath:    tpPath,
 		DataDir:       dataDir,
@@ -137,6 +144,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	usage.Start(ctx)
 	logs.Start(ctx)
 	backups.Start(ctx)
+	notify.Start(ctx)
 
 	opts := []api.ServerOption{
 		// The guard must run first so the dashboard is access-checked too.
@@ -144,6 +152,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		api.WithRouterConfigurator(func(engine *gin.Engine, h *handlers.BaseAPIHandler, _ *config.Config) {
 			if h != nil {
 				usage.AttachAuthManager(h.AuthManager)
+				notify.AttachAuthManager(h.AuthManager)
 			}
 			group := engine.Group(APIPrefix)
 			guard.Routes(group)
@@ -151,6 +160,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 			logs.Routes(group)
 			backups.Routes(group)
 			editable.Routes(group)
+			notify.Routes(group)
 		}),
 	}
 	if factory := logs.LoggerFactory(); factory != nil {
