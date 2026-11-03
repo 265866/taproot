@@ -246,8 +246,8 @@
     },
     "devices": {
       "title": "Devices",
-      "desc": "Usage by the device that sent each request, as the access guard identified it. Requests recorded before device attribution, or through routes without a request ID, show as Unknown device.",
-      "unknown": "Unknown device",
+      "desc": "Usage by the device that sent each request, as the access guard identified it. A plugin's own requests, such as Claude Keep Rolling's pings, show under the plugin's name. No caller recorded holds requests the server has no caller for, such as plugin pings from before plugins were attributed, and requests through routes without a request ID.",
+      "unknown": "No caller recorded",
       "empty": "No requests in this range.",
       "device": "Device",
       "login": "Login",
