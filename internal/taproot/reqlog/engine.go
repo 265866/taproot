@@ -32,6 +32,10 @@ import (
 // seals, so a single encoder runs at a time no matter how many sessions are
 // open. A sealed file is written to a temp name, verified, and renamed; it is
 // never modified afterwards.
+//
+// An unclean stop loses records still in the in-memory queue and a frame cut
+// off mid-write. Complete frames in open segments carry their own metadata and
+// are re-indexed when the next start seals those segments.
 const (
 	segmentOpen    = "open"
 	segmentSealing = "sealing"
