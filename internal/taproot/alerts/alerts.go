@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -81,6 +82,20 @@ type Service struct {
 	grantMu      sync.Mutex
 	grantReads   map[string]grantRead
 	grantPolling bool
+
+	// startedAt and restoredLogins belong to the evaluation goroutine;
+	// loadState sets them before that goroutine starts.
+	startedAt time.Time
+	// restoredLogins holds the login alerts alert_state had open, by auth
+	// index. Upstream keeps RequiresSignIn in memory only, so after a restart
+	// a broken login looks healthy until a refresh fails again. These stay
+	// broken until the credential shows it works.
+	restoredLogins map[string]restoredLogin
+}
+
+type restoredLogin struct {
+	seen  bool
+	token [sha256.Size]byte
 }
 
 // New prepares the service. Start runs it. An invalid webhook keeps alerts
@@ -253,7 +268,7 @@ func (s *Service) evaluate(ctx context.Context) {
 		return
 	}
 	now := s.now()
-	accounts := accountsFrom(auths, now)
+	accounts := accountsFrom(auths, now, s.heldLogins(auths))
 	s.pollGrants(ctx, auths, now)
 	forgot := s.detector.Forget(accounts)
 	msgs, changed := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
@@ -283,8 +298,9 @@ func (s *Service) snapshot(now time.Time, accounts []Account) Snapshot {
 	return snap
 }
 
-// accountsFrom keeps the accounts in scope, with their login state.
-func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
+// accountsFrom keeps the accounts in scope, with their login state. held
+// marks restored login alerts that stay broken (see heldLogins).
+func accountsFrom(auths []*coreauth.Auth, now time.Time, held map[string]bool) []Account {
 	out := make([]Account, 0, len(auths))
 	for _, a := range auths {
 		if !inScope(a) {
@@ -295,7 +311,7 @@ func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
 			continue
 		}
 		rejected := coreauth.HasUnauthorizedAuthFailure(a)
-		broken := a.RequiresSignIn || rejected
+		broken := a.RequiresSignIn || rejected || held[idx]
 		acct := Account{AuthIndex: idx, Provider: strings.ToLower(strings.TrimSpace(a.Provider)), Label: safeLabel(authLabel(a)), LoginBroken: broken}
 		if broken {
 			acct.LoginReason = loginReason(a, now)
@@ -411,7 +427,12 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 	}()
 }
 
+// loadState restores the detector's memory. Login alerts that were open
+// stay open until the credential shows it works (see restoredLogins); one
+// whose recovery was already pending recovers as usual.
 func (s *Service) loadState(ctx context.Context) error {
+	s.startedAt = s.now()
+	s.restoredLogins = map[string]restoredLogin{}
 	rows, err := s.db.QueryContext(ctx, `SELECT key, state FROM alert_state`)
 	if err != nil {
 		return err
@@ -431,8 +452,50 @@ func (s *Service) loadState(ctx context.Context) error {
 			continue
 		}
 		s.detector.tracks[key] = &t
+		if idx, ok := strings.CutPrefix(key, "login:"); ok && t.Active && t.Notified {
+			s.restoredLogins[idx] = restoredLogin{}
+		}
 	}
 	return rows.Err()
+}
+
+// heldLogins returns the restored login alerts that still lack evidence the
+// credential works: a successful refresh after startup, or an access token
+// other than the one first seen after startup. Accounts no longer in scope
+// are let go; Forget drops their tracks.
+func (s *Service) heldLogins(auths []*coreauth.Auth) map[string]bool {
+	if len(s.restoredLogins) == 0 {
+		return nil
+	}
+	present := map[string]bool{}
+	for _, a := range auths {
+		if !inScope(a) {
+			continue
+		}
+		idx := a.EnsureIndex()
+		r, ok := s.restoredLogins[idx]
+		if !ok {
+			continue
+		}
+		present[idx] = true
+		token, _ := a.Metadata["access_token"].(string)
+		sum := sha256.Sum256([]byte(token))
+		switch {
+		case a.LastRefreshedAt.After(s.startedAt), r.seen && sum != r.token:
+			delete(s.restoredLogins, idx)
+		case !r.seen:
+			s.restoredLogins[idx] = restoredLogin{seen: true, token: sum}
+		}
+	}
+	held := map[string]bool{}
+	for idx := range s.restoredLogins {
+		if present[idx] {
+			held[idx] = true
+		} else {
+			delete(s.restoredLogins, idx)
+		}
+	}
+	return held
 }
 
 // saveState replaces the stored detector memory, so a restart neither

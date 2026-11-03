@@ -296,6 +296,53 @@ func TestUserDisabledAccountsAreOutOfScope(t *testing.T) {
 	}
 }
 
+// TestRestartKeepsALoginAlertOpenUntilTheCredentialWorks: upstream keeps
+// RequiresSignIn in memory only, so after a restart a broken login looks
+// healthy until a refresh fails again. Only a refresh after startup or a new
+// access token ends the episode.
+func TestRestartKeepsALoginAlertOpenUntilTheCredentialWorks(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		works func(a *coreauth.Auth, now time.Time)
+	}{
+		{"refresh after startup", func(a *coreauth.Auth, now time.Time) { a.LastRefreshedAt = now }},
+		{"new sign-in", func(a *coreauth.Auth, _ time.Time) { a.Metadata["access_token"] = "tok-b-new" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openDB(t, t.TempDir())
+			fake := &fakeDiscord{}
+			spare := func() *coreauth.Auth { return expiresAt(claudeAuth("b", "spare"), t0.Add(-time.Hour)) }
+			broken := spare()
+			broken.RequiresSignIn = true
+			h := newHarness(t, db, fake, broken)
+			h.step(t, 0)
+			h.step(t, loginDelay)
+			if got := h.titles(t, 2); got[0] != "Claude login broken" || got[1] != "Claude pool is empty" {
+				t.Fatalf("titles = %q", got)
+			}
+
+			// After the restart upstream has forgotten RequiresSignIn, and an
+			// old refresh time proves nothing.
+			restarted := spare()
+			restarted.LastRefreshedAt = t0.Add(-time.Hour)
+			h2 := newHarnessAt(t, db, fake, h.now.Add(time.Minute), restarted)
+			h2.step(t, 0)
+			h2.step(t, settle)
+			h2.step(t, cooldown)
+			h2.titles(t, 2)
+
+			fixed := spare()
+			tc.works(fixed, h2.now)
+			h2.setAuths(fixed)
+			h2.step(t, time.Minute)
+			h2.step(t, settle)
+			if got := h2.titles(t, 4); got[2] != "Claude login works again" || got[3] != "Claude pool has capacity again" {
+				t.Fatalf("titles = %q", got)
+			}
+		})
+	}
+}
+
 // TestPoolWaitsOutTheLoginDelay covers a lone account that upstream marks
 // with a terminal 401 while it retries: a short failure posts nothing.
 func TestPoolWaitsOutTheLoginDelay(t *testing.T) {
