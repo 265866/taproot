@@ -67,6 +67,8 @@ type Ingest struct {
 	writeMu sync.Mutex
 	tracker *quotaTracker
 
+	quotaHook quotaHook
+
 	authMu sync.RWMutex
 	auths  authLister
 
@@ -249,6 +251,7 @@ func (i *Ingest) flush(ctx context.Context) error {
 		i.mu.Unlock()
 		return err
 	}
+	i.quotaHook.publish(allObs)
 	return nil
 }
 
