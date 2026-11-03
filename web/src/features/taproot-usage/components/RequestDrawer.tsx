@@ -5,6 +5,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import type { UsageEvent } from '@/services/api/taproot';
 import { requestLogHref } from '../logic/links';
 import { providerName } from '../logic/accounts';
+import { deviceFilterKey, loginLabel } from '../logic/devices';
 import { DASH, formatFullDateTime, formatMs, formatUSDPrecise } from '../logic/format';
 import styles from '../TaprootUsage.module.scss';
 
@@ -14,10 +15,20 @@ interface Props {
   open: boolean;
   onClose: () => void;
   accountLabel: (authIndex: string) => string;
+  deviceLabel: (deviceKey: string) => string;
+  showEmails: boolean;
   onFilterSession: (sessionId: string) => void;
 }
 
-export function RequestDrawer({ event, open, onClose, accountLabel, onFilterSession }: Props) {
+export function RequestDrawer({
+  event,
+  open,
+  onClose,
+  accountLabel,
+  deviceLabel,
+  showEmails,
+  onFilterSession,
+}: Props) {
   const { t } = useTranslation();
   const n = (value: number) => value.toLocaleString();
 
@@ -35,6 +46,11 @@ export function RequestDrawer({ event, open, onClose, accountLabel, onFilterSess
           ),
         ],
         [t('taproot_usage.detail.account'), accountLabel(event.authIndex)],
+        [t('taproot_usage.detail.device'), deviceLabel(deviceFilterKey(event.deviceId ?? ''))],
+        [
+          t('taproot_usage.detail.device_login'),
+          loginLabel(event.deviceLogin ?? '', showEmails) || DASH,
+        ],
         [t('taproot_usage.detail.provider'), providerName(event.provider) || DASH],
         [t('taproot_usage.detail.model'), event.model || DASH],
         [t('taproot_usage.detail.alias'), event.alias || DASH],

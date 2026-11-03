@@ -954,3 +954,84 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* ---------- Devices ---------- */
+
+.splitBar {
+  display: inline-flex;
+  width: 96px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  vertical-align: middle;
+}
+
+.splitBarWide {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+}
+
+.split5m {
+  background: var(--amber-color);
+}
+
+.split1h {
+  background: var(--success-color);
+}
+
+.ttlAdvice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-color);
+
+  p {
+    margin: 0;
+  }
+
+  .callout {
+    margin: 0;
+  }
+
+  code {
+    font-size: 12px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+  }
+}
+
+.ttlHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ttlShare {
+  font-size: var(--font-size-numeral-lg);
+  font-weight: var(--font-weight-numeral);
+  letter-spacing: var(--letter-spacing-numeral);
+  color: var(--amber-text);
+}
+
+.ttlMeasured {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ttlEstimate {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+
+  strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+}

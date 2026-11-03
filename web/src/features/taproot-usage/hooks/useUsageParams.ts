@@ -3,10 +3,16 @@ import { useSearchParams } from 'react-router-dom';
 import type { UsageGroupBy } from '@/services/api/taproot';
 import { RANGE_PRESETS, type RangePreset } from '../logic/range';
 
-export const USAGE_TABS = ['overview', 'sessions', 'requests', 'pricing'] as const;
+export const USAGE_TABS = ['overview', 'sessions', 'requests', 'devices', 'pricing'] as const;
 export type UsageTab = (typeof USAGE_TABS)[number];
 
-export const GROUP_BYS: readonly UsageGroupBy[] = ['model', 'account', 'provider', 'session'];
+export const GROUP_BYS: readonly UsageGroupBy[] = [
+  'model',
+  'account',
+  'provider',
+  'session',
+  'device',
+];
 
 export type FailedFilter = '' | 'true' | 'false';
 
@@ -20,6 +26,8 @@ export interface UsageParams {
   account: string;
   model: string;
   session: string;
+  /** A device ID, or `(none)` for requests without a device. */
+  device: string;
   failed: FailedFilter;
 }
 
@@ -40,6 +48,7 @@ export function useUsageParams(): [UsageParams, (patch: Partial<UsageParams>) =>
       account: search.get('account') ?? '',
       model: search.get('model') ?? '',
       session: search.get('session') ?? '',
+      device: search.get('device') ?? '',
       failed: oneOf(search.get('failed'), ['', 'true', 'false'] as const, ''),
     }),
     [search]

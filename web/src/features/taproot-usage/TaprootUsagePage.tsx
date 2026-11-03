@@ -25,6 +25,8 @@ import { Overview } from './components/Overview';
 import type { TimeAxis } from './components/Charts';
 import { SessionsView } from './components/SessionsView';
 import { RequestsView, type RequestFilters } from './components/RequestsView';
+import { DevicesView } from './components/DevicesView';
+import { deviceFilterKey } from './logic/devices';
 import { PricingEditor } from './components/PricingEditor';
 import styles from './TaprootUsage.module.scss';
 
@@ -56,6 +58,7 @@ export function TaprootUsagePage() {
     overview: null,
     sessions: null,
     requests: null,
+    devices: null,
     pricing: null,
   });
 
@@ -113,16 +116,32 @@ export function TaprootUsagePage() {
     return [...keys].sort();
   }, [modelSummary.data]);
 
+  // Device names for the Overview's device grouping and the Requests device filter.
+  const needsDevices =
+    params.tab === 'requests' || (params.tab === 'overview' && params.group === 'device');
+  const deviceList = useTaprootQuery(needsDevices ? `device-names|${rangeQuery}` : null, () =>
+    taprootApi.usageDevices({ from: range.from, to: range.to })
+  );
+  const devices = useMemo(() => deviceList.data?.devices ?? [], [deviceList.data]);
+  const deviceLabel = useCallback(
+    (key: string) => {
+      if (!key || key === NONE_GROUP) return t('taproot_usage.devices.unknown');
+      return devices.find((d) => d.deviceId === key)?.name || key;
+    },
+    [devices, t]
+  );
+
   const shownGroup = overview.data?.groupBy ?? params.group;
   const labelFor = useCallback(
     (key: string) => {
+      if (shownGroup === 'device') return deviceLabel(key);
       if (key === NONE_GROUP) return t('taproot_usage.none_group');
       if (shownGroup === 'account') return accountLabel(key);
       if (shownGroup === 'provider') return providerName(key);
       if (shownGroup === 'session') return key.slice(0, 8);
       return key;
     },
-    [shownGroup, accountLabel, t]
+    [shownGroup, accountLabel, deviceLabel, t]
   );
 
   const viewRequests = useMemo(() => {
@@ -130,11 +149,20 @@ export function TaprootUsagePage() {
       account: 'account',
       model: 'model',
       session: 'session',
+      device: 'device',
     };
     const field = filterFor[shownGroup];
     if (!field) return undefined;
     return (key: string) =>
-      setParams({ tab: 'requests', account: '', model: '', session: '', failed: '', [field]: key });
+      setParams({
+        tab: 'requests',
+        account: '',
+        model: '',
+        session: '',
+        device: '',
+        failed: '',
+        [field]: key,
+      });
   }, [shownGroup, setParams]);
 
   useEffect(() => {
@@ -349,7 +377,14 @@ export function TaprootUsagePage() {
             refreshKey={refreshKey}
             accountLabel={accountLabel}
             onViewRequests={(sessionId) =>
-              setParams({ tab: 'requests', account: '', model: '', session: sessionId, failed: '' })
+              setParams({
+                tab: 'requests',
+                account: '',
+                model: '',
+                session: sessionId,
+                device: '',
+                failed: '',
+              })
             }
           />
         ) : null}
@@ -361,12 +396,33 @@ export function TaprootUsagePage() {
               account: params.account,
               model: params.model,
               session: params.session,
+              device: params.device,
               failed: params.failed,
             }}
             onFiltersChange={setParams}
             accounts={accounts}
             models={models}
+            devices={devices}
             accountLabel={accountLabel}
+            deviceLabel={deviceLabel}
+            showEmails={showEmails}
+          />
+        ) : null}
+        {params.tab === 'devices' ? (
+          <DevicesView
+            window={window}
+            refreshKey={refreshKey}
+            showEmails={showEmails}
+            onViewRequests={(deviceId) =>
+              setParams({
+                tab: 'requests',
+                account: '',
+                model: '',
+                session: '',
+                device: deviceFilterKey(deviceId),
+                failed: '',
+              })
+            }
           />
         ) : null}
         {params.tab === 'pricing' ? <PricingEditor models={models} onSaved={refresh} /> : null}
