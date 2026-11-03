@@ -19,6 +19,19 @@ Taproot is the owner's fork of CLIProxyAPI. It runs on server and serves every C
 - The removed providers come out of the dashboard only. Their backend code stays, because deleting it would conflict with every upstream merge.
 - `web/` is a hard fork of Cli-Proxy-API-Management-Center at `f154fa9`, imported with `git subtree`. The fork stops following upstream UI changes. It follows the backend's management API instead.
 - `scripts/taproot/sync-upstream.sh` merges `upstream/main` and runs the checks.
+- `sdk/cliproxy/service_config.go` maps `routing.strategy: soonest-reset-first` to `internal/taproot/routing.SoonestResetSelector` (7 lines).
+  - Upstream builds the credential selector only there, and `routing.session-affinity` wraps whatever it builds.
+  - The plugin-scheduler hook would bypass session affinity, and the plugin host overwrites it.
+
+## Soonest-reset-first routing
+
+- **Order.** New sessions and failovers go to the eligible account whose weekly window resets soonest:
+  - Claude uses `anthropic-ratelimit-unified-7d-reset`.
+  - Codex uses its 10080-minute window.
+  - Weekly resets are fixed per account, so a past reset rolls forward by whole weeks.
+- **Skipped and unknown accounts.** Accounts at or above 100% weekly utilization are skipped. Accounts whose responses carry no weekly reset sort last. Ties use round-robin.
+- **Session affinity first.** Bound sessions keep their account.
+- **Probing after a restart.** Upstream keeps quota headers in memory only. After a restart, each Claude or Codex account with no observed headers gets one new session first, so its reset becomes known. Without that, the first account to answer would take every session.
 
 ## Architecture
 
