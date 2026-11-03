@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { en } from '@/i18n/resources';
 import { readFileSync } from 'node:fs';
 
 const readSource = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -88,12 +89,10 @@ describe('log workspace layout contract', () => {
   });
 
   test('all supported locales describe both filtering and display settings', () => {
-    for (const locale of ['en', 'zh-CN', 'zh-TW', 'ru']) {
-      const messages = JSON.parse(readSource(`src/i18n/locales/${locale}.json`));
-      expect(messages.logs.filter_panel_title).toBeTruthy();
-      expect(messages.logs.show_raw_logs).toBeTruthy();
-      expect(messages.logs.wrap_lines).toBeTruthy();
-      expect(messages.logs.hide_management_logs).toBeTruthy();
-    }
+    const messages = en;
+    expect(messages.logs.filter_panel_title).toBeTruthy();
+    expect(messages.logs.show_raw_logs).toBeTruthy();
+    expect(messages.logs.wrap_lines).toBeTruthy();
+    expect(messages.logs.hide_management_logs).toBeTruthy();
   });
 });

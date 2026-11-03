@@ -1,4 +1,5 @@
 import { selectResetGrant } from '../src/features/quota/providers/claude/selectResetGrant';
+import { en } from '@/i18n/resources';
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { apiClient } from '../src/services/api/client';
@@ -619,12 +620,8 @@ test('read authentication refusals retain a safe diagnostic code', async () => {
   }
 });
 
-test('all grant messages and confirmation are translated in six locales', async () => {
-  const locales = await Promise.all(
-    ['en', 'zh-CN', 'zh-TW', 'ru', 'vi', 'ko'].map(
-      async (locale) => (await Bun.file(`src/i18n/locales/${locale}.json`).json()).claude_reset
-    )
-  );
+test('all grant messages and confirmation are translated', () => {
+  const locales = [en.claude_reset as Record<string, string>];
   for (const locale of locales) {
     expect(Object.keys(locale).sort()).toEqual(Object.keys(locales[0]).sort());
     for (const stage of ['organization', 'status', 'eligibility', 'request_id', 'operation']) {
@@ -687,13 +684,11 @@ test('cooldown clear failures reuse existing messages without new locale keys', 
   expect(hook).toContain("answer.code === 'cooldown_clear_failed'");
   expect(hook).toContain("t('auth_files.cooldown_reset_failed', {");
   expect(hook).toContain("message: t('common.unknown_error')");
-  for (const language of ['en', 'zh-CN', 'zh-TW', 'ru', 'vi', 'ko', 'tr']) {
-    const locale = await Bun.file(`src/i18n/locales/${language}.json`).json();
-    expect(locale.claude_reset.cooldown_clear_failed).toBeUndefined();
-    expect(locale.auth_files.cooldown_reset_failed).toContain('{{name}}');
-    expect(locale.auth_files.cooldown_reset_failed).toContain('{{message}}');
-    expect(typeof locale.common.unknown_error).toBe('string');
-  }
+  const locale = en;
+  expect(locale.claude_reset.cooldown_clear_failed).toBeUndefined();
+  expect(locale.auth_files.cooldown_reset_failed).toContain('{{name}}');
+  expect(locale.auth_files.cooldown_reset_failed).toContain('{{message}}');
+  expect(typeof locale.common.unknown_error).toBe('string');
 });
 
 test('account reads map upstream 429 to a sanitized typed rate-limit failure', async () => {

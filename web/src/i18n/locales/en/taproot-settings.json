@@ -1,0 +1,6 @@
+{
+  "taproot_settings": {
+    "title": "Settings",
+    "placeholder": "Access allowlist, log retention, and backup schedule land here next."
+  }
+}

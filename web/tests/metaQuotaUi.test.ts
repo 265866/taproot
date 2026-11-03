@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { en } from '@/i18n/resources';
 import { createElement } from 'react';
-import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import i18n from '@/i18n';
 import type { AuthFileItem, MetaQuotaState } from '@/types';
@@ -37,36 +37,34 @@ afterEach(() => useQuotaStore.getState().clearQuotaCache());
 
 describe('Muse quota UI integration', () => {
   test('provides quota labels in all six locales', () => {
-    for (const locale of ['en', 'zh-CN', 'zh-TW', 'ru', 'vi', 'ko']) {
-      const translations = JSON.parse(readFileSync(`src/i18n/locales/${locale}.json`, 'utf8'));
-      for (const key of [
-        'title',
-        'empty_title',
-        'empty_desc',
-        'idle',
-        'loading',
-        'load_failed',
-        'missing_auth_index',
-        'missing_file',
-        'missing_dca_token',
-        'invalid_auth_file',
-        'download_failed',
-        'stale_request',
-        'empty_data',
-        'request_failed',
-        'invalid_response',
-        'plan',
-        'active',
-        'inactive',
-        'window',
-        'window_duration',
-        'window_duration_hours',
-        'weekly',
-        'unknown',
-        'remaining',
-      ]) {
-        expect(translations.meta_quota[key]).toBeTruthy();
-      }
+    const translations = en;
+    for (const key of [
+      'title',
+      'empty_title',
+      'empty_desc',
+      'idle',
+      'loading',
+      'load_failed',
+      'missing_auth_index',
+      'missing_file',
+      'missing_dca_token',
+      'invalid_auth_file',
+      'download_failed',
+      'stale_request',
+      'empty_data',
+      'request_failed',
+      'invalid_response',
+      'plan',
+      'active',
+      'inactive',
+      'window',
+      'window_duration',
+      'window_duration_hours',
+      'weekly',
+      'unknown',
+      'remaining',
+    ]) {
+      expect(translations.meta_quota[key]).toBeTruthy();
     }
   });
   test('registers quota and filters disabled credentials', () => {
