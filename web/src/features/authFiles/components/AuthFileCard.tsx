@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/icons';
 import { ProviderStatusBar } from '@/components/providers/ProviderStatusBar';
 import type { AuthFileItem } from '@/types';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { statusBarDataFromRecentRequests } from '@/utils/recentRequests';
 import { formatFileSize } from '@/utils/format';
 import {
@@ -62,6 +63,7 @@ export type AuthFileCardProps = {
 
 export function AuthFileCard(props: AuthFileCardProps) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const {
     file,
     compact,
@@ -105,14 +107,15 @@ export function AuthFileCard(props: AuthFileCardProps) {
     (authIndexKey && statusBarCache.get(authIndexKey)) ||
     statusBarDataFromRecentRequests(file.recentRequests ?? []);
 
-  const rawStatusMessage = getAuthFileStatusMessage(file);
+  const rawStatusMessage = mask(getAuthFileStatusMessage(file));
   const hasStatusWarning = hasAuthFileStatusWarning(file);
 
   const priorityValue = Number.isSafeInteger(file.priority) ? file.priority : undefined;
   const weightValue = Number.isSafeInteger(file.weight) ? file.weight : undefined;
-  const noteValue = typeof file.note === 'string' ? file.note.trim() : '';
+  const noteValue = typeof file.note === 'string' ? mask(file.note.trim()) : '';
   // Lead with account identity and use the file name as secondary text.
   const identity = deriveAuthFileIdentity(file);
+  const shownName = mask(file.name);
 
   // Capture the entrance delay once so subsequent updates do not interrupt it.
   const [mountEntranceDelayMs] = useState<number | null>(entranceDelayMs ?? null);
@@ -138,8 +141,8 @@ export function AuthFileCard(props: AuthFileCardProps) {
             checked={selected}
             onChange={() => onToggleSelect(file.name)}
             className={styles.selection}
-            ariaLabel={t('auth_files.card_select', { name: file.name })}
-            title={t('auth_files.card_select', { name: file.name })}
+            ariaLabel={t('auth_files.card_select', { name: shownName })}
+            title={t('auth_files.card_select', { name: shownName })}
           />
         )}
         <h3 className={styles.identity}>
@@ -155,9 +158,9 @@ export function AuthFileCard(props: AuthFileCardProps) {
           </span>
           <span
             className={`${styles.account} ${identity.kind === 'fileName' ? styles.accountMono : ''}`}
-            title={identity.primary}
+            title={mask(identity.primary)}
           >
-            {identity.primary}
+            {mask(identity.primary)}
           </span>
         </h3>
         {isRuntimeOnly && (
@@ -166,8 +169,8 @@ export function AuthFileCard(props: AuthFileCardProps) {
       </header>
 
       {identity.secondary && (
-        <p className={styles.fileName} title={identity.fullName}>
-          {identity.secondary}
+        <p className={styles.fileName} title={mask(identity.fullName)}>
+          {mask(identity.secondary)}
         </p>
       )}
 
@@ -320,7 +323,7 @@ export function AuthFileCard(props: AuthFileCardProps) {
           <div className={styles.toggleWrap}>
             <span className={styles.toggleLabel}>{t('auth_files.status_toggle_label')}</span>
             <ToggleSwitch
-              ariaLabel={t('auth_files.card_toggle', { name: file.name })}
+              ariaLabel={t('auth_files.card_toggle', { name: shownName })}
               checked={!file.disabled}
               disabled={
                 disableControls ||

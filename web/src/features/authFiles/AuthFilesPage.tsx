@@ -55,6 +55,7 @@ import {
   type AuthFilesSortMode,
 } from '@/features/authFiles/uiState';
 import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import styles from './AuthFilesPage.module.scss';
 
 const DEFAULT_REGULAR_PAGE_SIZE = 9;
@@ -79,6 +80,7 @@ const normalizePersistedStatusFilterMode = (value: unknown): AuthFilesStatusFilt
 
 export function AuthFilesPage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -660,7 +662,7 @@ export function AuthFilesPage() {
 
         {error && (
           <div className={styles.errorBanner} role="alert">
-            {error}
+            {mask(error)}
           </div>
         )}
 

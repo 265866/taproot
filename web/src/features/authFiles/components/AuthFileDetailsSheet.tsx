@@ -7,6 +7,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Input } from '@/components/ui/Input';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useNotificationStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type {
   PrefixProxyEditorField,
   PrefixProxyEditorFieldValue,
@@ -52,6 +53,7 @@ export type AuthFileDetailsSheetProps = {
  */
 export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const navigate = useNavigate();
   const { disableControls, editor, updatedText, dirty, onClose, onCopyText, onSave, onChange } =
     props;
@@ -113,7 +115,7 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
         return JSON.stringify(record, null, 2);
       }
     } catch {
-      /* 非 JSON 原样展示 */
+      /* Show non-JSON text as it is. */
     }
     return fileInfoText;
   }, [fileInfoText]);
@@ -173,10 +175,15 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
             </div>
           ) : (
             <>
-              {editor.error && <div className={styles.error}>{editor.error}</div>}
+              {editor.error && <div className={styles.error}>{mask(editor.error)}</div>}
               <div className={styles.jsonWrapper}>
                 <label className={styles.label}>{t('auth_files.prefix_proxy_info_label')}</label>
-                <textarea className={styles.textarea} rows={8} readOnly value={displayInfoText} />
+                <textarea
+                  className={styles.textarea}
+                  rows={8}
+                  readOnly
+                  value={mask(displayInfoText)}
+                />
               </div>
               <div className={styles.jsonWrapper}>
                 <label className={styles.label}>
@@ -185,9 +192,14 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
                     : t('auth_files.prefix_proxy_invalid_content_label')}
                 </label>
                 {editor.json ? (
-                  <textarea className={styles.textarea} rows={10} readOnly value={previewText} />
+                  <textarea
+                    className={styles.textarea}
+                    rows={10}
+                    readOnly
+                    value={mask(previewText)}
+                  />
                 ) : (
-                  <pre className={styles.invalidPreview}>{invalidContentPreview}</pre>
+                  <pre className={styles.invalidPreview}>{mask(invalidContentPreview)}</pre>
                 )}
               </div>
               {editor.json && (
