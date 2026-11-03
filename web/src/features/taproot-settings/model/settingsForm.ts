@@ -39,6 +39,46 @@ export function accessUpdate(
   return { ok: true, update: { allowLogins: normalized } };
 }
 
+// ---- Admin devices ---------------------------------------------------------------------------
+
+/** A MagicDNS name: `desktop` or `desktop.tailnet-0000.ts.net`. */
+const NODE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
+
+export function normalizeNode(node: string): string {
+  return node.trim().toLowerCase().replace(/\.$/, '');
+}
+
+/** The caller's own device, when they reached taproot through the tailnet. */
+export function ownNode(me: TaprootMe | null): string | null {
+  return me?.via === 'tailnet' && me.node ? normalizeNode(me.node) : null;
+}
+
+/**
+ * Whether an admin-nodes entry names a device: its full MagicDNS name, or its first label. The
+ * server also requires a short entry's device to be in its own tailnet, and has the last word.
+ */
+export function entryMatchesNode(entry: string, node: string): boolean {
+  return entry === node || entry === node.split('.')[0];
+}
+
+export function adminNodesUpdate(
+  nodes: string[],
+  me: TaprootMe | null
+): Validation<NonNullable<TaprootSettingsUpdate['access']>> {
+  const normalized: string[] = [];
+  for (const raw of nodes) {
+    const node = normalizeNode(raw);
+    if (!node) continue;
+    if (!NODE.test(node)) return fail('node_format', raw.trim());
+    if (!normalized.includes(node)) normalized.push(node);
+  }
+  const own = ownNode(me);
+  if (own && !normalized.some((entry) => entryMatchesNode(entry, own))) {
+    return fail('node_lockout', own);
+  }
+  return { ok: true, update: { adminNodes: normalized } };
+}
+
 // ---- Request log retention -------------------------------------------------------------------
 
 const SIZE_UNITS: Record<string, number> = {

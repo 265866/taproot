@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   accessUpdate,
+  adminNodesUpdate,
   backupsForm,
   backupsUpdate,
   formatSize,
   ingestUpdate,
   ownLogin,
+  ownNode,
   parseSize,
   retentionForm,
   retentionUpdate,
@@ -55,6 +57,40 @@ describe('access allowlist', () => {
       detail: 'no-at-sign',
     });
     expect(accessUpdate(['two words@github'], loopback).ok).toBe(false);
+  });
+});
+
+describe('admin devices', () => {
+  const onLaptop: TaprootMe = { ...tailnet, node: 'laptop.tailnet-0000.ts.net.' };
+
+  test('normalizes, dedupes, and allows an empty list from loopback', () => {
+    expect(
+      adminNodesUpdate([' Laptop. ', 'laptop', '', 'phone.tailnet-0000.ts.net'], loopback)
+    ).toEqual({ ok: true, update: { adminNodes: ['laptop', 'phone.tailnet-0000.ts.net'] } });
+    expect(adminNodesUpdate([], loopback)).toEqual({ ok: true, update: { adminNodes: [] } });
+  });
+
+  test('keeps the tailnet caller own device, by full name or first label', () => {
+    expect(ownNode(onLaptop)).toBe('laptop.tailnet-0000.ts.net');
+    expect(ownNode(loopback)).toBeNull();
+    expect(adminNodesUpdate(['laptop'], onLaptop).ok).toBe(true);
+    expect(adminNodesUpdate(['LAPTOP.tailnet-0000.ts.net'], onLaptop).ok).toBe(true);
+    expect(adminNodesUpdate(['phone'], onLaptop)).toEqual({
+      ok: false,
+      error: 'node_lockout',
+      detail: 'laptop.tailnet-0000.ts.net',
+    });
+    expect(adminNodesUpdate([], onLaptop)).toMatchObject({ ok: false, error: 'node_lockout' });
+  });
+
+  test('rejects names that are not MagicDNS names', () => {
+    for (const bad of ['two words', 'a/b', 'host:8317', 'me@github', '-lead', 'trail-']) {
+      expect(adminNodesUpdate([bad], loopback)).toEqual({
+        ok: false,
+        error: 'node_format',
+        detail: bad,
+      });
+    }
   });
 });
 
@@ -208,6 +244,8 @@ test('every validation error has copy', () => {
     'login_format',
     'logins_empty',
     'lockout',
+    'node_format',
+    'node_lockout',
     'days_range',
     'size_format',
     'size_min',

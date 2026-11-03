@@ -9,7 +9,7 @@
     "saved": "{{section}} saved",
     "access": {
       "title": "Access",
-      "description": "Tailscale logins that may use the proxy, the management API, and this dashboard. Loopback and trusted networks are always admitted.",
+      "description": "Tailscale logins that may use the proxy. To use this dashboard and the management API, the device must also be an admin device. Local connections are always admitted; trusted networks reach the proxy only.",
       "disabled": "The access guard is turned off in taproot.yaml, so every caller is admitted and this list has no effect.",
       "list_label": "Allowed logins",
       "you": "you",
@@ -20,6 +20,21 @@
       "add": "Add",
       "own_hint": "You are signed in as {{login}}, which must stay on the list.",
       "local_hint": "You are connected locally, so no login of yours is checked. Keep at least one login you use from the tailnet."
+    },
+    "admin_nodes": {
+      "title": "Admin devices",
+      "description": "Tailnet devices that may use this dashboard and the management API, by MagicDNS name: desktop, or the full desktop.tailnet-0000.ts.net. Other devices signed in to an allowed login reach the proxy only.",
+      "disabled": "The access guard is turned off in taproot.yaml, so every caller is an admin and this list has no effect.",
+      "list_label": "Admin devices",
+      "empty": "No admin devices. Only local connections can manage taproot.",
+      "this_device": "this device",
+      "remove": "Remove {{node}}",
+      "cannot_remove_self": "You cannot remove the device you are using",
+      "add_label": "Device to make an admin",
+      "add_placeholder": "device or device.tailnet.ts.net",
+      "add": "Add",
+      "own_hint": "You are using {{node}}, which must stay on the list.",
+      "local_hint": "You are connected locally, which is always an admin. With the list empty, no tailnet device can manage taproot."
     },
     "retention": {
       "title": "Request log retention",
@@ -65,6 +80,8 @@
       "login_format": "{{detail}} is not a Tailscale login (name@provider).",
       "logins_empty": "Allow at least one login.",
       "lockout": "Keep your own login, {{detail}}, or you lose access.",
+      "node_format": "{{detail}} is not a MagicDNS name such as desktop or desktop.tailnet-0000.ts.net.",
+      "node_lockout": "Keep the device you are using, {{detail}}, or you lose access.",
       "days_range": "Days must be a whole number from 1 to 3650.",
       "size_format": "Write the size as a number and unit, such as 20 GB or 512 MB.",
       "size_min": "The size limit must be at least 1 MB.",

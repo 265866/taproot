@@ -236,7 +236,8 @@ export interface RestoreResult {
 }
 
 export interface TaprootSettings {
-  access: { enabled: boolean; allowLogins: string[] };
+  /** adminNodes: tailnet devices that reach the admin surface; empty means loopback only. */
+  access: { enabled: boolean; allowLogins: string[]; adminNodes: string[] };
   requestLogs: {
     /** Negative disables the age limit. */
     maxDays: number;
@@ -252,7 +253,7 @@ export interface TaprootSettings {
 
 /** A `PUT /settings` body: absent sections and fields stay as they are. */
 export interface TaprootSettingsUpdate {
-  access?: { allowLogins?: string[] };
+  access?: { allowLogins?: string[]; adminNodes?: string[] };
   requestLogs?: Partial<TaprootSettings['requestLogs']>;
   backups?: Partial<TaprootSettings['backups']>;
   ingest?: { pollInterval?: string };
