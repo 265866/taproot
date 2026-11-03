@@ -4,13 +4,12 @@ Taproot is the owner's fork of CLIProxyAPI. It runs on server and serves every C
 
 ## Outcome and acceptance
 
-- One binary and one container replace both `cliproxyapi` and `cpa-usage-keeper` on server.
+- Taproot is a new service on server with its own data. Nothing is migrated: usage and quota history start with taproot. At cutover, the two Claude auth files are copied in and the old `cliproxyapi` is stopped first, so the two proxies never refresh the same OAuth tokens.
 - Only allowlisted Tailscale logins reach the proxy, the management API, or the dashboard. Nobody types a key or password.
 - The dashboard has no Quick Start, AI Providers, sponsor or affiliate content, Kimi China, Devin, Vertex, SIWC, or config API-key editing.
 - Quota page in the style of the reference screenshot (`internal/taproot/docs/quota-reference.png`): pooled remaining percentage per provider, recorded and projected lines, pool empty, first empty, next reset, and burn rate over 1h, 3h, or 6h.
 - Usage section: cost, requests, tokens including cache reads and writes, latency, time to first token, and failures, broken down by account, model, and session.
 - Request logs are compressed, indexed, searchable, and pruned to a budget. Backups run on a schedule, and you can download or restore them from the dashboard.
-- CPA Usage Keeper's history (from 2026-09-09) is imported.
 - Upstream merges stay cheap. See "Upstream boundary".
 
 ## Upstream boundary
@@ -41,7 +40,7 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 |---|---|---|
 | store | `internal/taproot/store` | DB open, migrations, `Snapshot` |
 | access | `internal/taproot/access` | Tailnet identity, allowlist, keyless management |
-| ingest | `internal/taproot/ingest` | Usage events, quota observations, pricing, Usage Keeper import |
+| ingest | `internal/taproot/ingest` | Usage events, quota observations, pricing |
 | reqlog | `internal/taproot/reqlog` | Request log storage, index, retention |
 | backup | `internal/taproot/backup` | Scheduled snapshots, download, restore |
 | web | `internal/taproot/web` | The embedded dashboard build |
@@ -78,10 +77,6 @@ Each module owns its tables and registers migrations with `store.Register`, so n
   - The `prices(model_pattern, input, output, cache_read, cache_write_5m, cache_write_1h, per Mtok USD, source, updated_at)` table is seeded with current list prices and is editable.
   - Cost is computed at query time, so a price edit reprices all history.
   - The dashboard labels Claude and Codex subscription costs as "API-equivalent cost".
-- **Import.** `taproot-import-usage-keeper <path to app.db>` is a flag on the server binary. It runs once and is idempotent by event key. It maps:
-  - `usage_events` to taproot's `usage_events`
-  - `quota_cycles` plus `quota_percent_segments` to quota observations
-  - `model_price_settings` to prices
 
 ### Request logs
 
@@ -182,12 +177,12 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 
 - **Go.** `gofmt`, `go vet`, `go build`, and `go test ./internal/taproot/...`. `go test ./...` runs before each integration.
 - **Web.** `bun run verify`. The baseline has 8 timezone test failures on Windows from upstream; those files get deleted or replaced with the old quota timeline.
-- **Real-surface check.** The real binary with an imported copy of server's Usage Keeper database, driven in a browser for every page. Screenshots go in the result.
+- **Real-surface check.** The real binary, driven in a browser for every page. Development data comes from real or fake-upstream traffic; screenshots go in the result.
 - **Review.** A fresh-context review of access first, because it decides who can read OAuth tokens.
 
 ## Decisions after phase A
 
-- **Importer.** The importer is a separate binary, `cmd/taproot-import` (`-config`, `-usage-keeper`). The server's flags stay upstream's.
+- **No data migration.** Taproot starts fresh. The Usage Keeper importer that phase A built for test data was removed.
 - **Request log segments.** Segments roll on idle (15m), age (6h), day change, or 64 MiB raw, not hourly. On the real fixture, per-session segments compressed 97x, while per-session-hour segments compressed 73x. The 64 MiB cap keeps the worst lookup under 50 ms.
 - **Plugin resource routes** (`/v0/resource/plugins/*`) are guarded but get no injected key. Upstream serves them unauthenticated and forwards headers to plugin code.
 - **RESP usage queue.** Upstream multiplexes this Redis-protocol queue on the proxy port, outside gin, so the guard never sees it. The generated `MANAGEMENT_PASSWORD` enables it. Accepted risk: AUTH needs the random 256-bit secret, and upstream bans an IP after 5 failures. Taproot does not use the queue. Revisit if upstream adds a switch to disable it.

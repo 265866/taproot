@@ -40,9 +40,6 @@ RUN set -eu; \
 	ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'"; \
 	mkdir -p /out; \
 	CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="${ldflags}" -o /out/taproot ./cmd/server; \
-	if [ -d cmd/taproot-import ]; then \
-		CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="${ldflags}" -o /out/taproot-import ./cmd/taproot-import; \
-	fi; \
 	chmod 0755 /out/*
 
 FROM debian:bookworm-slim
