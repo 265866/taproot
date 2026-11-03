@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { IconCopy } from '@/components/ui/icons';
 import { useNotificationStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { copyToClipboard } from '@/utils/clipboard';
 import {
   COLLAPSE_BYTES,
@@ -27,18 +28,21 @@ type Mode = 'formatted' | 'raw';
  * A request or response body. Large bodies start collapsed, JSON is parsed only after the body is
  * opened (after a paint, so the click responds first), and raw text renders in chunks.
  */
-export function BodyViewer({ text, size }: { text: string; size?: number }) {
+export function BodyViewer({ text: raw, size }: { text: string; size?: number }) {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const { mask } = useEmailMask();
+  // Everything shown is masked; copy keeps the real body.
+  const text = useMemo(() => mask(raw), [mask, raw]);
   const kind = useMemo(() => sniffBody(text), [text]);
-  const bytes = size ?? text.length;
+  const bytes = size ?? raw.length;
   const [open, setOpen] = useState(text.length <= COLLAPSE_BYTES);
   const [mode, setMode] = useState<Mode>(kind === 'json' || kind === 'sse' ? 'formatted' : 'raw');
 
   if (kind === 'empty') return <div className={styles.empty}>{t('taproot_logs.body.empty')}</div>;
 
   const copy = async () => {
-    const ok = await copyToClipboard(text);
+    const ok = await copyToClipboard(raw);
     showNotification(
       t(ok ? 'taproot_logs.body.copied' : 'taproot_logs.body.copy_failed'),
       ok ? 'success' : 'error'

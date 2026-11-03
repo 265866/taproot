@@ -27,6 +27,7 @@ import {
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { logsApi, responseDataToText, type ErrorLogFile } from '@/services/api/logs';
 import { taprootApi } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
@@ -57,6 +58,7 @@ type TabType = 'logs' | 'errors';
  */
 export function AppLogsPanel() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const navigate = useNavigate();
   const { showNotification } = useNotificationStore();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
@@ -804,7 +806,7 @@ export function AppLogsPanel() {
                     <pre className={styles.rawLog} spellCheck={false}>
                       {parsedVisibleLines.map((line) => (
                         <span key={line.id} data-log-id={line.id} style={{ display: 'block' }}>
-                          {line.raw || '\u00a0'}
+                          {mask(line.raw) || '\u00a0'}
                         </span>
                       ))}
                     </pre>
@@ -896,13 +898,13 @@ export function AppLogsPanel() {
                               )}
 
                               {line.path && (
-                                <span className={styles.path} title={line.path}>
-                                  {line.path}
+                                <span className={styles.path} title={mask(line.path)}>
+                                  {mask(line.path)}
                                 </span>
                               )}
 
                               {line.message && (
-                                <span className={styles.message}>{line.message}</span>
+                                <span className={styles.message}>{mask(line.message)}</span>
                               )}
                               <Button
                                 variant="ghost"
@@ -1069,13 +1071,13 @@ export function AppLogsPanel() {
             </div>
           )}
           {errorLogViewer.status === 'error' && (
-            <div className="error-box">{errorLogViewer.message}</div>
+            <div className="error-box">{mask(errorLogViewer.message)}</div>
           )}
           {errorLogViewer.status === 'loading' && <div className="hint">{t('common.loading')}</div>}
           {errorLogViewer.status === 'ready' &&
             (errorLogViewer.text ? (
               <pre className={styles.errorLogContent} spellCheck={false}>
-                {errorLogViewer.text}
+                {mask(errorLogViewer.text)}
               </pre>
             ) : (
               <div className="hint">{t('taproot_logs.app.error_log_empty_content')}</div>

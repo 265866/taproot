@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { taprootApi, type TaprootAccount } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
@@ -40,6 +42,7 @@ export function TaprootLogsPage() {
           <h1 className={styles.title}>{t('taproot_logs.title')}</h1>
           <p className={styles.description}>{t('taproot_logs.description')}</p>
         </div>
+        <ShowEmailsToggle />
         <div className={styles.tabs} role="tablist" aria-label={t('taproot_logs.title')}>
           {(['requests', 'app'] as const).map((value) => (
             <button
@@ -95,6 +98,7 @@ function RequestLogsView({
   const queryKey = JSON.stringify(parseQuery(params));
   const query = useMemo<RequestLogQuery>(() => JSON.parse(queryKey) as RequestLogQuery, [queryKey]);
   const logs = useRequestLogs(query);
+  const { mask } = useEmailMask();
   const [statsKey, setStatsKey] = useState(0);
   const [accounts, setAccounts] = useState<TaprootAccount[]>([]);
   const lastOpened = useRef<string | null>(null);
@@ -123,8 +127,8 @@ function RequestLogsView({
     return map;
   }, [accounts]);
   const accountLabel = useCallback(
-    (authIndex: string) => labels.get(authIndex) ?? authIndex,
-    [labels]
+    (authIndex: string) => mask(labels.get(authIndex) ?? authIndex),
+    [labels, mask]
   );
   const accountOptions = useMemo(
     () =>
@@ -215,7 +219,7 @@ function RequestLogsView({
       />
       {logs.error && (
         <div className="error-box" role="alert">
-          {t('taproot_logs.list.load_failed', { message: logs.error })}
+          {mask(t('taproot_logs.list.load_failed', { message: logs.error }))}
         </div>
       )}
       {logs.loaded && logs.rows.length === 0 && !logs.error ? (

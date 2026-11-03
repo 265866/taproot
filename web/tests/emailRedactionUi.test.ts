@@ -171,3 +171,15 @@ describe('Routing board', () => {
     expect(html).toContain('claude-ab12cd34-anthropic1@sl.example.org');
   });
 });
+
+describe('Request Logs body', () => {
+  test('masks bodies by default and shows them after toggling', async () => {
+    const { BodyViewer } = await import('../src/features/taproot-logs/components/BodyViewer');
+    const text = 'auth claude-ab12cd34-anthropic1@sl.example.org.json refreshed';
+    const hidden = renderToStaticMarkup(createElement(BodyViewer, { text }));
+    expect(leaks(hidden)).toEqual([]);
+    expect(hidden).toContain('claude-ab12cd34-an•••1@s•••.run.json');
+    clickToggle();
+    expect(renderToStaticMarkup(createElement(BodyViewer, { text }))).toContain(text);
+  });
+});

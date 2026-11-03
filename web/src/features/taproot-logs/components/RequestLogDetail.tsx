@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { IconChevronLeft, IconCopy, IconDownload } from '@/components/ui/icons';
 import { useNotificationStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import {
   TaprootApiError,
   taprootApi,
@@ -34,6 +35,7 @@ export function RequestLogDetail({
 }) {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const { mask } = useEmailMask();
   const [load, setLoad] = useState<Load>({ status: 'loading' });
 
   useEffect(() => {
@@ -99,7 +101,7 @@ export function RequestLogDetail({
         <div className="error-box" role="alert">
           {load.notFound
             ? t('taproot_logs.detail.not_found', { id: requestId })
-            : t('taproot_logs.detail.load_failed', { message: load.message })}
+            : mask(t('taproot_logs.detail.load_failed', { message: load.message }))}
         </div>
       )}
       {load.status === 'ready' && (
@@ -123,6 +125,7 @@ function DetailBody({
   onShowSession: (sessionId: string) => void;
 }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const { meta, request, response, upstream } = detail;
   const facts: [string, ReactNode][] = [
     [t('taproot_logs.columns.time'), new Date(meta.timestamp).toLocaleString()],
@@ -165,7 +168,7 @@ function DetailBody({
       <header className={styles.header}>
         <span className={`${styles.status} ${styles[statusTone(meta.status)]}`}>{meta.status}</span>
         <h2 id="request-log-detail-title" className={styles.title}>
-          <span className={styles.method}>{meta.method}</span> {meta.url || meta.path}
+          <span className={styles.method}>{meta.method}</span> {mask(meta.url || meta.path)}
         </h2>
       </header>
       {meta.errorOnly && <div className="hint">{t('taproot_logs.detail.error_only')}</div>}
@@ -207,7 +210,7 @@ function DetailBody({
                 <span className={`${styles.status} ${styles[statusTone(error.status)]}`}>
                   {error.status}
                 </span>{' '}
-                {error.message}
+                {mask(error.message)}
               </li>
             ))}
           </ul>
@@ -277,12 +280,13 @@ function Headers({ headers }: { headers: HeaderMap }) {
 }
 
 function KeyValues({ rows }: { rows: [string, string][] }) {
+  const { mask } = useEmailMask();
   return (
     <dl className={styles.headers}>
       {rows.map(([name, value], index) => (
         <div key={`${name}-${index}`} className={styles.headerRow}>
-          <dt>{name}</dt>
-          <dd>{value}</dd>
+          <dt>{mask(name)}</dt>
+          <dd>{mask(value)}</dd>
         </div>
       ))}
     </dl>
@@ -292,12 +296,13 @@ function KeyValues({ rows }: { rows: [string, string][] }) {
 /** Mounted only inside an open section, so the split runs when someone looks. */
 function UpstreamAttempts({ text }: { text: string }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const blocks = useMemo(() => parseUpstream(text), [text]);
   return (
     <>
       {blocks.map((block, index) => (
         <div key={index} className={styles.attempt}>
-          {block.title && <SubTitle>{block.title}</SubTitle>}
+          {block.title && <SubTitle>{mask(block.title)}</SubTitle>}
           {block.fields.length > 0 && <KeyValues rows={block.fields} />}
           {block.headers.length > 0 && (
             <>

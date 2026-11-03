@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type { RequestLogMeta } from '@/services/api/taproot';
 import { formatBytes, formatDurationMs, shortSessionId, statusTone } from '../model/format';
 import styles from './RequestLogTable.module.scss';
@@ -30,6 +31,7 @@ export function RequestLogTable({
   onLoadMore: () => void;
 }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const sentinel = useRef<HTMLDivElement>(null);
 
   // Loads the next page as the end of the list scrolls into view; the button stays for keyboards.
@@ -79,7 +81,7 @@ export function RequestLogTable({
               <td className={styles.request}>
                 {/* The link covers the row (see .rowLink), so the whole row opens the detail. */}
                 <Link className={styles.rowLink} to={detailHref(row.requestId)}>
-                  <span className={styles.method}>{row.method}</span> {row.path}
+                  <span className={styles.method}>{row.method}</span> {mask(row.path)}
                 </Link>
                 {(row.streaming || row.errorOnly || row.dropped) && (
                   <span className={styles.flags}>
