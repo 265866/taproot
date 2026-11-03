@@ -44,16 +44,8 @@ export interface ModelMappingDiagramProps {
   className?: string;
 }
 
-const PROVIDER_COLORS = [
-  '#8b8680',
-  '#10b981',
-  '#f59e0b',
-  '#c65746',
-  '#8b5cf6',
-  '#ec4899',
-  '#06b6d4',
-  '#84cc16',
-];
+// Muted mid-lightness hues that read on light and dark surfaces and stay clear of the status colors.
+const PROVIDER_COLORS = ['#8b8680', '#547ebc', '#76863b', '#b875a8', '#009296', '#8c64a5'];
 
 function getProviderColor(provider: string): string {
   const hash = provider.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
