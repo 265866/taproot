@@ -61,6 +61,12 @@ func TestRootServesEmbeddedDashboard(t *testing.T) {
 	if got := resp.Header.Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Errorf("Content-Type = %q", got)
 	}
+	if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q, want DENY", got)
+	}
+	if got := resp.Header.Get("Content-Security-Policy"); got != "frame-ancestors 'none'" {
+		t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'", got)
+	}
 
 	resp, body = fetch(t, http.MethodHead, srv.URL+"/")
 	if resp.StatusCode != http.StatusOK || len(body) != 0 {

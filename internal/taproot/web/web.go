@@ -28,6 +28,9 @@ func Middleware() gin.HandlerFunc {
 		h := c.Writer.Header()
 		h.Set("Content-Type", "text/html; charset=utf-8")
 		h.Set("Cache-Control", "no-store")
+		// The dashboard holds keyless admin actions, so no page may frame it (clickjacking).
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
 		h.Set("Content-Length", strconv.Itoa(len(index)))
 		c.Status(http.StatusOK)
 		if c.Request.Method == http.MethodGet {

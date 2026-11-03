@@ -1,5 +1,44 @@
 // Package access admits requests by the caller's Tailscale identity instead of
 // API keys or the management key.
+//
+// # Security model
+//
+// The server has two surfaces. The admin surface reads or changes
+// credentials, settings, backups, and plugins: the dashboard (GET and HEAD /),
+// /v0/management/**, /v8/management/**, /taproot/**, plugin pages and assets
+// under /v0/resource/plugins/**, the OAuth callbacks on the main port, and
+// the /v1/ws provider gateway. Everything else is the proxy surface.
+//
+// Callers are identified by the connection's source address only:
+//
+//   - Loopback reaches both surfaces. Only processes inside the container, or
+//     on the development machine, connect from loopback.
+//   - trusted-cidrs reach the proxy only. They hold host-local addresses, such
+//     as the LAN address that server's 127.0.1.1 publish arrives from.
+//   - A tailnet address reaches the proxy when tailscaled's whois login is in
+//     allow-logins. It reaches the admin surface when, in addition, the node is
+//     not the server's own node, and, if admin-nodes is set, the node is listed
+//     there. The server's own node is excluded because every process and
+//     container on the host connects through it, and they all resolve to the
+//     host owner's login.
+//
+// The server's own node comes from tailscaled's LocalAPI status. Until it has
+// been read once, tailnet callers get no admin access and only local host
+// names pass the Host check.
+//
+// The admin surface is keyless for admitted callers, so a browser is its weak
+// point: any page the admin visits could send requests with the admin's
+// tailnet address. The guard therefore rejects, on both surfaces and before
+// upstream's wildcard CORS middleware runs:
+//
+//   - a Host that is not one of the server's names (DNS rebinding),
+//   - an Origin whose host and port differ from the request's Host, which
+//     covers CORS preflights and websocket upgrades,
+//   - Sec-Fetch-Site cross-site or same-site, except top-level navigations to
+//     the dashboard and the OAuth callbacks.
+//
+// Command-line clients send none of these headers. The dashboard response
+// also forbids framing (see package web).
 package access
 
 import (
@@ -24,8 +63,10 @@ import (
 const (
 	defaultSocket   = "/var/run/tailscale/tailscaled.sock"
 	defaultCacheTTL = time.Minute
-	managementEnv   = "MANAGEMENT_PASSWORD"
-	identityKey     = "taproot.access.identity"
+	// selfRetry spaces LocalAPI status attempts while the last one failed.
+	selfRetry     = 5 * time.Second
+	managementEnv = "MANAGEMENT_PASSWORD"
+	identityKey   = "taproot.access.identity"
 )
 
 // DefaultAllowLogins is used when allow-logins is absent from taproot.yaml.
@@ -43,8 +84,18 @@ type Config struct {
 	Enabled *bool `yaml:"enabled"`
 	// AllowLogins lists admitted Tailscale login names. Absent means DefaultAllowLogins.
 	AllowLogins []string `yaml:"allow-logins"`
-	// TrustedCIDRs are admitted without a whois lookup.
-	TrustedCIDRs    []string      `yaml:"trusted-cidrs"`
+	// AdminNodes, when set, limits the admin surface to these tailnet nodes.
+	// An entry is a MagicDNS name, either the full name
+	// (desktop.tailnet-0000.ts.net) or its first label for nodes in the
+	// server's own tailnet (desktop). Control assigns these names; the
+	// device-reported hostname is not used.
+	AdminNodes []string `yaml:"admin-nodes"`
+	// TrustedCIDRs reach the proxy surface without a whois lookup. Use single
+	// host-local addresses (/32), never a whole LAN.
+	TrustedCIDRs []string `yaml:"trusted-cidrs"`
+	// ExtraHosts are additional Host names or addresses the server answers to,
+	// besides localhost, loopback, and its own tailnet names and addresses.
+	ExtraHosts      []string      `yaml:"extra-hosts"`
 	TailscaleSocket string        `yaml:"tailscale-socket"`
 	CacheTTL        time.Duration `yaml:"cache-ttl"`
 }
@@ -64,20 +115,33 @@ type Identity struct {
 	DisplayName string
 	Node        string
 	Via         Via
+	// Admin is true when the caller may reach the admin surface.
+	Admin bool
+	// notAdmin says why Admin is false.
+	notAdmin string
 }
 
-// Guard decides whether a request may reach the proxy, the management API, or the dashboard.
+// Guard decides whether a request may reach the proxy or the admin surface.
 type Guard struct {
-	enabled bool
-	trusted []netip.Prefix
-	allow   atomic.Pointer[[]string]
-	secret  string
-	whois   func(context.Context, netip.Addr) (peer, error)
-	ttl     time.Duration
-	now     func() time.Time
+	enabled    bool
+	trusted    []netip.Prefix
+	allow      atomic.Pointer[[]string]
+	adminNodes []string
+	extraHosts map[string]bool
+	secret     string
+	whois      func(context.Context, netip.Addr) (peer, error)
+	status     func(context.Context) (selfNode, error)
+	ttl        time.Duration
+	now        func() time.Time
 
 	mu    sync.Mutex
 	cache map[netip.Addr]cacheEntry
+
+	fetchMu     sync.Mutex
+	selfMu      sync.Mutex
+	selfNode    *selfNode
+	selfExpires time.Time
+	selfRetryAt time.Time
 }
 
 type cacheEntry struct {
@@ -90,10 +154,11 @@ type cacheEntry struct {
 // only then registers the management routes.
 func New(cfg Config) (*Guard, error) {
 	g := &Guard{
-		enabled: cfg.Enabled == nil || *cfg.Enabled,
-		ttl:     cfg.CacheTTL,
-		now:     time.Now,
-		cache:   make(map[netip.Addr]cacheEntry),
+		enabled:    cfg.Enabled == nil || *cfg.Enabled,
+		ttl:        cfg.CacheTTL,
+		now:        time.Now,
+		cache:      make(map[netip.Addr]cacheEntry),
+		extraHosts: make(map[string]bool),
 	}
 	if !g.enabled {
 		log.Warn("taproot access: guard disabled; every caller reaches the proxy")
@@ -110,7 +175,24 @@ func New(cfg Config) (*Guard, error) {
 		if err != nil {
 			return nil, fmt.Errorf("trusted-cidrs %q: %w", raw, err)
 		}
+		if !prefix.IsSingleIP() {
+			log.Warnf("taproot access: trusted-cidrs %s covers more than one address; every host in it reaches the proxy without a login", prefix.Masked())
+		}
 		g.trusted = append(g.trusted, prefix.Masked())
+	}
+	for _, raw := range cfg.AdminNodes {
+		node := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
+		if node == "" || strings.ContainsAny(node, " /:") {
+			return nil, fmt.Errorf("admin-nodes: invalid node name %q", raw)
+		}
+		g.adminNodes = append(g.adminNodes, node)
+	}
+	for _, raw := range cfg.ExtraHosts {
+		host := hostOnly(raw)
+		if host == "" || strings.ContainsAny(host, " /") {
+			return nil, fmt.Errorf("extra-hosts: invalid host %q", raw)
+		}
+		g.extraHosts[host] = true
 	}
 	logins := cfg.AllowLogins
 	if logins == nil {
@@ -123,15 +205,17 @@ func New(cfg Config) (*Guard, error) {
 	if socket == "" {
 		socket = defaultSocket
 	}
-	client := newWhoisClient(socket)
+	client := newLocalClient(socket)
 	g.whois = client.whois
+	g.status = client.status
 
 	secret, err := managementSecret()
 	if err != nil {
 		return nil, err
 	}
 	g.secret = secret
-	log.Infof("taproot access: guard enabled with %d allowed logins, %d trusted CIDRs, tailscaled socket %s", len(logins), len(g.trusted), socket)
+	log.Infof("taproot access: guard enabled with %d allowed logins, %d admin nodes, %d trusted CIDRs, %d extra hosts, tailscaled socket %s",
+		len(logins), len(g.adminNodes), len(g.trusted), len(g.extraHosts), socket)
 	return g, nil
 }
 
@@ -191,19 +275,35 @@ func IdentityFrom(c *gin.Context) (Identity, bool) {
 	return id, ok
 }
 
-// Middleware runs on every route. It identifies callers by the connection's
-// source address only; forwarding and Tailscale-* headers are client-controlled
-// on this port and are ignored.
+// Middleware runs on every route, ahead of upstream's CORS middleware. It
+// identifies callers by the connection's source address only; forwarding and
+// Tailscale-* headers are client-controlled on this port and are ignored.
 func (g *Guard) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !g.enabled || c.Request.URL.Path == "/healthz" {
+		r := c.Request
+		path := r.URL.Path
+		// Upstream's control panel is third-party HTML that would run
+		// same-origin with keyless management.
+		if path == "/management.html" {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		if !g.enabled || path == "/healthz" {
 			c.Next()
 			return
 		}
-		id, reason := g.admit(c.Request.Context(), c.Request.RemoteAddr)
+		surf := classify(path)
+		self := sync.OnceValue(func() *selfNode { return g.self(context.WithoutCancel(r.Context())) })
+		id, reason := g.admit(r.Context(), r.RemoteAddr, self)
+		if reason == "" && surf == surfaceAdmin && !id.Admin {
+			reason = id.notAdmin
+		}
+		if reason == "" {
+			reason = g.browserCheck(r, self)
+		}
 		if reason != "" {
 			// Upstream's log formatter drops fields it does not know, so the details go in the message.
-			log.Infof("taproot access: denied %s %s from %s: %s", c.Request.Method, c.Request.URL.Path, c.Request.RemoteAddr, reason)
+			log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, path, surf, r.RemoteAddr, reason)
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{
 				"code":    "forbidden",
 				"message": "caller is not allowed",
@@ -211,9 +311,12 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			return
 		}
 		c.Set(identityKey, id)
-		if isManagementPath(c.Request.URL.Path) {
-			c.Request.Header.Set("Authorization", "Bearer "+g.secret)
-			c.Request.Header.Del("X-Management-Key")
+		if surf == surfaceAdmin {
+			c.Header("X-Frame-Options", "SAMEORIGIN")
+		}
+		if isManagementPath(path) {
+			r.Header.Set("Authorization", "Bearer "+g.secret)
+			r.Header.Del("X-Management-Key")
 		}
 		c.Next()
 	}
@@ -233,18 +336,18 @@ func isManagementPath(path string) bool {
 }
 
 // admit returns the caller's identity, or a non-empty denial reason.
-func (g *Guard) admit(ctx context.Context, remoteAddr string) (Identity, string) {
+func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfNode) (Identity, string) {
 	addrPort, err := netip.ParseAddrPort(remoteAddr)
 	if err != nil {
 		return Identity{}, "unparseable remote address"
 	}
 	addr := addrPort.Addr().Unmap().WithZone("")
 	if addr.IsLoopback() {
-		return Identity{Via: ViaLoopback, Node: addr.String()}, ""
+		return Identity{Via: ViaLoopback, Node: addr.String(), Admin: true}, ""
 	}
 	for _, prefix := range g.trusted {
 		if prefix.Contains(addr) {
-			return Identity{Via: ViaCIDR, Node: addr.String()}, ""
+			return Identity{Via: ViaCIDR, Node: addr.String(), notAdmin: "trusted-cidrs callers reach the proxy only"}, ""
 		}
 	}
 	if !isTailnet(addr) {
@@ -257,7 +360,41 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string) (Identity, string)
 	if !slices.Contains(*g.allow.Load(), strings.ToLower(p.Login)) {
 		return Identity{}, "login " + p.Login + " not in allow-logins"
 	}
-	return Identity{Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, Via: ViaTailnet}, ""
+	id := Identity{Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, Via: ViaTailnet}
+	s := self()
+	switch {
+	case s == nil:
+		id.notAdmin = "this server's own tailnet node is unknown, so tailnet callers reach the proxy only"
+	case containsAddr(s.IPs, addr) || (p.StableID != "" && p.StableID == s.StableID):
+		id.notAdmin = "this server's own node reaches the proxy only"
+	case !g.isAdminNode(p.Node, s):
+		id.notAdmin = "node " + p.Node + " not in admin-nodes"
+	default:
+		id.Admin = true
+	}
+	return id, ""
+}
+
+// isAdminNode matches a whois MagicDNS name against admin-nodes. A short
+// entry matches only nodes in the server's own tailnet.
+func (g *Guard) isAdminNode(node string, self *selfNode) bool {
+	if len(g.adminNodes) == 0 {
+		return true
+	}
+	node = strings.ToLower(node)
+	short := ""
+	if _, suffix, ok := strings.Cut(self.DNSName, "."); ok && suffix != "" {
+		short, _ = strings.CutSuffix(node, "."+suffix)
+		if short == node {
+			short = ""
+		}
+	}
+	for _, entry := range g.adminNodes {
+		if entry == node || (short != "" && entry == short) {
+			return true
+		}
+	}
+	return false
 }
 
 func isTailnet(addr netip.Addr) bool {
@@ -296,6 +433,52 @@ func (g *Guard) lookup(ctx context.Context, addr netip.Addr) (peer, error) {
 	return p, nil
 }
 
+// self returns the server's own tailnet node, refreshed every cache TTL. A
+// failed refresh keeps the last known node; nil means it was never read.
+func (g *Guard) self(ctx context.Context) *selfNode {
+	cur, settled := g.cachedSelf()
+	if settled {
+		return cur
+	}
+	// Until the node is known, callers wait for the one fetch in flight
+	// instead of being refused admin access; after that a refresh never blocks.
+	if cur == nil {
+		g.fetchMu.Lock()
+	} else if !g.fetchMu.TryLock() {
+		return cur
+	}
+	defer g.fetchMu.Unlock()
+	if cur, settled = g.cachedSelf(); settled {
+		return cur
+	}
+
+	s, err := g.status(ctx)
+	now := g.now()
+	g.selfMu.Lock()
+	defer g.selfMu.Unlock()
+	if err != nil {
+		g.selfRetryAt = now.Add(selfRetry)
+		if g.selfNode == nil {
+			log.Warnf("taproot access: cannot read this server's tailnet node, so tailnet callers get no admin access and only local host names are accepted: %v", err)
+		} else {
+			log.Warnf("taproot access: cannot refresh this server's tailnet node, keeping %s: %v", g.selfNode.DNSName, err)
+		}
+		return g.selfNode
+	}
+	g.selfNode = &s
+	g.selfExpires = now.Add(g.ttl)
+	return g.selfNode
+}
+
+// cachedSelf returns the cached node and whether it may be used without a
+// fetch: it is fresh, or the last fetch failed less than selfRetry ago.
+func (g *Guard) cachedSelf() (*selfNode, bool) {
+	now := g.now()
+	g.selfMu.Lock()
+	defer g.selfMu.Unlock()
+	return g.selfNode, now.Before(g.selfExpires) || now.Before(g.selfRetryAt)
+}
+
 // Routes registers access endpoints under the taproot API group.
 func (g *Guard) Routes(r *gin.RouterGroup) {
 	r.GET("/me", g.handleMe)
@@ -306,11 +489,12 @@ type meResponse struct {
 	DisplayName string `json:"displayName"`
 	Node        string `json:"node"`
 	Via         string `json:"via"`
+	Admin       bool   `json:"admin"`
 }
 
 func (g *Guard) handleMe(c *gin.Context) {
 	if !g.enabled {
-		c.JSON(http.StatusOK, meResponse{Via: "disabled"})
+		c.JSON(http.StatusOK, meResponse{Via: "disabled", Admin: true})
 		return
 	}
 	id, ok := IdentityFrom(c)
@@ -318,5 +502,5 @@ func (g *Guard) handleMe(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"code": "forbidden", "message": "no admitted identity"}})
 		return
 	}
-	c.JSON(http.StatusOK, meResponse{Login: id.Login, DisplayName: id.DisplayName, Node: id.Node, Via: string(id.Via)})
+	c.JSON(http.StatusOK, meResponse{Login: id.Login, DisplayName: id.DisplayName, Node: id.Node, Via: string(id.Via), Admin: id.Admin})
 }

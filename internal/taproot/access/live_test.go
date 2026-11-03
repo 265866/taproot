@@ -9,45 +9,57 @@ import (
 	"testing"
 )
 
-// TestLiveWhois runs against a real tailscaled. It is skipped unless
+// TestLiveTailscaled runs against a real tailscaled. It is skipped unless
 // TAPROOT_LIVE_TAILSCALE_SOCKET names the socket and TAPROOT_LIVE_WHOIS lists
-// expectations as "ip=login,ip=login"; an empty login expects no such peer.
-// Build it for a host with `GOOS=linux go test -c ./internal/taproot/access`.
-func TestLiveWhois(t *testing.T) {
+// expectations as "ip=login=surface,...", where surface is admin, proxy, or
+// none (denied everywhere); an empty login expects no such peer. Build it for
+// a host with `GOOS=linux go test -c ./internal/taproot/access`.
+func TestLiveTailscaled(t *testing.T) {
 	socket := os.Getenv("TAPROOT_LIVE_TAILSCALE_SOCKET")
 	cases := os.Getenv("TAPROOT_LIVE_WHOIS")
 	if socket == "" || cases == "" {
 		t.Skip("TAPROOT_LIVE_TAILSCALE_SOCKET and TAPROOT_LIVE_WHOIS not set")
 	}
+	client := newLocalClient(socket)
+	self, err := client.status(context.Background())
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	t.Logf("self: id=%s dns=%s ips=%v", self.StableID, self.DNSName, self.IPs)
+
 	g := newTestGuard(t, Config{TailscaleSocket: socket})
 	e, _ := testEngine(g)
-	for _, pair := range strings.Split(cases, ",") {
-		ip, wantLogin, ok := strings.Cut(strings.TrimSpace(pair), "=")
-		if !ok {
-			t.Fatalf("bad TAPROOT_LIVE_WHOIS entry %q", pair)
+	short, _, _ := strings.Cut(self.DNSName, ".")
+	for _, entry := range strings.Split(cases, ",") {
+		parts := strings.Split(strings.TrimSpace(entry), "=")
+		if len(parts) != 3 {
+			t.Fatalf("bad TAPROOT_LIVE_WHOIS entry %q", entry)
 		}
+		ip, wantLogin, wantSurface := parts[0], parts[1], parts[2]
 		t.Run(ip, func(t *testing.T) {
-			p, err := newWhoisClient(socket).whois(context.Background(), mustAddr(t, ip))
-			if wantLogin == "" {
-				if !errors.Is(err, errPeerNotFound) {
-					t.Fatalf("whois err = %v, want errPeerNotFound", err)
-				}
-				assertForbidden(t, do(e, ip+":40000", "/v1/models", nil))
-				t.Logf("ip=%s not found, denied", ip)
-				return
-			}
-			if err != nil {
+			p, err := client.whois(context.Background(), mustAddr(t, ip))
+			switch {
+			case wantLogin == "" && !errors.Is(err, errPeerNotFound):
+				t.Fatalf("whois err = %v, want errPeerNotFound", err)
+			case wantLogin != "" && err != nil:
 				t.Fatalf("whois: %v", err)
-			}
-			if p.Login != wantLogin {
+			case wantLogin != "" && p.Login != wantLogin:
 				t.Fatalf("login = %q, want %q", p.Login, wantLogin)
 			}
-			rec := do(e, ip+":40000", "/v1/models", nil)
-			admitted := rec.Code == http.StatusOK
-			wantAdmitted := strings.EqualFold(wantLogin, DefaultAllowLogins[0])
-			t.Logf("ip=%s login=%s node=%s status=%d admitted=%v", ip, p.Login, p.Node, rec.Code, admitted)
-			if admitted != wantAdmitted {
-				t.Fatalf("admitted = %v, want %v under the default allowlist", admitted, wantAdmitted)
+			// Requests as Claude Code and Codex send them: Host is the base URL's authority.
+			hostHeader := map[string]string{"Host": short + ":8317"}
+			proxy := do(e, ip+":40000", "/v1/models", hostHeader).Code == http.StatusOK
+			admin := do(e, ip+":40000", "/taproot/api/v1/me", hostHeader).Code == http.StatusOK
+			got := "none"
+			switch {
+			case admin:
+				got = "admin"
+			case proxy:
+				got = "proxy"
+			}
+			t.Logf("ip=%s login=%q node=%q stableID=%s proxy=%v admin=%v", ip, p.Login, p.Node, p.StableID, proxy, admin)
+			if got != wantSurface {
+				t.Fatalf("surface = %s, want %s under the default allowlist", got, wantSurface)
 			}
 		})
 	}

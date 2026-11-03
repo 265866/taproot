@@ -56,6 +56,7 @@ func newRealServer(t *testing.T, g *Guard) *api.Server {
 func serve(h http.Handler, method, remote, path string, headers map[string]string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, nil)
 	req.RemoteAddr = remote
+	req.Host = "localhost:8317"
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -89,7 +90,6 @@ func TestRealServerGuardsEveryRoute(t *testing.T) {
 		{http.MethodPost, "/v1/messages", nil},
 		{http.MethodGet, "/v1/responses", wsUpgrade},
 		{http.MethodGet, "/backend-api/codex/responses", wsUpgrade},
-		{http.MethodGet, "/management.html", nil},
 		{http.MethodGet, "/v8/management/config", nil},
 		{http.MethodGet, "/v8/management/credentials", nil},
 		{http.MethodGet, "/v0/management/config", nil},
@@ -107,6 +107,12 @@ func TestRealServerGuardsEveryRoute(t *testing.T) {
 			if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"forbidden"`) {
 				t.Errorf("%s %s from %s = %d %q, want the guard's 403", r.method, r.path, remote, rec.Code, rec.Body)
 			}
+		}
+	}
+
+	for _, remote := range []string{"203.0.113.9:5000", outsiderIP + ":40000", adminIP + ":40000", "127.0.0.1:1"} {
+		if rec := serve(h, http.MethodGet, remote, "/management.html", nil); rec.Code != http.StatusNotFound {
+			t.Errorf("/management.html from %s = %d, want 404", remote, rec.Code)
 		}
 	}
 

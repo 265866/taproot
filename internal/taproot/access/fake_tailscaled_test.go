@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -17,10 +18,12 @@ import (
 type fakeTailscaled struct {
 	socket string
 
-	mu    sync.Mutex
-	peers map[string]fakePeer
-	fail  map[string]int
-	calls map[string]int
+	mu          sync.Mutex
+	peers       map[string]fakePeer
+	fail        map[string]int
+	calls       map[string]int
+	statusFails int
+	statusCalls int
 }
 
 type fakePeer struct {
@@ -58,6 +61,10 @@ func (f *fakeTailscaled) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid localapi request", http.StatusForbidden)
 		return
 	}
+	if r.URL.Path == "/localapi/v0/status" {
+		f.serveStatus(w)
+		return
+	}
 	if r.URL.Path != "/localapi/v0/whois" {
 		http.NotFound(w, r)
 		return
@@ -83,12 +90,17 @@ func (f *fakeTailscaled) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no match for IP:port", http.StatusNotFound)
 		return
 	}
+	// A node ending in a dot is a full name from another tailnet.
+	name := p.node + "." + tailnetSuffix + "."
+	if strings.HasSuffix(p.node, ".") {
+		name = p.node
+	}
 	// Field set taken from apitype.WhoIsResponse with tailcfg.Node and tailcfg.UserProfile.
 	resp := map[string]any{
 		"Node": map[string]any{
 			"ID":           12345,
-			"StableID":     "nStable",
-			"Name":         p.node + ".tail1234.ts.net.",
+			"StableID":     "n" + p.node + "CNTRL",
+			"Name":         name,
 			"ComputedName": p.node,
 			"User":         777,
 			"Addresses":    []string{addr + "/32"},
@@ -104,6 +116,51 @@ func (f *fakeTailscaled) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// serveStatus mirrors /localapi/v0/status?peers=false with the fields of
+// ipnstate.Status and ipnstate.PeerStatus that server's tailscaled reports.
+func (f *fakeTailscaled) serveStatus(w http.ResponseWriter) {
+	f.mu.Lock()
+	f.statusCalls++
+	failing := f.statusFails > 0
+	if failing {
+		f.statusFails--
+	}
+	f.mu.Unlock()
+	if failing {
+		http.Error(w, "backend unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"Version":        "1.90.0",
+		"BackendState":   "Running",
+		"TailscaleIPs":   []string{selfIP, selfIPv6},
+		"MagicDNSSuffix": tailnetSuffix,
+		"Self": map[string]any{
+			"ID":           "nserverCNTRL",
+			"PublicKey":    "nodekey:0000",
+			"HostName":     "server",
+			"DNSName":      "server." + tailnetSuffix + ".",
+			"OS":           "linux",
+			"UserID":       777,
+			"TailscaleIPs": []string{selfIP, selfIPv6},
+			"Online":       true,
+		},
+	})
+}
+
+func (f *fakeTailscaled) failStatus(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.statusFails = n
+}
+
+func (f *fakeTailscaled) statusCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.statusCalls
 }
 
 func (f *fakeTailscaled) callCount(addr string) int {
@@ -124,16 +181,25 @@ func (f *fakeTailscaled) setPeer(addr string, p fakePeer) {
 	f.peers[addr] = p
 }
 
+// The addresses and names are server's tailnet as measured with tailscale status
+// and whois on 2026-11-02.
 const (
-	adminIP  = "100.64.0.2"
-	outsiderIP = "100.64.0.9"
-	strayIP   = "100.100.1.1"
+	tailnetSuffix = "tailnet-0000.ts.net"
+	selfIP        = "100.64.0.1"
+	selfIPv6      = "fd7a:115c:a1e0::1"
+	adminIP      = "100.64.0.2"
+	otherNodeIP   = "100.101.1.2"
+	outsiderIP     = "100.64.0.9"
+	strayIP       = "100.100.1.1"
 )
 
 func defaultPeers() map[string]fakePeer {
 	return map[string]fakePeer{
-		adminIP:  {login: "alice@github", displayName: "Alice", node: "laptop"},
-		outsiderIP: {login: "bob@example.org", displayName: "Bob", node: "bob-pc"},
+		selfIP:      {login: "alice@github", displayName: "Alice", node: "server"},
+		selfIPv6:    {login: "alice@github", displayName: "Alice", node: "server"},
+		adminIP:    {login: "alice@github", displayName: "Alice", node: "laptop"},
+		otherNodeIP: {login: "alice@github", displayName: "Alice", node: "worker"},
+		outsiderIP:   {login: "bob@example.org", displayName: "Bob", node: "bob-pc"},
 	}
 }
 
