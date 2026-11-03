@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/stores';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { formatCompactNumber, formatDateValue, formatPercent } from '@/utils/format';
+import { DashboardUsageSummary } from '@/features/taproot-usage/components/DashboardUsageSummary';
 import { useDashboardOverview } from './hooks/useDashboardOverview';
 import { LiveWire } from './components/LiveWire';
 import { Meter } from './components/Meter';
@@ -290,6 +291,8 @@ export function DashboardPage() {
           />
         </div>
       </section>
+
+      <DashboardUsageSummary />
 
       {/* ---------- KPI ---------- */}
       <section className={styles.statsRow} ref={statsRef} aria-label={t('dashboard.stats_aria')}>
