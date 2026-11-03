@@ -25,10 +25,11 @@ export function TaprootLogsPage() {
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get('tab') === 'app' ? 'app' : 'requests';
 
+  // Filters stay in the URL across tabs, so switching back finds the list as it was.
   const selectTab = (next: Tab) => {
-    const updated = new URLSearchParams();
+    const updated = new URLSearchParams(params);
     if (next === 'app') updated.set('tab', 'app');
-    else for (const [key, value] of params) if (key !== 'tab') updated.set(key, value);
+    else updated.delete('tab');
     setParams(updated);
   };
 
