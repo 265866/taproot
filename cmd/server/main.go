@@ -669,14 +669,6 @@ func main() {
 		log.WithField("api_keys", strings.Join(matches, ",")).Error("unsafe example API key configured; proxy API endpoints disabled until api-keys is updated")
 		serverOptions = append(serverOptions, api.WithExampleAPIKeySafeMode())
 	}
-	if !commandMode && !cloudConfigMissing && !homeMode && !tuiMode {
-		taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
-		if errTaproot != nil {
-			log.Errorf("taproot setup failed: %v", errTaproot)
-			return
-		}
-		serverOptions = append(serverOptions, taprootOptions...)
-	}
 
 	// Register the shared token store once so all components use the same persistence backend.
 	if usePostgresStore {
@@ -838,6 +830,16 @@ func main() {
 			}
 		} else {
 			// Start the main proxy service
+			// Taproot opens its data dir only here, where the server actually starts:
+			// never for login, plugin command-line, or TUI client runs beside a live server.
+			if !homeMode {
+				taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
+				if errTaproot != nil {
+					log.Errorf("taproot setup failed: %v", errTaproot)
+					os.Exit(1)
+				}
+				serverOptions = append(serverOptions, taprootOptions...)
+			}
 			managementasset.StartAutoUpdater(context.Background(), configFilePath)
 			misc.StartAntigravityVersionUpdater(context.Background())
 			registry.SetLocalModelCatalogs(localModel)
