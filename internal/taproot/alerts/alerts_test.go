@@ -63,10 +63,17 @@ func openDB(t *testing.T, dir string) *store.DB {
 
 func newHarness(t *testing.T, db *store.DB, fake *fakeDiscord, auths ...*coreauth.Auth) *harness {
 	t.Helper()
+	return newHarnessAt(t, db, fake, t0, auths...)
+}
+
+// newHarnessAt starts a service whose clock reads start, as a restart later
+// in a test does.
+func newHarnessAt(t *testing.T, db *store.DB, fake *fakeDiscord, start time.Time, auths ...*coreauth.Auth) *harness {
+	t.Helper()
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 	t.Setenv(OriginEnv, srv.URL)
-	h := &harness{feed: &fakeFeed{}, auths: &fakeAuths{list: auths}, fake: fake, now: t0}
+	h := &harness{feed: &fakeFeed{}, auths: &fakeAuths{list: auths}, fake: fake, now: start}
 	svc, err := New(Config{DiscordWebhook: testWebhook}, db, h.feed)
 	if err != nil {
 		t.Fatal(err)
@@ -404,6 +411,49 @@ func TestServiceReadsGrantsReadOnly(t *testing.T) {
 	if seen[0] != "GET /api/oauth/usage?cedar_ember=1&skip_spend=1 Bearer tok-a oauth-2025-04-20" {
 		t.Fatalf("grant read = %q", seen[0])
 	}
+}
+
+// TestGrantAlertDoesNotRepeatWithinItsWindow: after a restart the grant
+// reads are empty, and a failed read leaves them empty for the grant
+// interval. The warning must still not come back for the same grant.
+func TestGrantAlertDoesNotRepeatWithinItsWindow(t *testing.T) {
+	var mu sync.Mutex
+	failing := false
+	grants := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		fail := failing
+		mu.Unlock()
+		if fail {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"cedar_ember":{"eligible":true,"grants":[{"id":"g","resets_left":1,"ends_at":"` + t0.Add(20*time.Hour).Format(time.RFC3339) + `"}]}}`))
+	}))
+	defer grants.Close()
+	db := openDB(t, t.TempDir())
+	fake := &fakeDiscord{}
+	h := newHarness(t, db, fake, claudeAuth("a", "main"))
+	h.svc.grants.url = grants.URL
+	h.step(t, 0)
+	h.step(t, 0)
+	if got := h.titles(t, 1); got[0] != "Claude reset grant expires soon" {
+		t.Fatalf("titles = %q", got)
+	}
+
+	mu.Lock()
+	failing = true
+	mu.Unlock()
+	h2 := newHarnessAt(t, db, fake, h.now.Add(time.Minute), claudeAuth("a", "main"))
+	h2.svc.grants.url = grants.URL
+	h2.step(t, 0)
+	h2.step(t, settle)
+	h2.step(t, cooldown)
+	mu.Lock()
+	failing = false
+	mu.Unlock()
+	h2.step(t, grantInterval)
+	h2.step(t, 0)
+	h2.titles(t, 1)
 }
 
 func TestTestEndpoint(t *testing.T) {

@@ -76,6 +76,10 @@ type Condition struct {
 	// Delay is how long the condition must hold before it is posted, for
 	// states upstream can set briefly while it retries.
 	Delay time.Duration
+	// Until, when set, keeps a posted alert's episode open until then even
+	// while the condition is not seen, for a condition that cannot recover
+	// before it ends, such as a grant's expiry.
+	Until time.Time
 }
 
 const grantWarnWithin = 24 * time.Hour
@@ -300,6 +304,7 @@ func grantCondition(key string, a Account, g Grant) Condition {
 				{Name: "Expires", Value: discordTime(g.EndsAt), Inline: true},
 			},
 		},
+		Until: g.EndsAt,
 	}
 }
 
@@ -310,6 +315,8 @@ type track struct {
 	ChangedAt time.Time `json:"changedAt"`
 	LastAlert time.Time `json:"lastAlert"`
 	Recovery  *Message  `json:"recovery,omitempty"`
+	// Until is the posted condition's Until.
+	Until time.Time `json:"until,omitzero"`
 }
 
 // Detector turns conditions into messages. A key alerts once per episode; a
@@ -349,7 +356,7 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 		msg := c.Alert
 		msg.At = now
 		out = append(out, msg)
-		t.Notified, t.LastAlert, t.Recovery, changed = true, now, c.Recovery, true
+		t.Notified, t.LastAlert, t.Recovery, t.Until, changed = true, now, c.Recovery, c.Until, true
 	}
 	for key, t := range d.tracks {
 		if _, ok := active[key]; ok {
@@ -357,6 +364,9 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 		}
 		if t.Active {
 			t.Active, t.ChangedAt, changed = false, now, true
+		}
+		if t.Notified && now.Before(t.Until) {
+			continue
 		}
 		if t.Notified && now.Sub(t.ChangedAt) >= d.settle {
 			if t.Recovery != nil {

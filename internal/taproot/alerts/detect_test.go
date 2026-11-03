@@ -273,3 +273,21 @@ func TestDetectorForgetsQuietKeys(t *testing.T) {
 		t.Fatal("an idle step should not report a change")
 	}
 }
+
+func TestDetectorHoldsAnAlertUntilItsEnd(t *testing.T) {
+	d := NewDetector(30*time.Minute, 2*time.Minute)
+	grant := map[string]Condition{"grant:a:g": {Alert: Message{Key: "grant:a:g", Title: "alert"}, Until: t0.Add(20 * time.Hour)}}
+	if msgs, _ := d.Step(t0, grant); len(msgs) != 1 {
+		t.Fatalf("first step = %v", msgs)
+	}
+	d.Step(t0.Add(time.Hour), nil)
+	d.Step(t0.Add(3*time.Hour), nil)
+	if msgs, _ := d.Step(t0.Add(4*time.Hour), grant); len(msgs) != 0 {
+		t.Fatalf("an unseen grant came back and alerted again: %v", msgs)
+	}
+	d.Step(t0.Add(21*time.Hour), nil)
+	d.Step(t0.Add(22*time.Hour), nil)
+	if len(d.tracks) != 0 {
+		t.Fatalf("tracks = %v, want none after the end", d.tracks)
+	}
+}
