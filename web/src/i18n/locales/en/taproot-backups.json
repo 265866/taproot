@@ -1,6 +1,53 @@
 {
   "taproot_backups": {
     "title": "Backups",
-    "placeholder": "Scheduled backups with download and restore land here next."
+    "description": "Snapshots of config.yaml, taproot.yaml, the auth files, and the taproot database. They hold OAuth tokens, so keep downloads private.",
+    "create": "Back up now",
+    "created": "Backup {{id}} written",
+    "create_failed": "Backup failed: {{message}}",
+    "summary_label": "Backup summary",
+    "count": "Backups",
+    "latest": "Latest",
+    "schedule": "Schedule",
+    "schedule_off": "Off",
+    "schedule_daily": "Daily at {{time}}",
+    "keep_one": "Server time · keeps {{count}} backup.",
+    "keep_other": "Server time · keeps the newest {{count}}.",
+    "change_schedule": "Change in Settings",
+    "loading": "Loading backups…",
+    "load_failed": "Could not load backups: {{message}}",
+    "empty_title": "No backups yet",
+    "empty_description": "Back up now, or wait for the scheduled backup.",
+    "columns": {
+      "created": "Created",
+      "reason": "Reason",
+      "size": "Size",
+      "files": "Files",
+      "actions": "Actions"
+    },
+    "reason": {
+      "scheduled": "Scheduled",
+      "manual": "Manual",
+      "pre-restore": "Pre-restore"
+    },
+    "download": "Download",
+    "download_label": "Download backup {{id}}",
+    "restore": "Restore…",
+    "restore_label": "Restore backup {{id}}",
+    "restore_title": "Restore this backup?",
+    "restore_lead": "This puts taproot back to how it was on {{when}}.",
+    "restore_step_pre": "Taproot first saves the current state as a pre-restore backup, so you can undo this by restoring that one.",
+    "restore_step_files": "config.yaml, taproot.yaml, and the auth folder are replaced with this backup's copies. Credentials added since then are removed from the auth folder; they stay in the pre-restore backup.",
+    "restore_step_db": "Usage, quota, prices, and the request log index return to this backup's snapshot when taproot next starts.",
+    "restore_step_restart": "Taproot then restarts itself if its supervisor allows it; otherwise you restart it. Requests in flight during the restart fail.",
+    "restore_type": "To confirm, type the backup id",
+    "restore_confirm": "Restore",
+    "restore_failed": "Restore failed: {{message}}",
+    "restored": "Backup restored",
+    "pre_restore_saved": "The previous state is saved as",
+    "restart_waiting": "Waiting for taproot to restart…",
+    "restart_back": "Taproot is back up and running the restored database.",
+    "restart_gave_up": "Taproot has not come back after 90 seconds. Check the server.",
+    "restart_manual": "Restart taproot now to finish: the database is restored on the next start."
   }
 }
