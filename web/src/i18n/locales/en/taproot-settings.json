@@ -39,8 +39,8 @@
       "at": "at",
       "server_time": "server time",
       "keep": "Keep the newest",
-      "keep_unit": "backups",
-      "keep_hint": "Lowering this removes the oldest backups after the next one is written."
+      "keep_unit": "backups of each kind",
+      "keep_hint": "The count applies to each kind separately: scheduled, manual, and pre-restore backups each keep this many. Lowering it removes the oldest of each kind after the next backup is written."
     },
     "ingest": {
       "title": "Quota polling",
