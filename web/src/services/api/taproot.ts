@@ -39,6 +39,11 @@ export interface TaprootAccount {
 
 export interface QuotaWindowState {
   window: QuotaWindowId;
+  /**
+   * True for windows that limit every request of the account. Servers older than this field
+   * omit it; the quota model then decides by window name.
+   */
+  accountWide?: boolean;
   /** Fraction used, 0..1. */
   utilization: number;
   resetsAt: string | null;
@@ -57,6 +62,7 @@ export interface QuotaSeries {
   authIndex: string;
   provider: string;
   window: QuotaWindowId;
+  accountWide?: boolean;
   periodSeconds: number;
   points: { t: string; utilization: number }[];
   resets: string[];
@@ -335,8 +341,10 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
     quotaSeries: (range: TimeRange & { provider?: string }) =>
       request<{ series: QuotaSeries[] }>('GET', '/quota/series', { query: { ...range } }),
 
-    usageSummary: (query: TimeRange & { bucket: UsageBucket; groupBy: UsageGroupBy }) =>
-      request<UsageSummary>('GET', '/usage/summary', { query: { ...query } }),
+    /** `tz` is an IANA zone; daily buckets then start at its midnight instead of UTC's. */
+    usageSummary: (
+      query: TimeRange & { bucket: UsageBucket; groupBy: UsageGroupBy; tz?: string }
+    ) => request<UsageSummary>('GET', '/usage/summary', { query: { ...query } }),
     usageEvents: (filter: UsageEventFilter) =>
       request<{ events: UsageEvent[]; nextCursor: string | null }>('GET', '/usage/events', {
         query: { ...filter },

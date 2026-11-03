@@ -122,6 +122,10 @@ export function AccountRows({
                     role="cell"
                     className={styles.windowCell}
                     data-binding={binding || undefined}
+                    data-informational={!w.accountWide || undefined}
+                    title={
+                      w.accountWide ? undefined : t('taproot_quota.accounts.informational_hint')
+                    }
                   >
                     <span className={styles.windowLabel}>{windowName(id)}</span>
                     <span className={styles.windowUsed}>
@@ -129,6 +133,11 @@ export function AccountRows({
                       {binding && (
                         <span className={styles.bindingTag}>
                           {t('taproot_quota.accounts.binding')}
+                        </span>
+                      )}
+                      {!w.accountWide && (
+                        <span className={styles.infoTag}>
+                          {t('taproot_quota.accounts.informational')}
                         </span>
                       )}
                     </span>

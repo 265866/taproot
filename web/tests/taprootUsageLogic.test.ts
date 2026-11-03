@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import type {
-  AccountQuota,
   TaprootAccount,
   UsageSession,
   UsageSummary,
@@ -9,6 +8,8 @@ import type {
 import {
   chooseBucket,
   customWindow,
+  dailyBucketZone,
+  localTimeZone,
   parseLocalDate,
   presetWindow,
   todayWindow,
@@ -42,10 +43,11 @@ import {
   toDrafts,
   validateDrafts,
 } from '@/features/taproot-usage/logic/prices';
-import { currentUtilization, pooledQuota } from '@/features/taproot-usage/logic/quotaPool';
 import {
   formatAxisMs,
   formatAxisNumber,
+  formatBucketLabel,
+  formatBucketTick,
   formatMs,
   formatRatio,
   formatUSD,
@@ -456,94 +458,6 @@ describe('prices', () => {
   });
 });
 
-describe('pooled quota', () => {
-  const now = Date.parse('2026-11-03T03:00:00Z');
-  const quota: AccountQuota[] = [
-    {
-      authIndex: '8dc6f68dec36dcc4',
-      provider: 'claude',
-      windows: [
-        {
-          window: 'five_hour',
-          utilization: 0.01,
-          resetsAt: '2026-11-03T07:00:00Z',
-          status: '',
-          observedAt: '',
-          periodSeconds: 18000,
-        },
-        {
-          window: 'seven_day',
-          utilization: 1,
-          resetsAt: '2026-11-05T12:00:00Z',
-          status: 'rejected',
-          observedAt: '',
-          periodSeconds: 604800,
-        },
-      ],
-    },
-    {
-      authIndex: 'f2a3f5069de30215',
-      provider: 'claude',
-      windows: [
-        // Reset time has passed: this window started over.
-        {
-          window: 'five_hour',
-          utilization: 0.64,
-          resetsAt: '2026-10-31T20:00:00Z',
-          status: '',
-          observedAt: '',
-          periodSeconds: 18000,
-        },
-        {
-          window: 'seven_day',
-          utilization: 0.02,
-          resetsAt: '2026-11-10T01:00:00Z',
-          status: '',
-          observedAt: '',
-          periodSeconds: 604800,
-        },
-      ],
-    },
-    {
-      authIndex: '4111f467192c8a48',
-      provider: 'codex',
-      windows: [
-        {
-          window: 'codex_primary',
-          utilization: 0.47,
-          resetsAt: null,
-          status: '',
-          observedAt: '',
-          periodSeconds: 604800,
-        },
-      ],
-    },
-  ];
-
-  test('sums each enabled account by its tightest live window', () => {
-    // 8dc6: 1 - 1 = 0; f2a3: 1 - max(0, 0.02) = 0.98. Codex is disabled.
-    const pools = pooledQuota(ACCOUNTS, quota, now);
-    expect(pools).toHaveLength(1);
-    expect(pools[0].provider).toBe('claude');
-    expect(pools[0].accounts).toBe(2);
-    expect(pools[0].remaining).toBeCloseTo(0.98, 10);
-    expect(pools[0].nextResetAt).toBe('2026-11-05T12:00:00Z');
-  });
-
-  test('a single account with no windows counts as missing data, not as full', () => {
-    const pools = pooledQuota([], [{ authIndex: 'x', provider: 'codex', windows: [] }], now);
-    expect(pools).toEqual([
-      { provider: 'codex', accounts: 0, accountsWithoutData: 1, remaining: 0, nextResetAt: null },
-    ]);
-    expect(pooledQuota([], [], now)).toEqual([]);
-  });
-
-  test('a passed reset reads as zero utilization', () => {
-    expect(currentUtilization(quota[1].windows[0], now)).toBe(0);
-    expect(currentUtilization(quota[1].windows[1], now)).toBe(0.02);
-  });
-});
-
 describe('formatting', () => {
   test('currency, ratios, and durations', () => {
     expect(formatUSD(0)).toBe('$0.00');
@@ -591,5 +505,42 @@ describe('series colors and links', () => {
       pathname: '/request-logs',
       search: '?requestId=01a1-9f50%20x',
     });
+  });
+});
+
+describe('daily buckets and time zones', () => {
+  test('sends the browser zone', () => {
+    expect(localTimeZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  test('buckets at local midnight mean the server honored tz', () => {
+    const local = [new Date(2026, 10, 2), new Date(2026, 10, 3)].map((d) => ({
+      t: d.toISOString(),
+    }));
+    expect(dailyBucketZone(local)).toBe('local');
+    expect(dailyBucketZone([])).toBe('local');
+  });
+
+  test('UTC-midnight buckets are detected when the local zone is not UTC', () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      expect(dailyBucketZone([{ t: '2026-11-02T00:00:00Z' }, { t: '2026-11-03T00:00:00Z' }])).toBe(
+        'utc'
+      );
+      // Pacific midnight on Nov 3 (PST) is 08:00 UTC.
+      expect(dailyBucketZone([{ t: '2026-11-03T08:00:00Z' }])).toBe('local');
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  test('labels say UTC only for UTC days', () => {
+    const noon = Date.UTC(2026, 10, 3, 12);
+    expect(formatBucketLabel(noon, '1d', 'utc')).toBe('Nov 3 (UTC)');
+    expect(formatBucketLabel(noon, '1d', 'local')).not.toContain('UTC');
+    expect(formatBucketTick(noon, '1d', 30 * 86_400_000, 'utc')).toBe('Nov 3');
+    expect(formatBucketTick(noon, '1d', 30 * 86_400_000, 'local')).toMatch(/^Nov [0-9]+$/);
   });
 });

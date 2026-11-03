@@ -513,6 +513,14 @@
   font-size: 11px;
 }
 
+.infoTag {
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
 /* The column header names the window on wide screens; small screens hide it. */
 .windowLabel {
   display: none;

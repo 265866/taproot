@@ -19,6 +19,26 @@ export interface TimeWindow {
   toMs: number;
 }
 
+/** Where the server cut daily buckets: the browser's midnight, or UTC's. */
+export type DayZone = 'local' | 'utc';
+
+/** The browser's IANA time zone, sent as `tz` so daily buckets follow the local day. */
+export function localTimeZone(): string | undefined {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+}
+
+/**
+ * Daily buckets start at local midnight when the server honored `tz`. A server that ignores it
+ * cuts UTC days, which the labels then say.
+ */
+export function dailyBucketZone(buckets: readonly { t: string }[]): DayZone {
+  for (const bucket of buckets) {
+    const start = new Date(bucket.t);
+    if (start.getHours() !== 0 || start.getMinutes() !== 0) return 'utc';
+  }
+  return 'local';
+}
+
 /** Hourly buckets up to a week, daily beyond: 24 to 168 points, or one point per day. */
 export function chooseBucket(window: TimeWindow): UsageBucket {
   return window.toMs - window.fromMs <= 7 * DAY_MS ? '1h' : '1d';

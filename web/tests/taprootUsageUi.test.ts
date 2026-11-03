@@ -7,6 +7,8 @@ import type { UsageSummary, UsageTotals } from '@/services/api/taproot';
 import { KpiTiles } from '@/features/taproot-usage/components/KpiTiles';
 import { Overview } from '@/features/taproot-usage/components/Overview';
 import { BreakdownTable } from '@/features/taproot-usage/components/BreakdownTable';
+import { AffinityPanel } from '@/features/taproot-usage/components/SessionsView';
+import { affinityStats } from '@/features/taproot-usage/logic/sessions';
 import { breakdownRows, rankGroups } from '@/features/taproot-usage/logic/summary';
 import { en } from '@/i18n/resources';
 
@@ -82,7 +84,7 @@ describe('usage overview', () => {
         summary,
         byProvider: summary,
         groupBy: 'model',
-        axis: { bucket: '1h', spanMs: 86_400_000 },
+        axis: { bucket: '1h', spanMs: 86_400_000, dayZone: 'local' },
         accountOrder: [],
         labelFor: (key: string) => key,
       })
@@ -123,5 +125,26 @@ describe('breakdown table', () => {
     expect(html.match(/title="View requests"/g)?.length).toBe(1);
     expect(html).toContain('75%'); // 1.5 of 2.0
     expect(html).toContain('25%'); // failure rate 1 / 4
+  });
+});
+
+describe('session affinity panel', () => {
+  const stats = affinityStats([]);
+
+  test('says it covers only the loaded sessions when the range has more', () => {
+    const html = render(createElement(AffinityPanel, { stats, loadedCount: 100, hasMore: true }));
+    expect(html).toContain('Covers only the 100 most recent sessions loaded so far');
+    expect(html).toContain('load more sessions below');
+  });
+
+  test('says it covers every session once all are loaded', () => {
+    const html = render(createElement(AffinityPanel, { stats, loadedCount: 42, hasMore: false }));
+    expect(html).toContain('Covers all 42 sessions in this range.');
+    expect(html).not.toContain('loaded so far');
+  });
+
+  test('shows no scope line before anything loads', () => {
+    const html = render(createElement(AffinityPanel, { stats, loadedCount: 0, hasMore: false }));
+    expect(html).not.toContain('Covers');
   });
 });

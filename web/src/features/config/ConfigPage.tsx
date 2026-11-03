@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
@@ -27,6 +27,7 @@ import {
   resolveStatus,
 } from './uiState';
 import { findConfigFieldById } from './searchIndex';
+import { hasProxyApiKeys } from './proxyApiKeys';
 import { shouldReloadVisualDraft, useConfigDocument } from './hooks/useConfigDocument';
 import { useFieldJump } from './hooks/useFieldJump';
 import { useSourceSearch } from './hooks/useSourceSearch';
@@ -108,6 +109,8 @@ export function ConfigPage() {
     applyVisualChangesToYaml,
   });
   const sourceSearch = useSourceSearch();
+  const deferredContent = useDeferredValue(doc.content);
+  const proxyApiKeys = useMemo(() => hasProxyApiKeys(deferredContent), [deferredContent]);
 
   const disableControls = connectionStatus !== 'connected';
   const hasVisualModeError = !!visualParseError;
@@ -313,6 +316,11 @@ export function ConfigPage() {
       {!doc.error && visualParseError && (
         <div className="error-box" role="alert">
           {t('config_management.visual_mode_unavailable_detail', { message: visualParseError })}
+        </div>
+      )}
+      {proxyApiKeys && (
+        <div className={styles.warningBox} role="status">
+          {t('config_management.proxy_api_keys_warning')}
         </div>
       )}
 

@@ -72,6 +72,31 @@ describe('fromApi', () => {
     ).toBeNull();
   });
 
+  test('passes the server accountWide flag through and leaves it absent otherwise', () => {
+    const base = {
+      utilization: 0.1,
+      resetsAt: null,
+      status: '',
+      observedAt: '2026-11-03T00:00:00Z',
+      periodSeconds: 18000,
+    };
+    expect(toWindowObservation({ ...base, window: 'codex_x', accountWide: false })).toMatchObject({
+      accountWide: false,
+    });
+    expect(toWindowObservation({ ...base, window: 'five_hour' })).not.toHaveProperty('accountWide');
+    const series = {
+      authIndex: 'a',
+      provider: 'codex',
+      periodSeconds: 18000,
+      points: [],
+      resets: [],
+    };
+    expect(toWindowSeries({ ...series, window: 'codex_x', accountWide: true }).accountWide).toBe(
+      true
+    );
+    expect(toWindowSeries({ ...series, window: 'codex_x' })).not.toHaveProperty('accountWide');
+  });
+
   test('sorts series points and resets and drops unparsable ones', () => {
     const s: QuotaSeries = {
       authIndex: 'a',

@@ -5,6 +5,7 @@ import {
   burnRate,
   decreaseBetween,
   drainAt,
+  isAccountWide,
   projectAccount,
   projectPool,
   recordedAccount,
@@ -228,12 +229,15 @@ describe('projectAccount', () => {
     const p = projectAccount(account, NOW, NOW + 8 * H, 3 * H, 1);
     expect(p.binding).toBe('five_hour');
     // 2h: 5h at 0.7 and 7d at 0.32, so 0.3 left; the reset leaves 1 - 0.32 = 0.68.
+    // 5h overtakes 7d where 0.1s = 0.32 + 0.01s, s = 32/9 h after the reset: 0.68 - 0.32/9 left.
     // 7h: 5h at 0.5 and 7d at 0.37, so 0.5 left; the reset leaves 0.63.
     // 8h: 5h at 0.1 and 7d at 0.38, so 0.62 left.
+    const crossing = NOW + 2 * H + (32 / 9) * H;
     expectPoints(p.points, [
       [NOW, 0.5],
       [NOW + 2 * H, 0.3],
       [NOW + 2 * H, 0.68],
+      [crossing, 0.68 - 0.32 / 9],
       [NOW + 7 * H, 0.5],
       [NOW + 7 * H, 0.63],
       [NOW + 8 * H, 0.62],
@@ -362,7 +366,7 @@ describe('recorded history', () => {
 
   test('an observation of zero utilization is recorded', () => {
     const zero: WindowSeries = {
-      window: 'w',
+      window: 'seven_day',
       periodMs: WEEK,
       points: [{ t: NOW - H, u: 0 }],
       resets: [],
@@ -375,7 +379,7 @@ describe('recorded history', () => {
 
   test('the pool steps up where a later account starts', () => {
     const late: WindowSeries = {
-      window: 'w',
+      window: 'seven_day',
       periodMs: WEEK,
       points: [{ t: NOW - 3 * H, u: 0.25 }],
       resets: [],
@@ -433,5 +437,165 @@ describe('drain', () => {
       [2, 0.5],
       [4, 0.5],
     ]);
+  });
+});
+
+describe('account-wide windows', () => {
+  // A Codex account whose per-model and code-review limits are exhausted while its account-wide
+  // windows have room: the account can still serve ordinary requests.
+  const codex: AccountInput = {
+    authIndex: 'c',
+    windows: [
+      obs('codex_primary', 0.2, NOW + 3 * H, FIVE),
+      obs('codex_secondary', 0.1, NOW + 100 * H, WEEK),
+      obs('codex_gpt_5_3_codex_spark_primary', 1, NOW + 2 * H, FIVE),
+      { ...obs('codex_code_review_primary', 1, NOW + 4 * H, FIVE), accountWide: false },
+    ],
+    series: [
+      ramp('codex_gpt_5_3_codex_spark_primary', FIVE, 1, 0.3, 3),
+      { ...ramp('codex_code_review_primary', FIVE, 1, 0.3, 3), accountWide: false },
+    ],
+  };
+
+  test('only the four account-wide windows bind; others are informational', () => {
+    expect(isAccountWide({ window: 'five_hour' })).toBe(true);
+    expect(isAccountWide({ window: 'seven_day' })).toBe(true);
+    expect(isAccountWide({ window: 'codex_primary' })).toBe(true);
+    expect(isAccountWide({ window: 'codex_secondary' })).toBe(true);
+    expect(isAccountWide({ window: 'seven_day_opus' })).toBe(false);
+    expect(isAccountWide({ window: 'codex_bengalfox_primary' })).toBe(false);
+    // The server's flag wins over the name.
+    expect(isAccountWide({ window: 'seven_day', accountWide: false })).toBe(false);
+    expect(isAccountWide({ window: 'custom', accountWide: true })).toBe(true);
+  });
+
+  test('an exhausted model limit does not empty the account', () => {
+    const p = projectAccount(codex, NOW, NOW + 10 * H, 3 * H, 1);
+    expect(p.remainingNow).toBeCloseTo(0.8, 12);
+    expect(p.binding).toBe('codex_primary');
+    expect(p.emptyAt).toBeNull();
+    // At the +3h codex_primary reset codex_secondary (0.1) binds: 0.8 -> 0.9. The model limit's
+    // reset at +2h adds nothing.
+    expect(p.resets).toEqual([{ t: NOW + 3 * H, gain: expect.closeTo(0.1, 12) }]);
+    // The drill-down still lists every window, flagged.
+    expect(p.windows.map((w) => [w.window, w.accountWide])).toEqual([
+      ['codex_primary', true],
+      ['codex_secondary', true],
+      ['codex_gpt_5_3_codex_spark_primary', false],
+      ['codex_code_review_primary', false],
+    ]);
+    const pool = projectPool([codex], NOW, NOW + 10 * H, 3 * H, 1);
+    expect(pool.remainingNow).toBeCloseTo(0.8, 12);
+    expect(pool.firstEmpty).toBeNull();
+  });
+
+  test('an account reporting only informational windows counts as full', () => {
+    const p = projectAccount(
+      { authIndex: 'd', windows: [obs('seven_day_opus', 0.9, NOW + H, WEEK)], series: [] },
+      NOW,
+      NOW + 2 * H,
+      3 * H,
+      1
+    );
+    expect(p.remainingNow).toBe(1);
+    expect(p.binding).toBeNull();
+    expect(p.windows.map((w) => w.window)).toEqual(['seven_day_opus']);
+  });
+
+  test('recorded history ignores informational series', () => {
+    const fiveHour: WindowSeries = {
+      window: 'five_hour',
+      periodMs: FIVE,
+      points: [{ t: NOW - 2 * H, u: 0.3 }],
+      resets: [],
+    };
+    const opus: WindowSeries = {
+      window: 'seven_day_opus',
+      periodMs: WEEK,
+      points: [{ t: NOW - H, u: 0.95 }],
+      resets: [],
+    };
+    expectPoints(recordedAccount([fiveHour, opus], NOW - 3 * H, NOW), [
+      [NOW - 2 * H, 0.7],
+      [NOW, 0.7],
+    ]);
+  });
+});
+
+describe('projection kinks', () => {
+  // five_hour at 50% burning 10%/h (reset in 10h); seven_day at 60% burning 1%/h.
+  // remaining = 1 - max(u): seven_day binds until 0.5 + 0.1t = 0.6 + 0.01t, t = 10/9 h,
+  // where remaining is 1 - 0.6 - 0.01 * 10/9 = 0.38889. Then five_hour binds and empties at
+  // 0.5 + 0.1t = 1, t = 5h.
+  const account: AccountInput = {
+    authIndex: 'k',
+    windows: [
+      obs('five_hour', 0.5, NOW + 10 * H, FIVE),
+      obs('seven_day', 0.6, NOW + 100 * H, WEEK),
+    ],
+    series: [ramp('five_hour', FIVE, 0.5, 0.1, 1), ramp('seven_day', WEEK, 0.6, 0.01, 1)],
+  };
+
+  test('breaks where a faster window overtakes the binding one', () => {
+    const p = projectAccount(account, NOW, NOW + 6 * H, 1 * H, 1);
+    const crossing = NOW + (10 / 9) * H;
+    expect(p.points[0]).toEqual({ t: NOW, v: expect.closeTo(0.4, 12) });
+    expect(p.points[1].t).toBeCloseTo(crossing, 0);
+    expect(p.points[1].v).toBeCloseTo(1 - 0.6 - 0.01 * (10 / 9), 9);
+    expect(p.points[2].t).toBeCloseTo(NOW + 5 * H, 0);
+    expect(p.points[2].v).toBeCloseTo(0, 9);
+    expect(p.emptyAt).toBeCloseTo(NOW + 5 * H, 0);
+    // Chart and pool values between breakpoints follow the true remaining.
+    expect(valueAt(p.points, NOW + H, 'left')).toBeCloseTo(0.39, 9);
+    expect(valueAt(p.points, NOW + 2 * H, 'left')).toBeCloseTo(0.3, 9);
+    const pool = projectPool([account], NOW, NOW + 6 * H, 1 * H, 1);
+    expect(valueAt(pool.points, NOW + H, 'left')).toBeCloseTo(0.39, 9);
+  });
+
+  test('windows at the same level do not add a crossing', () => {
+    const tied: AccountInput = {
+      authIndex: 't',
+      windows: [obs('five_hour', 0.5, null, FIVE), obs('seven_day', 0.5, null, WEEK)],
+      series: [ramp('five_hour', FIVE, 0.5, 0.1, 1), ramp('seven_day', WEEK, 0.5, 0.01, 1)],
+    };
+    const p = projectAccount(tied, NOW, NOW + 6 * H, 1 * H, 1);
+    expectPoints(p.points, [
+      [NOW, 0.5],
+      [NOW + 5 * H, 0],
+      [NOW + 6 * H, 0],
+    ]);
+  });
+});
+
+describe('burnRate baseline', () => {
+  test('interpolates the baseline segment at the window start', () => {
+    // 10% at -2h, 20% at -30m, 30% now; 1h window. Usage at -1h is 10% + 10% x (1h / 1.5h),
+    // so the last hour used 20% - 16.667% + 10% = 13.333%.
+    const s: WindowSeries = {
+      window: 'seven_day',
+      periodMs: WEEK,
+      points: [
+        { t: NOW - 2 * H, u: 0.1 },
+        { t: NOW - 0.5 * H, u: 0.2 },
+        { t: NOW, u: 0.3 },
+      ],
+      resets: [],
+    };
+    expect(burnRate(s, NOW, 1 * H)).toBeCloseTo(0.4 / 3, 12);
+  });
+
+  test('a known reset inside the baseline segment counts usage after the window start', () => {
+    // Reset at -2h, so the window grew from 0 at -2h to 30% at -30m: 20%/h; at -1h it was 20%.
+    const s: WindowSeries = {
+      window: 'five_hour',
+      periodMs: FIVE,
+      points: [
+        { t: NOW - 3 * H, u: 0.9 },
+        { t: NOW - 0.5 * H, u: 0.3 },
+        { t: NOW, u: 0.35 },
+      ],
+      resets: [NOW - 2 * H],
+    };
+    expect(burnRate(s, NOW, 1 * H)).toBeCloseTo(0.1 + 0.05, 12);
   });
 });

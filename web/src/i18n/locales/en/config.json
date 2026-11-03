@@ -32,6 +32,7 @@
     "status_saving": "Saving configuration...",
     "status_saving_short": "Saving",
     "save_success": "Configuration saved successfully",
+    "proxy_api_keys_warning": "This config lists proxy API keys (access.api-keys or a top-level api-keys list). Taproot admits callers by their Tailscale identity, so these keys are not needed, and while any are set every client must send one. Remove them unless you mean to require a key.",
     "visual_mode_unavailable": "Visual editor unavailable until YAML syntax is fixed",
     "visual_mode_unavailable_short": "YAML issue",
     "validation_blocked_short": "Fix errors",

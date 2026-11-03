@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { buildProviderGroups } from '@/features/taproot-quota/model/fromApi';
+import { poolNow } from '@/features/taproot-quota/model/poolView';
 import { taprootApi } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
 import { todayWindow, toIso } from '../logic/range';
 import { cacheHitRatio } from '../logic/totals';
-import { pooledQuota } from '../logic/quotaPool';
 import { providerName } from '../logic/accounts';
 import { providerColor } from '../logic/viz';
 import { formatDateTime, formatRatio, formatUSD } from '../logic/format';
@@ -29,7 +30,14 @@ export function DashboardUsageSummary() {
     Promise.all([taprootApi.accounts(), taprootApi.quotaCurrent()])
   );
   const pools = useMemo(
-    () => (quota.data ? pooledQuota(quota.data[0].accounts, quota.data[1].accounts, nowMs) : []),
+    () =>
+      quota.data
+        ? buildProviderGroups(quota.data[0].accounts, quota.data[1].accounts, []).map((group) => ({
+            provider: group.provider,
+            hasQuotaData: group.hasQuotaData,
+            ...poolNow(group, nowMs),
+          }))
+        : [],
     [quota.data, nowMs]
   );
   const totals = today.data?.totals;
@@ -81,8 +89,8 @@ export function DashboardUsageSummary() {
           <span className={styles.kpiHint}>{t('taproot_usage.kpi.cache_hit_hint')}</span>
         </article>
         {pools.map((pool, index) => {
-          const capacity = pool.accounts;
-          const fraction = capacity > 0 ? pool.remaining / capacity : 0;
+          const capacity = pool.hasQuotaData ? pool.capacity : 0;
+          const fraction = capacity > 0 ? pool.remainingNow / capacity : 0;
           const color = providerColor(pool.provider, index);
           return (
             <article key={pool.provider} className={styles.kpi}>
@@ -90,7 +98,7 @@ export function DashboardUsageSummary() {
                 {t('taproot_usage.dashboard.pool', { provider: providerName(pool.provider) })}
               </span>
               <strong className={styles.kpiValue}>
-                {capacity > 0 ? `${Math.round(pool.remaining * 100)}%` : '—'}
+                {capacity > 0 ? `${Math.round(pool.remainingNow * 100)}%` : '—'}
                 {capacity > 0 ? (
                   <span className={styles.kpiUnit}>
                     {t('taproot_usage.dashboard.pool_value', { capacity: `${capacity * 100}%` })}
@@ -111,15 +119,14 @@ export function DashboardUsageSummary() {
               </div>
               <span className={styles.kpiHint}>
                 {[
-                  t('taproot_usage.dashboard.pool_accounts', { count: pool.accounts }),
-                  pool.accountsWithoutData > 0
-                    ? t('taproot_usage.dashboard.pool_without_data', {
-                        count: pool.accountsWithoutData,
-                      })
+                  t('taproot_usage.dashboard.pool_accounts', { count: pool.capacity }),
+                  pool.hasQuotaData && pool.unobserved > 0
+                    ? t('taproot_usage.dashboard.pool_without_data', { count: pool.unobserved })
                     : null,
-                  pool.nextResetAt
+                  pool.hasQuotaData ? null : t('taproot_usage.dashboard.pool_no_observations'),
+                  capacity > 0 && pool.nextReset
                     ? t('taproot_usage.dashboard.pool_next_reset', {
-                        time: formatDateTime(pool.nextResetAt),
+                        time: formatDateTime(pool.nextReset.t),
                       })
                     : null,
                 ]

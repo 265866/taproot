@@ -8,11 +8,16 @@
  * - An account has one or more windows (Claude `five_hour`, `seven_day`, ...; Codex
  *   `codex_primary`, ...). Each window has a utilization `u` that grows with use and drops to 0
  *   at its reset.
- * - An account can serve requests only while every window has room, so its remaining capacity is
- *   `1 - max(u)` over its windows. The **binding window** at an instant is the window with the
- *   least remaining at that instant (ties go to the window that empties sooner in the
- *   projection). For Claude that is usually `seven_day`; `five_hour` binds when it is tighter in
- *   the short term. An account without a `five_hour` window is simply bound by what it has.
+ * - **Account-wide windows** limit every request: Claude `five_hour` and `seven_day`, Codex
+ *   `codex_primary` and `codex_secondary`, or whatever the server flags `accountWide`. Other
+ *   windows, such as per-model or code-review limits, block only part of the traffic; the
+ *   drill-down lists them, but they never bind the account.
+ * - An account can serve requests only while every account-wide window has room, so its
+ *   remaining capacity is `1 - max(u)` over those windows. The **binding window** at an instant
+ *   is the window with the least remaining at that instant (ties go to the window that empties
+ *   sooner in the projection). For Claude that is usually `seven_day`; `five_hour` binds when it
+ *   is tighter in the short term. An account without a `five_hour` window is simply bound by
+ *   what it has.
  * - **Stale windows.** A window counts only while it is still reported: it is dropped when its
  *   last reset has passed and its newest observation is more than one period older than the
  *   account's newest observation of any window. That covers an account that stops reporting a
@@ -25,9 +30,10 @@
  * account contributes to the recorded pool from its first observation onward.
  *
  * Burn rate per window: the sum of utilization increases over the trailing burn window
- * (1h, 3h, or 6h), divided by its length in hours. The observation just before the window is
- * the baseline. A decrease is a reset: when a known reset falls between two observations the
- * increase counts from 0, otherwise a negative delta is ignored.
+ * (1h, 3h, or 6h), divided by its length in hours. Usage between observations is taken as
+ * linear, so the segment from the observation just before the window (the baseline) counts only
+ * its share after the window start. A decrease is a reset: when a known reset falls between two
+ * observations the increase counts from 0 at the reset, otherwise a negative delta is ignored.
  *
  * Projection, per account, from now:
  * - Each window starts at its current utilization, rolled forward through any resets that
@@ -35,7 +41,10 @@
  * - Resets happen at the observed `resetsAt` and then every `periodSeconds`. Weekly windows reset
  *   at a fixed time per account; a 5-hour window starts on first use, so with steady use it
  *   restarts at each reset, which is the same rule.
- * - While any window is exhausted the account is blocked and none of its windows accrue.
+ * - While any account-wide window is exhausted the account is blocked and none of its windows
+ *   accrue.
+ * - Remaining is piecewise linear. It breaks at resets, where a window is exhausted, and where a
+ *   faster-growing window overtakes the current maximum.
  * - Accounts are independent: when one empties, its traffic is not moved to the others. The
  *   pool can therefore empty later than it would if the proxy rebalanced load.
  */
@@ -43,8 +52,22 @@
 export const HOUR_MS = 3_600_000;
 export const EPSILON = 1e-9;
 
+/** Account-wide windows by name, for responses without the server's `accountWide` flag. */
+const ACCOUNT_WIDE_WINDOWS: ReadonlySet<string> = new Set([
+  'five_hour',
+  'seven_day',
+  'codex_primary',
+  'codex_secondary',
+]);
+
+/** Whether a window limits every request of its account; the server's flag wins. */
+export function isAccountWide(w: { window: string; accountWide?: boolean }): boolean {
+  return w.accountWide ?? ACCOUNT_WIDE_WINDOWS.has(w.window);
+}
+
 export interface WindowObservation {
   window: string;
+  accountWide?: boolean;
   /** Fraction used, 0..1. */
   utilization: number;
   resetsAt: number | null;
@@ -54,6 +77,7 @@ export interface WindowObservation {
 
 export interface WindowSeries {
   window: string;
+  accountWide?: boolean;
   periodMs: number;
   points: { t: number; u: number }[];
   /** Known reset instants, ascending. */
@@ -82,6 +106,8 @@ export interface ResetEvent {
 
 export interface WindowState {
   window: string;
+  /** False for a window that is listed but never binds the account. */
+  accountWide: boolean;
   utilization: number;
   nextReset: number | null;
   periodMs: number;
@@ -156,8 +182,16 @@ export function burnRate(series: WindowSeries | undefined, now: number, windowMs
   for (let i = firstIndex + 1; i < points.length; i++) {
     const prev = points[i - 1];
     const cur = points[i];
-    const reset = series.resets.some((r) => r > prev.t && r <= cur.t);
-    used += reset ? cur.u : Math.max(0, cur.u - prev.u);
+    let from = prev.t;
+    let base = prev.u;
+    for (const r of series.resets) {
+      if (r > prev.t && r <= cur.t) {
+        from = r;
+        base = 0;
+      }
+    }
+    const increase = Math.max(0, cur.u - base);
+    used += from < spanStart ? (increase * (cur.t - spanStart)) / (cur.t - from) : increase;
   }
   return used / spanHours;
 }
@@ -175,6 +209,23 @@ const remainingOf = (windows: SimWindow[]) =>
   windows.length === 0 ? 1 : 1 - Math.max(...windows.map((w) => w.u));
 
 /**
+ * Time until a window below the maximum catches up with it, where remaining changes slope.
+ * Windows within EPSILON of the maximum count as tied, so a crossing just taken is not repeated.
+ */
+function timeToOvertake(windows: SimWindow[]): number {
+  if (windows.length < 2) return Infinity;
+  const top = Math.max(...windows.map((w) => w.u));
+  const leadRate = Math.max(...windows.filter((w) => top - w.u <= EPSILON).map((w) => w.rate));
+  let soonest = Infinity;
+  for (const w of windows) {
+    if (top - w.u > EPSILON && w.rate > leadRate) {
+      soonest = Math.min(soonest, (top - w.u) / (w.rate - leadRate));
+    }
+  }
+  return soonest;
+}
+
+/**
  * Projects one account from `now` to `end`. Returns breakpoints of its remaining capacity;
  * between breakpoints the value is linear.
  */
@@ -185,25 +236,27 @@ export function projectAccount(
   burnWindowMs: number,
   multiplier: number
 ): AccountProjection {
-  const live = activeWindows(account.windows, now);
-  const sim: SimWindow[] = live.map((w) => {
+  const windows: WindowState[] = activeWindows(account.windows, now).map((w) => {
     const rolled = rollForward(w, now);
     const series = account.series.find((s) => s.window === w.window);
     return {
       window: w.window,
-      u: rolled.utilization,
-      next: rolled.nextReset,
-      period: w.periodMs,
-      rate: (burnRate(series, now, burnWindowMs) * Math.max(0, multiplier)) / HOUR_MS,
+      accountWide: isAccountWide(w),
+      utilization: rolled.utilization,
+      nextReset: rolled.nextReset,
+      periodMs: w.periodMs,
+      burnPerHour: burnRate(series, now, burnWindowMs),
     };
   });
-  const windows: WindowState[] = sim.map((w) => ({
-    window: w.window,
-    utilization: w.u,
-    nextReset: w.next,
-    periodMs: w.period,
-    burnPerHour: w.rate * HOUR_MS,
-  }));
+  const sim: SimWindow[] = windows
+    .filter((w) => w.accountWide)
+    .map((w) => ({
+      window: w.window,
+      u: w.utilization,
+      next: w.nextReset,
+      period: w.periodMs,
+      rate: (w.burnPerHour * Math.max(0, multiplier)) / HOUR_MS,
+    }));
 
   const timeToFull = (w: SimWindow) => (w.rate > 0 ? (1 - w.u) / w.rate : Infinity);
   const binding =
@@ -223,6 +276,7 @@ export function projectAccount(
       if (w.next !== null) next = Math.min(next, w.next);
       if (!blocked && w.rate > 0) next = Math.min(next, t + (1 - w.u) / w.rate);
     }
+    if (!blocked) next = Math.min(next, t + timeToOvertake(sim));
     next = Math.max(next, t);
     if (!blocked) {
       for (const w of sim) {
@@ -353,7 +407,7 @@ export function projectPool(
 export function recordedAccount(series: WindowSeries[], from: number, to: number): Point[] {
   type Event = { t: number; window: string; u: number; reset: boolean };
   const events: Event[] = [];
-  for (const s of series) {
+  for (const s of series.filter(isAccountWide)) {
     for (const p of s.points) events.push({ t: p.t, window: s.window, u: p.u, reset: false });
     for (const r of s.resets) events.push({ t: r, window: s.window, u: 0, reset: true });
   }

@@ -10,6 +10,8 @@ import {
   RANGE_PRESETS,
   chooseBucket,
   customWindow,
+  dailyBucketZone,
+  localTimeZone,
   presetWindow,
   toIso,
   toLocalDateInput,
@@ -20,6 +22,7 @@ import {
 import { NONE_GROUP } from './logic/summary';
 import { accountName, indexAccounts, providerName } from './logic/accounts';
 import { Overview } from './components/Overview';
+import type { TimeAxis } from './components/Charts';
 import { SessionsView } from './components/SessionsView';
 import { RequestsView, type RequestFilters } from './components/RequestsView';
 import { PricingEditor } from './components/PricingEditor';
@@ -61,7 +64,7 @@ export function TaprootUsagePage() {
     [params.range, params.from, params.to, anchorMs]
   );
   const bucket = chooseBucket(window);
-  const axis = { bucket, spanMs: window.toMs - window.fromMs };
+  const spanMs = window.toMs - window.fromMs;
   const rangeQuery = `${toIso(window.fromMs)}|${toIso(window.toMs)}|${bucket}|${refreshKey}`;
 
   const refresh = useCallback(() => {
@@ -79,7 +82,7 @@ export function TaprootUsagePage() {
     [accountIndex, showEmails]
   );
 
-  const range = { from: toIso(window.fromMs), to: toIso(window.toMs) };
+  const range = { from: toIso(window.fromMs), to: toIso(window.toMs), tz: localTimeZone() };
   // The grouping and axis travel with the data they describe, so a click re-renders only the
   // toolbar until the new data arrives, instead of redrawing old data on a new axis.
   const overview = useTaprootQuery(
@@ -92,6 +95,8 @@ export function TaprootUsagePage() {
           ? null
           : taprootApi.usageSummary({ ...range, bucket, groupBy: 'provider' }),
       ]);
+      const dayZone = bucket === '1d' ? dailyBucketZone(summary.buckets) : 'local';
+      const axis: TimeAxis = { bucket, spanMs, dayZone };
       return { summary, byProvider: byProvider ?? summary, groupBy, axis };
     }
   );
@@ -267,7 +272,13 @@ export function TaprootUsagePage() {
             </div>
           </div>
         ) : null}
-        <span className={styles.bucketNote}>{t(`taproot_usage.range.bucket_${bucket}`)}</span>
+        <span className={styles.bucketNote}>
+          {t(
+            bucket === '1d' && overview.data?.axis.dayZone === 'utc'
+              ? 'taproot_usage.range.bucket_1d_utc'
+              : `taproot_usage.range.bucket_${bucket}`
+          )}
+        </span>
         <button
           type="button"
           className={styles.ghostButton}

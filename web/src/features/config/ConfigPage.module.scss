@@ -24,6 +24,16 @@
   min-width: 0;
 }
 
+.warningBox {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .tabsRow {
   display: flex;
   min-width: 0;
