@@ -15,6 +15,7 @@ import {
 } from '@/utils/constants';
 import { computeApiUrl } from '@/utils/connection';
 import { parseApiErrorResponse } from './apiError';
+import { TAPROOT_REQUEST_HEADERS } from './taproot';
 
 class ApiClient {
   private instance: AxiosInstance;
@@ -26,6 +27,7 @@ class ApiClient {
       timeout: REQUEST_TIMEOUT_MS,
       headers: {
         'Content-Type': 'application/json',
+        ...TAPROOT_REQUEST_HEADERS,
       },
     });
 

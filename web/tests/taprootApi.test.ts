@@ -11,6 +11,7 @@ interface Seen {
   path: string;
   search: URLSearchParams;
   authorization: string | null;
+  requestHeader: string | null;
   body: unknown;
 }
 
@@ -28,6 +29,7 @@ beforeAll(() => {
         path: url.pathname,
         search: url.searchParams,
         authorization: request.headers.get('authorization'),
+        requestHeader: request.headers.get('x-taproot-request'),
         body: request.method === 'GET' ? null : await request.json().catch(() => null),
       });
       const path = url.pathname.replace('/taproot/api/v1', '');
@@ -80,6 +82,7 @@ describe('taproot API client', () => {
       method: 'GET',
       path: '/taproot/api/v1/me',
       authorization: null,
+      requestHeader: '1',
     });
   });
 
@@ -118,9 +121,10 @@ describe('taproot API client', () => {
       method: 'PUT',
       path: '/taproot/api/v1/prices',
       body: { prices },
+      requestHeader: '1',
     });
     expect((await client.createBackup()).id).toBe('b1');
-    expect(seen.at(-1)).toMatchObject({ method: 'POST', body: null });
+    expect(seen.at(-1)).toMatchObject({ method: 'POST', body: null, requestHeader: '1' });
   });
 
   test('surfaces the contract error shape as a typed error', async () => {

@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import type { ConnectionFailure, ConnectionStatus } from '@/types';
 import { apiClient } from '@/services/api/client';
 import { detectApiBaseFromLocation } from '@/utils/connection';
+import { isRecord } from '@/utils/helpers';
 import { useConfigStore } from './useConfigStore';
 import { useModelsStore } from './useModelsStore';
 import { useQuotaStore } from './useQuotaStore';
@@ -17,6 +18,8 @@ interface AuthStoreState {
   apiBase: string;
   connectionStatus: ConnectionStatus;
   connectionFailure: ConnectionFailure | null;
+  /** The refused device, when the failure is `not_admin`. */
+  connectionFailureNode: string | null;
   serverVersion: string | null;
   serverBuildDate: string | null;
   supportsPlugin: boolean;
@@ -27,8 +30,17 @@ interface AuthStoreState {
 }
 
 export const classifyConnectionError = (error: unknown): ConnectionFailure => {
-  const status = (error as { status?: unknown } | null)?.status;
+  const { status, apiCode } = (error as { status?: unknown; apiCode?: unknown } | null) ?? {};
+  // The access guard's 403 for an allowed account on a device outside access.admin-nodes.
+  if (status === 403 && apiCode === 'not_admin_node') return 'not_admin';
   return status === 401 || status === 403 ? 'forbidden' : 'unreachable';
+};
+
+/** The device name the guard reports in a `not_admin_node` denial. */
+export const deniedNode = (error: unknown): string | null => {
+  const details = (error as { details?: unknown } | null)?.details;
+  const node = isRecord(details) && isRecord(details.error) ? details.error.node : undefined;
+  return typeof node === 'string' && node.trim() ? node.trim() : null;
 };
 
 const initialApiBase = () => (typeof window === 'undefined' ? '' : detectApiBaseFromLocation());
@@ -39,6 +51,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
   apiBase: initialApiBase(),
   connectionStatus: 'disconnected',
   connectionFailure: null,
+  connectionFailureNode: null,
   serverVersion: null,
   serverBuildDate: null,
   supportsPlugin: false,
@@ -48,7 +61,12 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
 
     connectPromise = (async () => {
       const apiBase = get().apiBase || initialApiBase();
-      set({ apiBase, connectionStatus: 'connecting', connectionFailure: null });
+      set({
+        apiBase,
+        connectionStatus: 'connecting',
+        connectionFailure: null,
+        connectionFailureNode: null,
+      });
       useConfigStore.getState().clearCache();
       useModelsStore.getState().clearCache();
       useQuotaStore.getState().clearQuotaCache();
@@ -59,7 +77,11 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
         set({ connectionStatus: 'connected' });
         return true;
       } catch (error) {
-        set({ connectionStatus: 'error', connectionFailure: classifyConnectionError(error) });
+        set({
+          connectionStatus: 'error',
+          connectionFailure: classifyConnectionError(error),
+          connectionFailureNode: deniedNode(error),
+        });
         return false;
       } finally {
         connectPromise = null;
@@ -84,7 +106,11 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
 if (typeof window !== 'undefined') {
   // A 401 after connecting means the server stopped admitting this caller.
   window.addEventListener('unauthorized', () => {
-    useAuthStore.setState({ connectionStatus: 'error', connectionFailure: 'forbidden' });
+    useAuthStore.setState({
+      connectionStatus: 'error',
+      connectionFailure: 'forbidden',
+      connectionFailureNode: null,
+    });
   });
 
   window.addEventListener('server-version-update', ((e: CustomEvent) => {

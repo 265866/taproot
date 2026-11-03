@@ -8,6 +8,8 @@ import type { ConnectionFailure, ConnectionStatus } from '@/types';
 interface ConnectionGateViewProps {
   status: ConnectionStatus;
   failure: ConnectionFailure | null;
+  /** The refused device's MagicDNS name, for a `not_admin` failure. */
+  node?: string | null;
   onRetry: () => void;
   children: ReactElement;
 }
@@ -15,6 +17,7 @@ interface ConnectionGateViewProps {
 export function ConnectionGateView({
   status,
   failure,
+  node = null,
   onRetry,
   children,
 }: ConnectionGateViewProps) {
@@ -23,12 +26,18 @@ export function ConnectionGateView({
   if (status === 'connected') return children;
 
   if (status === 'error') {
-    const key = failure === 'forbidden' ? 'forbidden' : 'unreachable';
+    const key = failure ?? 'unreachable';
+    const body =
+      key === 'not_admin'
+        ? node
+          ? t('connection_gate.not_admin_body', { node })
+          : t('connection_gate.not_admin_body_unnamed')
+        : t(`connection_gate.${key}_body`);
     return (
       <div className="connection-gate" role="alert">
         <div className="connection-gate-card">
           <h1 className="connection-gate-title">{t(`connection_gate.${key}_title`)}</h1>
-          <p className="connection-gate-body">{t(`connection_gate.${key}_body`)}</p>
+          <p className="connection-gate-body">{body}</p>
           <Button variant="secondary" onClick={onRetry}>
             {t('connection_gate.retry')}
           </Button>
@@ -49,6 +58,7 @@ export function ConnectionGateView({
 export function ConnectionGate({ children }: { children: ReactElement }) {
   const status = useAuthStore((state) => state.connectionStatus);
   const failure = useAuthStore((state) => state.connectionFailure);
+  const node = useAuthStore((state) => state.connectionFailureNode);
   const connect = useAuthStore((state) => state.connect);
 
   useEffect(() => {
@@ -58,7 +68,12 @@ export function ConnectionGate({ children }: { children: ReactElement }) {
   }, [connect]);
 
   return (
-    <ConnectionGateView status={status} failure={failure} onRetry={() => void connect()}>
+    <ConnectionGateView
+      status={status}
+      failure={failure}
+      node={node}
+      onRetry={() => void connect()}
+    >
       {children}
     </ConnectionGateView>
   );
