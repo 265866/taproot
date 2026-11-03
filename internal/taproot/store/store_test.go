@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,5 +79,34 @@ func TestOpenRejectsBrokenMigration(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "taproot.db")); err != nil {
 		t.Fatalf("db file missing after failed migration: %v", err)
+	}
+}
+
+func TestOpenKeepsTempStructuresInMemory(t *testing.T) {
+	db, err := Open(context.Background(), Config{}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(3)
+	conns := make([]*sql.Conn, 0, 3)
+	defer func() {
+		for _, c := range conns {
+			_ = c.Close()
+		}
+	}()
+	for n := 0; n < 3; n++ {
+		c, err := db.Conn(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		conns = append(conns, c)
+		var mode int
+		if err := c.QueryRowContext(context.Background(), `PRAGMA temp_store`).Scan(&mode); err != nil {
+			t.Fatal(err)
+		}
+		if mode != 2 {
+			t.Fatalf("connection %d temp_store = %d, want 2 (memory)", n, mode)
+		}
 	}
 }

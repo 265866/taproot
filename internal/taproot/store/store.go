@@ -59,7 +59,11 @@ func Open(ctx context.Context, cfg Config, dataDir string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
 	}
-	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)"
+	// temp_store(MEMORY): the container runs with a read-only root and only the
+	// data dir mounted, so SQLite's temp-file search (TMPDIR, /var/tmp, /tmp)
+	// may find nowhere to spill sorts and GROUP BYs. Taproot's temp structures
+	// are bounded by query results, not by table size.
+	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
