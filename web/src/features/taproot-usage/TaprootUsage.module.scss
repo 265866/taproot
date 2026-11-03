@@ -1014,6 +1014,11 @@
 }
 
 .ttlShare {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ttlShareValue {
   font-size: var(--font-size-numeral-lg);
   font-weight: var(--font-weight-numeral);
   letter-spacing: var(--letter-spacing-numeral);

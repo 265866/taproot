@@ -266,7 +266,7 @@
       "status_none": "No split",
       "ttl_title": "Cache TTL check",
       "ttl_desc": "Flags a device when more than {{share}} of its Claude main-conversation cache writes were 5-minute, over at least {{min}} requests with a reported split. Subagent requests are left out: Claude Code sets their TTL separately.",
-      "ttl_share": "{{share}} of cache writes were 5-minute",
+      "ttl_share": "of main-conversation cache writes were 5-minute",
       "ttl_measured": "Measured: {{fiveMinute}} tokens written with a 5-minute TTL and {{oneHour}} with a one-hour TTL, over {{requests}} main-conversation requests.",
       "ttl_fix_before": "On {{device}}, add",
       "ttl_fix_after": "to",
@@ -276,7 +276,8 @@
       "estimate_rewrites_other": "{{count}} cache writes totalling {{tokens}} tokens followed a 5 to 60 minute pause, so a one-hour TTL would likely have read them instead (about {{cost}}). Writing the rest at the one-hour rate would add about {{premium}}.",
       "estimate_none": "No cache write followed a 5 to 60 minute pause in this range. Writing at the one-hour rate would add about {{premium}}.",
       "estimate_net_saving": "Net: about {{amount}} saved at API prices.",
-      "estimate_net_cost": "Net: about {{amount}} more at API prices."
+      "estimate_net_cost": "Net: about {{amount}} more at API prices.",
+      "estimate_net_cost_hint": "A one-hour TTL pays off when sessions pause for 5 to 60 minutes; if this device rarely pauses that long, the 5-minute TTL is cheaper."
     }
   }
 }

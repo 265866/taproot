@@ -207,7 +207,7 @@ describe('devices tab rendering', () => {
 
   test('the TTL advice gives the setting and labels the estimate', () => {
     const html = render(createElement(TtlAdvice, { devices: [flagged] }));
-    expect(html).toContain('90% of cache writes were 5-minute');
+    expect(html).toContain('90%</span> of main-conversation cache writes were 5-minute');
     expect(html).toContain('&quot;promptCacheTtl&quot;: &quot;1h&quot;');
     expect(html).toContain('~/.claude/settings.json');
     expect(html).toContain('Estimate');

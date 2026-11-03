@@ -82,9 +82,8 @@ export function TtlAdvice({ devices }: { devices: readonly UsageDevice[] }) {
             <div className={styles.ttlHead}>
               <strong>{name}</strong>
               <span className={styles.ttlShare}>
-                {t('taproot_usage.devices.ttl_share', {
-                  share: formatRatio(m.fiveMinuteShare, 0),
-                })}
+                <span className={styles.ttlShareValue}>{formatRatio(m.fiveMinuteShare, 0)}</span>{' '}
+                {t('taproot_usage.devices.ttl_share')}
               </span>
             </div>
             <SplitBar fiveMinute={m.cacheWrite5mTokens} oneHour={m.cacheWrite1hTokens} wide />
@@ -125,6 +124,7 @@ export function TtlAdvice({ devices }: { devices: readonly UsageDevice[] }) {
                       amount: formatUSD(-e.netSavingsUSD),
                     })}
               </strong>
+              {e.netSavingsUSD < 0 ? ` ${t('taproot_usage.devices.estimate_net_cost_hint')}` : null}
             </p>
           </div>
         );
