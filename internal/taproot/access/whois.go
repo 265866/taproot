@@ -89,9 +89,8 @@ func (l *localClient) get(ctx context.Context, path string) ([]byte, error) {
 
 type whoisResponse struct {
 	Node *struct {
-		StableID     string
-		Name         string
-		ComputedName string
+		StableID string
+		Name     string
 	}
 	UserProfile *struct {
 		LoginName   string
@@ -114,10 +113,9 @@ func (l *localClient) whois(ctx context.Context, addr netip.Addr) (peer, error) 
 	p := peer{Login: parsed.UserProfile.LoginName, DisplayName: parsed.UserProfile.DisplayName}
 	if parsed.Node != nil {
 		p.StableID = parsed.Node.StableID
+		// Only the control-assigned name: ComputedName derives from the
+		// device-reported hostname, which the device controls.
 		p.Node = strings.TrimSuffix(parsed.Node.Name, ".")
-		if p.Node == "" {
-			p.Node = parsed.Node.ComputedName
-		}
 	}
 	return p, nil
 }

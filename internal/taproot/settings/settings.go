@@ -22,10 +22,14 @@ import (
 
 const defaultPollInterval = 15 * time.Minute
 
-// AllowList is the access guard's runtime allowlist.
-type AllowList interface {
+// AccessLists are the access guard's runtime login and admin node lists.
+type AccessLists interface {
 	AllowLogins() []string
 	SetAllowLogins([]string) error
+	AdminNodes() []string
+	SetAdminNodes([]string) error
+	// AdminNodesInclude reports whether a candidate admin-nodes list admits node.
+	AdminNodesInclude(nodes []string, node string) bool
 }
 
 // RetentionSetter is the request log module's runtime retention.
@@ -42,7 +46,7 @@ type ScheduleSetter interface {
 
 // Deps are the modules and paths the settings endpoints read and change.
 type Deps struct {
-	Access        AllowList
+	Access        AccessLists
 	AccessEnabled bool
 	Logs          RetentionSetter
 	Backups       ScheduleSetter
@@ -119,6 +123,7 @@ func (s *Settings) Routes(r *gin.RouterGroup) {
 type accessView struct {
 	Enabled     bool     `json:"enabled"`
 	AllowLogins []string `json:"allowLogins"`
+	AdminNodes  []string `json:"adminNodes"`
 }
 
 type requestLogsView struct {
@@ -161,6 +166,7 @@ type view struct {
 type update struct {
 	Access *struct {
 		AllowLogins *[]string `json:"allowLogins"`
+		AdminNodes  *[]string `json:"adminNodes"`
 	} `json:"access"`
 	RequestLogs *struct {
 		MaxDays         *int      `json:"maxDays"`
@@ -180,18 +186,14 @@ type update struct {
 func (s *Settings) current() view {
 	ret := s.deps.Logs.Retention()
 	dailyAt, keep := s.deps.Backups.Schedule()
-	logins := s.deps.Access.AllowLogins()
-	if logins == nil {
-		logins = []string{}
-	}
-	exclude := ret.ExcludePaths
-	if exclude == nil {
-		exclude = []string{}
-	}
 	return view{
-		Access: accessView{Enabled: s.deps.AccessEnabled, AllowLogins: logins},
+		Access: accessView{
+			Enabled:     s.deps.AccessEnabled,
+			AllowLogins: nonNilStrings(s.deps.Access.AllowLogins()),
+			AdminNodes:  nonNilStrings(s.deps.Access.AdminNodes()),
+		},
 		RequestLogs: requestLogsView{
-			MaxDays: ret.MaxDays, MaxBytes: int64(ret.MaxBytes), ExcludePaths: exclude, KeepUnrouted404: ret.KeepUnrouted404,
+			MaxDays: ret.MaxDays, MaxBytes: int64(ret.MaxBytes), ExcludePaths: nonNilStrings(ret.ExcludePaths), KeepUnrouted404: ret.KeepUnrouted404,
 		},
 		Backups: backupsView{DailyAt: dailyAt, Keep: keep},
 		Ingest: ingestView{
@@ -272,6 +274,22 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 			}
 			undo = append(undo, func() { s.restore("allow-logins", s.deps.Access.SetAllowLogins(before)) })
 			edits = append(edits, yamlEdit{path: []string{"access", "allow-logins"}, value: s.deps.Access.AllowLogins()})
+		}
+	}
+
+	if u.Access != nil && u.Access.AdminNodes != nil {
+		if err := s.checkAdminNodes(*u.Access.AdminNodes, caller); err != nil {
+			rollback()
+			return err
+		}
+		before := s.deps.Access.AdminNodes()
+		if err := s.deps.Access.SetAdminNodes(*u.Access.AdminNodes); err != nil {
+			rollback()
+			return badRequest("invalid_admin_nodes", "admin-nodes: %v", err)
+		}
+		if after := s.deps.Access.AdminNodes(); !slices.Equal(before, after) {
+			undo = append(undo, func() { s.restore("admin-nodes", s.deps.Access.SetAdminNodes(before)) })
+			edits = append(edits, yamlEdit{path: []string{"access", "admin-nodes"}, value: nonNilStrings(after)})
 		}
 	}
 
@@ -386,6 +404,24 @@ func (s *Settings) checkLogins(raw []string, caller access.Identity) ([]string, 
 		}
 	}
 	return logins, nil
+}
+
+// checkAdminNodes refuses a list that would drop the calling device. Loopback
+// callers are admins whatever the list says.
+func (s *Settings) checkAdminNodes(nodes []string, caller access.Identity) error {
+	if !s.deps.AccessEnabled {
+		return &apiError{
+			status: http.StatusConflict, code: "access_disabled",
+			message: "the access guard is disabled in taproot.yaml, so admin-nodes has no effect",
+		}
+	}
+	if caller.Via == access.ViaTailnet && !s.deps.Access.AdminNodesInclude(nodes, caller.Node) {
+		return &apiError{
+			status: http.StatusConflict, code: "would_lock_out",
+			message: fmt.Sprintf("admin-nodes must keep this device %s", caller.Node),
+		}
+	}
+	return nil
 }
 
 func (s *Settings) restore(what string, err error) {

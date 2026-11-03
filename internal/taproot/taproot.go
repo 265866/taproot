@@ -92,6 +92,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, fmt.Errorf("taproot access: %w", err)
 	}
+	api.SetRESPConnectionFilter(access.RESPFilter)
 	if err := backup.ApplyPendingRestore(dataDir); err != nil {
 		return nil, fmt.Errorf("taproot pending restore: %w", err)
 	}

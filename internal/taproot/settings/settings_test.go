@@ -260,6 +260,55 @@ func TestPutRefusesToLockOutCaller(t *testing.T) {
 	}
 }
 
+func TestAdminNodes(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	_, v, _ := f.do(t, http.MethodGet, "")
+	if v.Access.AdminNodes == nil || len(v.Access.AdminNodes) != 0 {
+		t.Fatalf("GET adminNodes = %#v, want []", v.Access.AdminNodes)
+	}
+
+	// Loopback may set any list; entries are normalized and written to the file.
+	code, v, body := f.do(t, http.MethodPut, `{"access": {"adminNodes": [" Laptop. ", "laptop", "phone.tailnet-0000.ts.net"]}}`)
+	if code != http.StatusOK || !slices.Equal(v.Access.AdminNodes, []string{"laptop", "phone.tailnet-0000.ts.net"}) {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	if got := f.parsed(t).Access.AdminNodes; !slices.Equal(got, []string{"laptop", "phone.tailnet-0000.ts.net"}) {
+		t.Errorf("file admin-nodes = %v", got)
+	}
+	if !strings.Contains(f.file(t), "allow-logins: [alice@github] # me") {
+		t.Errorf("unrelated access lines changed:\n%s", f.file(t))
+	}
+
+	// A tailnet caller cannot drop its own device.
+	f.caller = access.Identity{Login: "alice@github", Node: "phone.tailnet-0000.ts.net", Via: access.ViaTailnet}
+	before := f.file(t)
+	code, _, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": ["laptop"]}, "backups": {"keep": 5}}`)
+	if code != http.StatusConflict || errorCode(t, body) != "would_lock_out" {
+		t.Fatalf("PUT dropping own node = %d %s, want 409 would_lock_out", code, body)
+	}
+	if got := f.guard.AdminNodes(); !slices.Equal(got, []string{"laptop", "phone.tailnet-0000.ts.net"}) {
+		t.Errorf("admin-nodes changed to %v", got)
+	}
+	if _, keep := f.backups.Schedule(); keep != 3 || f.file(t) != before {
+		t.Errorf("a refused update changed state: keep %d\n%s", keep, f.file(t))
+	}
+	if code, _, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": []}}`); code != http.StatusConflict {
+		t.Fatalf("PUT clearing the list from a tailnet caller = %d %s", code, body)
+	}
+	if code, v, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": ["PHONE.tailnet-0000.ts.net."]}}`); code != http.StatusOK || !slices.Equal(v.Access.AdminNodes, []string{"phone.tailnet-0000.ts.net"}) {
+		t.Fatalf("PUT keeping own node in other case = %d %s", code, body)
+	}
+
+	// Loopback may clear it.
+	f.caller = access.Identity{Via: access.ViaLoopback}
+	if code, v, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": []}}`); code != http.StatusOK || len(v.Access.AdminNodes) != 0 {
+		t.Fatalf("PUT clearing from loopback = %d %s", code, body)
+	}
+	if got := f.parsed(t).Access.AdminNodes; len(got) != 0 {
+		t.Errorf("file admin-nodes after clearing = %v", got)
+	}
+}
+
 func TestLoopbackCallerMaySetAnyList(t *testing.T) {
 	f := newFixture(t, options{})
 	code, v, body := f.do(t, http.MethodPut, `{"access": {"allowLogins": ["friend@github"]}}`)
@@ -292,6 +341,7 @@ func TestLaterFailureRollsBackEarlierChanges(t *testing.T) {
 		name, body, code string
 	}{
 		{"bad exclude path", `{"access": {"allowLogins": ["a@github"]}, "requestLogs": {"excludePaths": ["no-slash"]}}`, "invalid_retention"},
+		{"bad admin node", `{"access": {"allowLogins": ["a@github"], "adminNodes": ["bad name"]}}`, "invalid_admin_nodes"},
 		{"bad daily-at", `{"access": {"allowLogins": ["a@github"]}, "requestLogs": {"maxDays": 3}, "backups": {"dailyAt": "25:00"}}`, "invalid_backups"},
 		{"bad keep", `{"requestLogs": {"maxDays": 3}, "backups": {"keep": 0}}`, "invalid_backups"},
 		{"bad poll interval", `{"access": {"allowLogins": ["a@github"]}, "backups": {"dailyAt": "off"}, "ingest": {"pollInterval": "soon"}}`, "invalid_poll_interval"},
@@ -375,12 +425,14 @@ func TestDisabledGuardRefusesAllowLogins(t *testing.T) {
 	if v.Access.Enabled || v.Access.AllowLogins == nil {
 		t.Errorf("access = %+v", v.Access)
 	}
-	code, _, body := f.do(t, http.MethodPut, `{"access": {"allowLogins": ["a@github"]}}`)
-	if code != http.StatusConflict || errorCode(t, body) != "access_disabled" {
-		t.Fatalf("PUT = %d %s", code, body)
+	for _, put := range []string{`{"access": {"allowLogins": ["a@github"]}}`, `{"access": {"adminNodes": ["laptop"]}}`} {
+		code, _, body := f.do(t, http.MethodPut, put)
+		if code != http.StatusConflict || errorCode(t, body) != "access_disabled" {
+			t.Fatalf("PUT %s = %d %s", put, code, body)
+		}
 	}
 	// Other sections still save.
-	if code, _, body = f.do(t, http.MethodPut, `{"backups": {"dailyAt": "off"}}`); code != http.StatusOK {
+	if code, _, body := f.do(t, http.MethodPut, `{"backups": {"dailyAt": "off"}}`); code != http.StatusOK {
 		t.Fatalf("PUT backups = %d %s", code, body)
 	}
 	if got := f.parsed(t).Backups.DailyAt; got != "off" {

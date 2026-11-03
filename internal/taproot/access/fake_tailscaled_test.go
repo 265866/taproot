@@ -28,6 +28,8 @@ type fakeTailscaled struct {
 
 type fakePeer struct {
 	login, displayName, node string
+	// noName leaves Node.Name empty, so only ComputedName carries the node.
+	noName bool
 }
 
 func newFakeTailscaled(t *testing.T, peers map[string]fakePeer) *fakeTailscaled {
@@ -92,7 +94,9 @@ func (f *fakeTailscaled) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	// A node ending in a dot is a full name from another tailnet.
 	name := p.node + "." + tailnetSuffix + "."
-	if strings.HasSuffix(p.node, ".") {
+	if p.noName {
+		name = ""
+	} else if strings.HasSuffix(p.node, ".") {
 		name = p.node
 	}
 	// Field set taken from apitype.WhoIsResponse with tailcfg.Node and tailcfg.UserProfile.

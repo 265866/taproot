@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,6 +19,29 @@ const (
 	initialAcceptRetryDelay = 5 * time.Millisecond
 	maxAcceptRetryDelay     = 1 * time.Second
 )
+
+// respConnectionFilter decides by remote address whether a Redis-protocol
+// connection on the shared port is served. Taproot (the fork) sets it; see
+// internal/taproot/PLAN.md, "Upstream boundary".
+var respConnectionFilter atomic.Pointer[func(net.Addr) bool]
+
+// SetRESPConnectionFilter installs a filter for Redis-protocol connections on
+// the shared port; nil removes it. Rejected connections are closed before any
+// reply.
+func SetRESPConnectionFilter(filter func(net.Addr) bool) {
+	if filter == nil {
+		respConnectionFilter.Store(nil)
+		return
+	}
+	respConnectionFilter.Store(&filter)
+}
+
+// RESPConnectionAllowed reports whether the installed filter, if any, admits a
+// Redis-protocol connection from remote.
+func RESPConnectionAllowed(remote net.Addr) bool {
+	filter := respConnectionFilter.Load()
+	return filter == nil || (*filter)(remote)
+}
 
 func normalizeHTTPServeError(err error) error {
 	if err == nil {
@@ -179,6 +203,10 @@ func (s *Server) routeMuxConnection(conn net.Conn, httpListener *muxListener) {
 	}
 
 	if isRedisRESPPrefix(prefix[0]) {
+		if !RESPConnectionAllowed(conn.RemoteAddr()) {
+			_ = conn.Close()
+			return
+		}
 		s.handleRedisConnection(conn, reader)
 		return
 	}

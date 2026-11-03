@@ -23,8 +23,10 @@ const (
 	tailnet  = "tailnet-0000.ts.net"
 	selfIP   = "100.64.0.1"
 	adminIP = "100.64.0.2"
-	lanIP    = "192.168.0.88"
-	host     = "server:8317"
+	// worker is the owner's server node, signed in as him but not in admin-nodes.
+	workerIP = "100.101.1.2"
+	lanIP     = "192.168.0.88"
+	host      = "server:8317"
 	// Fake token values; the test checks they never leave the server cross-origin.
 	refreshToken = "sk-ant-ort-TESTONLY"
 )
@@ -43,7 +45,7 @@ func fakeLocalAPI(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes := map[string]string{selfIP: "server", adminIP: "desktop"}
+	nodes := map[string]string{selfIP: "server", adminIP: "desktop", workerIP: "worker"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/localapi/v0/whois", func(w http.ResponseWriter, r *http.Request) {
 		node, ok := nodes[r.FormValue("addr")]
@@ -102,7 +104,7 @@ func newServer(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	taprootYAML := filepath.Join(dir, "taproot.yaml")
-	tp := "access:\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) + "\n  trusted-cidrs: [\"" + lanIP + "/32\"]\nbackups:\n  daily-at: \"off\"\n"
+	tp := "access:\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) + "\n  trusted-cidrs: [\"" + lanIP + "/32\"]\nbackups:\n  daily-at: \"off\"\n"
 	if err := os.WriteFile(taprootYAML, []byte(tp), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +142,24 @@ func (f fixture) do(r req) *httptest.ResponseRecorder {
 	return rec
 }
 
+// guardCode returns the code of the guard's 403, or "" for any other response.
+func guardCode(rec *httptest.ResponseRecorder) string {
+	if rec.Code != http.StatusForbidden {
+		return ""
+	}
+	var body struct{ Error struct{ Code string } }
+	if json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+		return ""
+	}
+	switch body.Error.Code {
+	case "forbidden", "not_admin_node", "request_header_required":
+		return body.Error.Code
+	}
+	return ""
+}
+
 func isGuardDenial(rec *httptest.ResponseRecorder) bool {
-	return rec.Code == http.StatusForbidden && strings.Contains(rec.Body.String(), "caller is not allowed")
+	return guardCode(rec) != ""
 }
 
 // assertDenied checks the guard answered 403 before upstream's CORS
@@ -263,7 +281,7 @@ func TestSameOriginDashboardWorks(t *testing.T) {
 // security model in package access describes (finding 9).
 func TestSurfaces(t *testing.T) {
 	f := newServer(t)
-	adminPaths := []string{"/", "/taproot/api/v1/me", "/v8/management/config", "/v0/management/auth-files/download?name=claude-x.json", "/v0/resource/plugins/demo/index.html", "/anthropic/callback?state=x"}
+	adminPaths := []string{"/taproot/api/v1/me", "/v8/management/config", "/v0/management/auth-files/download?name=claude-x.json", "/v0/resource/plugins/demo/index.html", "/anthropic/callback?state=x"}
 	for _, tc := range []struct {
 		name, remote, host string
 		admin              bool
@@ -272,7 +290,9 @@ func TestSurfaces(t *testing.T) {
 		{"server's own node", selfIP, selfIP + ":8317", false},
 		// server-local callers using the 127.0.1.1 publish arrive from the LAN address.
 		{"trusted cidr", lanIP, "127.0.1.1:8317", false},
-		{"allowlisted other node", adminIP, host, true},
+		{"node in admin-nodes", adminIP, host, true},
+		// Security recheck F1: another node of the allowed login is not an admin.
+		{"allowlisted node outside admin-nodes", workerIP, host, false},
 		{"loopback", "127.0.0.1", "localhost:8317", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -290,11 +310,117 @@ func TestSurfaces(t *testing.T) {
 					t.Errorf("admin %s = %d, want the guard's 403", path, rec.Code)
 				}
 			}
+			// The dashboard page is static, and every admitted caller may load it.
+			if rec := f.do(req{remote: tc.remote, host: tc.host, path: "/"}); rec.Code != http.StatusOK {
+				t.Errorf("GET / = %d, want 200", rec.Code)
+			}
 		})
+	}
+	if rec := f.do(req{remote: "203.0.113.9", path: "/"}); !isGuardDenial(rec) {
+		t.Errorf("GET / from a stranger = %d, want the guard's 403", rec.Code)
 	}
 	for _, remote := range []string{adminIP, selfIP, "127.0.0.1", "203.0.113.9"} {
 		if rec := f.do(req{remote: remote, path: "/management.html"}); rec.Code != http.StatusNotFound {
 			t.Errorf("/management.html from %s = %d, want 404", remote, rec.Code)
+		}
+	}
+}
+
+// Security recheck F1: a node of the allowed login that is not in admin-nodes
+// gets no tokens, and its 403 names the node to add.
+func TestNodeOutsideAdminNodesIsTold(t *testing.T) {
+	f := newServer(t)
+	sameOrigin := map[string]string{"Origin": "http://" + host}
+	rec := f.do(req{remote: workerIP, path: "/v0/management/auth-files/download?name=claude-x.json", headers: sameOrigin})
+	if guardCode(rec) != "not_admin_node" || strings.Contains(rec.Body.String(), refreshToken) {
+		t.Fatalf("token download from worker = %d %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Error struct{ Node, Message string }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error.Node != "worker."+tailnet || !strings.Contains(body.Error.Message, "access.admin-nodes") {
+		t.Fatalf("not_admin_node body = %s", rec.Body)
+	}
+	if rec := f.do(req{remote: workerIP, method: http.MethodPost, path: "/v1/messages", body: `{}`}); isGuardDenial(rec) {
+		t.Fatalf("worker proxy request denied: %s", rec.Body)
+	}
+}
+
+// admin-nodes is editable through settings, refuses to drop the caller's own
+// device, and is written to taproot.yaml.
+func TestAdminNodesEditableThroughSettings(t *testing.T) {
+	f := newServer(t)
+	sameOrigin := map[string]string{"Origin": "http://" + host, "Content-Type": "application/json"}
+	rec := f.do(req{remote: adminIP, method: http.MethodPut, path: "/taproot/api/v1/settings", headers: sameOrigin, body: `{"access":{"adminNodes":["worker"]}}`})
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "would_lock_out") {
+		t.Fatalf("dropping own node = %d %s, want 409 would_lock_out", rec.Code, rec.Body)
+	}
+	rec = f.do(req{remote: adminIP, method: http.MethodPut, path: "/taproot/api/v1/settings", headers: sameOrigin, body: `{"access":{"adminNodes":["desktop","Worker.` + tailnet + `."]}}`})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("adding worker = %d %s", rec.Code, rec.Body)
+	}
+	var got struct{ Access struct{ AdminNodes []string } }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || strings.Join(got.Access.AdminNodes, ",") != "desktop,worker."+tailnet {
+		t.Fatalf("settings adminNodes = %s", rec.Body)
+	}
+	if rec := f.do(req{remote: workerIP, path: "/v8/management/config", headers: sameOrigin}); rec.Code != http.StatusOK {
+		t.Fatalf("worker after listing = %d %s", rec.Code, rec.Body)
+	}
+	written, err := os.ReadFile(f.taprootYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tp, err := LoadConfig(f.taprootYAML)
+	if err != nil || strings.Join(tp.Access.AdminNodes, ",") != "desktop,worker."+tailnet {
+		t.Fatalf("taproot.yaml admin-nodes = %v (%v):\n%s", tp.Access.AdminNodes, err, written)
+	}
+	// Loopback may clear the list; it stays an admin itself.
+	rec = f.do(req{remote: "127.0.0.1", host: "localhost:8317", method: http.MethodPut, path: "/taproot/api/v1/settings", headers: map[string]string{"Content-Type": "application/json"}, body: `{"access":{"adminNodes":[]}}`})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("loopback clearing admin-nodes = %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(req{remote: adminIP, path: "/v8/management/config", headers: sameOrigin}); guardCode(rec) != "not_admin_node" {
+		t.Fatalf("admin after clearing = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// Security recheck F3: over plain http a cross-site no-cors GET carries no
+// Origin and no Sec-Fetch-*, so GETs that change state need RequestHeader.
+func TestStateChangingGETsNeedRequestHeader(t *testing.T) {
+	f := newServer(t)
+	for _, path := range []string{
+		"/v0/management/usage-queue",
+		"/v8/management/observability/usage/queue",
+		"/v0/management/anthropic-auth-url",
+		"/v8/management/oauth/auth-url?provider=anthropic",
+	} {
+		if rec := f.do(req{remote: adminIP, path: path}); guardCode(rec) != "request_header_required" {
+			t.Errorf("header-less GET %s = %d %.200s, want request_header_required", path, rec.Code, rec.Body)
+		}
+	}
+	rec := f.do(req{remote: adminIP, path: "/v0/management/usage-queue", headers: map[string]string{"X-Taproot-Request": "1"}})
+	if rec.Code != http.StatusOK {
+		t.Errorf("usage-queue with the header = %d %.200s", rec.Code, rec.Body)
+	}
+	// Read-only GETs, such as a plugin page's state fetch, need no header.
+	for _, path := range []string{"/v8/management/config", "/v0/management/claude-keep-rolling/state", "/taproot/api/v1/settings"} {
+		if rec := f.do(req{remote: adminIP, path: path}); isGuardDenial(rec) {
+			t.Errorf("read-only GET %s denied: %s", path, rec.Body)
+		}
+	}
+}
+
+// Security recheck F2: Setup limits upstream's RESP listener to loopback.
+func TestSetupLimitsRESPToLoopback(t *testing.T) {
+	api.SetRESPConnectionFilter(nil)
+	newServer(t)
+	t.Cleanup(func() { api.SetRESPConnectionFilter(nil) })
+	if !api.RESPConnectionAllowed(&net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1}) {
+		t.Error("loopback RESP refused")
+	}
+	for _, ip := range []string{adminIP, selfIP, lanIP} {
+		if api.RESPConnectionAllowed(&net.TCPAddr{IP: net.ParseIP(ip), Port: 1}) {
+			t.Errorf("RESP from %s admitted", ip)
 		}
 	}
 }
