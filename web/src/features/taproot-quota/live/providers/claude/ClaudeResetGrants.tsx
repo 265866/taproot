@@ -17,15 +17,20 @@ import {
   resetGrantFailureMessageKey,
 } from './resetGrantOperations';
 import { selectResetGrant } from './selectResetGrant';
-import { readResetGrantsForCard, scheduleResetGrantRead } from './resetGrantReads';
+import { cardResetGrantSource, type ResetGrantSource } from './resetGrantCache';
+import { scheduleResetGrantRead } from './resetGrantReads';
 
-/** Card-owned reads; the session-scoped journal owns spending and ambiguous retries. */
+/**
+ * Caller-owned reads; the session-scoped journal owns spending and ambiguous retries. `source`
+ * must be stable; a cached one shows its status at once instead of reading after a delay.
+ */
 export function useClaudeResetGrants(
   file: AuthFileItem,
   enabled: boolean,
   disabled: boolean,
   refreshToken: unknown,
-  onRefresh: () => void
+  onRefresh: () => void,
+  source: ResetGrantSource = cardResetGrantSource
 ) {
   const { t } = useTranslation();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
@@ -47,11 +52,17 @@ export function useClaudeResetGrants(
     const version = ++generation.current;
     setStatus(null);
     if (!enabled || disabled || !sessionActive || !authIndex) return;
+    const cached = source.peek?.(authIndex);
+    if (cached) {
+      setStatus(cached);
+      setMessage('');
+      return;
+    }
     let cancelled = false;
     const current = () =>
       !cancelled && version === generation.current && session === apiClient.getConnectionRevision();
     const cancelRead = scheduleResetGrantRead(() => {
-      void readResetGrantsForCard(authIndex).then(
+      void source.read(authIndex).then(
         (result) => {
           if (current()) {
             setStatus(result);
@@ -74,7 +85,7 @@ export function useClaudeResetGrants(
       cancelRead();
       generation.current += 1;
     };
-  }, [authIndex, key, enabled, disabled, sessionActive, session, refreshToken, reload]);
+  }, [authIndex, key, enabled, disabled, sessionActive, session, refreshToken, reload, source]);
 
   const operation = resetGrantOperations.inspect(key);
   const pending = operation && !operation.code ? operation : undefined;
@@ -131,6 +142,7 @@ export function useClaudeResetGrants(
           // A concurrent page-wide refresh can invalidate this read generation.
           // Release the local lock regardless, but never refresh a replacement account.
           setBusy(false);
+          source.invalidate?.(authIndex);
           setReload((value) => value + 1);
           if (current()) onRefresh();
         }
@@ -139,6 +151,7 @@ export function useClaudeResetGrants(
   };
   return {
     count: status?.grants.reduce((sum, grant) => sum + grant.resetsLeft, 0) ?? null,
+    status,
     grants: status?.grants ?? [],
     busy,
     blocked,
