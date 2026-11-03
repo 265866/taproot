@@ -13,10 +13,10 @@ import { useTranslation } from 'react-i18next';
 import { captureQuotaCacheGeneration, commitIfQuotaCacheCurrent } from '@/stores';
 import { getStatusFromError } from '@/utils/quota';
 import { getQuotaCacheKey } from '@/utils/quota/identity';
-import type { QuotaFileEntry } from '../logic';
-import { QUOTA_ADAPTERS, getQuotaSetter, type QuotaCardState } from '../providers';
-import { enrichQuotaInBackground } from '../quotaEnrichment';
-import type { QuotaProviderType } from '../providers/types';
+import type { QuotaFileEntry } from '@/features/taproot-quota/live/logic';
+import { QUOTA_ADAPTERS, getQuotaSetter, type QuotaCardState } from '@/features/taproot-quota/live/providers';
+import { enrichQuotaInBackground } from '@/features/taproot-quota/live/quotaEnrichment';
+import type { QuotaProviderType } from '@/features/taproot-quota/live/providers/types';
 
 interface BatchFetchResult {
   name: string;

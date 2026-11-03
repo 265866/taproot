@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createMetaQuotaFetcher, MetaQuotaError } from '@/features/quota/providers/meta/requests';
+import { createMetaQuotaFetcher, MetaQuotaError } from '@/features/taproot-quota/live/providers/meta/requests';
 import type { ApiCallRequest, ApiCallResult } from '@/services/api/apiCall';
 import type { AuthFileItem } from '@/types';
 

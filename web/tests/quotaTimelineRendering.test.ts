@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import '../src/i18n/index';
 import { QuotaTimeline } from '../src/features/quota/components/QuotaTimeline';
-import type { QuotaFileEntry } from '../src/features/quota/logic';
+import type { QuotaFileEntry } from '../src/features/taproot-quota/live/logic';
 import { buildKimiQuotaRows } from '../src/utils/quota';
 
 const entries: QuotaFileEntry[] = [

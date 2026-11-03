@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test';
-import { KIMI_CONFIG } from '@/features/quota/providers/kimi/data';
+import { KIMI_CONFIG } from '@/features/taproot-quota/live/providers/kimi/data';
 import { apiCallApi, authFilesApi } from '@/services/api';
 import { KIMI_AI_USAGE_URL, KIMI_USAGE_URL, buildKimiQuotaRows } from '@/utils/quota';
 import type { AuthFileItem } from '@/types';

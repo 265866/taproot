@@ -29,8 +29,8 @@ import {
   HOUR_MS,
 } from '../quotaTimelineModel';
 import type { TimelineLane, TimelineMode } from '../quotaTimelineModel';
-import type { QuotaFileEntry } from '../logic';
-import type { QuotaCardState } from '../providers';
+import type { QuotaFileEntry } from '@/features/taproot-quota/live/logic';
+import type { QuotaCardState } from '@/features/taproot-quota/live/providers';
 import styles from './QuotaTimeline.module.scss';
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;

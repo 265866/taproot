@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { QUOTA_PAGE_SIZE } from '@/features/quota/constants';
+import { QUOTA_PAGE_SIZE } from '@/features/taproot-quota/live/constants';
 import {
   buildTabCounts,
   canRefreshQuotaAfterList,
@@ -11,7 +11,7 @@ import {
   resolveQuotaProviderType,
   sortQuotaEntries,
   type QuotaFileEntry,
-} from '@/features/quota/logic';
+} from '@/features/taproot-quota/live/logic';
 import type { AuthFileItem } from '@/types';
 
 const file = (name: string, provider: string, extra: Partial<AuthFileItem> = {}): AuthFileItem =>

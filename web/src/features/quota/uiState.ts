@@ -3,7 +3,7 @@ import {
   QUOTA_TAB_ORDER,
   type QuotaSortMode,
   type QuotaTabId,
-} from './constants';
+} from '@/features/taproot-quota/live/constants';
 
 /** 额度页 UI 偏好：会话级持久化（sessionStorage），跨会话不携带。 */
 export type QuotaUiState = {

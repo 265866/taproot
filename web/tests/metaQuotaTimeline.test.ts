@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { buildTimelineLane } from '@/features/quota/quotaTimelineModel';
-import { collectQuotaRowInstants, nextRecoveryMs } from '@/features/quota/resetSchedule';
+import { collectQuotaRowInstants, nextRecoveryMs } from '@/features/taproot-quota/live/resetSchedule';
 import type { MetaQuotaState } from '@/types';
 
 const NOW_MS = Date.parse('2099-01-01T00:00:00Z');

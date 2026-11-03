@@ -22,9 +22,9 @@ import type {
   XaiQuotaState,
 } from '@/types';
 import { HOUR_MS, DAY_MS } from '@/utils/time/durations';
-import { QuotaCard } from '../components/QuotaCard';
-import type { QuotaFileEntry } from '../logic';
-import type { QuotaCardState } from '../providers';
+import { QuotaCard } from '@/features/taproot-quota/live/components/QuotaCard';
+import type { QuotaFileEntry } from '@/features/taproot-quota/live/logic';
+import type { QuotaCardState } from '@/features/taproot-quota/live/providers';
 import pageStyles from '../QuotaPage.module.scss';
 import styles from './QuotaTierPreview.module.scss';
 

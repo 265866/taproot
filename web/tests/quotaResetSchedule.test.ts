@@ -10,7 +10,7 @@ import {
   pickSoonestRowId,
   pickUrgentRowId,
   resetCreditRowId,
-} from '@/features/quota/resetSchedule';
+} from '@/features/taproot-quota/live/resetSchedule';
 import { DAY_MS, HOUR_MS } from '@/utils/time/durations';
 
 const NOW = new Date(2026, 7, 2, 12).getTime();

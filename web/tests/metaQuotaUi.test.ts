@@ -4,12 +4,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import i18n from '@/i18n';
 import type { AuthFileItem, MetaQuotaState } from '@/types';
-import { MetaQuotaBody } from '@/features/quota/providers/meta/MetaQuotaBody';
-import { META_CONFIG } from '@/features/quota/providers/meta/data';
+import { MetaQuotaBody } from '@/features/taproot-quota/live/providers/meta/MetaQuotaBody';
+import { META_CONFIG } from '@/features/taproot-quota/live/providers/meta/data';
 import { parseMetaQuotaPayload } from '@/services/api/metaQuota';
 import { metaQuotaResponse } from './fixtures/metaQuota';
-import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/quota/types';
-import { classifyQuotaFiles, buildTabCounts } from '@/features/quota/logic';
+import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
+import { classifyQuotaFiles, buildTabCounts } from '@/features/taproot-quota/live/logic';
 import { QUOTA_PROVIDER_TYPES } from '@/features/authFiles/constants';
 import {
   captureQuotaCacheGeneration,

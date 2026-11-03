@@ -24,7 +24,7 @@ import type { AuthFileItem, ResolvedTheme } from '@/types';
 import { getQuotaCacheKey } from '@/utils/quota/identity';
 import { ProviderTabs } from '@/features/authFiles/components/ProviderTabs';
 import { QuotaHeader } from './components/QuotaHeader';
-import { QuotaCard } from './components/QuotaCard';
+import { QuotaCard } from '@/features/taproot-quota/live/components/QuotaCard';
 import { QuotaTimeline } from './components/QuotaTimeline';
 import {
   CARD_ENTRANCE_BUDGET_MS,
@@ -33,7 +33,7 @@ import {
   QUOTA_TAB_ORDER,
   type QuotaSortMode,
   type QuotaTabId,
-} from './constants';
+} from '@/features/taproot-quota/live/constants';
 import {
   buildTabCounts,
   canRefreshQuotaAfterList,
@@ -43,11 +43,11 @@ import {
   paginate,
   sortQuotaEntries,
   type QuotaFileEntry,
-} from './logic';
-import { nextRecoveryMs } from './resetSchedule';
-import { QUOTA_ADAPTERS, getQuotaSetter, type QuotaCardState } from './providers';
-import type { QuotaProviderType } from './providers/types';
-import { useQuotaActions } from './hooks/useQuotaActions';
+} from '@/features/taproot-quota/live/logic';
+import { nextRecoveryMs } from '@/features/taproot-quota/live/resetSchedule';
+import { QUOTA_ADAPTERS, getQuotaSetter, type QuotaCardState } from '@/features/taproot-quota/live/providers';
+import type { QuotaProviderType } from '@/features/taproot-quota/live/providers/types';
+import { useQuotaActions } from '@/features/taproot-quota/live/hooks/useQuotaActions';
 import { useQuotaBatchLoader } from './hooks/useQuotaBatchLoader';
 import { readQuotaUiState, writeQuotaUiState } from './uiState';
 import styles from './QuotaPage.module.scss';

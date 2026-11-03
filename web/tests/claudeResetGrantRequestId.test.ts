@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { generateResetGrantRequestId } from '../src/features/quota/providers/claude/resetGrantRequestId';
+import { generateResetGrantRequestId } from '../src/features/taproot-quota/live/providers/claude/resetGrantRequestId';
 import { ANTHROPIC_RESET_REQUEST_ID_RE } from '../src/services/api/claudeResetGrants';
 
 type RandomSource = Partial<Pick<Crypto, 'randomUUID' | 'getRandomValues'>>;

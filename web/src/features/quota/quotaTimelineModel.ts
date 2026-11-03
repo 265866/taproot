@@ -11,7 +11,7 @@
  */
 
 import { DAY_MS, HOUR_MS } from '@/utils/time/durations';
-import type { QuotaProviderType } from './providers/types';
+import type { QuotaProviderType } from '@/features/taproot-quota/live/providers/types';
 
 export { DAY_MS, HOUR_MS };
 

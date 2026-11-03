@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveClaudePlanType } from '@/features/quota/providers/claude/data';
+import { resolveClaudePlanType } from '@/features/taproot-quota/live/providers/claude/data';
 import type { ClaudeProfileResponse } from '@/types';
 
 describe('Claude plan type', () => {

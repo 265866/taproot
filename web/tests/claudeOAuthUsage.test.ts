@@ -7,11 +7,11 @@ import i18n from '@/i18n';
 import { normalizeClaudeUsageSnapshot } from '@/services/api/claudeUsage';
 import { apiCallApi, getApiCallErrorMessage, type ApiCallResult } from '@/services/api/apiCall';
 import { apiClient } from '@/services/api/client';
-import { CLAUDE_CONFIG, hasClaudeUsageData } from '@/features/quota/providers/claude/data';
-import { ClaudeQuotaBody } from '@/features/quota/providers/claude/ClaudeQuotaBody';
+import { CLAUDE_CONFIG, hasClaudeUsageData } from '@/features/taproot-quota/live/providers/claude/data';
+import { ClaudeQuotaBody } from '@/features/taproot-quota/live/providers/claude/ClaudeQuotaBody';
 import { buildTimelineLane } from '@/features/quota/quotaTimelineModel';
-import { nextRecoveryMs } from '@/features/quota/resetSchedule';
-import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/quota/types';
+import { nextRecoveryMs } from '@/features/taproot-quota/live/resetSchedule';
+import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
 import {
   captureQuotaCacheGeneration,
   commitIfQuotaCacheCurrent,

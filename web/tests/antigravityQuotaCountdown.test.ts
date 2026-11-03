@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getNextAntigravityCountdownUpdateDelay } from '@/features/quota/providers/antigravity/countdown';
+import { getNextAntigravityCountdownUpdateDelay } from '@/features/taproot-quota/live/providers/antigravity/countdown';
 
 const MINUTE_MS = 60_000;
 

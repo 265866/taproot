@@ -7,8 +7,8 @@ import {
   resolveCodexCardTier,
   resolveKimiCardTier,
   resolveXaiCardTier,
-} from '@/features/quota/cardTier';
-import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/quota/types';
+} from '@/features/taproot-quota/live/cardTier';
+import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
 import type { XaiBillingSummary } from '@/types';
 
 const classes = bindQuotaClasses(

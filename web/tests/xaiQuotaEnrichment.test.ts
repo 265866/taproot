@@ -3,9 +3,9 @@ import i18n from '@/i18n';
 import type { AuthFileItem } from '@/types';
 import { apiCallApi, type ApiCallResult } from '@/services/api';
 import { useQuotaStore } from '@/stores/useQuotaStore';
-import { XAI_CONFIG } from '@/features/quota/providers/xai/data';
-import type { QuotaAdapter } from '@/features/quota/providers';
-import { enrichQuotaInBackground } from '@/features/quota/quotaEnrichment';
+import { XAI_CONFIG } from '@/features/taproot-quota/live/providers/xai/data';
+import type { QuotaAdapter } from '@/features/taproot-quota/live/providers';
+import { enrichQuotaInBackground } from '@/features/taproot-quota/live/quotaEnrichment';
 import { getQuotaCacheKey } from '@/utils/quota/identity';
 import { XAI_USER_URL, XAI_SETTINGS_URL, buildXaiBillingSummary } from '@/utils/quota';
 

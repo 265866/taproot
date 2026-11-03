@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { TFunction } from 'i18next';
-import { buildClaudeQuotaWindows } from '@/features/quota/providers/claude/data';
+import { buildClaudeQuotaWindows } from '@/features/taproot-quota/live/providers/claude/data';
 import type { ClaudeUsagePayload } from '@/types';
 import { formatQuotaResetTime } from '@/utils/quota';
 

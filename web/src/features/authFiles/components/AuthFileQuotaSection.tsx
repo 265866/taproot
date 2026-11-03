@@ -12,9 +12,9 @@ import { getQuotaCacheKey } from '@/utils/quota/identity';
 import { isRuntimeOnlyAuthFile, type QuotaProviderType } from '@/features/authFiles/constants';
 import { Button } from '@/components/ui/Button';
 import { IconRefreshCw } from '@/components/ui/icons';
-import { bindQuotaClasses } from '@/features/quota/types';
-import { QUOTA_ADAPTERS, type QuotaCardState } from '@/features/quota/providers';
-import { hasClaudeUsageData } from '@/features/quota/providers/claude/data';
+import { bindQuotaClasses } from '@/features/taproot-quota/live/types';
+import { QUOTA_ADAPTERS, type QuotaCardState } from '@/features/taproot-quota/live/providers';
+import { hasClaudeUsageData } from '@/features/taproot-quota/live/providers/claude/data';
 import styles from './AuthFileQuota.module.scss';
 
 /** Bind the auth-file host's compact styles to the quota rendering contract. */
