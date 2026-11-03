@@ -15,6 +15,7 @@ export const ROUTING_STRATEGIES: readonly RoutingStrategy[] = [
   'round-robin',
   'weighted-round-robin',
   'fill-first',
+  'soonest-reset-first',
 ];
 
 export interface RoutingWeightSlot {
