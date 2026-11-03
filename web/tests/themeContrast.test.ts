@@ -1,66 +1,131 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { THEMES, contrast, luminance, mustColor, oklch, over } from './helpers/themeTokens';
 
-const themes = readFileSync(join(import.meta.dir, '../src/styles/themes.scss'), 'utf8');
+const OPAQUE_SURFACES = [
+  'bg-secondary',
+  'bg-primary',
+  'bg-tertiary',
+  'bg-hover',
+  'floating-surface',
+  'input-bg',
+];
+const TEXT = ['text-primary', 'text-secondary', 'text-tertiary', 'accent-text'];
+const PILL_TEXT = ['text-primary', 'text-secondary', 'accent-text'];
 
-function block(selector: string): Record<string, string> {
-  const start = themes.indexOf(`${selector} {`);
-  if (start < 0) throw new Error(`no ${selector} block`);
-  const body = themes.slice(start, themes.indexOf('\n}', start));
-  const tokens: Record<string, string> = {};
-  for (const [, name, value] of body.matchAll(/^\s*--([\w-]+):\s*(#[0-9a-f]{6});/gim)) {
-    tokens[name] = value.toLowerCase();
-  }
-  return tokens;
-}
+describe('dark theme: pure black with hairline cards', () => {
+  const dark = THEMES.dark;
+  const c = (name: string) => mustColor(dark, name);
 
-function luminance(hex: string): number {
-  const [r, g, b] = [1, 3, 5].map((i) => {
-    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-describe('dark theme tokens', () => {
-  const dark = block("[data-theme='dark']");
-
-  test('the page is pure black and surfaces lift above it', () => {
-    expect(dark['bg-secondary']).toBe('#000000');
-    expect(luminance(dark['bg-primary'])).toBeGreaterThan(luminance(dark['bg-secondary']));
-    expect(luminance(dark['bg-tertiary'])).toBeGreaterThan(luminance(dark['bg-primary']));
-    expect(luminance(dark['border-color'])).toBeGreaterThan(luminance(dark['bg-tertiary']));
-  });
-
-  test('body text meets WCAG AA on every surface', () => {
-    for (const surface of ['bg-secondary', 'bg-primary', 'bg-tertiary', 'floating-surface']) {
-      for (const text of ['text-primary', 'text-secondary', 'text-tertiary', 'accent-text']) {
-        expect(contrast(dark[text], dark[surface])).toBeGreaterThanOrEqual(4.5);
-      }
-      expect(contrast(dark.accent, dark[surface])).toBeGreaterThanOrEqual(4.5);
+  test('the page, cards, and inputs are pure black', () => {
+    for (const name of ['bg-secondary', 'bg-primary', 'input-bg']) {
+      expect({ name, value: dark[name] }).toEqual({ name, value: '#000000' });
     }
   });
 
-  test('primary button labels meet AA and accent glyphs meet the 3:1 UI minimum', () => {
-    expect(contrast('#ffffff', dark['button-primary-bg'])).toBeGreaterThanOrEqual(4.5);
-    expect(contrast('#ffffff', dark['button-primary-hover'])).toBeGreaterThanOrEqual(4.5);
-    expect(contrast('#ffffff', dark.accent)).toBeGreaterThanOrEqual(3);
+  test('hairlines separate cards from the page, and hover fills stay below the hairline', () => {
+    const page = c('bg-secondary');
+    expect(luminance(c('bg-tertiary'))).toBeGreaterThan(luminance(page));
+    expect(luminance(c('bg-hover'))).toBeGreaterThan(luminance(c('bg-tertiary')));
+    expect(luminance(c('border-color'))).toBeGreaterThan(luminance(c('bg-hover')));
+    expect(luminance(c('border-primary'))).toBeGreaterThan(luminance(c('border-color')));
+    expect(luminance(c('border-hover'))).toBeGreaterThan(luminance(c('border-primary')));
   });
 
-  test('the Codex provider hue stays apart from the interface accent', () => {
-    const hue = (hex: string) => {
-      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-      const max = Math.max(r, g, b);
-      const d = max - Math.min(r, g, b);
-      const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-      return (h * 60 + 360) % 360;
-    };
-    expect(Math.abs(hue(dark['provider-codex']) - hue(dark.accent))).toBeGreaterThanOrEqual(20);
+  test('menus, popovers, and tooltips lift above the page with a visible border', () => {
+    for (const surface of ['floating-surface', 'tooltip-bg']) {
+      expect(luminance(c(surface))).toBeGreaterThan(luminance(c('bg-secondary')));
+    }
+    expect(luminance(c('tooltip-border'))).toBeGreaterThan(luminance(c('tooltip-bg')));
+    expect(luminance(c('border-color'))).toBeGreaterThan(luminance(c('floating-surface')));
+  });
+
+  test('the selected pill is a lifted neutral fill with near-white text', () => {
+    expect(luminance(c('accent-subtle'))).toBeGreaterThan(luminance(c('bg-hover')));
+    expect(oklch(c('accent-subtle')).c).toBeLessThan(0.01);
+    expect(luminance(c('accent-text'))).toBeGreaterThan(luminance(c('text-primary')));
+  });
+
+  test('the primary button is near-white with near-black text', () => {
+    expect(luminance(c('button-primary-bg'))).toBeGreaterThan(0.85);
+    expect(luminance(c('button-primary-text'))).toBeLessThan(0.01);
   });
 });
+
+for (const [mode, tokens] of Object.entries(THEMES)) {
+  describe(`${mode} theme contrast`, () => {
+    const c = (name: string) => mustColor(tokens, name);
+    const page = c('bg-secondary');
+    // The pill and focus ring may be translucent; they are measured as painted on each surface.
+    const surfaces = [
+      ...OPAQUE_SURFACES.map((name) => ({ name, color: c(name) })),
+      ...['bg-secondary', 'bg-primary'].map((name) => ({
+        name: `accent-subtle on ${name}`,
+        color: over(c('accent-subtle'), c(name)),
+      })),
+    ];
+
+    test('body text and selected text meet WCAG AA on every surface, including the pill', () => {
+      for (const surface of surfaces) {
+        const texts = surface.name.startsWith('accent-subtle') ? PILL_TEXT : TEXT;
+        for (const text of texts) {
+          const ratio = contrast(c(text), surface.color);
+          expect({ surface: surface.name, text, aa: ratio >= 4.5 }).toEqual({
+            surface: surface.name,
+            text,
+            aa: true,
+          });
+        }
+      }
+    });
+
+    test('the selected pill is visible against the page and the cards', () => {
+      for (const name of ['bg-secondary', 'bg-primary']) {
+        const pill = over(c('accent-subtle'), c(name));
+        expect(Math.abs(luminance(pill) - luminance(c(name)))).toBeGreaterThan(0.004);
+      }
+    });
+
+    test('primary button labels meet AA at rest and on hover', () => {
+      for (const fill of ['button-primary-bg', 'button-primary-hover']) {
+        expect(contrast(c('button-primary-text'), c(fill))).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    test('focus outlines, toggles, and checkboxes meet the 3:1 UI minimum', () => {
+      for (const surface of OPAQUE_SURFACES) {
+        expect({ surface, ok: contrast(c('accent'), c(surface)) >= 3 }).toEqual({
+          surface,
+          ok: true,
+        });
+      }
+      // A checked toggle draws its thumb in --primary-contrast on an --accent track.
+      expect(contrast(c('primary-contrast'), c('accent'))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c('accent'), c('toggle-off-bg'))).toBeGreaterThanOrEqual(3);
+      const ring = over(c('focus-ring'), page);
+      expect(Math.abs(luminance(ring) - luminance(page))).toBeGreaterThan(0.02);
+    });
+
+    test('the interface accent is neutral, so provider and status colors carry all the hue', () => {
+      for (const name of [
+        'accent',
+        'accent-hover',
+        'accent-text',
+        'accent-subtle',
+        'primary-color',
+        'primary-active',
+        'button-primary-bg',
+        'button-primary-hover',
+      ]) {
+        expect({ name, neutral: oklch(c(name)).c < 0.02 }).toEqual({ name, neutral: true });
+      }
+    });
+
+    test('the provider colors keep their hues', () => {
+      expect(oklch(c('provider-claude')).h).toBeLessThan(60);
+      expect(oklch(c('provider-codex')).h).toBeGreaterThan(260);
+      expect(oklch(c('provider-codex')).h).toBeLessThan(300);
+      expect(oklch(c('provider-claude')).c).toBeGreaterThan(0.1);
+      expect(oklch(c('provider-codex')).c).toBeGreaterThan(0.1);
+    });
+  });
+}

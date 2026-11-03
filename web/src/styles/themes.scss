@@ -17,20 +17,13 @@
   --font-weight-numeral: 500;
   --letter-spacing-numeral: -0.03em;
 
-  // Interface accent. Blue marks selection, focus, links, and primary actions; provider hues stay
-  // reserved for provider data, so Codex sits on indigo to stay distinct from the accent.
-  --accent-subtle: color-mix(in srgb, var(--accent) 12%, transparent);
-  --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
-  --focus-ring: color-mix(in srgb, var(--accent) 30%, transparent);
+  // Interface accent. A neutral ink marks selection, focus, and toggles in every theme; there is
+  // no interface hue, so provider and status colors are the only color on the page.
   --primary-color: var(--accent);
   --primary-hover: var(--accent-hover);
-  --primary-contrast: #ffffff;
 
-  --button-primary-bg: var(--accent);
-  --button-primary-hover: var(--accent-hover);
-  --button-primary-text: #ffffff;
-
-  --radius-lg: 12px;
+  --radius-lg: 6px;
+  --radius-md: 4px;
   --space-page: 32px;
   --space-card: 24px;
 }
@@ -48,20 +41,28 @@
   --floating-shadow: 0 12px 26px rgba(0, 0, 0, 0.14);
 
   --text-primary: #2d2a26;
-  --text-secondary: #6d6760;
-  --text-tertiary: #a29c95;
+  --text-secondary: #57524c;
+  --text-tertiary: #6a645e;
   --text-quaternary: #c0bab3;
   --text-muted: var(--text-tertiary);
+  --mark-color: var(--text-primary);
 
   --border-color: #e3e1db; // 边框/分割线
   --border-secondary: var(--border-color);
   --border-primary: #d5d2cb;
   --border-hover: #cecac4;
 
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-text: #1d4ed8;
-  --primary-active: #1e40af;
+  --accent: #2d2a26;
+  --accent-hover: #000000;
+  --accent-text: #1a1814;
+  --accent-subtle: rgba(45, 42, 38, 0.08); // selected pill, on the page and on cards
+  --accent-border: rgba(45, 42, 38, 0.24);
+  --focus-ring: rgba(45, 42, 38, 0.22);
+  --primary-active: #000000;
+  --primary-contrast: #ffffff;
+  --button-primary-bg: #1c1b19;
+  --button-primary-hover: #000000;
+  --button-primary-text: #ffffff;
   --input-bg: var(--bg-secondary);
   --toggle-off-bg: #d5d2cb;
   --overlay-bg: rgba(0, 0, 0, 0.35);
@@ -93,8 +94,6 @@
 
   --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   --shadow-lg: 0 10px 18px -3px rgb(0 0 0 / 0.1);
-
-  --radius-md: 8px;
 
   // Workbench tokens (Home parity)
   --primary-8: color-mix(in srgb, var(--primary-color) 8%, transparent);
@@ -143,8 +142,8 @@
   --floating-shadow: 0 12px 26px rgba(0, 0, 0, 0.12);
 
   --text-primary: #2d2a26;
-  --text-secondary: #6d6760;
-  --text-tertiary: #a29c95;
+  --text-secondary: #57524c;
+  --text-tertiary: #6a645e;
   --text-quaternary: #c0bab3;
   --text-muted: var(--text-tertiary);
 
@@ -178,8 +177,6 @@
   --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   --shadow-lg: 0 10px 18px -3px rgb(0 0 0 / 0.1);
 
-  --radius-md: 8px;
-
   // Workbench tokens (Home parity)
   --primary-8: color-mix(in srgb, var(--primary-color) 8%, transparent);
   --primary-10: color-mix(in srgb, var(--primary-color) 10%, transparent);
@@ -196,21 +193,22 @@
   --accent-bg: var(--bg-tertiary);
 }
 
-// Dark theme (default): a pure black page, surfaces lifted a step, quiet 1px borders.
-// Text tokens hold WCAG AA (4.5:1) on every surface up to --bg-tertiary.
+// Dark theme (default): a pure black page with cards the page color, separated by 1px hairlines.
+// Floating surfaces (menus, popovers, tooltips) lift a step to #0d0d0d with a border so they still
+// read as above the page. Text tokens hold WCAG AA (4.5:1) on every surface, including the pill.
 [data-theme='dark'] {
   --bg-secondary: #000000; // page and sidebar
-  --bg-primary: #0c0c0c; // cards and panels
-  --bg-tertiary: #141414; // hover and secondary fills
-  --bg-hover: #1a1a1a;
-  --bg-quinary: #070707;
+  --bg-primary: #000000; // cards and panels: the page color, outlined by --border-color
+  --bg-tertiary: #0d0d0d; // hover and secondary fills
+  --bg-hover: #111111;
+  --bg-quinary: #000000;
   --bg-error-light: rgba(198, 87, 70, 0.18);
-  --floating-surface: #111111;
+  --floating-surface: #0d0d0d;
   --floating-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
-  --input-bg: #0f0f0f;
-  --toggle-off-bg: #333333;
+  --input-bg: #000000;
+  --toggle-off-bg: #262626;
   --overlay-bg: rgba(0, 0, 0, 0.72);
-  --tooltip-bg: #141414;
+  --tooltip-bg: #0d0d0d;
   --tooltip-text: #ededed;
   --tooltip-border: #2a2a2a;
 
@@ -219,21 +217,26 @@
   --text-tertiary: #808080;
   --text-quaternary: #525252;
   --text-muted: var(--text-tertiary);
+  --mark-color: #f5f5f5;
 
-  --border-color: #1f1f1f;
+  --border-color: #171717;
   --border-secondary: var(--border-color);
-  --border-primary: #2a2a2a;
-  --border-hover: #383838;
+  --border-primary: #1f1f1f;
+  --border-hover: #2a2a2a;
 
-  // --accent carries white glyphs at 3.3:1 (toggles, checkboxes) and reads at 6:1 as text on
-  // cards. Button labels need 4.5:1, so the primary button fill is a deeper step of the same blue.
-  --accent: #3d8bff;
-  --accent-hover: #63a1ff;
-  --accent-text: #6ea8ff;
-  --accent-subtle: color-mix(in srgb, var(--accent) 14%, transparent);
-  --primary-active: #8ab9ff;
-  --button-primary-bg: #1f6feb;
-  --button-primary-hover: #1a62d6;
+  // A neutral accent: light gray marks toggles, checkboxes, focus, and the selected tab; a selected
+  // pill is a #171717 fill with near-white text; the primary button is near-white with black text.
+  --accent: #d4d4d4;
+  --accent-hover: #fafafa;
+  --accent-text: #fafafa;
+  --accent-subtle: #171717;
+  --accent-border: #2a2a2a;
+  --focus-ring: rgba(255, 255, 255, 0.18);
+  --primary-active: #fafafa;
+  --primary-contrast: #000000;
+  --button-primary-bg: #f5f5f5;
+  --button-primary-hover: #ffffff;
+  --button-primary-text: #0a0a0a;
 
   --provider-claude: #d97757;
   --provider-codex: #8e8cff;
@@ -262,8 +265,6 @@
 
   --shadow: none;
   --shadow-lg: 0 12px 28px -6px rgb(0 0 0 / 0.6);
-
-  --radius-md: 8px;
 
   // Workbench tokens (Home parity, deeper amber for dark)
   --primary-8: color-mix(in srgb, var(--primary-color) 8%, transparent);

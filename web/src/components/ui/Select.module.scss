@@ -104,7 +104,7 @@
   flex-shrink: 0;
 
   &:hover {
-    background: var(--bg-tertiary);
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   }
 }
 
@@ -116,5 +116,5 @@
 }
 
 .optionHighlighted {
-  background: var(--bg-tertiary);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }

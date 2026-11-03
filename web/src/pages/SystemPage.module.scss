@@ -32,9 +32,6 @@
 .aboutLogo {
   width: 108px;
   height: 108px;
-  border-radius: 26px;
-  object-fit: cover;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
 }
 
 .aboutTitle {
@@ -86,7 +83,7 @@
   &:hover {
     transform: translateY(-1px);
     border-color: var(--primary-color);
-    box-shadow: 0 8px 18px rgba($primary-color, 0.18);
+    box-shadow: var(--shadow-lg);
   }
 
   &:active {
@@ -342,7 +339,6 @@
   .aboutLogo {
     width: 92px;
     height: 92px;
-    border-radius: 22px;
   }
 
   .aboutTitle {
