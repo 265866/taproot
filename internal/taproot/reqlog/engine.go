@@ -619,9 +619,13 @@ func (e *engine) reindexRaw(ctx context.Context, id int64, rawPath string) (int6
 		return 0, fmt.Errorf("open raw segment: %w", err)
 	}
 	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat raw segment: %w", err)
+	}
 	var rows []indexRow
 	var firstTs, lastTs int64
-	validEnd, err := scanFrames(f, 0, func(offset int64, length int, meta *recordMeta) {
+	validEnd, err := scanFrames(f, 0, info.Size(), func(offset int64, length int, meta *recordMeta) {
 		rows = append(rows, indexRow{meta: meta, segment: id, offset: offset, length: length})
 		if firstTs == 0 || meta.TimeMs < firstTs {
 			firstTs = meta.TimeMs
@@ -630,10 +634,6 @@ func (e *engine) reindexRaw(ctx context.Context, id int64, rawPath string) (int6
 	})
 	if err != nil {
 		return 0, fmt.Errorf("scan raw segment: %w", err)
-	}
-	info, err := f.Stat()
-	if err != nil {
-		return 0, fmt.Errorf("stat raw segment: %w", err)
 	}
 	if info.Size() > validEnd {
 		if err := f.Truncate(validEnd); err != nil {

@@ -22,6 +22,11 @@ const frameMagic = "TPRL1 "
 // recovery read an unbounded line.
 const maxFrameHeader = 64
 
+// maxFrameMeta bounds the meta JSON a header may declare. Real meta is the
+// index row plus headers, a few KiB; a larger value is corruption and must not
+// become an allocation.
+const maxFrameMeta = 16 << 20
+
 // recordMeta is the index row plus what the detail view needs that the text
 // layout would make awkward to parse back.
 type recordMeta struct {
@@ -99,7 +104,7 @@ func decodeFrame(frame []byte) (*recordMeta, []byte, error) {
 		return nil, nil, err
 	}
 	body := frame[nl+1:]
-	if len(body) != metaLen+textLen+1 || body[len(body)-1] != '\n' {
+	if metaLen > len(body) || textLen > len(body) || len(body) != metaLen+textLen+1 || body[len(body)-1] != '\n' {
 		return nil, nil, errBadFrame
 	}
 	var meta recordMeta
@@ -126,9 +131,10 @@ func parseFrameHeader(line []byte) (int, int, error) {
 }
 
 // scanFrames walks complete frames from r, starting at offset base, and
-// returns where the last complete frame ended. A torn or corrupt tail stops
+// returns where the last complete frame ended. end is where r's data stops; a
+// header declaring more than that is a torn or corrupt tail. Such a tail stops
 // the scan without an error; only read failures are errors.
-func scanFrames(r io.Reader, base int64, visit func(offset int64, length int, meta *recordMeta)) (int64, error) {
+func scanFrames(r io.Reader, base, end int64, visit func(offset int64, length int, meta *recordMeta)) (int64, error) {
 	br := bufio.NewReaderSize(r, 1<<20)
 	pos := base
 	for {
@@ -147,6 +153,10 @@ func scanFrames(r io.Reader, base int64, visit func(offset int64, length int, me
 			return pos, nil
 		}
 		headerLen := len(line)
+		remaining := end - pos - int64(headerLen)
+		if metaLen > maxFrameMeta || int64(metaLen) > remaining || int64(textLen) >= remaining-int64(metaLen) {
+			return pos, nil
+		}
 		metaJSON := make([]byte, metaLen)
 		if _, err := io.ReadFull(br, metaJSON); err != nil {
 			return pos, ignoreEOF(err)
