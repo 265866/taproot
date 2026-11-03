@@ -11,12 +11,10 @@ export type AuthFileType =
   | 'aistudio'
   | 'claude'
   | 'codex'
-  | 'devin'
   | 'meta'
   | 'antigravity'
   | 'xai'
   | 'iflow'
-  | 'vertex'
   | 'empty'
   | 'unknown';
 
@@ -41,10 +39,6 @@ export interface AuthFileCooldownSnapshot {
 
 export interface AuthFileItem {
   name: string;
-  siwcBindSupported?: boolean;
-  useSiwc?: boolean;
-  siwcBound?: boolean;
-  siwcExpiresAt?: string;
   type?: AuthFileType | string;
   provider?: string;
   /**
@@ -53,7 +47,7 @@ export interface AuthFileItem {
    * the API key itself through those fields.
    */
   email?: string;
-  /** GCP / Vertex project ID, used when account email is absent. */
+  /** GCP project ID, used when account email is absent. */
   projectId?: string;
   size?: number;
   authIndex?: string | number | null;

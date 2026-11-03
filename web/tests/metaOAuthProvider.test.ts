@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider } from 'react-i18next';
 import { createInstance } from 'i18next';
-import en from '@/i18n/locales/en.json';
+import { en } from '@/i18n/resources';
 import { OAuthFlowDialog } from '@/features/oauth/components/OAuthFlowDialog';
 import {
   CALLBACK_SUPPORTED,
@@ -19,7 +19,7 @@ import {
   supportsAuthFileWebsockets,
 } from '@/features/authFiles/constants';
 import { providerLabel } from '@/features/dashboard/utils';
-import { PROVIDER_LOGOS } from '@/features/providers/brandLogos';
+import iconMeta from '@/assets/icons/meta.svg';
 import { apiClient } from '@/services/api/client';
 import { oauthApi, type BuiltInOAuthProvider } from '@/services/api/oauth';
 import { classifyModels } from '@/utils/models';
@@ -56,7 +56,7 @@ describe('Muse (Meta) provider and device OAuth', () => {
   test('recognizes both names and quota support without enabling websockets', () => {
     expect(normalizeOAuthProviderKey(' Muse ')).toBe('meta');
     expect(OAUTH_PROVIDER_PRESETS).toContain('meta');
-    expect(getAuthFileIcon('muse', 'dark')).toBe(PROVIDER_LOGOS.meta.src);
+    expect(getAuthFileIcon('muse', 'dark')).toBe(iconMeta);
     expect(getAuthFileIcon('meta', 'light')).toBeTruthy();
     expect(providerLabel('meta', 'Unknown')).toBe('Muse (Meta)');
     expect(supportsAuthFileManualRefresh('meta')).toBe(true);
@@ -64,15 +64,13 @@ describe('Muse (Meta) provider and device OAuth', () => {
     expect([...QUOTA_PROVIDER_TYPES]).toContain('meta');
   });
 
-  test('classifies Muse models without changing Devin namespace precedence', () => {
+  test('classifies Muse models by name', () => {
     const groups = classifyModels([
       { name: 'muse-spark-1.3' },
       { name: 'muse-latest' },
-      { name: 'devin/muse-spark-1.3' },
       { name: 'gpt-5' },
     ]);
     expect(groups.find((group) => group.id === 'meta')?.items).toHaveLength(2);
-    expect(groups.find((group) => group.id === 'devin')?.items).toHaveLength(1);
     expect(groups.find((group) => group.id === 'gpt')?.items).toHaveLength(1);
   });
 
@@ -98,7 +96,6 @@ describe('Muse (Meta) provider and device OAuth', () => {
           text: (suffix: string) => i18n.t(`auth_login.meta_${suffix}`),
           supportsCallback: false,
           onStart: () => {},
-          onCancel: () => {},
           onCallbackChange: () => {},
           onCallbackSubmit: () => {},
           onViewAuthFiles: () => {},
@@ -111,26 +108,23 @@ describe('Muse (Meta) provider and device OAuth', () => {
     expect(markup).toContain(en.auth_login.step_enter_device_code);
     expect(markup).not.toContain(en.auth_login.oauth_callback_label);
     expect(markup).not.toContain('auth_login.');
-    for (const locale of ['en', 'zh-CN', 'zh-TW', 'ru']) {
-      const translations = JSON.parse(readFileSync(`src/i18n/locales/${locale}.json`, 'utf8'));
-      for (const suffix of [
-        'oauth_title',
-        'oauth_button',
-        'oauth_hint',
-        'open_link',
-        'copy_link',
-        'oauth_status_waiting',
-        'oauth_status_success',
-        'oauth_status_error',
-        'oauth_start_error',
-        'oauth_polling_error',
-      ]) {
-        expect(translations.auth_login[`meta_${suffix}`]).toBeTruthy();
-      }
-      expect(translations.auth_files.filter_meta).toBe('Muse (Meta)');
-      expect(translations.providersPage.providerNames.meta).toBe('Muse (Meta)');
-      expect(translations.auth_login.device_code_label).toBeTruthy();
-      expect(translations.auth_login.device_code_copy).toBeTruthy();
+    const translations = en;
+    for (const suffix of [
+      'oauth_title',
+      'oauth_button',
+      'oauth_hint',
+      'open_link',
+      'copy_link',
+      'oauth_status_waiting',
+      'oauth_status_success',
+      'oauth_status_error',
+      'oauth_start_error',
+      'oauth_polling_error',
+    ]) {
+      expect(translations.auth_login[`meta_${suffix}`]).toBeTruthy();
     }
+    expect(translations.auth_files.filter_meta).toBe('Muse (Meta)');
+    expect(translations.auth_login.device_code_label).toBeTruthy();
+    expect(translations.auth_login.device_code_copy).toBeTruthy();
   });
 });

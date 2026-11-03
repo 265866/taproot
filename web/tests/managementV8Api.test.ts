@@ -8,7 +8,6 @@ import { configApi } from '@/services/api/config';
 import { configFileApi } from '@/services/api/configFile';
 import { logsApi } from '@/services/api/logs';
 import { versionApi } from '@/services/api/version';
-import { vertexApi } from '@/services/api/vertex';
 import { apiKeyUsageApi } from '@/services/api/apiKeyUsage';
 
 const spies: Array<{ mockRestore(): void }> = [];
@@ -296,7 +295,6 @@ describe('v8 management API contracts', () => {
     const put = mock('put');
     const post = mock('post');
     const raw = mock('getRaw', { data: 'config: yaml' });
-    const form = mock('postForm');
     await configApi.updateRequestLog(false);
     expect(put).toHaveBeenLastCalledWith('/config/observability/logs/request-log', false);
     await logsApi.fetchLogs({ limit: 10 });
@@ -315,8 +313,6 @@ describe('v8 management API contracts', () => {
     expect(post).toHaveBeenLastCalledWith('/routing/cooldown/reset', {
       auth_index: 'auth-index-1',
     });
-    await vertexApi.importCredential(new File(['{}'], 'fixture.json'));
-    expect(form.mock.calls.at(-1)?.[0]).toBe('/oauth/import?provider=vertex');
     expect(await configFileApi.fetchConfigYaml()).toBe('config: yaml');
     expect(raw.mock.calls.at(-1)?.[0]).toBe('/config.yaml');
     await configFileApi.saveConfigYaml('config: yaml');

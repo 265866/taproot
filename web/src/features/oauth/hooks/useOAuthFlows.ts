@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAuthStore, useNotificationStore } from '@/stores';
+import { useNotificationStore } from '@/stores';
 import { oauthApi, pluginsApi } from '@/services/api';
 import { getErrorMessage, isRecord } from '@/utils/helpers';
 import { notifyAuthFilesChanged } from '@/features/authFiles/authFilesEvents';
 import { createOAuthAttempts, type OAuthAttempt } from '../oauthAttempts';
-import { validateDevinCallback } from '../devinOAuth';
 import { resolveCallbackUrl } from '../callbackUrl';
 import {
   buildPluginOAuthProviderCards,
@@ -20,8 +19,6 @@ export interface ProviderFlowState {
   status?: 'waiting' | 'success' | 'error';
   error?: string;
   polling?: boolean;
-  cancelling?: boolean;
-  cancelError?: string;
   callbackUrl?: string;
   callbackSubmitting?: boolean;
   callbackStatus?: 'success' | 'error';
@@ -75,15 +72,14 @@ export function usePluginOAuthProviders(apiBase: string) {
 
 /**
  * 每个提供商一条独立的登录尝试（attempt）：开始 → 轮询状态 → 成功/失败，
- * 可选的手动回调提交与 Devin 会话取消。尝试失效后，已发出的请求落地也不再写状态。
+ * 可选的手动回调提交。尝试失效后，已发出的请求落地也不再写状态。
  */
 export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions) {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
   const [states, setStates] = useState<Record<string, ProviderFlowState>>({});
-  /** 本次会话新增的凭证数（含 Vertex 导入），换连接时归零。 */
+  /** 本次会话新增的凭证数。 */
   const [addedCount, setAddedCount] = useState(0);
-  const recordCredentialAdded = useCallback(() => setAddedCount((count) => count + 1), []);
   const attempts = useRef(
     createOAuthAttempts({
       setTimeout: (callback, delay) => window.setTimeout(callback, delay),
@@ -95,25 +91,7 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
     attempts.current.invalidateAll();
   }, []);
 
-  useEffect(() => {
-    // Invalidate synchronously on connection changes, including a new key on
-    // the same server. Never send cleanup requests through the new connection.
-    const unsubscribe = useAuthStore.subscribe((current, previous) => {
-      if (
-        current.apiBase !== previous.apiBase ||
-        current.managementKey !== previous.managementKey ||
-        current.isAuthenticated !== previous.isAuthenticated
-      ) {
-        clearTimers();
-        setStates({});
-        setAddedCount(0);
-      }
-    });
-    return () => {
-      unsubscribe();
-      clearTimers();
-    };
-  }, [clearTimers]);
+  useEffect(() => clearTimers, [clearTimers]);
 
   const providerText = (provider: string, suffix: string) => {
     const card = providerCards.find((item) => item.id === provider);
@@ -142,15 +120,13 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
   const completeProviderAuth = (provider: string) => {
     const resetAttempt = attempts.current.begin(provider);
     notifyAuthFilesChanged();
-    recordCredentialAdded();
+    setAddedCount((count) => count + 1);
     updateProviderState(provider, {
       url: undefined,
       state: undefined,
       status: 'success',
       error: undefined,
       polling: false,
-      cancelling: false,
-      cancelError: undefined,
       callbackUrl: '',
       callbackSubmitting: false,
       callbackStatus: undefined,
@@ -171,19 +147,6 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
           completeProviderAuth(provider);
           notify(provider, providerText(provider, 'oauth_status_success'), 'success');
         } else if (res.status === 'error') {
-          if (provider === 'devin') {
-            // Expired, denied and cancelled states cannot accept another callback.
-            attempt.invalidate();
-            updateProviderState(provider, {
-              url: undefined,
-              state: undefined,
-              callbackUrl: '',
-              callbackSubmitting: false,
-              callbackStatus: undefined,
-              callbackError: undefined,
-              callbackValidation: undefined,
-            });
-          }
           updateProviderState(provider, { status: 'error', error: res.error, polling: false });
           notify(
             provider,
@@ -204,49 +167,7 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
     );
   };
 
-  const cancelAuth = async (provider: string) => {
-    const state = states[provider]?.state;
-    if (provider !== 'devin' || !state || states[provider]?.cancelling) return;
-    // Replace the attempt before DELETE so late polls/callback submissions cannot
-    // overwrite the cancellation result or a subsequent login.
-    const attempt = attempts.current.begin(provider);
-    updateProviderState(provider, {
-      cancelling: true,
-      cancelError: undefined,
-      polling: true,
-      callbackSubmitting: false,
-      callbackStatus: undefined,
-      callbackError: undefined,
-      callbackValidation: undefined,
-    });
-    try {
-      const result = await oauthApi.cancelSession(state, attempt.signal);
-      if (!attempt.isCurrent()) return;
-      if (result.cancelled) {
-        resetProviderAttempt(provider);
-        notify(provider, t('auth_login.devin_oauth_cancelled'), 'success');
-        return;
-      }
-      // A completed or expired session returns cancelled=false. Read its real
-      // status rather than claiming cancellation or losing a completed login.
-    } catch (err: unknown) {
-      if (!attempt.isCurrent()) return;
-      const message = getErrorMessage(err);
-      updateProviderState(provider, { cancelError: message });
-      notify(provider, `${t('auth_login.devin_oauth_cancel_error')} ${message}`, 'error');
-    }
-    updateProviderState(provider, {
-      cancelling: false,
-      status: 'waiting',
-      error: undefined,
-    });
-    startPolling(provider, state, attempt);
-  };
-
   const startAuth = async (provider: string) => {
-    // A network error can stop polling while the server is still waiting. Require
-    // explicit cancellation before replacing that Devin session.
-    if (provider === 'devin' && states[provider]?.state) return;
     const attempt = attempts.current.begin(provider);
     updateProviderState(provider, {
       url: undefined,
@@ -254,8 +175,6 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
       state: undefined,
       status: 'waiting',
       polling: true,
-      cancelling: false,
-      cancelError: undefined,
       error: undefined,
       callbackStatus: undefined,
       callbackError: undefined,
@@ -310,12 +229,6 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
   const submitCallback = async (provider: string) => {
     const attempt = attempts.current.get(provider);
     if (!attempt?.isCurrent()) return;
-    if (
-      provider === 'devin' &&
-      (states[provider]?.cancelling || states[provider]?.status !== 'waiting')
-    ) {
-      return;
-    }
     const rejectInput = (key: string) =>
       updateProviderState(provider, { callbackValidation: t(key) });
     const callbackInput = (states[provider]?.callbackUrl || '').trim();
@@ -326,13 +239,6 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
           : 'auth_login.oauth_callback_required'
       );
       return;
-    }
-    if (provider === 'devin') {
-      const callbackError = validateDevinCallback(callbackInput, states[provider]?.state);
-      if (callbackError) {
-        rejectInput(`auth_login.devin_callback_${callbackError}`);
-        return;
-      }
     }
     const redirectUrl = resolveCallbackUrl(provider, callbackInput, states[provider]?.state);
     if (!redirectUrl) {
@@ -392,10 +298,8 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
   return {
     states,
     addedCount,
-    recordCredentialAdded,
     providerText,
     startAuth,
-    cancelAuth,
     submitCallback,
     setCallbackInput,
     dismissSuccess,
