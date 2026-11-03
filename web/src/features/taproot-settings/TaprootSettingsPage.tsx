@@ -31,6 +31,7 @@ import {
   type Validation,
 } from './model/settingsForm';
 import styles from './TaprootSettingsPage.module.scss';
+import { AlertsSection } from './AlertsSection';
 
 type Save = (update: TaprootSettingsUpdate) => Promise<void>;
 
@@ -82,6 +83,7 @@ export function TaprootSettingsPage() {
           <RetentionSection settings={settings.requestLogs} save={save} />
           <BackupsSection settings={settings.backups} save={save} />
           <IngestSection settings={settings.ingest} save={save} />
+          {settings.alerts && <AlertsSection settings={settings.alerts} save={save} />}
           <AboutSection settings={settings} me={me} />
         </div>
       )}

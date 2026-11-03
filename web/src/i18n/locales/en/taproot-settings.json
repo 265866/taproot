@@ -77,6 +77,22 @@
       "data_dir": "Data folder",
       "config_path": "Settings file"
     },
+    "alerts": {
+      "title": "Alerts",
+      "description": "Posts to a Discord channel when an account hits a quota limit, a provider's accounts are all out, a login stops working, or a Claude reset grant with resets left expires within a day.",
+      "state_active": "On",
+      "state_off": "Off",
+      "state_none": "No webhook",
+      "webhook_set": "Webhook ending in {{hint}}",
+      "webhook_label": "Discord webhook URL",
+      "replace_label": "Replace the webhook",
+      "webhook_hint": "In Discord, open the channel's settings, then Integrations, Webhooks, and Copy Webhook URL. The URL is a secret: taproot stores it in taproot.yaml and never shows it again.",
+      "enabled": "Send alerts",
+      "send_test": "Send test",
+      "test_sent": "Test alert sent to Discord",
+      "clear": "Remove webhook",
+      "cleared": "Webhook removed"
+    },
     "errors": {
       "login_format": "{{detail}} is not a Tailscale login (name@provider).",
       "logins_empty": "Allow at least one login.",
@@ -89,7 +105,8 @@
       "exclude_format": "{{detail}} must be a path starting with /, optionally after a method.",
       "keep_range": "Keep must be a whole number from 1 to 1000.",
       "time_format": "Use a 24-hour time such as 03:13.",
-      "duration_format": "Use a duration such as 15m or 1h30m, or 0."
+      "duration_format": "Use a duration such as 15m or 1h30m, or 0.",
+      "webhook_format": "Paste a Discord webhook URL, which starts with https://discord.com/api/webhooks/."
     }
   }
 }

@@ -251,6 +251,15 @@ export interface TaprootSettings {
   };
   backups: { dailyAt: string; keep: number };
   ingest: { pollInterval: string; activePollInterval: string; restartRequired: boolean };
+  /** Absent when the server has no alerts module. The webhook itself never leaves the server. */
+  alerts?: {
+    /** The taproot.yaml switch; alerts only go out when it is on and a webhook is set. */
+    enabled: boolean;
+    webhookSet: boolean;
+    /** The webhook's last six characters, such as `…a1B2c3`. */
+    webhookHint: string;
+    active: boolean;
+  };
   info: { configPath: string; dataDir: string; version: string; commit: string; buildDate: string };
 }
 
@@ -260,6 +269,8 @@ export interface TaprootSettingsUpdate {
   requestLogs?: Partial<TaprootSettings['requestLogs']>;
   backups?: Partial<TaprootSettings['backups']>;
   ingest?: { pollInterval?: string };
+  /** `discordWebhook: ''` clears the webhook. */
+  alerts?: { discordWebhook?: string; enabled?: boolean };
 }
 
 export interface TimeRange {
@@ -399,6 +410,8 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
     settings: () => request<TaprootSettings>('GET', '/settings'),
     putSettings: (update: TaprootSettingsUpdate) =>
       request<TaprootSettings>('PUT', '/settings', { body: update }),
+    /** Posts a test message to the saved Discord webhook. */
+    testAlert: () => request<{ sent: true }>('POST', '/alerts/test'),
   };
 }
 
