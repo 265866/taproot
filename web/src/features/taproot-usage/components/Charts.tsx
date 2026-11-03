@@ -28,12 +28,14 @@ import {
   formatUSD,
 } from '../logic/format';
 import { providerName } from '../logic/accounts';
+import type { DayZone } from '../logic/range';
 import { providerColor } from '../logic/viz';
 import styles from '../TaprootUsage.module.scss';
 
 export interface TimeAxis {
   bucket: UsageBucket;
   spanMs: number;
+  dayZone: DayZone;
 }
 
 export interface LegendEntry {
@@ -98,7 +100,9 @@ function TooltipBody({ props, axis, entries, format, total }: TooltipBodyProps):
   const sum = rows.reduce((acc, row) => acc + (row.value as number), 0);
   return (
     <div className={styles.tooltip}>
-      <div className={styles.tooltipTitle}>{formatBucketLabel(Number(label), axis.bucket)}</div>
+      <div className={styles.tooltipTitle}>
+        {formatBucketLabel(Number(label), axis.bucket, axis.dayZone)}
+      </div>
       {[...rows].reverse().map(({ entry, value }) => (
         <div key={entry.id} className={styles.tooltipRow}>
           <span>
@@ -130,7 +134,9 @@ function XAxisFor({ axis }: { axis: TimeAxis }) {
       tick={AXIS_TICK}
       tickLine={false}
       axisLine={{ stroke: 'var(--border-color)' }}
-      tickFormatter={(value: number) => formatBucketTick(value, axis.bucket, axis.spanMs)}
+      tickFormatter={(value: number) =>
+        formatBucketTick(value, axis.bucket, axis.spanMs, axis.dayZone)
+      }
       minTickGap={28}
     />
   );

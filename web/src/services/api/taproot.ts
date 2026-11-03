@@ -341,8 +341,10 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
     quotaSeries: (range: TimeRange & { provider?: string }) =>
       request<{ series: QuotaSeries[] }>('GET', '/quota/series', { query: { ...range } }),
 
-    usageSummary: (query: TimeRange & { bucket: UsageBucket; groupBy: UsageGroupBy }) =>
-      request<UsageSummary>('GET', '/usage/summary', { query: { ...query } }),
+    /** `tz` is an IANA zone; daily buckets then start at its midnight instead of UTC's. */
+    usageSummary: (
+      query: TimeRange & { bucket: UsageBucket; groupBy: UsageGroupBy; tz?: string }
+    ) => request<UsageSummary>('GET', '/usage/summary', { query: { ...query } }),
     usageEvents: (filter: UsageEventFilter) =>
       request<{ events: UsageEvent[]; nextCursor: string | null }>('GET', '/usage/events', {
         query: { ...filter },

@@ -84,7 +84,7 @@ describe('usage overview', () => {
         summary,
         byProvider: summary,
         groupBy: 'model',
-        axis: { bucket: '1h', spanMs: 86_400_000 },
+        axis: { bucket: '1h', spanMs: 86_400_000, dayZone: 'local' },
         accountOrder: [],
         labelFor: (key: string) => key,
       })

@@ -8,6 +8,8 @@ import type {
 import {
   chooseBucket,
   customWindow,
+  dailyBucketZone,
+  localTimeZone,
   parseLocalDate,
   presetWindow,
   todayWindow,
@@ -44,6 +46,8 @@ import {
 import {
   formatAxisMs,
   formatAxisNumber,
+  formatBucketLabel,
+  formatBucketTick,
   formatMs,
   formatRatio,
   formatUSD,
@@ -501,5 +505,42 @@ describe('series colors and links', () => {
       pathname: '/request-logs',
       search: '?requestId=01a1-9f50%20x',
     });
+  });
+});
+
+describe('daily buckets and time zones', () => {
+  test('sends the browser zone', () => {
+    expect(localTimeZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  test('buckets at local midnight mean the server honored tz', () => {
+    const local = [new Date(2026, 10, 2), new Date(2026, 10, 3)].map((d) => ({
+      t: d.toISOString(),
+    }));
+    expect(dailyBucketZone(local)).toBe('local');
+    expect(dailyBucketZone([])).toBe('local');
+  });
+
+  test('UTC-midnight buckets are detected when the local zone is not UTC', () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      expect(dailyBucketZone([{ t: '2026-11-02T00:00:00Z' }, { t: '2026-11-03T00:00:00Z' }])).toBe(
+        'utc'
+      );
+      // Pacific midnight on Nov 3 (PST) is 08:00 UTC.
+      expect(dailyBucketZone([{ t: '2026-11-03T08:00:00Z' }])).toBe('local');
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  test('labels say UTC only for UTC days', () => {
+    const noon = Date.UTC(2026, 10, 3, 12);
+    expect(formatBucketLabel(noon, '1d', 'utc')).toBe('Nov 3 (UTC)');
+    expect(formatBucketLabel(noon, '1d', 'local')).not.toContain('UTC');
+    expect(formatBucketTick(noon, '1d', 30 * 86_400_000, 'utc')).toBe('Nov 3');
+    expect(formatBucketTick(noon, '1d', 30 * 86_400_000, 'local')).toMatch(/^Nov [0-9]+$/);
   });
 });

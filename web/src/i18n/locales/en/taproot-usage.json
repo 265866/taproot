@@ -20,7 +20,8 @@
       "error_order": "The start date is after the end date.",
       "error_future": "The start date is in the future.",
       "bucket_1h": "Hourly",
-      "bucket_1d": "Daily (UTC days)",
+      "bucket_1d": "Daily (local days)",
+      "bucket_1d_utc": "Daily (UTC days)",
       "bucket_5m": "5 minutes"
     },
     "group": {

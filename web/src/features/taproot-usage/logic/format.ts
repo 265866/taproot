@@ -1,5 +1,6 @@
 import { formatCompactNumber } from '@/utils/format';
 import type { UsageBucket } from '@/services/api/taproot';
+import type { DayZone } from './range';
 
 export const DASH = '—';
 
@@ -73,11 +74,12 @@ const dayHourFormat = new Intl.DateTimeFormat('en-US', {
   weekday: 'short',
   hour: 'numeric',
 });
-const dayFormat = new Intl.DateTimeFormat('en-US', {
+const utcDayFormat = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
   timeZone: 'UTC',
 });
+const localDayFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
 const dateTimeFormat = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
@@ -94,17 +96,22 @@ const fullFormat = new Intl.DateTimeFormat('en-US', {
 });
 
 /**
- * Axis tick for a bucket start. Daily buckets are UTC days on the server, so they are labelled
- * by their UTC date; hourly buckets use local time.
+ * Axis tick for a bucket start, in local time. Daily buckets are labelled by the date of the
+ * zone the server cut them in (see `dailyBucketZone`).
  */
-export function formatBucketTick(ms: number, bucket: UsageBucket, spanMs: number): string {
-  if (bucket === '1d') return dayFormat.format(ms);
+export function formatBucketTick(
+  ms: number,
+  bucket: UsageBucket,
+  spanMs: number,
+  dayZone: DayZone
+): string {
+  if (bucket === '1d') return (dayZone === 'utc' ? utcDayFormat : localDayFormat).format(ms);
   return spanMs <= 24 * 3_600_000 ? timeFormat.format(ms) : dayHourFormat.format(ms);
 }
 
-export function formatBucketLabel(ms: number, bucket: UsageBucket): string {
-  if (bucket === '1d') return `${dayFormat.format(ms)} (UTC)`;
-  return dateTimeFormat.format(ms);
+export function formatBucketLabel(ms: number, bucket: UsageBucket, dayZone: DayZone): string {
+  if (bucket !== '1d') return dateTimeFormat.format(ms);
+  return dayZone === 'utc' ? `${utcDayFormat.format(ms)} (UTC)` : localDayFormat.format(ms);
 }
 
 export function formatDateTime(value: string | number | null): string {
