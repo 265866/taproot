@@ -188,6 +188,12 @@ func (e excluder) excluded(method, rawURL string, status int, reachedUpstream bo
 	if !e.keepUnrouted404 && status == http.StatusNotFound && !reachedUpstream {
 		return true
 	}
+	// The access guard answers callers it does not admit with a local 403.
+	// The logging middleware runs before the guard, so without this rule any
+	// tailnet peer could fill the log budget with records it chose.
+	if status == http.StatusForbidden && !reachedUpstream {
+		return true
+	}
 	for _, rule := range e.rules {
 		if rule.matches(method, urlPath) {
 			return true
