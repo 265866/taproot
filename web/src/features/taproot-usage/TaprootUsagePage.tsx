@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconEye, IconEyeOff } from '@/components/ui/icons';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { usePrivacyStore } from '@/stores';
 import { taprootApi, type UsageGroupBy } from '@/services/api/taproot';
 import { useTaprootQuery } from './hooks/useTaprootQuery';
 import { GROUP_BYS, USAGE_TABS, useUsageParams, type UsageTab } from './hooks/useUsageParams';
@@ -30,8 +30,6 @@ import { deviceFilterKey } from './logic/devices';
 import { PricingEditor } from './components/PricingEditor';
 import styles from './TaprootUsage.module.scss';
 
-const SHOW_EMAILS_KEY = 'taproot.usage.showEmails';
-
 function resolveWindow(
   range: RangePreset,
   from: string,
@@ -49,7 +47,7 @@ export function TaprootUsagePage() {
   const [params, setParams] = useUsageParams();
   const [anchorMs, setAnchorMs] = useState(() => Date.now());
   const [refreshKey, setRefreshKey] = useState(0);
-  const [showEmails, setShowEmails] = useLocalStorage(SHOW_EMAILS_KEY, false);
+  const showEmails = usePrivacyStore((state) => state.showEmails);
   const [customDraft, setCustomDraft] = useState(() => ({
     from: params.from || toLocalDateInput(Date.now() - 6 * 86_400_000),
     to: params.to || toLocalDateInput(Date.now()),
@@ -307,15 +305,7 @@ export function TaprootUsagePage() {
               : `taproot_usage.range.bucket_${bucket}`
           )}
         </span>
-        <button
-          type="button"
-          className={styles.ghostButton}
-          aria-pressed={showEmails}
-          onClick={() => setShowEmails(!showEmails)}
-        >
-          {showEmails ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-          {t('taproot_usage.show_emails')}
-        </button>
+        <ShowEmailsToggle />
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label={t('taproot_usage.tabs.label')}>

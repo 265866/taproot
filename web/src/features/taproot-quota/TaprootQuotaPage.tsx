@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { IconChevronLeft, IconEye, IconEyeOff, IconRefreshCw } from '@/components/ui/icons';
+import { IconChevronLeft, IconRefreshCw } from '@/components/ui/icons';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { ProviderTabs } from '@/features/authFiles/components/ProviderTabs';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNow } from '@/hooks/useNow';
-import { useThemeStore } from '@/stores';
+import { usePrivacyStore, useThemeStore } from '@/stores';
 import { Ledger } from './components/Ledger';
 import { ProviderCard } from './components/ProviderCard';
 import { Segmented } from './components/Segmented';
@@ -36,7 +37,7 @@ export function TaprootQuotaPage() {
   const [view, setView] = useState<ChartView>('remaining');
   const [burnHours, setBurnHours] = useState<BurnWindowHours>(3);
   const [future, setFuture] = useState<FutureUsage>('same');
-  const [showEmails, setShowEmails] = useState(false);
+  const showEmails = usePrivacyStore((state) => state.showEmails);
   const { data, loading, error, refresh } = useQuotaData(range);
   const quotaRefresh = useQuotaRefresh(refresh);
 
@@ -90,15 +91,7 @@ export function TaprootQuotaPage() {
           )}
         </div>
         <div className={styles.headerActions}>
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-pressed={showEmails}
-            onClick={() => setShowEmails((v) => !v)}
-          >
-            {showEmails ? <IconEyeOff size={15} /> : <IconEye size={15} />}
-            {t(showEmails ? 'taproot_quota.hide_emails' : 'taproot_quota.show_emails')}
-          </Button>
+          <ShowEmailsToggle />
           <Button size="sm" onClick={refreshAll} loading={refreshBusy}>
             {!refreshBusy && <IconRefreshCw size={15} />}
             {t('taproot_quota.ledger.refresh_all')}

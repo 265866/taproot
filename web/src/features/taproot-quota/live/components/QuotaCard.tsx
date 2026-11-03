@@ -9,6 +9,7 @@ import { IconRefreshCw } from '@/components/ui/icons';
 import type { ClaudeQuotaState, ResolvedTheme } from '@/types';
 import { resolveQuotaErrorMessage } from '@/utils/quota';
 import { getQuotaDisplayName } from '@/utils/quota/identity';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import {
   getAuthFileIcon,
   getThemeSurfaceIconBackground,
@@ -55,7 +56,8 @@ export function QuotaCard(props: QuotaCardProps) {
   const file = entry.file;
   const retainedClaudeUsage =
     entry.type === 'claude' && hasClaudeUsageData(quota as ClaudeQuotaState | undefined);
-  const displayName = getQuotaDisplayName(file);
+  const { mask } = useEmailMask();
+  const displayName = mask(getQuotaDisplayName(file));
 
   // Capture the entrance delay only at mount, without a render-time ref read.
   const [mountEntranceDelayMs] = useState<number | null>(entranceDelayMs ?? null);
@@ -159,7 +161,7 @@ export function QuotaCard(props: QuotaCardProps) {
           </div>
         ) : status === 'error' ? (
           <div className={styles.errorStrip} role="alert">
-            {t(`${adapter.i18nPrefix}.load_failed`, { message: errorMessage })}
+            {mask(t(`${adapter.i18nPrefix}.load_failed`, { message: errorMessage }))}
           </div>
         ) : quota && !retainedClaudeUsage ? (
           <adapter.Body

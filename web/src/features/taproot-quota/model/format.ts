@@ -1,5 +1,7 @@
 /** Display helpers for quota figures. Pure; locale and time zone come from the caller or runtime. */
 
+import { maskAddress, maskEmails } from '@/utils/emailMask';
+
 const MINUTE_MS = 60_000;
 
 /** Fraction (1 = 100%) to a whole percent string without the sign. */
@@ -49,20 +51,16 @@ export function formatMoment(t: number, now: number, locale?: string): string {
 }
 
 /**
- * Masks an account label so screenshots do not leak it: `anthropic1@sl.example.org` becomes
- * `an•••1@s•••.run`. Labels without `@` keep their first two characters.
+ * Masks an account label so screenshots do not leak it: emails inside it are masked with the
+ * dashboard's shared format (`anthropic1@sl.example.org` becomes `an•••1@s•••.run`). Labels with no
+ * email keep only their first two characters, since an account label is identifying either way.
  */
 export function maskLabel(label: string): string {
-  const dots = '•••';
   if (!label) return '';
+  const masked = maskEmails(label);
+  if (masked !== label) return masked;
   const at = label.lastIndexOf('@');
-  if (at < 0) return `${label.slice(0, 2)}${dots}`;
-  const local = label.slice(0, at);
-  const domain = label.slice(at + 1);
-  const dot = domain.lastIndexOf('.');
-  const tld = dot > 0 ? domain.slice(dot) : '';
-  const tail = local.length > 3 ? local.slice(-1) : '';
-  return `${local.slice(0, 2)}${dots}${tail}@${domain.slice(0, 1)}${dots}${tld}`;
+  return at < 0 ? `${label.slice(0, 2)}•••` : maskAddress(label.slice(0, at), label.slice(at + 1));
 }
 
 /** Fallback name for a window id without a catalog entry: `seven_day_opus` -> `Seven day opus`. */

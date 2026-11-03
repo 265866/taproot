@@ -20,7 +20,8 @@ const FILE_PREFIX =
   /^(?:claude|codex|antigravity|gemini|xai|kimi|qwen|iflow|aistudio|devin|vertex)-(?:[0-9a-f]{8,64}-)?/;
 
 /** Meta writes `meta-<email with @ as _>-<16 hex>.json`, so its file names carry no `@`. */
-const META_FILE = /\bmeta-([A-Za-z0-9._-]+)_([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)-([0-9a-f]{16})\.json/g;
+const META_FILE =
+  /\bmeta-([A-Za-z0-9._-]+)_([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)-([0-9a-f]{16})\.json/g;
 
 const LOCAL_CHAR = /[A-Za-z0-9._%+-]/;
 const DOMAIN_CHAR = /[A-Za-z0-9.-]/;

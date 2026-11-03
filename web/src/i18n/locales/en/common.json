@@ -18,6 +18,8 @@
     "error": "Error",
     "info": "Info",
     "warning": "Warning",
+    "show_emails": "Show emails",
+    "hide_emails": "Hide emails",
     "loading": "Loading...",
     "connecting": "Connecting...",
     "connected": "Connected",
