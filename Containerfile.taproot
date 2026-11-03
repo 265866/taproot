@@ -13,7 +13,7 @@
 # Matches packageManager in web/package.json.
 ARG BUN_VERSION=1.4.3
 
-FROM oven/bun:${BUN_VERSION} AS web
+FROM docker.io/oven/bun:${BUN_VERSION} AS web
 WORKDIR /src
 COPY web/package.json web/bun.lock /deps/
 RUN cd /deps && bun install --frozen-lockfile
@@ -26,7 +26,7 @@ RUN rm -rf web/node_modules web/dist \
 	&& mv /deps/node_modules web/node_modules \
 	&& VERSION="${VERSION}" bash scripts/taproot/build-web.sh
 
-FROM golang:1.26-bookworm AS build
+FROM docker.io/library/golang:1.26-bookworm AS build
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
 COPY go.mod go.sum ./
@@ -42,7 +42,7 @@ RUN set -eu; \
 	CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="${ldflags}" -o /out/taproot ./cmd/server; \
 	chmod 0755 /out/*
 
-FROM debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/ /taproot/
 COPY config.example.yaml /taproot/config.example.yaml
