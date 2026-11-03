@@ -405,7 +405,8 @@ func TestExclusions(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.flush()
-	for id, want := range map[string]bool{"unrouted": false, "upstream-404": true, "models": false, "health": false, "health-post": true} {
+	logSimple(t, lg, "taproot-settings", "/taproot/api/v1/settings", "", 200, ts, []byte(`{"access":{}}`))
+	for id, want := range map[string]bool{"unrouted": false, "upstream-404": true, "models": false, "health": false, "health-post": true, "taproot-settings": false} {
 		_, err := h.logs.Get(context.Background(), id)
 		if want && err != nil {
 			t.Fatalf("%s should be stored: %v", id, err)

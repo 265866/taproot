@@ -180,6 +180,11 @@ func (e excluder) excluded(method, rawURL string, status int, reachedUpstream bo
 	if i := strings.IndexByte(urlPath, '?'); i >= 0 {
 		urlPath = urlPath[:i]
 	}
+	// Taproot's own API is management traffic (settings, prices, backups), and
+	// upstream likewise never logs its management routes.
+	if urlPath == "/taproot" || strings.HasPrefix(urlPath, "/taproot/") {
+		return true
+	}
 	if !e.keepUnrouted404 && status == http.StatusNotFound && !reachedUpstream {
 		return true
 	}
