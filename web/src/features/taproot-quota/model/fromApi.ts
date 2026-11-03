@@ -39,6 +39,7 @@ export function toWindowObservation(w: QuotaWindowState): WindowObservation | nu
   if (observedAt === null || !Number.isFinite(w.utilization)) return null;
   return {
     window: w.window,
+    ...(typeof w.accountWide === 'boolean' ? { accountWide: w.accountWide } : {}),
     utilization: w.utilization,
     resetsAt: parseTime(w.resetsAt),
     observedAt,
@@ -57,7 +58,13 @@ export function toWindowSeries(s: QuotaSeries): WindowSeries {
     .map(parseTime)
     .filter((t): t is number => t !== null)
     .sort((a, b) => a - b);
-  return { window: s.window, periodMs: Math.max(0, s.periodSeconds) * 1000, points, resets };
+  return {
+    window: s.window,
+    ...(typeof s.accountWide === 'boolean' ? { accountWide: s.accountWide } : {}),
+    periodMs: Math.max(0, s.periodSeconds) * 1000,
+    points,
+    resets,
+  };
 }
 
 export function compareProviders(a: string, b: string): number {

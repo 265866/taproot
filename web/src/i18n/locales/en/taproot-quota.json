@@ -78,6 +78,8 @@
       "trend": "Remaining",
       "used": "{{value}} used",
       "binding": "binding",
+      "informational": "info",
+      "informational_hint": "Limits only some models or features, so it does not count toward the account's remaining quota",
       "resets": "resets {{time}} (in {{in}})",
       "no_reset": "no reset known",
       "none": "—",

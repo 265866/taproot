@@ -125,6 +125,22 @@ describe('accountStatus', () => {
       kind: 'no_data',
     });
   });
+  test('an account reporting only informational windows has no data', () => {
+    const opusOnly = account('o', {
+      windows: [
+        {
+          window: 'seven_day_opus',
+          utilization: 1,
+          resetsAt: NOW + H,
+          observedAt: NOW,
+          periodMs: WEEK,
+        },
+      ],
+    });
+    expect(accountStatus(opusOnly, { remainingNow: 1, resets: [] }, NOW)).toEqual({
+      kind: 'no_data',
+    });
+  });
 });
 
 describe('windowColumns', () => {

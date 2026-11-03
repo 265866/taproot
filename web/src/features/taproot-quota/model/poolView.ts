@@ -4,6 +4,7 @@ import type { QuotaAccount, ProviderGroup } from './fromApi';
 import {
   EPSILON,
   drainAt,
+  isAccountWide,
   projectAccount,
   projectPool,
   recordedAccount,
@@ -96,7 +97,7 @@ export function accountStatus(
   now: number
 ): AccountStatus {
   if (account.disabled) return { kind: 'disabled' };
-  if (!projection || account.windows.length === 0) return { kind: 'no_data' };
+  if (!projection || !account.windows.some(isAccountWide)) return { kind: 'no_data' };
   if (projection.remainingNow > EPSILON) return { kind: 'available' };
   const reset = projection.resets.find((r) => r.t > now);
   return { kind: 'blocked', until: reset ? reset.t : null };

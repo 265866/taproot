@@ -39,6 +39,11 @@ export interface TaprootAccount {
 
 export interface QuotaWindowState {
   window: QuotaWindowId;
+  /**
+   * True for windows that limit every request of the account. Servers older than this field
+   * omit it; the quota model then decides by window name.
+   */
+  accountWide?: boolean;
   /** Fraction used, 0..1. */
   utilization: number;
   resetsAt: string | null;
@@ -57,6 +62,7 @@ export interface QuotaSeries {
   authIndex: string;
   provider: string;
   window: QuotaWindowId;
+  accountWide?: boolean;
   periodSeconds: number;
   points: { t: string; utilization: number }[];
   resets: string[];
