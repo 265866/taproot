@@ -21,13 +21,33 @@ export function formatUSDPrecise(value: number): string {
   return `$${value.toLocaleString('en-US', { maximumFractionDigits: value < 1 ? 4 : 2 })}`;
 }
 
+/** Axis ticks: up to two decimals so neighbouring ticks never round to the same label. */
+export function formatAxisNumber(value: number): string {
+  const abs = Math.abs(value);
+  for (const [divisor, unit] of [
+    [1e9, 'B'],
+    [1e6, 'M'],
+    [1e3, 'K'],
+  ] as const) {
+    if (abs >= divisor) return `${Number((value / divisor).toFixed(2))}${unit}`;
+  }
+  return String(Number(value.toFixed(2)));
+}
+
+export function formatAxisMs(value: number): string {
+  return value < 1000 ? `${Math.round(value)} ms` : `${Number((value / 1000).toFixed(1))} s`;
+}
+
 export function formatTokens(value: number): string {
   return formatCompactNumber(value);
 }
 
 export function formatRatio(value: number | null, digits = 1): string {
   if (value === null || !Number.isFinite(value)) return DASH;
-  return `${(value * 100).toFixed(digits).replace(/\.0+$/, '')}%`;
+  return `${(value * 100)
+    .toFixed(digits)
+    .replace(/(\.\d*?)0+$/, '$1')
+    .replace(/\.$/, '')}%`;
 }
 
 export function formatMs(value: number | null | undefined): string {

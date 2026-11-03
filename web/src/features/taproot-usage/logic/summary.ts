@@ -4,6 +4,9 @@ import { EMPTY_TOTALS, cacheHitRatio, failureRate, type AdditiveTotals } from '.
 /** The chart key for groups folded past the series cap. */
 export const OTHER_GROUP = '__other__';
 
+/** The server's key for events with an empty group value. */
+export const NONE_GROUP = '(none)';
+
 /** Categorical palette slots available to group series; the rest fold into Other. */
 export const MAX_GROUP_SERIES = 7;
 

@@ -43,7 +43,15 @@ import {
   validateDrafts,
 } from '@/features/taproot-usage/logic/prices';
 import { currentUtilization, pooledQuota } from '@/features/taproot-usage/logic/quotaPool';
-import { formatMs, formatRatio, formatUSD } from '@/features/taproot-usage/logic/format';
+import {
+  formatAxisMs,
+  formatAxisNumber,
+  formatMs,
+  formatRatio,
+  formatUSD,
+} from '@/features/taproot-usage/logic/format';
+import { groupColor } from '@/features/taproot-usage/logic/viz';
+import { requestLogHref } from '@/features/taproot-usage/logic/links';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -544,9 +552,44 @@ describe('formatting', () => {
     expect(formatUSD(1234.5)).toBe('$1,235');
     expect(formatRatio(0.9)).toBe('90%');
     expect(formatRatio(0.1234)).toBe('12.3%');
+    expect(formatRatio(0.015, 2)).toBe('1.5%');
+    expect(formatRatio(0.0035, 2)).toBe('0.35%');
+    expect(formatRatio(1, 2)).toBe('100%');
     expect(formatRatio(null)).toBe('—');
     expect(formatMs(850)).toBe('850 ms');
     expect(formatMs(6743)).toBe('6.74 s');
     expect(formatMs(null)).toBe('—');
+  });
+});
+
+describe('axis labels', () => {
+  test('keep two decimals so adjacent ticks stay distinct', () => {
+    expect(formatAxisNumber(1350)).toBe('1.35K');
+    expect(formatAxisNumber(1800)).toBe('1.8K');
+    expect(formatAxisNumber(450)).toBe('450');
+    expect(formatAxisNumber(3_600_000_000)).toBe('3.6B');
+    expect(formatAxisNumber(0)).toBe('0');
+    expect(formatAxisMs(850)).toBe('850 ms');
+    expect(formatAxisMs(60_000)).toBe('60 s');
+    expect(formatAxisMs(45_000)).toBe('45 s');
+  });
+});
+
+describe('series colors and links', () => {
+  test('accounts keep their /accounts slot whatever their rank', () => {
+    const order = ['8dc6f68dec36dcc4', 'f2a3f5069de30215'];
+    // f2a3 ranks first by cost but stays in slot 2.
+    expect(groupColor('account', 'f2a3f5069de30215', 0, order)).toBe('var(--usage-series-2)');
+    expect(groupColor('account', '8dc6f68dec36dcc4', 1, order)).toBe('var(--usage-series-1)');
+    expect(groupColor('provider', 'claude', 3, [])).toBe('var(--provider-claude)');
+    expect(groupColor('model', 'claude-opus-5-5', 2, [])).toBe('var(--usage-series-3)');
+    expect(groupColor('model', OTHER_GROUP, 7, [])).toBe('var(--usage-series-other)');
+  });
+
+  test('request log links use the Request Logs query contract', () => {
+    expect(requestLogHref('01a1-9f50 x')).toEqual({
+      pathname: '/request-logs',
+      search: '?requestId=01a1-9f50%20x',
+    });
   });
 });

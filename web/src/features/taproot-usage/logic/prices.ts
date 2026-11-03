@@ -129,8 +129,8 @@ export function matchPrice<T extends Pick<Price, 'modelPattern'>>(
   const globs = prices
     .filter((p) => p.modelPattern.includes('*'))
     .sort((a, b) => {
-      const la = a.modelPattern.replaceAll('*', '').length;
-      const lb = b.modelPattern.replaceAll('*', '').length;
+      const la = a.modelPattern.split('*').join('').length;
+      const lb = b.modelPattern.split('*').join('').length;
       if (la !== lb) return lb - la;
       return a.modelPattern < b.modelPattern ? -1 : a.modelPattern > b.modelPattern ? 1 : 0;
     });

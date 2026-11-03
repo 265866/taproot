@@ -1,0 +1,64 @@
+import { useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import type { UsageGroupBy } from '@/services/api/taproot';
+import { RANGE_PRESETS, type RangePreset } from '../logic/range';
+
+export const USAGE_TABS = ['overview', 'sessions', 'requests', 'pricing'] as const;
+export type UsageTab = (typeof USAGE_TABS)[number];
+
+export const GROUP_BYS: readonly UsageGroupBy[] = ['model', 'account', 'provider', 'session'];
+
+export type FailedFilter = '' | 'true' | 'false';
+
+export interface UsageParams {
+  tab: UsageTab;
+  range: RangePreset;
+  /** `YYYY-MM-DD`, used when range is custom. */
+  from: string;
+  to: string;
+  group: UsageGroupBy;
+  account: string;
+  model: string;
+  session: string;
+  failed: FailedFilter;
+}
+
+function oneOf<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
+  return value !== null && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
+/** Page state lives in the hash query, so a view (including request filters) can be linked. */
+export function useUsageParams(): [UsageParams, (patch: Partial<UsageParams>) => void] {
+  const [search, setSearch] = useSearchParams();
+  const params = useMemo<UsageParams>(
+    () => ({
+      tab: oneOf(search.get('tab'), USAGE_TABS, 'overview'),
+      range: oneOf(search.get('range'), RANGE_PRESETS, '24h'),
+      from: search.get('from') ?? '',
+      to: search.get('to') ?? '',
+      group: oneOf(search.get('group'), GROUP_BYS, 'model'),
+      account: search.get('account') ?? '',
+      model: search.get('model') ?? '',
+      session: search.get('session') ?? '',
+      failed: oneOf(search.get('failed'), ['', 'true', 'false'] as const, ''),
+    }),
+    [search]
+  );
+  const update = useCallback(
+    (patch: Partial<UsageParams>) => {
+      setSearch(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(patch)) {
+            if (value) next.set(key, value);
+            else next.delete(key);
+          }
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearch]
+  );
+  return [params, update];
+}
