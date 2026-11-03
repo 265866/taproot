@@ -2,21 +2,24 @@
 # Merges upstream/main into the current branch and runs taproot's checks.
 # It never pushes.
 #
-#   scripts/taproot/sync-upstream.sh            fetch, merge, check
-#   scripts/taproot/sync-upstream.sh --dry-run  fetch and report incoming commits and conflicts only
-#   scripts/taproot/sync-upstream.sh --no-fetch use the upstream/main already fetched
+#   scripts/taproot/sync-upstream.sh               fetch, merge, check
+#   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits and conflicts only
+#   scripts/taproot/sync-upstream.sh --no-fetch    use the upstream/main already fetched
+#   scripts/taproot/sync-upstream.sh --checks-only run the checks on HEAD, e.g. after resolving conflicts
 set -euo pipefail
 
 remote=upstream
 branch=main
 dry_run=0
 fetch=1
+checks_only=0
 for arg in "$@"; do
 	case "$arg" in
 	--dry-run) dry_run=1 ;;
 	--no-fetch) fetch=0 ;;
+	--checks-only) checks_only=1 ;;
 	-h | --help)
-		sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+		sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 		exit 0
 		;;
 	*)
@@ -29,6 +32,52 @@ done
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 target="$remote/$branch"
+
+results=()
+failed=0
+check() {
+	local name="$1"
+	shift
+	printf '\n== %s\n' "$name"
+	if "$@"; then
+		results+=("PASS  $name")
+	else
+		results+=("FAIL  $name")
+		failed=1
+	fi
+}
+
+gofmt_clean() {
+	local unformatted
+	unformatted="$(git ls-files -z -- '*.go' | xargs -0 gofmt -l)"
+	if [[ -n "$unformatted" ]]; then
+		printf '%s\n' "$unformatted"
+		return 1
+	fi
+}
+
+build_server() {
+	local out status=0
+	out="$(mktemp -d)"
+	go build -o "$out/taproot" ./cmd/server || status=$?
+	rm -rf "$out"
+	return "$status"
+}
+
+run_checks() {
+	check "gofmt" gofmt_clean
+	check "go build ./cmd/server" build_server
+	check "go vet ./internal/taproot/..." go vet ./internal/taproot/...
+	check "go test ./internal/taproot/... ./sdk/..." go test -count=1 ./internal/taproot/... ./sdk/...
+	printf '\n== Summary\n'
+}
+
+if ((checks_only)); then
+	run_checks
+	printf 'Checked %s at %s.\n' "$(git rev-parse --abbrev-ref HEAD)" "$(git rev-parse --short HEAD)"
+	printf '%s\n' "${results[@]}"
+	exit "$failed"
+fi
 
 if ! git remote get-url "$remote" >/dev/null 2>&1; then
 	printf 'no "%s" remote; add it with: git remote add %s https://github.com/router-for-me/CLIProxyAPI.git\n' "$remote" "$remote" >&2
@@ -72,52 +121,15 @@ if ! git merge --no-edit --no-ff "$target"; then
 	echo
 	echo "Merge stopped on conflicts in:"
 	git diff --name-only --diff-filter=U | sed 's/^/  /'
-	echo "Resolve them and commit, then rerun the checks, or run 'git merge --abort' to undo."
+	echo "Resolve them and commit, then run $0 --checks-only. Or run 'git merge --abort' to undo."
 	exit 1
 fi
 
-results=()
-failed=0
-check() {
-	local name="$1"
-	shift
-	printf '\n== %s\n' "$name"
-	if "$@"; then
-		results+=("PASS  $name")
-	else
-		results+=("FAIL  $name")
-		failed=1
-	fi
-}
-
-gofmt_clean() {
-	local unformatted
-	unformatted="$(git ls-files -z -- '*.go' | xargs -0 gofmt -l)"
-	if [[ -n "$unformatted" ]]; then
-		printf '%s\n' "$unformatted"
-		return 1
-	fi
-}
-
-build_server() {
-	local out
-	out="$(mktemp -d)"
-	go build -o "$out/taproot" ./cmd/server
-	local status=$?
-	rm -rf "$out"
-	return "$status"
-}
-
-check "gofmt" gofmt_clean
-check "go build ./cmd/server" build_server
-check "go vet ./internal/taproot/..." go vet ./internal/taproot/...
-check "go test ./internal/taproot/... ./sdk/..." go test -count=1 ./internal/taproot/... ./sdk/...
-
-printf '\n== Summary\n'
+run_checks
 printf 'Merged %s commit(s) from %s into %s (%s..%s).\n' "$incoming" "$target" "$current" "$(git rev-parse --short "$before")" "$(git rev-parse --short HEAD)"
 printf '%s\n' "${results[@]}"
 if ((failed)); then
-	echo "Some checks failed. The merge commit is in place; fix forward or reset with: git reset --hard $before"
+	echo "Some checks failed. The merge commit is in place; fix forward, or undo it with: git reset --hard $before"
 	exit 1
 fi
 echo "All checks passed. Nothing was pushed."
