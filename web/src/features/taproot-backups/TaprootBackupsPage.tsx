@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { IconDownload, IconPlus } from '@/components/ui/icons';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { formatBytes } from '@/features/taproot-logs/model/format';
 import { ROUTES } from '@/router/routes';
@@ -351,6 +352,7 @@ function RestoreBanner({
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const restartText =
     result.restart === 'manual'
       ? t('taproot_backups.restart_manual')
@@ -363,7 +365,7 @@ function RestoreBanner({
     <div className={styles.banner} role="status">
       <div>
         <strong>{t('taproot_backups.restored')}</strong>
-        <p>{result.message}</p>
+        <p>{mask(result.message)}</p>
         <p>
           {t('taproot_backups.pre_restore_saved')} <code>{result.preRestoreBackupId}</code>
         </p>
