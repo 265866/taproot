@@ -282,7 +282,7 @@ func codexWeekly(signal func(string) string, observedAt, now time.Time) (WeeklyW
 			if !okAfter || seconds < 0 || observedAt.IsZero() {
 				continue
 			}
-			reset, ok = observedAt.Add(time.Duration(seconds*float64(time.Second))), true
+			reset = observedAt.Add(time.Duration(seconds * float64(time.Second)))
 		}
 		used, _ := parseFinite(signal(base + "used-percent"))
 		return rollForward(reset, week, used >= 100, now), true

@@ -27,14 +27,6 @@ func claudeAuth(id string, reset time.Time, utilization string) *coreauth.Auth {
 	return &coreauth.Auth{ID: id, Provider: "claude", Quota: coreauth.QuotaState{Signals: signals, ObservedAt: testNow}}
 }
 
-func ids(auths []*coreauth.Auth) []string {
-	out := make([]string, len(auths))
-	for i, a := range auths {
-		out[i] = a.ID
-	}
-	return out
-}
-
 func newTestSelector() *SoonestResetSelector {
 	return &SoonestResetSelector{now: func() time.Time { return testNow }}
 }
