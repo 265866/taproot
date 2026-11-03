@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot"
@@ -40,13 +39,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	dataDir := tp.DataDir
-	if dataDir == "" {
-		dataDir = "taproot"
-	}
-	if !filepath.IsAbs(dataDir) {
-		dataDir = filepath.Join(filepath.Dir(*configPath), dataDir)
-	}
+	dataDir := taproot.DataDir(tp, *configPath)
 	db, err := store.Open(ctx, tp.Store, dataDir)
 	if err != nil {
 		return fmt.Errorf("open taproot store: %w", err)

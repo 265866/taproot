@@ -64,6 +64,18 @@ func ConfigPath(upstreamConfigPath string) string {
 	return filepath.Join(filepath.Dir(upstreamConfigPath), "taproot.yaml")
 }
 
+// DataDir resolves where taproot keeps its database, request logs, and backups.
+func DataDir(tp Config, upstreamConfigPath string) string {
+	dataDir := tp.DataDir
+	if dataDir == "" {
+		dataDir = "taproot"
+	}
+	if !filepath.IsAbs(dataDir) {
+		dataDir = filepath.Join(filepath.Dir(upstreamConfigPath), dataDir)
+	}
+	return dataDir
+}
+
 // Setup opens taproot's modules and returns the server options that mount them.
 // It must run before the service is built, because the access guard prepares
 // the management secret that the management handler reads at construction.
@@ -73,17 +85,14 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, err
 	}
-	dataDir := tp.DataDir
-	if dataDir == "" {
-		dataDir = "taproot"
-	}
-	if !filepath.IsAbs(dataDir) {
-		dataDir = filepath.Join(filepath.Dir(upstreamConfigPath), dataDir)
-	}
+	dataDir := DataDir(tp, upstreamConfigPath)
 
 	guard, err := access.New(tp.Access)
 	if err != nil {
 		return nil, fmt.Errorf("taproot access: %w", err)
+	}
+	if err := backup.ApplyPendingRestore(dataDir); err != nil {
+		return nil, fmt.Errorf("taproot pending restore: %w", err)
 	}
 	db, err := store.Open(ctx, tp.Store, dataDir)
 	if err != nil {
@@ -116,7 +125,8 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	backups.Start(ctx)
 
 	opts := []api.ServerOption{
-		api.WithMiddleware(guard.Middleware()),
+		// The guard must run first so the dashboard is access-checked too.
+		api.WithMiddleware(guard.Middleware(), web.Middleware()),
 		api.WithRouterConfigurator(func(engine *gin.Engine, h *handlers.BaseAPIHandler, _ *config.Config) {
 			if h != nil {
 				usage.AttachAuthManager(h.AuthManager)
@@ -126,7 +136,6 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 			usage.Routes(group)
 			logs.Routes(group)
 			backups.Routes(group)
-			web.Routes(engine)
 		}),
 	}
 	if factory := logs.LoggerFactory(); factory != nil {

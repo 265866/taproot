@@ -36,6 +36,3 @@ func Middleware() gin.HandlerFunc {
 		c.Abort()
 	}
 }
-
-// Routes is a no-op kept until Setup installs Middleware in its place.
-func Routes(engine *gin.Engine) {}
