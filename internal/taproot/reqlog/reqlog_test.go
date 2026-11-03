@@ -769,3 +769,60 @@ func TestLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// TestStreamingSpooledSections follows the middleware's order: executors
+// spool API sections to sources from NewFileBodySource, the writer reads them
+// in Close, and the middleware removes them right after.
+func TestStreamingSpooledSections(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	body := []byte(`{"model":"claude-opus-5-5"}`)
+	reqSrc, err := lg.NewFileBodySource("api-request")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resSrc, err := lg.NewFileBodySource("api-response")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiReq := apiRequestText(body)
+	apiResp := apiResponseText("event: message_stop\ndata: {}")
+	if err := reqSrc.AppendBytes(apiReq); err != nil {
+		t.Fatal(err)
+	}
+	if err := resSrc.AppendBytes(apiResp); err != nil {
+		t.Fatal(err)
+	}
+	w, err := lg.LogStreamingRequest("/v1/messages", "POST", map[string][]string{"X-Claude-Code-Session-Id": {"spool"}}, body, "spooled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourced, ok := w.(interface {
+		WriteAPIRequestSource(*logging.FileBodySource) error
+		WriteAPIResponseSource(*logging.FileBodySource) error
+	})
+	if !ok {
+		t.Fatalf("%T does not accept spooled sections", w)
+	}
+	_ = w.WriteStatus(200, map[string][]string{"Content-Type": {"text/event-stream"}})
+	w.WriteChunkAsync([]byte("event: ping\n\n"))
+	_ = sourced.WriteAPIRequestSource(reqSrc)
+	_ = sourced.WriteAPIResponseSource(resSrc)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cleanupSources(reqSrc, resSrc)
+	h.flush()
+
+	d, err := h.logs.Get(context.Background(), "spooled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Upstream.Request != redactedExpect(apiReq) || d.Upstream.Response != redactedExpect(apiResp) || d.Response.Body != "event: ping\n\n" {
+		t.Fatalf("spooled sections not stored: %+v", d.Upstream)
+	}
+	left, _ := os.ReadDir(h.logs.engine.tmpDir())
+	if len(left) != 0 {
+		t.Fatalf("spool files left behind: %d", len(left))
+	}
+}

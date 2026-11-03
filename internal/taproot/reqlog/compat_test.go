@@ -82,6 +82,20 @@ func TestRawTextMatchesUpstreamLayout(t *testing.T) {
 			},
 		},
 		{
+			name: "websocket transcript",
+			id:   "0190a0b0-0000-7000-8000-00000000c0a4",
+			upstream: func(l *logging.FileRequestLogger) {
+				_ = l.LogRequest("/v1/responses", "GET", map[string][]string{"Upgrade": {"websocket"}}, nil, 101, respHeaders, nil,
+					[]byte("> {\"type\":\"response.create\"}\n< {\"type\":\"response.completed\"}"), nil, nil, []byte("> upstream frame\n< upstream reply\n"),
+					nil, "0190a0b0-0000-7000-8000-00000000c0a4", ts, time.Time{})
+			},
+			taproot: func() {
+				_ = h.logs.logger.LogRequest("/v1/responses", "GET", map[string][]string{"Upgrade": {"websocket"}}, nil, 101, respHeaders, nil,
+					[]byte("> {\"type\":\"response.create\"}\n< {\"type\":\"response.completed\"}"), nil, nil, []byte("> upstream frame\n< upstream reply\n"),
+					nil, "0190a0b0-0000-7000-8000-00000000c0a4", ts, time.Time{})
+			},
+		},
+		{
 			name:      "streaming",
 			id:        "0190a0b0-0000-7000-8000-00000000c0a3",
 			streaming: true,
