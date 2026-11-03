@@ -1,0 +1,540 @@
+@use '../../../styles/mixins' as *;
+
+/* Account ledger, after the reference account list: one quiet row per account, remaining per window. */
+
+.ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--bg-primary);
+  min-width: 0;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- toolbar ---------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 260px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-tertiary);
+
+  &:focus-within {
+    border-color: var(--primary-color);
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 14px;
+
+    &::placeholder {
+      color: var(--text-tertiary);
+    }
+  }
+}
+
+.selects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.empty {
+  margin: 0;
+  padding: 16px 0;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+/* ---------- provider summary ---------- */
+
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+
+.summaryHead,
+.summaryFoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.summaryFoot {
+  justify-content: space-between;
+}
+
+.summaryTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summaryCount {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.subPools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 0;
+  font-size: 13px;
+
+  div {
+    display: flex;
+    gap: 8px;
+  }
+
+  dt {
+    color: var(--text-secondary);
+  }
+
+  dd {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+}
+
+.summaryCount + .showToggle {
+  margin-left: 16px;
+}
+
+.showToggle {
+  @include button-reset;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-tertiary);
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-secondary);
+
+  img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+}
+
+/* ---------- rows ---------- */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rows[hidden] {
+  display: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) minmax(190px, 230px);
+  align-items: start;
+  gap: 16px 28px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-color);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  &[data-disabled] .account,
+  &[data-disabled] .windows {
+    opacity: 0.6;
+  }
+}
+
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.accountName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.masked {
+  letter-spacing: 0.02em;
+}
+
+.accountMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+
+  span + span::before {
+    content: '·';
+    margin-right: 6px;
+    color: var(--text-tertiary);
+  }
+}
+
+.cooldown {
+  color: var(--warning-color);
+}
+
+.lastSeen {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.windows {
+  display: grid;
+  grid-template-columns: repeat(var(--window-count, 1), minmax(0, 1fr));
+  gap: 12px 28px;
+  min-width: 0;
+}
+
+.noWindows {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  opacity: 0.45;
+  font-variant-numeric: tabular-nums;
+
+  &[data-limiting] {
+    opacity: 1;
+  }
+}
+
+.cellHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cellLabel {
+  font-size: 13px;
+  color: var(--text-secondary);
+  @include text-ellipsis;
+}
+
+.cellValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+
+  &[data-level='high'] {
+    background: var(--success-color);
+  }
+
+  &[data-level='medium'] {
+    background: var(--warning-color);
+  }
+
+  &[data-level='low'] {
+    background: var(--error-color);
+  }
+}
+
+.cellFoot {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  @include text-ellipsis;
+}
+
+/* ---------- grants and actions ---------- */
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.grants {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.grantsLabel {
+  color: var(--text-secondary);
+}
+
+.grantsToggle {
+  @include button-reset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+
+  &:hover .grantsExpiry {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  svg {
+    align-self: center;
+    color: var(--text-tertiary);
+    transition: transform var(--dur-hover, 120ms) var(--ease-out-strong, ease);
+  }
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.grantsCount {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.grantsExpiry {
+  color: var(--text-tertiary);
+}
+
+.grantList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-tertiary);
+
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+.grantLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+
+  > span + span::before {
+    content: '·';
+    margin-right: 6px;
+  }
+}
+
+.grantName {
+  color: var(--text-primary);
+}
+
+.grantEmpty,
+.grantMessage {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.action {
+  @include button-reset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: color var(--dur-hover, 120ms) var(--ease-out-strong, ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: default;
+    color: var(--text-quaternary);
+  }
+}
+
+.spin {
+  animation: ledger-spin 0.8s linear infinite;
+}
+
+@keyframes ledger-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- narrower screens ---------- */
+
+@include tablet {
+  .row {
+    grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+  }
+
+  .side {
+    grid-column: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 20px;
+  }
+}
+
+@include mobile {
+  .ledger {
+    padding: 16px;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .windows {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .summaryFoot {
+    flex-wrap: wrap;
+  }
+
+  .action {
+    min-height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+
+  .action,
+  .grantsToggle svg {
+    transition: none;
+  }
+}

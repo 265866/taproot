@@ -20,7 +20,6 @@ import {
 import type { ProviderGroup } from '../model/fromApi';
 import { buildPoolView, type FutureUsage } from '../model/poolView';
 import { lastDay, type DateRange } from '../model/range';
-import { AccountRows } from './AccountRows';
 import { LiveQuotaGrid } from './LiveQuota';
 import { PoolChart } from './PoolChart';
 import styles from '../TaprootQuotaPage.module.scss';
@@ -37,11 +36,9 @@ interface ProviderCardProps {
   view: ChartView;
   burnWindowHours: number;
   future: FutureUsage;
-  showAccounts: boolean;
   showEmails: boolean;
   resolvedTheme: ResolvedTheme;
   liveEntries: QuotaFileEntry[];
-  liveByAuthIndex: Map<string, QuotaFileEntry>;
 }
 
 function ProviderTitle({
@@ -74,9 +71,9 @@ function ProviderTitle({
   );
 }
 
-/** A provider's pooled quota: headline, stats, recorded and projected chart, and accounts. */
+/** A provider's pooled quota: headline, stats, and the recorded and projected chart. */
 export function ProviderCard(props: ProviderCardProps) {
-  const { group, now, range, view, burnWindowHours, future, showAccounts, showEmails } = props;
+  const { group, now, range, view, burnWindowHours, future, showEmails } = props;
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage;
   const burnWindowMs = burnWindowHours * 3_600_000;
@@ -234,16 +231,6 @@ export function ProviderCard(props: ProviderCardProps) {
             </span>
           </div>
         </>
-      )}
-      {showAccounts && (
-        <AccountRows
-          provider={group.provider}
-          view={pool}
-          range={range}
-          now={now}
-          showEmails={showEmails}
-          liveByAuthIndex={props.liveByAuthIndex}
-        />
       )}
     </section>
   );

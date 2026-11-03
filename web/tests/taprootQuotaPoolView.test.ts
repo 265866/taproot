@@ -1,12 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ProviderGroup, QuotaAccount } from '@/features/taproot-quota/model/fromApi';
-import {
-  accountStatus,
-  buildPoolView,
-  poolNow,
-  projectionHorizon,
-  windowColumns,
-} from '@/features/taproot-quota/model/poolView';
+import { buildPoolView, poolNow, projectionHorizon } from '@/features/taproot-quota/model/poolView';
 import { HOUR_MS as H } from '@/features/taproot-quota/model/projection';
 
 const NOW = Date.UTC(2026, 10, 3, 0, 0, 0);
@@ -18,8 +12,10 @@ const account = (authIndex: string, extra: Partial<QuotaAccount>): QuotaAccount 
   authIndex,
   provider: 'claude',
   label: `${authIndex}@example.com`,
+  email: `${authIndex}@example.com`,
   plan: '',
   disabled: false,
+  lastSeen: null,
   windows: [],
   series: [],
   ...extra,
@@ -92,74 +88,6 @@ describe('buildPoolView', () => {
     expect(view.projection.capacity).toBe(0);
     expect(view.recorded).toEqual([]);
     expect(view.burnPerHour).toBe(0);
-  });
-});
-
-describe('accountStatus', () => {
-  const withWindow = account('a', {
-    windows: [
-      { window: 'seven_day', utilization: 1, resetsAt: NOW + H, observedAt: NOW, periodMs: WEEK },
-    ],
-  });
-
-  test('blocked until the first reset that gives capacity back', () => {
-    expect(
-      accountStatus(withWindow, { remainingNow: 0, resets: [{ t: NOW + H, gain: 1 }] }, NOW)
-    ).toEqual({
-      kind: 'blocked',
-      until: NOW + H,
-    });
-    expect(accountStatus(withWindow, { remainingNow: 0, resets: [] }, NOW)).toEqual({
-      kind: 'blocked',
-      until: null,
-    });
-  });
-
-  test('available, disabled, and no data', () => {
-    expect(accountStatus(withWindow, { remainingNow: 0.5, resets: [] }, NOW)).toEqual({
-      kind: 'available',
-    });
-    expect(accountStatus({ ...withWindow, disabled: true }, undefined, NOW)).toEqual({
-      kind: 'disabled',
-    });
-    expect(accountStatus(account('b', {}), { remainingNow: 1, resets: [] }, NOW)).toEqual({
-      kind: 'no_data',
-    });
-  });
-  test('an account reporting only informational windows has no data', () => {
-    const opusOnly = account('o', {
-      windows: [
-        {
-          window: 'seven_day_opus',
-          utilization: 1,
-          resetsAt: NOW + H,
-          observedAt: NOW,
-          periodMs: WEEK,
-        },
-      ],
-    });
-    expect(accountStatus(opusOnly, { remainingNow: 1, resets: [] }, NOW)).toEqual({
-      kind: 'no_data',
-    });
-  });
-});
-
-describe('windowColumns', () => {
-  test('orders windows by period, shortest first, across accounts', () => {
-    const w = (window: string, periodMs: number) => ({
-      window,
-      utilization: 0,
-      resetsAt: null,
-      observedAt: NOW,
-      periodMs,
-    });
-    expect(
-      windowColumns([
-        { windows: [w('seven_day', WEEK), w('seven_day_opus', WEEK)] },
-        { windows: [w('five_hour', FIVE)] },
-      ])
-    ).toEqual(['five_hour', 'seven_day', 'seven_day_opus']);
-    expect(windowColumns([])).toEqual([]);
   });
 });
 

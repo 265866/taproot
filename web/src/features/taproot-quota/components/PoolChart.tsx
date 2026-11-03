@@ -32,16 +32,7 @@ interface PoolChartProps {
 
 const formatAxisPercent = (value: number) => `${Math.round(value)}%`;
 
-export function PoolChart({
-  rows,
-  view,
-  from,
-  to,
-  now,
-  yMax,
-  accent,
-  ariaLabel,
-}: PoolChartProps) {
+export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }: PoolChartProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage;
   const gradientId = useId().replace(/:/g, '');
