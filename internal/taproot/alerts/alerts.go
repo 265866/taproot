@@ -110,14 +110,13 @@ func New(cfg Config, db *store.DB, feed QuotaFeed) (*Service, error) {
 		log.Error("taproot alerts: alerts.discord-webhook in taproot.yaml is not a Discord webhook URL; alerts are off until settings replace it")
 	}
 	s := &Service{
-		db:       db,
-		feed:     feed,
-		detector: NewDetector(cooldown, settle),
-		grants:   grantReader{url: grantStatusURL},
-		now:      time.Now,
-		wake:     make(chan struct{}, 1),
-		cfg:      cfg,
-		// Set before any goroutine can read it.
+		db:             db,
+		feed:           feed,
+		detector:       NewDetector(cooldown, settle),
+		grants:         grantReader{url: grantStatusURL},
+		now:            time.Now,
+		wake:           make(chan struct{}, 1),
+		cfg:            cfg,
 		webhookInvalid: invalid,
 		quota:          map[quotaKey]ingest.QuotaObservation{},
 		grantReads:     map[string]grantRead{},
