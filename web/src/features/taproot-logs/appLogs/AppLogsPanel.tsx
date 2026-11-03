@@ -135,7 +135,7 @@ export function AppLogsPanel() {
     try {
       const res = await logsApi.fetchErrorLogs();
       if (!requests.errors.isCurrent(request)) return;
-      // API 返回 { files: [...] }
+      // The API returns { files: [...] }.
       setErrorLogs(Array.isArray(res.files) ? res.files : []);
     } catch (err: unknown) {
       if (!requests.errors.isCurrent(request)) return;
