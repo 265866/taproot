@@ -74,7 +74,7 @@
   font-weight: 650;
 
   &::after {
-    background: var(--text-primary);
+    background: var(--accent);
   }
 
   /* 整体禁用（保存中）时激活 tab 仍保持完整对比度 */

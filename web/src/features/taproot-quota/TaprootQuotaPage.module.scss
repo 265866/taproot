@@ -139,8 +139,8 @@
 
 .segmentActive,
 .segmentActive:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--bg-hover);
+  color: var(--accent-text);
+  background: var(--accent-subtle);
 }
 
 .selectWrap {

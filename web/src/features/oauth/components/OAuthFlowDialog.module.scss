@@ -2,7 +2,7 @@
 
 /* ============================================================
  * 授权对话框：品牌头 → 步骤（打开授权页 / 设备码 / 回调）→ 底部实时状态条。
- * 主操作是墨色药丸；次操作描边药丸；遥测（链接、设备码、状态）一律 mono。
+ * 主操作是强调色药丸；次操作描边药丸；遥测（链接、设备码、状态）一律 mono。
  * ============================================================ */
 
 /* ---------- 壳层：局部改写全局 modal 的头/体/脚与动效 ---------- */
@@ -407,11 +407,10 @@
   }
 }
 
-/* 墨色药丸（深色主题自动反相） */
 .primary {
   @extend %pill;
-  background: var(--text-primary);
-  color: var(--bg-secondary);
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
 }
 
 .secondary {
@@ -431,8 +430,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--text-primary) 86%, var(--bg-secondary));
-    box-shadow: 0 10px 22px -10px color-mix(in srgb, var(--text-primary) 45%, transparent);
+    background: var(--button-primary-hover);
+    box-shadow: 0 10px 22px -10px color-mix(in srgb, var(--button-primary-bg) 30%, transparent);
   }
 
   .secondary:hover:not(:disabled) {

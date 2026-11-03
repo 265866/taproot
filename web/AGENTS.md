@@ -67,12 +67,14 @@ Use 2-space indentation, semicolons, single quotes, ES5 trailing commas, and 100
 
 Component files use PascalCase, hooks use `useName`, and API modules use domain names such as `oauth.ts`. SCSS Modules sit beside their page or component as `Name.module.scss`. Vite injects `src/styles/variables.scss` into SCSS automatically.
 
-The visual direction follows `internal/taproot/docs/quota-reference.png`: near-black background, quiet 1px borders, generous spacing, subtle cards, and large numerals for headline figures. Dark is the default theme; the light, white, and auto themes must keep working. Use the tokens in `src/styles/themes.scss` instead of hard-coded colors:
+The visual direction follows `internal/taproot/docs/quota-reference.png`: pure black page, quiet 1px borders, generous spacing, subtle cards, and large numerals for headline figures. Dark is the default theme; the light, white, and auto themes must keep working. Use the tokens in `src/styles/themes.scss` instead of hard-coded colors:
 
-- Surfaces and text: `--bg-secondary` (page), `--bg-primary` (cards), `--bg-tertiary` (hover, active), `--border-color`, `--text-primary`, `--text-secondary`, `--text-tertiary`.
-- Provider accents: `--provider-claude`, `--provider-codex`, and their `-soft` fills.
+- Surfaces and text: `--bg-secondary` (page), `--bg-primary` (cards), `--bg-tertiary` (hover, active), `--border-color`, `--text-primary`, `--text-secondary`, `--text-tertiary`, and `--input-bg` for inputs.
+- Interface accent (blue): `--accent` (selection, focus, links), `--accent-hover`, `--accent-subtle` (selected backgrounds), `--accent-text` (blue text), `--accent-border`, and `--focus-ring`. `--primary-color` maps to `--accent`.
+- Selection states: a selected tab's underline uses `--accent`; a selected segment or chip uses `--accent-subtle` with `--accent-text`. Never mark a selection or a primary action with a `--text-primary` fill.
+- Provider accents: `--provider-claude`, `--provider-codex`, and their `-soft` fills. Provider hues stay reserved for provider data; chart series palettes keep clear of them and of the accent.
 - Display type: `--font-size-page-title`, `--font-size-numeral-xl`, `--font-size-numeral-lg`, and the `.numeral-xl` and `.numeral-lg` classes.
-- Primary buttons use `--button-primary-*`; `--primary-color` is the accent for toggles, checkboxes, and focus.
+- Primary actions, including feature-owned pills, use `--button-primary-bg`, `--button-primary-hover`, and `--button-primary-text`. Toggles and checkboxes use `--primary-color`.
 
 Charts use Recharts. Reuse shared components from `src/components/ui/` before adding primitives. Preserve keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
 

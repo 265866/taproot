@@ -61,9 +61,9 @@
   width: 30px;
   height: 30px;
   border-radius: $radius-full;
-  border: 1px solid var(--text-primary);
-  background: var(--text-primary);
-  color: var(--bg-secondary);
+  border: 1px solid var(--button-primary-bg);
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
   transition:
     transform var(--dur-press, 160ms) var(--ease-out-strong, ease-out),
     background-color $transition-fast,
@@ -82,7 +82,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .searchButton:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--text-primary) 86%, var(--bg-secondary));
+    background: var(--button-primary-hover);
     border-color: transparent;
   }
 }

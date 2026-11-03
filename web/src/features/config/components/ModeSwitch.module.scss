@@ -52,12 +52,9 @@
 }
 
 .segmentActive {
-  color: var(--text-primary);
+  color: var(--accent-text);
   font-weight: 650;
-  background: var(--floating-surface, var(--bg-primary));
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.12),
-    0 1px 2px rgba(0, 0, 0, 0.08);
+  background: var(--accent-subtle);
 
   /* 整体禁用（保存/加载中）时激活段仍保持完整对比度 —— 当前模式本身是有效信息 */
   &:disabled {
