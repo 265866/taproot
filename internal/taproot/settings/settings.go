@@ -361,8 +361,10 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 // Loopback and trusted-CIDR callers have no login and are admitted regardless.
 func (s *Settings) checkLogins(raw []string, caller access.Identity) ([]string, error) {
 	if !s.deps.AccessEnabled {
-		return nil, &apiError{status: http.StatusConflict, code: "access_disabled",
-			message: "the access guard is disabled in taproot.yaml, so allow-logins has no effect"}
+		return nil, &apiError{
+			status: http.StatusConflict, code: "access_disabled",
+			message: "the access guard is disabled in taproot.yaml, so allow-logins has no effect",
+		}
 	}
 	logins := make([]string, 0, len(raw))
 	for _, login := range raw {
@@ -378,8 +380,10 @@ func (s *Settings) checkLogins(raw []string, caller access.Identity) ([]string, 
 		return nil, badRequest("invalid_allow_logins", "allow-logins needs at least one login")
 	}
 	if caller.Login != "" && !slices.Contains(logins, strings.ToLower(caller.Login)) {
-		return nil, &apiError{status: http.StatusConflict, code: "would_lock_out",
-			message: fmt.Sprintf("allow-logins must keep your own login %s", caller.Login)}
+		return nil, &apiError{
+			status: http.StatusConflict, code: "would_lock_out",
+			message: fmt.Sprintf("allow-logins must keep your own login %s", caller.Login),
+		}
 	}
 	return logins, nil
 }
