@@ -2,68 +2,94 @@
 
 ## Project Scope & Structure
 
-This is a React 19 + TypeScript + Vite management frontend for CLI Proxy API, not the proxy itself. It exclusively uses the backend v8 Management API under `/v8/management` and the v8 configuration layout; do not add v0 fallbacks or legacy config adapters. Plugin resources and custom HTTP extensions are exceptions: preserve their backend-declared paths. The one sanctioned v0 touchpoint is `src/services/api/legacyBackendProbe.ts`: after a v8 login 404 it only detects an outdated backend to show a clearer error, and must never supply application data or act as a login fallback.
+This is taproot's dashboard: a React 19 + TypeScript + Vite frontend, hard-forked from Cli-Proxy-API-Management-Center and served by taproot's Go server at `/`. It no longer follows upstream UI changes. `internal/taproot/PLAN.md` at the repository root defines the dashboard scope, the taproot API contract, and which workstream owns which folder; read it before structural work.
 
-- `src/features/`: feature-owned pages, components, hooks, types, and logic. Current features are `dashboard`, `providers`, `authFiles`, `oauth`, `quota`, `config`, `logs`, and `plugins`. Prefer this layout for new feature work.
-- `src/pages/`: remaining route pages outside the feature layout (login, system, and the auth-file OAuth excluded-model/model-alias editors); `LogsPage.tsx` there is only a re-export of the logs feature. Follow nearby conventions when modifying these; do not migrate unrelated code.
-- `src/components/`, `src/hooks/`, `src/utils/`: shared UI, hooks, and utilities. Keep feature-specific code within its feature rather than promoting it prematurely.
-- `src/services/api/`: API client, domain endpoints, and backend data normalization. `src/services/storage/`: browser persistence.
-- `src/stores/`: Zustand state. `src/types/`: shared types. `src/styles/`: global styles and theme tokens.
-- `src/App.tsx`: hash-router setup. `src/router/MainRoutes.tsx`: authenticated route table. `ProtectedRoute` and `MainLayout` guard and wrap the authenticated app.
+The dashboard talks to two same-origin APIs and never holds a credential:
+
+- The CLIProxyAPI v8 Management API under `/v8/management`. Taproot's access guard admits allowlisted Tailscale callers and injects the management key server-side, so requests carry no `Authorization` header. Do not add v0 fallbacks or legacy config adapters. Plugin resources and custom HTTP extensions keep their backend-declared paths.
+- Taproot's own API under `/taproot/api/v1`, through the typed client in `src/services/api/taproot.ts`.
+
+There is no login page, management-key prompt, or key storage. `src/router/ConnectionGate.tsx` connects once and shows progress, access denied, or server unreachable. `src/utils/legacyStorage.ts` deletes keys the upstream UI left in localStorage on the same origin.
+
+Removed for good (do not reintroduce): Quick Start, AI Providers and API-key provider editing, sponsor or affiliate content, Kimi China, Devin, Vertex, SIWC, Config panel API-key editing, and non-English locales. Their backend code stays in the Go tree; only the dashboard drops them.
+
+- `src/features/`: feature-owned pages, components, hooks, types, and logic: `dashboard`, `authFiles` (including credential policy editors under `policy/`), `oauth`, `quota` (the previous quota page, kept at `#/quota` until `taproot-quota` replaces it), `routing` (OAuth credentials only), `config`, `logs` (the previous logs viewer at `#/logs`), and `plugins`.
+- `src/features/taproot-{quota,usage,logs,backups,settings}/`: taproot sections. Each belongs to the workstream named in the plan; this shell only provides placeholders and routes.
+- `src/pages/`: remaining route pages outside the feature layout (system, and the auth-file OAuth excluded-model and model-alias editors).
+- `src/components/`, `src/hooks/`, `src/utils/`: shared UI, hooks, and utilities. Keep feature-specific code inside its feature.
+- `src/services/api/`: API clients, domain endpoints, and backend data normalization.
+- `src/stores/`: Zustand state. `useAuthStore` holds the connection state (status, failure reason, server version, plugin support), not credentials.
+- `src/types/`: shared types. `src/styles/`: global styles and theme tokens.
+- `src/App.tsx`: hash-router setup. `src/router/routes.ts`: route paths shared by the route table, sidebar, and links. `src/router/MainRoutes.tsx`: route table. `src/components/layout/MainLayout.tsx`: shell and sidebar navigation.
 - `src/assets/`: bundled assets, including provider icons in `icons/`.
-- `src/i18n/locales/`: `en.json`, `zh-CN.json`, `zh-TW.json`, `ru.json`, `vi.json`, `ko.json`, and `tr.json`, registered in `src/i18n/index.ts`; fallback language is `zh-CN`. Update all seven files when adding or changing translation keys, including accessible labels.
+
+## Internationalization
+
+The UI is English only and the i18n layer stays: keep user-facing text, including accessible labels, in catalogs.
+
+- Each feature owns `src/i18n/locales/en/<feature>.json`. A file owns its top-level keys (for example `taproot-usage.json` owns `taproot_usage`), and call sites use `t('taproot_usage.title')`.
+- `src/i18n/resources.ts` merges every file in that folder at startup with `import.meta.glob`, so adding a feature file needs no registration. Two files defining the same top-level key throw at startup.
+- Shell strings (nav, sidebar, header, theme, connection gate) live in `shell.json`; cross-feature strings in `common.json`.
+- Tests read the merged catalog with `import { en } from '@/i18n/resources'`. `bunfig.toml` preloads `tests/helpers/viteGlobPlugin.ts`, which expands the same glob under `bun test`.
 
 ## Build, Test, and Development Commands
 
-Use Bun; `package.json` pins `bun@1.4.3`, and CI uses Node.js 24. Keep dependency changes consistent with `bun.lock`; do not introduce another package manager's lockfile.
+Use Bun; `package.json` pins `bun@1.4.3`. Keep dependency changes consistent with `bun.lock`; do not introduce another package manager's lockfile.
 
 - `bun install --frozen-lockfile`: install locked dependencies.
-- `bun run dev`: start Vite at `http://localhost:5173` by default.
+- `bun run dev`: start Vite at `http://localhost:5173`. It proxies `/v8`, `/v0`, and `/taproot` to `TAPROOT_DEV_SERVER` (default `http://127.0.0.1:8317`). Until the server injects the management key itself, start the local server with `MANAGEMENT_PASSWORD=<key>` and set `TAPROOT_DEV_MANAGEMENT_KEY=<key>` for Vite; the proxy adds the header in development only.
 - `bun run build`: TypeScript compilation followed by the production Vite build.
 - `bun run preview`: serve the built output locally.
-- `bun run test`: run all Bun tests.
-- `bun test tests/apiError.test.ts`: example focused test run.
-- `bun run lint`: run ESLint over TypeScript/TSX files. Some rules emit warnings; the current command does not enforce zero warnings.
+- `bun run test`: run all Bun tests. `bun test tests/apiError.test.ts` runs one file.
+- `bun run lint`: run ESLint over TypeScript/TSX files.
 - `bun run type-check`: run `tsc --noEmit`; the main TypeScript config includes `src`, not `tests`.
-- `bun run verify`: run tests, lint, and build (which includes TypeScript compilation).
-- `bun run format`: format all `src/**/*.{ts,tsx,css,scss}`. Prefer targeted formatting of changed files during routine work to avoid unrelated diffs.
+- `bun run verify`: run tests, lint, and build.
+- `bun run format`: format all `src/**/*.{ts,tsx,css,scss}`. Prefer formatting only the files you change; several upstream files are not Prettier-clean.
+
+`tests/quotaTimelineDst.test.ts` spawns a Bun subprocess per time zone and fails on Windows; it passes on Linux.
 
 ## Deployment Constraints
 
-The production artifact is a single `dist/index.html` with JS/CSS and bundled assets inlined by `vite-plugin-singlefile`. The release workflow renames it to `management.html` for backend hosting; `vX.Y.Z` tags trigger releases.
+The production artifact is a single `dist/index.html` with JS, CSS, and assets inlined by `vite-plugin-singlefile`. Taproot embeds it (see `internal/taproot/web`) and serves it at `/` with `Cache-Control: no-store`. Upstream's `/management.html` is disabled in deployment.
 
 Preserve hash routing and single-file deployment. Changes to assets, imports, code splitting, or build configuration must not introduce required external build artifacts. Do not edit generated `dist/` files. App version is injected as `__APP_VERSION__` from `VERSION`, then git tags, then the package version, falling back to `dev`.
 
 ## API Contracts & State
 
-- Treat backend contracts as the source of truth. Inspect `../CLIProxyAPI` before changing endpoint names, payloads, provider keys, OAuth callback parameters, auth-file semantics, or plugin/config contracts. If that checkout is unavailable, report the missing evidence rather than guessing; do not modify the backend unless requested.
-- Reuse `apiClient` from `src/services/api/client.ts` for Management API requests through domain modules. It centralizes the API prefix, bearer authentication, error normalization, and response-header handling. Avoid bypassing it with ad hoc requests in components.
-- Preserve the client's event integration: `unauthorized` handles 401s, `server-version-update` carries version/build metadata, and `server-plugin-support-update` carries plugin capability information. Keep plugin routes gated by backend support.
+- Treat backend contracts as the source of truth. The backend is the Go module at the repository root; inspect it before changing endpoint names, payloads, provider keys, OAuth callback parameters, auth-file semantics, or plugin/config contracts.
+- Reuse `apiClient` from `src/services/api/client.ts` for Management API requests through domain modules. It centralizes the API prefix, error normalization, and response-header handling. Use `taprootApi` from `src/services/api/taproot.ts` for taproot endpoints. Do not add ad hoc requests in components.
+- Preserve the client's events: `unauthorized` marks the connection as access denied, `server-version-update` carries version/build metadata, and `server-plugin-support-update` carries plugin capability. Keep plugin routes and nav items gated by backend support.
 - Normalize backend fields on read and serialize on write in the API layer; consult `transformers.ts` and the relevant domain module. Keep raw backend field-name handling out of ordinary UI components.
-- `useConfigStore.fetchConfig(forceRefresh?: boolean)` uses a full-config TTL cache and in-flight request deduplication, not section-based fetching. Reuse it where appropriate and invalidate/update caches after mutations using existing store actions.
-- Preserve stale-request guards and cache cleanup when switching connections or logging out. Old asynchronous responses must not overwrite the new session's state.
-- Provider UI capabilities live in `src/features/providers/descriptors.ts`; `adapters.ts` maps provider configs to the shared resource model. Extend these existing abstractions rather than scattering provider-specific conditionals across components.
+- `useConfigStore.fetchConfig(forceRefresh?: boolean)` uses a full-config TTL cache and in-flight request deduplication. Reuse it and invalidate or update caches after mutations using existing store actions.
+- Keep stale-request guards (`apiClient.getConnectionRevision()`) around read/modify/write sequences.
 
 ## Coding Style & UI Conventions
 
-Use 2-space indentation, semicolons, single quotes, ES5 trailing commas, and 100-character line width. Prefer typed React components and `unknown` with narrowing for untrusted data; avoid introducing `any` unless an unavoidable boundary requires it. Use the `@/` alias for `src` imports.
+Use 2-space indentation, semicolons, single quotes, ES5 trailing commas, and 100-character line width. Prefer typed React components and `unknown` with narrowing for untrusted data; avoid `any` unless an unavoidable boundary requires it. Use the `@/` alias for `src` imports.
 
-Component files use PascalCase, hooks use `useName`, and API modules use domain names such as `oauth.ts`. SCSS Modules sit beside their page or component as `Name.module.scss`. Vite automatically injects `src/styles/variables.scss` into SCSS; new modules do not need to import it again. Reuse shared components from `src/components/ui/` and existing theme tokens before adding new primitives or hard-coded colors.
+Component files use PascalCase, hooks use `useName`, and API modules use domain names such as `oauth.ts`. SCSS Modules sit beside their page or component as `Name.module.scss`. Vite injects `src/styles/variables.scss` into SCSS automatically.
 
-Keep user-facing text in i18n. Preserve keyboard interaction, accessible names, focus behavior, and reduced-motion handling when modifying interactive UI. For motion, reuse the timing tokens in `src/styles/themes.scss` (`--ease-out-strong`, `--dur-press`, `--dur-hover`) and the helpers in `src/hooks/motion.ts` (`prefersReducedMotion`, `useRevealOnScroll`, `useRevealGroup`, `useCountUp`) instead of ad hoc durations and easings.
+The visual direction follows `internal/taproot/docs/quota-reference.png`: near-black background, quiet 1px borders, generous spacing, subtle cards, and large numerals for headline figures. Dark is the default theme; the light, white, and auto themes must keep working. Use the tokens in `src/styles/themes.scss` instead of hard-coded colors:
+
+- Surfaces and text: `--bg-secondary` (page), `--bg-primary` (cards), `--bg-tertiary` (hover, active), `--border-color`, `--text-primary`, `--text-secondary`, `--text-tertiary`.
+- Provider accents: `--provider-claude`, `--provider-codex`, and their `-soft` fills.
+- Display type: `--font-size-page-title`, `--font-size-numeral-xl`, `--font-size-numeral-lg`, and the `.numeral-xl` and `.numeral-lg` classes.
+- Primary buttons use `--button-primary-*`; `--primary-color` is the accent for toggles, checkboxes, and focus.
+
+Charts use Recharts. Reuse shared components from `src/components/ui/` before adding primitives. Preserve keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
 
 ## Testing & Verification
 
-Tests are centralized under `tests/` as `*.test.ts` and use `bun:test`; shared fixtures live in `tests/fixtures/` and helpers in `tests/helpers/`. Existing suites cover pure logic, React server-side static rendering via `renderToStaticMarkup`, and source/contract checks. There is no configured browser DOM test harness; static markup tests do not verify browser interactions. Prefer extracting testable logic and following nearby test patterns rather than introducing a new framework by default.
+Tests live under `tests/` as `*.test.ts` and use `bun:test`; fixtures are in `tests/fixtures/` and helpers in `tests/helpers/`. Suites cover pure logic, React server-side static rendering via `renderToStaticMarkup`, source/contract checks, and real HTTP against `Bun.serve`. There is no browser DOM harness; static markup tests do not verify browser interactions.
 
-For code changes, add or update relevant regression tests, run focused tests while iterating, and run `bun run verify` before handoff. For UI changes, also verify the affected route in a browser and include screenshots or notes. Report commands actually run, failures, and anything not verified; if a backend or browser is unavailable, state the limitation explicitly. Documentation-only changes can be checked with diff/content validation instead of a full build.
+For code changes, add or update regression tests, run focused tests while iterating, and run `bun run verify` before handoff. For UI changes, also load the affected route in a real browser against a running server and keep screenshots or notes. Report commands actually run, failures, and anything not verified.
 
 ## Security
 
-Never commit real management keys, provider credentials, auth files, or other secrets; redact them from logs, screenshots, and test fixtures. Management keys are entered at runtime and persisted according to the remember-password setting. `src/services/storage/secureStorage.ts` provides reversible obfuscation, not encryption or a security boundary. Do not weaken authentication, plugin trust checks, or session isolation for convenience.
+Never commit management keys, provider credentials, auth files, request logs, backups, or other secrets; redact them from logs, screenshots, and fixtures. The browser must never receive or store the management key. Do not weaken the access model, plugin trust checks, or session isolation for convenience.
 
 ## Commits & Guidance Maintenance
 
-Use Conventional Commits, such as `feat(providers): add a provider` or `fix(auth-files): preserve disabled actions`. Keep changes focused. Pull requests should include a summary, linked issue when applicable, backend version/reproduction details for integration work, UI screenshots or notes when relevant, and verification results.
+Use Conventional Commits, such as `feat(web): add the usage page` or `fix(web): keep disabled credentials dimmed`. Keep changes focused and include UI screenshots or notes and verification results in pull requests.
 
-Maintain shared repository guidance in `AGENTS.md`. When updating it, synchronize the local `CLAUDE.md` to identical content if present; `CLAUDE.md` is currently ignored and untracked, so shared guidance must not depend on it. Keep guidance aligned with source and configuration rather than duplicating long implementation details.
+Maintain shared guidance in this `AGENTS.md`. `CLAUDE.md` is ignored and untracked; shared guidance must not depend on it.
