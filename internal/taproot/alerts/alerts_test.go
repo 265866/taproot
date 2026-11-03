@@ -356,3 +356,50 @@ func TestDiscordOriginOverrideIsLoopbackOnlyAndLogged(t *testing.T) {
 		t.Fatalf("active override should be logged without the webhook:\n%s", out)
 	}
 }
+
+// TestTestEndpointMakesOneShortAttempt keeps the dashboard request short:
+// a 429 comes back as rate_limited with Discord's wait, and a hung Discord
+// fails within the bound.
+func TestTestEndpointMakesOneShortAttempt(t *testing.T) {
+	fake := &fakeDiscord{statuses: []func(http.ResponseWriter){
+		status(http.StatusTooManyRequests, `{"message":"You are being rate limited.","retry_after":89.2}`),
+	}}
+	h := newHarness(t, openDB(t, t.TempDir()), fake)
+	r := gin.New()
+	h.svc.Routes(r.Group("/taproot/api/v1"))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	var body struct {
+		Error struct {
+			Code       string `json:"code"`
+			RetryAfter int    `json:"retryAfter"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if w.Code != http.StatusTooManyRequests || body.Error.Code != "rate_limited" || body.Error.RetryAfter != 90 || w.Header().Get("Retry-After") != "90" {
+		t.Fatalf("rate limited test send = %d %s %v", w.Code, w.Body, w.Header())
+	}
+	if fake.count() != 1 {
+		t.Fatalf("posts = %d, want a single attempt", fake.count())
+	}
+
+	release := make(chan struct{})
+	hung := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer hung.Close()
+	defer close(release)
+	h.svc.sender = NewSender(h.svc.webhook, hung.URL)
+	prev := testSendTimeout
+	testSendTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { testSendTimeout = prev })
+	start := time.Now()
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if w.Code != http.StatusBadGateway || time.Since(start) > 5*time.Second || strings.Contains(w.Body.String(), fakeToken) {
+		t.Fatalf("hung test send = %d %s after %v", w.Code, w.Body, time.Since(start))
+	}
+}

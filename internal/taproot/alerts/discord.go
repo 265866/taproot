@@ -11,22 +11,29 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	queueSize = 64
+	// maxPending bounds the queue by distinct keys. Keys come from accounts
+	// and windows, so only a runaway caller reaches it.
+	maxPending = 256
 	// maxAttempts bounds retries of one message, including 429 waits.
 	maxAttempts = 4
-	// maxRetryAfter caps how long one 429 may hold the queue.
-	maxRetryAfter = 2 * time.Minute
+	// maxSendWait caps the total wait between attempts of one message, so a
+	// long 429 sequence cannot hold the queue for minutes.
+	maxSendWait = time.Minute
 	// sendTimeout bounds one webhook POST. Alerts are outbound notices, not
 	// proxied traffic, so AGENTS.md's no-timeout rule does not apply.
 	sendTimeout = 15 * time.Second
 	maxBodyRead = 64 << 10
 )
+
+// testSendTimeout bounds the dashboard's test send, which holds the request.
+var testSendTimeout = 10 * time.Second
 
 var severityColors = map[Severity]int{
 	SeverityInfo:      0x3B82F6,
@@ -93,6 +100,8 @@ func truncate(s string, n int) string {
 type DeliveryError struct {
 	Status int
 	Reason string
+	// RetryAfter is Discord's requested wait on a 429.
+	RetryAfter time.Duration
 }
 
 func (e *DeliveryError) Error() string {
@@ -102,10 +111,17 @@ func (e *DeliveryError) Error() string {
 	return "discord unreachable: " + e.Reason
 }
 
-// Sender posts messages to the webhook from a bounded in-memory queue.
+// Sender posts messages to the webhook from an in-memory queue that holds at
+// most one message per key. A newer message for a pending key replaces it in
+// place, so a recovery is never dropped behind its own alert.
 type Sender struct {
-	client  *http.Client
-	queue   chan Message
+	client *http.Client
+
+	mu      sync.Mutex
+	pending map[string]Message
+	order   []string
+	ready   chan struct{}
+
 	webhook func() string
 	// origin, when set, replaces the webhook's scheme and host. It exists for
 	// end-to-end tests against a local fake Discord.
@@ -118,7 +134,8 @@ type Sender struct {
 func NewSender(webhook func() string, origin string) *Sender {
 	return &Sender{
 		client:  &http.Client{Timeout: sendTimeout},
-		queue:   make(chan Message, queueSize),
+		pending: map[string]Message{},
+		ready:   make(chan struct{}, 1),
 		webhook: webhook,
 		origin:  strings.TrimRight(origin, "/"),
 		backoff: 2 * time.Second,
@@ -126,22 +143,46 @@ func NewSender(webhook func() string, origin string) *Sender {
 	}
 }
 
-// Enqueue queues m without blocking. A full queue drops the message.
+// Enqueue queues m without blocking. A pending message with the same key is
+// replaced and keeps its place in line.
 func (s *Sender) Enqueue(m Message) {
-	select {
-	case s.queue <- m:
-	default:
-		log.WithField("key", m.Key).Warn("taproot alerts: queue full, dropping alert")
+	s.mu.Lock()
+	_, pending := s.pending[m.Key]
+	full := !pending && len(s.order) >= maxPending
+	if !full {
+		if !pending {
+			s.order = append(s.order, m.Key)
+		}
+		s.pending[m.Key] = m
 	}
+	s.mu.Unlock()
+	if full {
+		log.WithField("key", m.Key).Warn("taproot alerts: too many pending alerts, dropping alert")
+		return
+	}
+	select {
+	case s.ready <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Sender) next() (Message, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.order) == 0 {
+		return Message{}, false
+	}
+	key := s.order[0]
+	s.order = s.order[1:]
+	m := s.pending[key]
+	delete(s.pending, key)
+	return m, true
 }
 
 // Run delivers queued messages until ctx ends.
 func (s *Sender) Run(ctx context.Context) {
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case m := <-s.queue:
+		for m, ok := s.next(); ok && ctx.Err() == nil; m, ok = s.next() {
 			hook := s.webhook()
 			if hook == "" {
 				continue
@@ -150,39 +191,62 @@ func (s *Sender) Run(ctx context.Context) {
 				log.WithError(err).WithField("key", m.Key).Warn("taproot alerts: discord delivery failed")
 			}
 		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.ready:
+		}
 	}
 }
 
-// Send posts one message, retrying network errors, 5xx, and 429 a few times.
-func (s *Sender) Send(ctx context.Context, webhook string, m Message) error {
-	body, err := json.Marshal(payloadFor(m))
-	if err != nil {
-		return fmt.Errorf("encode alert: %w", err)
-	}
-	target, err := s.target(webhook)
+// SendOnce posts m in a single attempt, for the dashboard's test button.
+func (s *Sender) SendOnce(ctx context.Context, webhook string, m Message) error {
+	body, target, err := s.prepare(webhook, m)
 	if err != nil {
 		return err
 	}
-	var last error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	_, _, err = s.post(ctx, target, body)
+	return err
+}
+
+// Send posts one message, retrying network errors, 5xx, and 429 a few times
+// with at most maxSendWait of waiting in total.
+func (s *Sender) Send(ctx context.Context, webhook string, m Message) error {
+	body, target, err := s.prepare(webhook, m)
+	if err != nil {
+		return err
+	}
+	var waited time.Duration
+	for attempt := 1; ; attempt++ {
 		wait, retry, errPost := s.post(ctx, target, body)
 		if errPost == nil {
 			return nil
 		}
-		last = errPost
-		if !retry || attempt == maxAttempts {
-			break
-		}
 		if wait == 0 {
 			wait = s.backoff << (attempt - 1)
 		}
+		if !retry || attempt == maxAttempts || waited+wait > maxSendWait {
+			return errPost
+		}
+		waited += wait
 		log.WithError(errPost).WithFields(log.Fields{"key": m.Key, "attempt": attempt, "retry_in": wait.String()}).
 			Debug("taproot alerts: retrying discord delivery")
 		if err := s.sleep(ctx, wait); err != nil {
 			return err
 		}
 	}
-	return last
+}
+
+func (s *Sender) prepare(webhook string, m Message) ([]byte, string, error) {
+	body, err := json.Marshal(payloadFor(m))
+	if err != nil {
+		return nil, "", fmt.Errorf("encode alert: %w", err)
+	}
+	target, err := s.target(webhook)
+	if err != nil {
+		return nil, "", err
+	}
+	return body, target, nil
 }
 
 func (s *Sender) target(webhook string) (string, error) {
@@ -219,7 +283,8 @@ func (s *Sender) post(ctx context.Context, target string, body []byte) (time.Dur
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return 0, false, nil
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return retryAfter(resp.Header, raw), true, &DeliveryError{Status: resp.StatusCode}
+		wait := retryAfter(resp.Header, raw)
+		return wait, true, &DeliveryError{Status: resp.StatusCode, RetryAfter: wait}
 	case resp.StatusCode >= 500:
 		return 0, true, &DeliveryError{Status: resp.StatusCode}
 	}
@@ -238,11 +303,12 @@ func retryAfter(h http.Header, body []byte) time.Duration {
 	} else if v, err := strconv.ParseFloat(strings.TrimSpace(h.Get("Retry-After")), 64); err == nil && v > 0 {
 		secs = v
 	}
-	d := time.Duration(secs * float64(time.Second))
+	// The cap keeps a hostile value from overflowing the conversion.
+	d := time.Duration(min(secs, 24*3600) * float64(time.Second))
 	if d <= 0 {
 		d = time.Second
 	}
-	return min(d, maxRetryAfter)
+	return d
 }
 
 // withoutURL drops the request URL that net/http puts in its errors, since

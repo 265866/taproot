@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -466,10 +469,23 @@ func (s *Service) handleTest(c *gin.Context) {
 		Title:       "taproot test alert",
 		Description: "Alerts from taproot reach this channel.",
 	}
-	if err := s.sender.Send(c.Request.Context(), hook, msg); err != nil {
-		log.WithError(err).Warn("taproot alerts: test delivery failed")
-		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{"error": gin.H{"code": "delivery_failed", "message": err.Error()}})
+	ctx, cancel := context.WithTimeout(c.Request.Context(), testSendTimeout)
+	defer cancel()
+	err := s.sender.SendOnce(ctx, hook, msg)
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{"sent": true})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"sent": true})
+	log.WithError(err).Warn("taproot alerts: test delivery failed")
+	var de *DeliveryError
+	if errors.As(err, &de) && de.Status == http.StatusTooManyRequests {
+		secs := int(math.Ceil(de.RetryAfter.Seconds()))
+		c.Header("Retry-After", strconv.Itoa(secs))
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": gin.H{
+			"code": "rate_limited", "retryAfter": secs,
+			"message": fmt.Sprintf("Discord is rate limiting this webhook; try again in %d s", secs),
+		}})
+		return
+	}
+	c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{"error": gin.H{"code": "delivery_failed", "message": err.Error()}})
 }

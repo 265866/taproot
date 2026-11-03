@@ -272,3 +272,59 @@ func TestMaskWebhook(t *testing.T) {
 		t.Fatal("empty webhook should mask to empty")
 	}
 }
+
+// TestSendCapsTotalWaitUnder429 keeps one message from holding the queue
+// for minutes when Discord keeps asking for long waits.
+func TestSendCapsTotalWaitUnder429(t *testing.T) {
+	fake := &fakeDiscord{}
+	for range maxAttempts {
+		fake.statuses = append(fake.statuses, status(http.StatusTooManyRequests, `{"retry_after":45}`))
+	}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	s, waits := newTestSender(srv)
+	if err := s.Send(context.Background(), testWebhook, Message{Key: "k", Title: "t", At: t0}); err == nil {
+		t.Fatal("send should give up")
+	}
+	var total time.Duration
+	for _, w := range *waits {
+		total += w
+	}
+	if total > maxSendWait || len(*waits) != 1 {
+		t.Fatalf("waits = %v (total %v), want one 45s wait within %v", *waits, total, maxSendWait)
+	}
+}
+
+// TestEnqueueCoalescesByKeyAndKeepsRecoveries fills the queue while the
+// sender is busy: nothing is dropped, and a recovery replaces its own pending
+// alert in place.
+func TestEnqueueCoalescesByKeyAndKeepsRecoveries(t *testing.T) {
+	fake := &fakeDiscord{}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	s, _ := newTestSender(srv)
+	s.webhook = func() string { return testWebhook }
+	s.Enqueue(Message{Key: "login:k", Title: "login broken", At: t0})
+	for i := range 100 {
+		s.Enqueue(Message{Key: "limit:" + itoa(int64(i)), Title: "limit", At: t0})
+	}
+	s.Enqueue(Message{Key: "login:k", Severity: SeverityRecovered, Title: "login works again", At: t0})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Run(ctx)
+	waitFor(t, func() bool { return fake.count() >= 101 })
+	time.Sleep(20 * time.Millisecond)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.bodies) != 101 {
+		t.Fatalf("posts = %d, want 101", len(fake.bodies))
+	}
+	var first webhookPayload
+	if err := json.Unmarshal(fake.bodies[0], &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.Embeds[0].Title != "login works again" {
+		t.Fatalf("first post = %q, want the recovery in the alert's place", first.Embeds[0].Title)
+	}
+}
