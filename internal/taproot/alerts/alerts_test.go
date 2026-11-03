@@ -278,10 +278,36 @@ func TestTestEndpoint(t *testing.T) {
 	}
 }
 
-func TestNewRejectsAnInvalidWebhook(t *testing.T) {
-	_, err := New(Config{DiscordWebhook: "https://example.com/hook/" + fakeToken}, openDB(t, t.TempDir()), &fakeFeed{})
-	if err == nil || strings.Contains(err.Error(), fakeToken) {
-		t.Fatalf("err = %v", err)
+// TestNewKeepsAlertsOffForAnInvalidWebhook covers a hand-edited taproot.yaml:
+// the proxy still starts, alerts stay off, and the URL never reaches the log.
+func TestNewKeepsAlertsOffForAnInvalidWebhook(t *testing.T) {
+	logs := captureLogs(t)
+	bad := "https://example.com/hook/" + fakeToken
+	svc, err := New(Config{DiscordWebhook: bad}, openDB(t, t.TempDir()), &fakeFeed{})
+	if err != nil {
+		t.Fatalf("an invalid webhook must not stop startup: %v", err)
+	}
+	if svc.Active() || svc.webhook() != "" || !svc.WebhookInvalid() {
+		t.Fatalf("active = %v, webhook set = %v, invalid = %v", svc.Active(), svc.webhook() != "", svc.WebhookInvalid())
+	}
+	out := logs.String()
+	if !strings.Contains(out, "level=error") || !strings.Contains(out, "discord-webhook") || strings.Contains(out, fakeToken) || strings.Contains(out, "example.com") {
+		t.Fatalf("log should name the setting without the URL:\n%s", out)
+	}
+
+	r := gin.New()
+	svc.Routes(r.Group("/taproot/api/v1"))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "invalid_webhook") || strings.Contains(w.Body.String(), fakeToken) {
+		t.Fatalf("test send = %d %s", w.Code, w.Body)
+	}
+
+	if err := svc.SetConfig(Config{DiscordWebhook: testWebhook}); err != nil {
+		t.Fatal(err)
+	}
+	if !svc.Active() || svc.WebhookInvalid() {
+		t.Fatal("a valid replacement should turn alerts on")
 	}
 }
 

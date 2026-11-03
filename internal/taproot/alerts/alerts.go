@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -66,6 +65,9 @@ type Service struct {
 
 	cfgMu sync.RWMutex
 	cfg   Config
+	// webhookInvalid marks a webhook from taproot.yaml that fails
+	// validation. Alerts stay off until settings replace or clear it.
+	webhookInvalid bool
 
 	authMu sync.RWMutex
 	auths  authLister
@@ -78,27 +80,29 @@ type Service struct {
 	grantPolling bool
 }
 
-// New validates the config and prepares the service. Start runs it.
+// New prepares the service. Start runs it. An invalid webhook keeps alerts
+// off instead of failing, so a typo in taproot.yaml cannot stop the proxy.
 func New(cfg Config, db *store.DB, feed QuotaFeed) (*Service, error) {
 	if db == nil || feed == nil {
 		return nil, errors.New("alerts need the store and the ingest quota feed")
 	}
 	cfg.DiscordWebhook = strings.TrimSpace(cfg.DiscordWebhook)
-	if cfg.DiscordWebhook != "" {
-		if err := ValidateWebhook(cfg.DiscordWebhook); err != nil {
-			return nil, fmt.Errorf("alerts discord-webhook: %w", err)
-		}
+	invalid := cfg.DiscordWebhook != "" && ValidateWebhook(cfg.DiscordWebhook) != nil
+	if invalid {
+		log.Error("taproot alerts: alerts.discord-webhook in taproot.yaml is not a Discord webhook URL; alerts are off until settings replace it")
 	}
 	s := &Service{
-		db:         db,
-		feed:       feed,
-		detector:   NewDetector(cooldown, settle),
-		grants:     grantReader{url: grantStatusURL},
-		now:        time.Now,
-		wake:       make(chan struct{}, 1),
-		cfg:        cfg,
-		quota:      map[quotaKey]ingest.QuotaObservation{},
-		grantReads: map[string]grantRead{},
+		db:       db,
+		feed:     feed,
+		detector: NewDetector(cooldown, settle),
+		grants:   grantReader{url: grantStatusURL},
+		now:      time.Now,
+		wake:     make(chan struct{}, 1),
+		cfg:      cfg,
+		// Set before any goroutine can read it.
+		webhookInvalid: invalid,
+		quota:          map[quotaKey]ingest.QuotaObservation{},
+		grantReads:     map[string]grantRead{},
 	}
 	s.sender = NewSender(s.webhook, discordOrigin())
 	feed.OnQuota(s.observe)
@@ -136,19 +140,34 @@ func (s *Service) SetConfig(cfg Config) error {
 		}
 	}
 	s.cfgMu.Lock()
-	s.cfg = cfg
+	s.cfg, s.webhookInvalid = cfg, false
 	s.cfgMu.Unlock()
 	s.signal()
 	return nil
 }
 
+// Active reports whether alerts are sent: a valid webhook is set and the
+// switch is on.
+func (s *Service) Active() bool {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg.Active() && !s.webhookInvalid
+}
+
+// WebhookInvalid reports whether taproot.yaml holds a webhook that is not a
+// Discord webhook URL.
+func (s *Service) WebhookInvalid() bool {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.webhookInvalid
+}
+
 // webhook is the URL deliveries use, or "" when alerts are off.
 func (s *Service) webhook() string {
-	cfg := s.Config()
-	if !cfg.Active() {
+	if !s.Active() {
 		return ""
 	}
-	return cfg.DiscordWebhook
+	return s.Config().DiscordWebhook
 }
 
 // AttachAuthManager receives the runtime credential manager once the server is built.
@@ -223,7 +242,7 @@ func (s *Service) run(ctx context.Context) {
 // evaluate runs one detector step. It does nothing while alerts are off or
 // before the auth manager has loaded, so neither state produces false alerts.
 func (s *Service) evaluate(ctx context.Context) {
-	if !s.Config().Active() {
+	if !s.Active() {
 		return
 	}
 	auths := s.authList()
@@ -436,6 +455,10 @@ func (s *Service) handleTest(c *gin.Context) {
 	hook := s.Config().DiscordWebhook
 	if hook == "" {
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": gin.H{"code": "no_webhook", "message": "set a Discord webhook first"}})
+		return
+	}
+	if s.WebhookInvalid() {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": gin.H{"code": "invalid_webhook", "message": "the webhook in taproot.yaml is not a Discord webhook URL; replace it first"}})
 		return
 	}
 	msg := Message{

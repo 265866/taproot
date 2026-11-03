@@ -25,12 +25,17 @@ const (
 
 func withAlerts(t *testing.T, f *fixture) *alerts.Service {
 	t.Helper()
+	return withAlertsConfig(t, f, alerts.Config{})
+}
+
+func withAlertsConfig(t *testing.T, f *fixture, cfg alerts.Config) *alerts.Service {
+	t.Helper()
 	db, err := store.Open(context.Background(), store.Config{}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc, err := alerts.New(alerts.Config{}, db, noQuota{})
+	svc, err := alerts.New(cfg, db, noQuota{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,5 +106,32 @@ func TestAlertsChangeRollsBackWithTheRestOfTheUpdate(t *testing.T) {
 	}
 	if svc.Config().DiscordWebhook != "" {
 		t.Fatal("the webhook stayed set after the update failed")
+	}
+}
+
+// TestAlertsInvalidWebhookFromFileIsShownAndReplaceable covers a typo in a
+// hand-edited taproot.yaml: settings say why alerts are off, and clearing
+// or replacing the webhook fixes it.
+func TestAlertsInvalidWebhookFromFileIsShownAndReplaceable(t *testing.T) {
+	bad := "https://discord.com/api/webhoks/1/" + hookToken
+	f := newFixture(t, options{yaml: commentedYAML + "alerts:\n  discord-webhook: " + bad + "\n"})
+	svc := withAlertsConfig(t, f, alerts.Config{DiscordWebhook: bad})
+
+	code, v, body := f.do(t, http.MethodGet, "")
+	if code != http.StatusOK || v.Alerts == nil || !v.Alerts.WebhookInvalid || v.Alerts.Active || strings.Contains(body, hookToken) {
+		t.Fatalf("GET = %d %s", code, body)
+	}
+
+	code, v, body = f.do(t, http.MethodPut, `{"alerts": {"discordWebhook": ""}}`)
+	if code != http.StatusOK || v.Alerts.WebhookInvalid || v.Alerts.WebhookSet {
+		t.Fatalf("clear = %d %s", code, body)
+	}
+	if strings.Contains(f.file(t), hookToken) {
+		t.Fatalf("the invalid webhook is still in taproot.yaml: %s", f.file(t))
+	}
+
+	code, v, body = f.do(t, http.MethodPut, `{"alerts": {"discordWebhook": "`+hookURL+`"}}`)
+	if code != http.StatusOK || v.Alerts.WebhookInvalid || !v.Alerts.Active || svc.Config().DiscordWebhook != hookURL {
+		t.Fatalf("replace = %d %s", code, body)
 	}
 }

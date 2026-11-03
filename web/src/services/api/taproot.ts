@@ -306,6 +306,8 @@ export interface TaprootSettings {
     webhookSet: boolean;
     /** The webhook's last six characters, such as `…a1B2c3`. */
     webhookHint: string;
+    /** taproot.yaml holds a URL that is not a Discord webhook, so alerts are off until it is replaced or removed. */
+    webhookInvalid: boolean;
     active: boolean;
   };
   info: { configPath: string; dataDir: string; version: string; commit: string; buildDate: string };

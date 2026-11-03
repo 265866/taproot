@@ -92,13 +92,23 @@ export function AlertsSection({
       <div className={pageStyles.fields}>
         <div className={styles.status} role="status">
           <span
-            className={`status-badge ${settings.active ? 'success' : settings.webhookSet ? 'warning' : 'muted'}`}
+            className={`status-badge ${
+              settings.webhookInvalid
+                ? 'error'
+                : settings.active
+                  ? 'success'
+                  : settings.webhookSet
+                    ? 'warning'
+                    : 'muted'
+            }`}
           >
-            {settings.active
-              ? t('taproot_settings.alerts.state_active')
-              : settings.webhookSet
-                ? t('taproot_settings.alerts.state_off')
-                : t('taproot_settings.alerts.state_none')}
+            {settings.webhookInvalid
+              ? t('taproot_settings.alerts.state_invalid')
+              : settings.active
+                ? t('taproot_settings.alerts.state_active')
+                : settings.webhookSet
+                  ? t('taproot_settings.alerts.state_off')
+                  : t('taproot_settings.alerts.state_none')}
           </span>
           {settings.webhookSet && (
             <span className={pageStyles.muted}>
@@ -106,6 +116,11 @@ export function AlertsSection({
             </span>
           )}
         </div>
+        {settings.webhookInvalid && (
+          <div className="error-box" role="alert">
+            {t('taproot_settings.alerts.webhook_invalid')}
+          </div>
+        )}
         <label htmlFor={inputId} className={pageStyles.label}>
           {settings.webhookSet
             ? t('taproot_settings.alerts.replace_label')
@@ -145,7 +160,7 @@ export function AlertsSection({
               variant="secondary"
               size="sm"
               loading={busy === 'test'}
-              disabled={busy !== null}
+              disabled={busy !== null || settings.webhookInvalid}
               onClick={sendTest}
             >
               {t('taproot_settings.alerts.send_test')}
