@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type { RoutingChange, RoutingMember } from '@/types/routing';
 import { SETTING_LABEL_KEYS, formatSettingValue, formatWeightValue } from '../format';
 import styles from '../RoutingPage.module.scss';
@@ -23,6 +24,7 @@ export function ChangeReviewDialog({
   onClose,
 }: ChangeReviewDialogProps) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
 
   const describe = (change: RoutingChange): string => {
     if (change.kind === 'setting') {
@@ -68,7 +70,7 @@ export function ChangeReviewDialog({
       <p className={styles.dialogHint}>{t('routing.review_hint')}</p>
       <ul className={styles.changeList}>
         {changes.map((change, index) => (
-          <li key={index}>{describe(change)}</li>
+          <li key={index}>{mask(describe(change))}</li>
         ))}
       </ul>
     </Modal>

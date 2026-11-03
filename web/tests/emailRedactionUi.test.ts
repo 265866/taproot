@@ -1,0 +1,173 @@
+import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import i18n from '../src/i18n/index';
+import { buildRoutingBoard } from '../src/services/api/routing';
+import { draftFromBoard, resolveRoute } from '../src/features/routing/logic';
+import { TierLadder } from '../src/features/routing/components/TierLadder';
+import { ShowEmailsToggle } from '../src/components/common/ShowEmailsToggle';
+import { usePrivacyStore } from '../src/stores/usePrivacyStore';
+import type { AuthFileItem } from '../src/types/authFile';
+
+// The auth file card's quota host binds CSS-module class names at import, which bun:test does not
+// compile; any class name will do for markup assertions.
+mock.module('@/features/authFiles/components/AuthFileQuota.module.scss', () => ({
+  default: new Proxy({}, { get: (_, key) => String(key) }),
+}));
+const { AuthFileCard } = await import('../src/features/authFiles/components/AuthFileCard');
+
+const CLAUDE: AuthFileItem = {
+  name: 'claude-ab12cd34-anthropic1@sl.example.org.json',
+  type: 'claude',
+  email: 'anthropic1@sl.example.org',
+  authIndex: 'a1',
+  priority: 10,
+  note: 'Shared with ops-person@example.org',
+  status: 'error',
+  statusMessage: 'refresh failed for anthropic1@sl.example.org',
+  unavailable: true,
+};
+const CODEX: AuthFileItem = {
+  name: 'codex-1a2b3c4d-second.person@example.com-team.json',
+  type: 'codex',
+  email: 'second.person@example.com',
+  authIndex: 'a2',
+  priority: 0,
+};
+const SECRETS = ['anthropic1', 'second.person', 'ops-person', 'example.org', 'example.com'];
+
+const leaks = (html: string) => SECRETS.filter((secret) => html.includes(secret));
+
+const renderCard = (file: AuthFileItem) =>
+  renderToStaticMarkup(
+    createElement(AuthFileCard, {
+      file,
+      compact: false,
+      selected: false,
+      resolvedTheme: 'dark',
+      disableControls: false,
+      deleting: null,
+      statusUpdating: {},
+      manualRefreshing: {},
+      cooldownResetting: {},
+      quotaFilterType: null,
+      statusBarCache: new Map(),
+      onShowModels: () => {},
+      onDownload: () => {},
+      onManualRefresh: () => {},
+      onCooldownReset: () => {},
+      onOpenPrefixProxyEditor: () => {},
+      onDelete: () => {},
+      onToggleStatus: () => {},
+      onToggleSelect: () => {},
+    })
+  );
+
+const renderBoard = () => {
+  const board = buildRoutingBoard({ routing: { strategy: 'weighted-round-robin' } }, [
+    CLAUDE,
+    CODEX,
+  ]);
+  const draft = draftFromBoard(board);
+  return renderToStaticMarkup(
+    createElement(TierLadder, {
+      members: new Map(board.members.map((member) => [member.key, member])),
+      draft,
+      preview: resolveRoute(board, draft, { credentials: {} }, null, 0),
+      priorities: {},
+      model: null,
+      nowMs: 0,
+      theme: 'dark',
+      entryControl: null,
+      onMove: () => {},
+      onStep: () => {},
+      onEditWeights: () => {},
+    })
+  );
+};
+
+/** What the toggle button does on click. */
+const clickToggle = () => usePrivacyStore.getState().toggleShowEmails();
+
+beforeAll(async () => {
+  await i18n.changeLanguage('en');
+});
+afterEach(() => {
+  usePrivacyStore.setState({ showEmails: false });
+});
+
+describe('email preference', () => {
+  test('starts hidden and is not persisted', () => {
+    expect(usePrivacyStore.getState().showEmails).toBe(false);
+    const source = readFileSync('src/stores/usePrivacyStore.ts', 'utf8');
+    expect(source).not.toContain('persist');
+    expect(source).not.toContain('localStorage');
+  });
+
+  test('the toggle reflects and flips the preference', () => {
+    const hidden = renderToStaticMarkup(createElement(ShowEmailsToggle));
+    expect(hidden).toContain('aria-pressed="false"');
+    expect(hidden).toContain('Show emails');
+    clickToggle();
+    const shown = renderToStaticMarkup(createElement(ShowEmailsToggle));
+    expect(shown).toContain('aria-pressed="true"');
+    expect(shown).toContain('Hide emails');
+  });
+
+  test('Auth Files and Routing put the toggle in their headers', () => {
+    expect(readFileSync('src/features/authFiles/components/VaultHeader.tsx', 'utf8')).toContain(
+      '<ShowEmailsToggle />'
+    );
+    expect(readFileSync('src/features/routing/RoutingPage.tsx', 'utf8')).toContain(
+      '<ShowEmailsToggle />'
+    );
+  });
+});
+
+describe('Auth Files card', () => {
+  test('masks the account, file name, note, status, and labels by default', () => {
+    const html = renderCard(CLAUDE);
+    expect(leaks(html)).toEqual([]);
+    expect(html).toContain('>an•••1@s•••.run<');
+    expect(html).toContain('claude-ab12cd34-an•••1@s•••.run');
+    expect(html).toContain('Shared with op•••n@e•••.org');
+    expect(html).toContain('refresh failed for an•••1@s•••.run');
+    expect(html).toContain('aria-label="Select credential claude-ab12cd34-an•••1@s•••.run.json"');
+  });
+
+  test('shows everything after toggling', () => {
+    clickToggle();
+    const html = renderCard(CLAUDE);
+    expect(html).toContain('>anthropic1@sl.example.org<');
+    expect(html).toContain('title="claude-ab12cd34-anthropic1@sl.example.org.json"');
+    expect(html).toContain('Shared with ops-person@example.org');
+    expect(html).toContain(
+      'aria-label="Select credential claude-ab12cd34-anthropic1@sl.example.org.json"'
+    );
+  });
+
+  test('keeps a Codex plan suffix readable while masking its email', () => {
+    const html = renderCard(CODEX);
+    expect(leaks(html)).toEqual([]);
+    expect(html).toContain('codex-1a2b3c4d-se•••n@e•••.com-team');
+  });
+});
+
+describe('Routing board', () => {
+  test('masks member names, tooltips, labels, and DOM ids by default', () => {
+    const html = renderBoard();
+    expect(leaks(html)).toEqual([]);
+    expect(html).toContain('>an•••1@s•••.run<');
+    expect(html).toContain('>se•••n@e•••.com<');
+    expect(html).toContain('aria-label="Actions for an•••1@s•••.run"');
+  });
+
+  test('shows the real names after toggling', () => {
+    clickToggle();
+    const html = renderBoard();
+    expect(html).toContain('>anthropic1@sl.example.org<');
+    expect(html).toContain('>second.person@example.com<');
+    expect(html).toContain('claude-ab12cd34-anthropic1@sl.example.org');
+  });
+});

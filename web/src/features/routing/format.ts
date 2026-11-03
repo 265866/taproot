@@ -28,3 +28,16 @@ export function formatSettingValue(
 export function formatWeightValue(t: TFunction, value: number | null): string {
   return value === null ? t('routing.value_default') : String(value);
 }
+
+/**
+ * The DOM id for a member. Member keys carry the credential file name, which can hold an email,
+ * so the page gets a hash of the key instead (32-bit FNV-1a; a board holds a few dozen members).
+ */
+export function memberDomId(key: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `m${(hash >>> 0).toString(36)}`;
+}

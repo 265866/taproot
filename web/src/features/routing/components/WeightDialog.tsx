@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type { RoutingMember, RoutingStrategy } from '@/types/routing';
 import { ROUTING_WEIGHT_MAX, clampWeight } from '../logic';
 import styles from '../RoutingPage.module.scss';
@@ -28,6 +29,7 @@ export function WeightDialog({
   onClose,
 }: WeightDialogProps) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const [values, setValues] = useState<string[]>(() =>
     (member?.weights ?? []).map((_, index) => toText(weights[index]))
   );
@@ -46,7 +48,7 @@ export function WeightDialog({
     <Modal
       open={open}
       onClose={onClose}
-      title={t('routing.weight_title', { name: member.name })}
+      title={t('routing.weight_title', { name: mask(member.name) })}
       width={440}
       footer={
         <>
@@ -64,7 +66,7 @@ export function WeightDialog({
       <div className={styles.weightList}>
         {member.weights.map((slot, index) => (
           <label key={slot.index} className={styles.weightRow}>
-            <span className={styles.weightLabel}>{slot.label}</span>
+            <span className={styles.weightLabel}>{mask(slot.label)}</span>
             <input
               type="number"
               inputMode="numeric"

@@ -13,6 +13,7 @@ import {
   resolveRoute,
 } from '../src/features/routing/logic';
 import { TierLadder } from '../src/features/routing/components/TierLadder';
+import { memberDomId } from '../src/features/routing/format';
 import { PolicyPanel } from '../src/features/routing/components/PolicyPanel';
 import type { AuthFileItem } from '../src/types/authFile';
 
@@ -37,7 +38,7 @@ const FILES: AuthFileItem[] = [
 
 /** One card's markup: from its key to the next card. */
 const cardMarkup = (html: string, key: string): string => {
-  const rest = html.slice(html.indexOf(`data-member-key="${key}"`));
+  const rest = html.slice(html.indexOf(`data-member-key="${memberDomId(key)}"`));
   const next = rest.indexOf('data-member-key=', 1);
   return next < 0 ? rest : rest.slice(0, next);
 };
@@ -78,10 +79,12 @@ describe('routing board rendering', () => {
     expect(html).toContain('Fallback 1');
     expect(html).toContain('Serving requests');
     expect(html).toContain('Falls to the next tier when the whole tier is unavailable');
-    expect(html).toContain('main@example.com');
+    expect(html).toContain('m•••n@e•••.com');
     expect(html).toContain('aria-haspopup="menu"');
     // Runtime-only credentials show a lock instead of a drag handle and are not draggable.
-    expect(html).toMatch(/draggable="false"[^>]*data-member-key="cred:runtime"/);
+    expect(html).toMatch(
+      new RegExp(`draggable="false"[^>]*data-member-key="${memberDomId('cred:runtime')}"`)
+    );
   });
 
   test('disabled credentials are marked and dimmed; enabled ones are not', async () => {
@@ -105,7 +108,8 @@ describe('routing board rendering', () => {
     );
     // CSS Modules are not compiled under bun:test; the route state drives the dimmed style.
     const cardState = (key: string) =>
-      html.match(new RegExp(`data-member-key="${key}" data-state="([^"]*)"`))?.[1] ?? '';
+      html.match(new RegExp(`data-member-key="${memberDomId(key)}" data-state="([^"]*)"`))?.[1] ??
+      '';
     expect(cardMarkup(html, 'cred:off.json')).toContain('Disabled');
     expect(cardState('cred:off.json')).toBe('disabled');
     expect(cardMarkup(html, 'cred:main.json')).not.toContain('Disabled');
