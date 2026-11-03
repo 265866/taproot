@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 // mainConversationSQL selects Claude requests that belong to a top-level
@@ -69,9 +70,29 @@ func init() {
 }
 
 // deviceSource resolves upstream's per-request ID (usage.Record.TraceID) to
-// the device the access guard admitted.
+// the device the access guard admitted, and names stored devices.
 type deviceSource interface {
 	RequestDevice(requestID string) (access.Device, bool)
+	// DeviceName returns the name to show for a stored device ID and the
+	// name stored with it.
+	DeviceName(id, stored string) string
+}
+
+// pluginSource identifies plugins that call the model executor in-process,
+// through the plugin host, where no HTTP request carries a device.
+type pluginSource interface {
+	// CallerPlugin reports whether a usage record's context belongs to a
+	// plugin's in-process call, and that plugin's ID when known.
+	CallerPlugin(ctx context.Context) (pluginID string, ok bool)
+	// PluginName is the plugin's display name, or "" when it is not loaded.
+	PluginName(pluginID string) string
+}
+
+// pendingRecord is a queued usage record with the plugin, if any, that made it.
+type pendingRecord struct {
+	usage.Record
+	pluginID string
+	inPlugin bool
 }
 
 // AttachDevices sets where usage events get their device from. Without it,
@@ -83,13 +104,43 @@ func (i *Ingest) AttachDevices(src deviceSource) {
 	i.devices.Store(&src)
 }
 
-func (i *Ingest) requestDevice(traceID string) access.Device {
-	src := i.devices.Load()
+// AttachPlugins lets usage from in-process plugin calls be attributed to the
+// plugin. It must run before the service starts to cover every record.
+func (i *Ingest) AttachPlugins(src pluginSource) {
 	if src == nil {
+		return
+	}
+	i.plugins.Store(&src)
+}
+
+// recordDevice is the admitted HTTP caller behind a record when the guard
+// knows one, otherwise the plugin that made it in-process. The HTTP caller
+// comes first because a plugin that serves a client's request through the
+// host, such as an interceptor's fallback execution, carries that request's
+// ID, and the usage belongs to the client. A plugin's own work, such as a
+// timer or a dashboard action, runs without a proxy request ID.
+func (i *Ingest) recordDevice(p pendingRecord) access.Device {
+	if src := i.devices.Load(); src != nil {
+		if d, ok := (*src).RequestDevice(p.TraceID); ok {
+			return d
+		}
+	}
+	if !p.inPlugin {
 		return access.Device{}
 	}
-	d, _ := (*src).RequestDevice(traceID)
-	return d
+	name := ""
+	if src := i.plugins.Load(); src != nil && p.pluginID != "" {
+		name = (*src).PluginName(p.pluginID)
+	}
+	return access.PluginDevice(p.pluginID, name)
+}
+
+// deviceName is the name to show for a stored device.
+func (i *Ingest) deviceName(id, stored string) string {
+	if src := i.devices.Load(); src != nil && id != "" {
+		return (*src).DeviceName(id, stored)
+	}
+	return stored
 }
 
 type deviceRollupKey struct {
@@ -121,8 +172,10 @@ func (d deviceRollup) add(e event) {
 		row = &deviceRow{}
 		d[k] = row
 	}
-	row.add(deviceRow{requests: 1, failures: int64(boolInt(e.Failed)), tokens: e.Tokens,
-		splitRequests: int64(boolInt(e.Tokens.CacheWrite5m+e.Tokens.CacheWrite1h > 0))})
+	row.add(deviceRow{
+		requests: 1, failures: int64(boolInt(e.Failed)), tokens: e.Tokens,
+		splitRequests: int64(boolInt(e.Tokens.CacheWrite5m+e.Tokens.CacheWrite1h > 0)),
+	})
 }
 
 func (d deviceRollup) apply(ctx context.Context, c querier) error {
@@ -217,6 +270,9 @@ func (i *Ingest) handleUsageDevices(c *gin.Context) {
 	if err != nil {
 		internalError(c, err)
 		return
+	}
+	for k := range devices {
+		devices[k].Name = i.deviceName(devices[k].DeviceID, devices[k].Name)
 	}
 	c.JSON(http.StatusOK, gin.H{"devices": devices})
 }

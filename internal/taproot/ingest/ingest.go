@@ -59,7 +59,7 @@ type Ingest struct {
 	now          func() time.Time
 
 	mu         sync.Mutex
-	pending    []usage.Record
+	pending    []pendingRecord
 	pendingObs []observation
 	dropped    int64
 	wake       chan struct{}
@@ -74,6 +74,7 @@ type Ingest struct {
 	auths  authLister
 
 	devices atomic.Pointer[deviceSource]
+	plugins atomic.Pointer[pluginSource]
 
 	claudeUsageURL string
 	codexUsageURL  string
@@ -109,7 +110,13 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 
 // HandleUsage implements usage.Plugin. It only queues the record; SQLite
 // writes happen on the flush goroutine so the proxy never waits on disk.
-func (i *Ingest) HandleUsage(_ context.Context, record usage.Record) {
+// The context is the execution's, read here because only it says whether a
+// plugin made the request in-process.
+func (i *Ingest) HandleUsage(ctx context.Context, record usage.Record) {
+	p := pendingRecord{Record: record}
+	if src := i.plugins.Load(); src != nil {
+		p.pluginID, p.inPlugin = (*src).CallerPlugin(ctx)
+	}
 	i.mu.Lock()
 	if len(i.pending) >= maxPending {
 		i.dropped++
@@ -120,7 +127,7 @@ func (i *Ingest) HandleUsage(_ context.Context, record usage.Record) {
 		}
 		return
 	}
-	i.pending = append(i.pending, record)
+	i.pending = append(i.pending, p)
 	n := len(i.pending)
 	i.mu.Unlock()
 	if n >= flushBatch {
@@ -225,9 +232,10 @@ func (i *Ingest) flush(ctx context.Context) error {
 	now := i.now()
 	events := make([]event, 0, len(records))
 	allObs := make([]observation, 0, len(obs))
-	for _, r := range records {
+	for _, p := range records {
+		r := p.Record
 		e := eventFromRecord(r, now)
-		e.Device = i.requestDevice(r.TraceID)
+		e.Device = i.recordDevice(p)
 		events = append(events, e)
 		if e.AuthIndex == "" || len(r.ResponseHeaders) == 0 {
 			continue

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +70,7 @@ func fakeUpstream(t *testing.T) *httptest.Server {
 
 // newProxyServer builds the real server with taproot.Setup's options, real
 // Claude and Codex executors, and API-key credentials that point at upstream.
-func newProxyServer(t *testing.T, upstream string) http.Handler {
+func newProxyServer(t *testing.T, upstream string, trusted ...string) http.Handler {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	t.Setenv("MANAGEMENT_PASSWORD", "")
@@ -89,8 +91,12 @@ func newProxyServer(t *testing.T, upstream string) http.Handler {
 	if err := os.WriteFile(configPath, []byte("port: 8317\nauth-dir: "+filepath.ToSlash(authDir)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	cidrs := `"` + lanIP + `/32"`
+	for _, addr := range trusted {
+		cidrs += `, "` + addr + `/32"`
+	}
 	tp := "access:\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) +
-		"\n  trusted-cidrs: [\"" + lanIP + "/32\"]\nbackups:\n  daily-at: \"off\"\n"
+		"\n  trusted-cidrs: [" + cidrs + "]\nbackups:\n  daily-at: \"off\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "taproot.yaml"), []byte(tp), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -106,10 +112,14 @@ func newProxyServer(t *testing.T, upstream string) http.Handler {
 	manager.RegisterExecutor(executor.NewClaudeExecutor(cfg))
 	manager.RegisterExecutor(executor.NewCodexExecutor(cfg))
 	for _, a := range []*auth.Auth{
-		{ID: "devices-claude", Provider: "claude", Status: auth.StatusActive,
-			Attributes: map[string]string{auth.AttributeAPIKey: "sk-ant-api03-TESTONLY", "base_url": upstream}},
-		{ID: "devices-codex", Provider: "codex", Status: auth.StatusActive,
-			Attributes: map[string]string{auth.AttributeAPIKey: "sk-TESTONLY", "base_url": upstream}},
+		{
+			ID: "devices-claude", Provider: "claude", Status: auth.StatusActive,
+			Attributes: map[string]string{auth.AttributeAPIKey: "sk-ant-api03-TESTONLY", "base_url": upstream},
+		},
+		{
+			ID: "devices-codex", Provider: "codex", Status: auth.StatusActive,
+			Attributes: map[string]string{auth.AttributeAPIKey: "sk-TESTONLY", "base_url": upstream},
+		},
 	} {
 		if _, err := manager.Register(ctx, a); err != nil {
 			t.Fatalf("register %s: %v", a.ID, err)
@@ -159,13 +169,33 @@ func waitForEvents(t *testing.T, h http.Handler, want int) []storedEvent {
 // event names the device the access guard admitted.
 func TestUsageEventsCarryTheCallersDevice(t *testing.T) {
 	upstream := fakeUpstream(t)
-	h := newProxyServer(t, upstream.URL)
+	// One of this machine's own addresses stands in for server's LAN address,
+	// which a local client using the 127.0.1.1 publish arrives from.
+	own := machineAddrs(t)
+	ownIP := ""
+	cgnat := netip.MustParsePrefix("100.64.0.0/10") // tailnet addresses take the tailnet path
+	for addr := range own {
+		if addr.Is4() && !addr.IsLoopback() && !addr.IsLinkLocalUnicast() && !cgnat.Contains(addr) {
+			ownIP = addr.String()
+			break
+		}
+	}
+	if ownIP == "" {
+		t.Skip("this machine has no non-loopback IPv4 address to call from")
+	}
+	h := newProxyServer(t, upstream.URL, ownIP)
+	lanName := lanIP
+	if own[netip.MustParseAddr(lanIP)] {
+		lanName = "server (via " + lanIP + ")"
+	}
 
 	claude := func(remote, session string, stream bool) {
 		t.Helper()
 		body := fmt.Sprintf(`{"model":%q,"max_tokens":16,"stream":%t,"messages":[{"role":"user","content":"hi"}]}`, claudeModel, stream)
-		rec := (fixture{h: h}).do(req{method: http.MethodPost, remote: remote, path: "/v1/messages", body: body,
-			headers: map[string]string{"Content-Type": "application/json", "X-Claude-Code-Session-Id": session}})
+		rec := (fixture{h: h}).do(req{
+			method: http.MethodPost, remote: remote, path: "/v1/messages", body: body,
+			headers: map[string]string{"Content-Type": "application/json", "X-Claude-Code-Session-Id": session},
+		})
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "ok") {
 			t.Fatalf("claude from %s (stream %t) = %d %.300s", remote, stream, rec.Code, rec.Body)
 		}
@@ -175,6 +205,7 @@ func TestUsageEventsCarryTheCallersDevice(t *testing.T) {
 	claude(selfIP, "sess-self", false)
 	claude("127.0.0.1", "sess-loopback", false)
 	claude(lanIP, "sess-lan", false)
+	claude(ownIP, "sess-own", false)
 
 	// The websocket needs a real connection; the wrapper stands in for the
 	// tailnet source address the listener cannot produce in a test.
@@ -212,7 +243,7 @@ func TestUsageEventsCarryTheCallersDevice(t *testing.T) {
 		}
 	}
 
-	events := waitForEvents(t, h, 6)
+	events := waitForEvents(t, h, 7)
 	got := map[string]storedEvent{}
 	for _, e := range events {
 		key := e.SessionID
@@ -226,7 +257,8 @@ func TestUsageEventsCarryTheCallersDevice(t *testing.T) {
 		"claude:sess-stream":   {DeviceID: "node:nworkerCNTRL", DeviceName: "worker", DeviceLogin: "alice@github", Stream: true},
 		"claude:sess-self":     {DeviceID: "local", DeviceName: "server (local)", DeviceLogin: "alice@github"},
 		"claude:sess-loopback": {DeviceID: "local", DeviceName: "server (local)"},
-		"claude:sess-lan":      {DeviceID: "cidr:" + lanIP, DeviceName: lanIP},
+		"claude:sess-lan":      {DeviceID: "cidr:" + lanIP, DeviceName: lanName},
+		"claude:sess-own":      {DeviceID: "cidr:" + ownIP, DeviceName: "server (via " + ownIP + ")"},
 		"codex-ws":             {DeviceID: "node:ndesktopCNTRL", DeviceName: "desktop", DeviceLogin: "alice@github"},
 	}
 	for key, w := range want {
@@ -240,4 +272,43 @@ func TestUsageEventsCarryTheCallersDevice(t *testing.T) {
 				e.DeviceID, e.DeviceName, e.DeviceLogin, e.Stream, w.DeviceID, w.DeviceName, w.DeviceLogin, w.Stream)
 		}
 	}
+
+	// The devices API shows the same name, and the server's own address is
+	// still kept off the admin surface.
+	rec := (fixture{h: h}).do(req{method: http.MethodGet, remote: "127.0.0.1", path: "/taproot/api/v1/usage/devices?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z"})
+	var body struct {
+		Devices []struct{ DeviceID, Name, Via string }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode devices %d %.200s: %v", rec.Code, rec.Body, err)
+	}
+	var named bool
+	for _, d := range body.Devices {
+		named = named || (d.DeviceID == "cidr:"+ownIP && d.Name == "server (via "+ownIP+")" && d.Via == "cidr")
+	}
+	if !named {
+		t.Errorf("devices API = %+v, want cidr:%s named server (via %s)", body.Devices, ownIP, ownIP)
+	}
+	if rec := (fixture{h: h}).do(req{method: http.MethodGet, remote: ownIP, path: "/taproot/api/v1/me"}); rec.Code != http.StatusForbidden {
+		t.Errorf("/me from the server's own trusted address = %d, want 403", rec.Code)
+	}
+}
+
+// machineAddrs lists this machine's interface addresses, which the guard
+// reads to recognize the server's own addresses.
+func machineAddrs(t *testing.T) map[netip.Addr]bool {
+	t.Helper()
+	raw, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatalf("list interface addresses: %v", err)
+	}
+	out := map[netip.Addr]bool{}
+	for _, a := range raw {
+		if ipnet, ok := a.(*net.IPNet); ok {
+			if addr, ok := netip.AddrFromSlice(ipnet.IP); ok {
+				out[addr.Unmap()] = true
+			}
+		}
+	}
+	return out
 }

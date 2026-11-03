@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"os"
@@ -21,6 +22,134 @@ type fakeDevices map[string]access.Device
 func (f fakeDevices) RequestDevice(id string) (access.Device, bool) {
 	d, ok := f[id]
 	return d, ok
+}
+
+// DeviceName renames a stored device when the map has an entry under its
+// device ID with a "rename:" prefix.
+func (f fakeDevices) DeviceName(id, stored string) string {
+	if d, ok := f["rename:"+id]; ok {
+		return d.Name
+	}
+	return stored
+}
+
+type pluginCtxKey struct{}
+
+// fakePlugins marks a context as a plugin's in-process call when it carries
+// pluginCtxKey; the value is the plugin ID, possibly empty.
+type fakePlugins map[string]string
+
+func (f fakePlugins) CallerPlugin(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(pluginCtxKey{}).(string)
+	return id, ok
+}
+
+func (f fakePlugins) PluginName(id string) string { return f[id] }
+
+func pluginCtx(id string) context.Context {
+	return context.WithValue(context.Background(), pluginCtxKey{}, id)
+}
+
+// TestPluginRequestsGetThePluginsDevice checks in-process plugin requests are
+// attributed to the plugin, and that an admitted HTTP caller still wins when
+// the plugin served that caller's request.
+func TestPluginRequestsGetThePluginsDevice(t *testing.T) {
+	i, r, _ := newAPI(t)
+	base := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	i.AttachDevices(fakeDevices{"t-laptop": laptop})
+	i.AttachPlugins(fakePlugins{"claude-keep-rolling": "Claude Keep Rolling"})
+	for n, tc := range []struct {
+		ctx   context.Context
+		trace string
+	}{
+		{pluginCtx("claude-keep-rolling"), ""},
+		{pluginCtx("claude-keep-rolling"), ""},
+		{pluginCtx("web-search-router"), "t-laptop"}, // serving the laptop's request
+		{pluginCtx("unloaded"), ""},
+		{pluginCtx(""), ""},
+		{context.Background(), ""},
+	} {
+		i.HandleUsage(tc.ctx, usage.Record{
+			RequestID: fmt.Sprintf("p%d", n), TraceID: tc.trace, Provider: "claude", Model: "claude-haiku-4-5-20251001",
+			AuthIndex: "auth-a", RequestedAt: base.Add(time.Duration(n) * time.Minute), Detail: usage.Detail{InputTokens: 100, OutputTokens: 1},
+		})
+	}
+	mustFlush(t, i)
+
+	rangeQ := q("from", rfc(base), "to", rfc(base.Add(time.Hour)))
+	var resp struct{ Devices []deviceJSON }
+	if code := call(t, r, http.MethodGet, "/api/usage/devices"+rangeQ, nil, &resp); code != http.StatusOK {
+		t.Fatalf("devices status %d", code)
+	}
+	type row struct {
+		name, login, via string
+		requests         int64
+	}
+	got := map[string]row{}
+	for _, d := range resp.Devices {
+		got[d.DeviceID] = row{d.Name, d.Login, d.Via, d.Requests}
+	}
+	want := map[string]row{
+		"plugin:claude-keep-rolling": {"Claude Keep Rolling", "", "plugin", 2},
+		laptop.ID:                    {"laptop", "alice@github", "tailnet", 1},
+		"plugin:unloaded":            {"unloaded", "", "plugin", 1},
+		access.PluginsDeviceID:       {"In-process plugins", "", "plugin", 1},
+		"":                           {"", "", "", 1},
+	}
+	if len(got) != len(want) {
+		t.Errorf("devices = %+v, want %+v", got, want)
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("device %q = %+v, want %+v", id, got[id], w)
+		}
+	}
+
+	var ev struct{ Events []UsageEvent }
+	call(t, r, http.MethodGet, "/api/usage/events"+rangeQ+"&deviceId=plugin:claude-keep-rolling", nil, &ev)
+	if len(ev.Events) != 2 || ev.Events[0].DeviceName != "Claude Keep Rolling" {
+		t.Errorf("plugin events = %+v", ev.Events)
+	}
+}
+
+// TestDeviceNamesApplyAtReadTime checks the devices and events APIs show the
+// guard's current name for stored rows, so history picks up a rename.
+func TestDeviceNamesApplyAtReadTime(t *testing.T) {
+	i, r, _ := newAPI(t)
+	base := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	lan := access.Device{ID: "cidr:192.168.0.88", Name: "192.168.0.88", Via: access.ViaCIDR}
+	devices := fakeDevices{"t-lan": lan, "t-laptop": laptop}
+	i.AttachDevices(devices)
+	for n, trace := range []string{"t-lan", "t-laptop"} {
+		i.HandleUsage(context.Background(), usage.Record{
+			RequestID: fmt.Sprintf("r%d", n), TraceID: trace, Provider: "claude",
+			Model: "claude-opus-5-5", AuthIndex: "auth-a", RequestedAt: base.Add(time.Duration(n) * time.Minute),
+		})
+	}
+	mustFlush(t, i)
+	if got := queryInt(t, i, `SELECT COUNT(*) FROM usage_events WHERE device_name = '192.168.0.88'`); got != 1 {
+		t.Fatalf("stored rows with the address as name = %d, want 1", got)
+	}
+
+	devices["rename:"+lan.ID] = access.Device{Name: "server (via 192.168.0.88)"}
+	rangeQ := q("from", rfc(base), "to", rfc(base.Add(time.Hour)))
+	var resp struct{ Devices []deviceJSON }
+	call(t, r, http.MethodGet, "/api/usage/devices"+rangeQ, nil, &resp)
+	names := map[string]string{}
+	for _, d := range resp.Devices {
+		names[d.DeviceID] = d.Name
+	}
+	if names[lan.ID] != "server (via 192.168.0.88)" || names[laptop.ID] != "laptop" {
+		t.Errorf("device names = %v", names)
+	}
+	var ev struct{ Events []UsageEvent }
+	call(t, r, http.MethodGet, "/api/usage/events"+rangeQ+"&deviceId="+lan.ID, nil, &ev)
+	if len(ev.Events) != 1 || ev.Events[0].DeviceName != "server (via 192.168.0.88)" {
+		t.Errorf("lan events = %+v", ev.Events)
+	}
+	if got := queryInt(t, i, `SELECT COUNT(*) FROM usage_events WHERE device_name = '192.168.0.88'`); got != 1 {
+		t.Errorf("reading renamed a stored row")
+	}
 }
 
 var (

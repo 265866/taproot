@@ -117,13 +117,17 @@ type Config struct {
 	CacheTTL        time.Duration `yaml:"cache-ttl"`
 }
 
-// Via says how a caller was admitted.
+// Via says how a caller was admitted, or for a device, how its requests
+// reached the server.
 type Via string
 
 const (
 	ViaLoopback Via = "loopback"
 	ViaTailnet  Via = "tailnet"
 	ViaCIDR     Via = "cidr"
+	// ViaPlugin marks a device for a plugin's in-process requests. The guard
+	// never admits a caller with it.
+	ViaPlugin Via = "plugin"
 )
 
 // Identity is an admitted caller.
@@ -168,6 +172,8 @@ type Guard struct {
 	selfRetryAt time.Time
 
 	requests requestDevices
+	// own names trusted-cidrs devices only; admission never reads it.
+	own ownAddrs
 }
 
 type cacheEntry struct {
