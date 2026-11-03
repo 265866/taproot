@@ -14,8 +14,10 @@ var testNow = time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 
 func unix(t time.Time) string { return strconv.FormatInt(t.Unix(), 10) }
 
+// claudeAuth returns an observed Claude credential: it has answered at least once, so it
+// carries quota signals even when its weekly reset is unknown (zero reset).
 func claudeAuth(id string, reset time.Time, utilization string) *coreauth.Auth {
-	signals := map[string]string{}
+	signals := map[string]string{"Anthropic-Ratelimit-Unified-5h-Utilization": "0.1"}
 	if !reset.IsZero() {
 		signals["Anthropic-Ratelimit-Unified-7d-Reset"] = unix(reset)
 	}
@@ -136,6 +138,32 @@ func TestPickOrdering(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPickProbesEachUnobservedCredentialOnce(t *testing.T) {
+	unobserved := func(id, provider string) *coreauth.Auth {
+		return &coreauth.Auth{ID: id, Provider: provider}
+	}
+	auths := []*coreauth.Auth{
+		claudeAuth("c-known", testNow.Add(24*time.Hour), "0.2"),
+		unobserved("b-new", "claude"),
+		unobserved("a-new", "claude"),
+	}
+	// Each unobserved credential gets one request to learn its reset. If its headers
+	// never arrive, it sorts as unknown rather than being probed forever.
+	got := pickSequence(t, newTestSelector(), "claude", 4, auths)
+	want := []string{"a-new", "b-new", "c-known", "c-known"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("picks = %v, want %v", got, want)
+		}
+	}
+
+	// Providers without weekly quota headers are never probed.
+	others := []*coreauth.Auth{unobserved("a-gemini", "gemini"), unobserved("b-gemini", "gemini")}
+	if got := pickSequence(t, newTestSelector(), "gemini", 3, others); got[0] != "a-gemini" || got[1] != "b-gemini" || got[2] != "a-gemini" {
+		t.Fatalf("gemini picks = %v, want round-robin", got)
 	}
 }
 

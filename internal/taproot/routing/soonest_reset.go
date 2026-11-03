@@ -54,13 +54,19 @@ func IsStrategy(raw string) bool {
 // as the session-affinity fallback). It adds, in order:
 //
 //  1. Codex websocket preference, as upstream's built-in selectors apply it.
-//  2. Credentials whose weekly window is observed exhausted are skipped, unless every
+//  2. A Claude or Codex credential with no quota headers observed yet is picked once,
+//     before any ordering, so its weekly reset becomes known. Upstream keeps quota
+//     signals in memory only, so after a restart every credential starts unobserved;
+//     without this probe the first credential to answer would take every new session
+//     while the others, unknown, sort last and never get observed.
+//  3. Credentials whose weekly window is observed exhausted are skipped, unless every
 //     candidate is.
-//  3. The soonest known weekly reset wins. Credentials with no observed reset come last.
-//  4. Ties, and the all-unknown case, rotate round-robin.
+//  4. The soonest known weekly reset wins. Credentials with no observed reset come last.
+//  5. Ties, and the all-unknown case, rotate round-robin.
 type SoonestResetSelector struct {
 	mu         sync.Mutex
 	lastPicked map[string]string
+	probed     map[string]struct{}
 	now        func() time.Time
 }
 
@@ -78,8 +84,48 @@ func (s *SoonestResetSelector) Pick(ctx context.Context, provider, model string,
 	if s.now != nil {
 		now = s.now()
 	}
-	group := soonestGroup(preferCodexWebsocket(ctx, provider, auths), now)
-	return s.rotate(provider+":"+model, group), nil
+	candidates := preferCodexWebsocket(ctx, provider, auths)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if probe := s.nextProbe(candidates); probe != nil {
+		return probe, nil
+	}
+	return s.rotate(provider+":"+model, soonestGroup(candidates, now)), nil
+}
+
+// nextProbe returns the first unobserved Claude or Codex candidate not probed yet, by
+// credential ID. Each credential is probed at most once, so one whose responses never
+// carry quota headers falls back to sorting as unknown.
+func (s *SoonestResetSelector) nextProbe(auths []*coreauth.Auth) *coreauth.Auth {
+	var probe *coreauth.Auth
+	for _, auth := range auths {
+		if len(auth.Quota.Signals) > 0 || !reportsWeeklyWindow(auth.Provider) {
+			continue
+		}
+		if _, done := s.probed[auth.ID]; done {
+			continue
+		}
+		if probe == nil || auth.ID < probe.ID {
+			probe = auth
+		}
+	}
+	if probe == nil {
+		return nil
+	}
+	if s.probed == nil || len(s.probed) >= maxRotationKeys {
+		s.probed = make(map[string]struct{})
+	}
+	s.probed[probe.ID] = struct{}{}
+	return probe
+}
+
+func reportsWeeklyWindow(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "claude", "codex":
+		return true
+	}
+	return false
 }
 
 // soonestGroup returns the candidates sharing the soonest weekly reset, or every
@@ -120,13 +166,12 @@ func soonestGroup(auths []*coreauth.Auth, now time.Time) []*coreauth.Auth {
 	return group
 }
 
-// rotate picks the successor of the previous pick for key, by credential ID.
+// rotate picks the successor of the previous pick for key, by credential ID. The
+// caller holds s.mu.
 func (s *SoonestResetSelector) rotate(key string, group []*coreauth.Auth) *coreauth.Auth {
 	sorted := append([]*coreauth.Auth(nil), group...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.lastPicked == nil || (len(s.lastPicked) >= maxRotationKeys && s.lastPicked[key] == "") {
 		s.lastPicked = make(map[string]string)
 	}

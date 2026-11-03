@@ -44,16 +44,35 @@ func newAffinityManager(t *testing.T, model string, auths ...*coreauth.Auth) *co
 	t.Cleanup(affinity.Stop)
 	manager.SetSelector(affinity)
 	manager.RegisterExecutor(stubExecutor{provider: "claude"})
-	ctx := coreauth.WithSkipPersist(context.Background())
 	for _, auth := range auths {
-		if _, err := manager.Register(ctx, auth); err != nil {
-			t.Fatalf("Register(%s): %v", auth.ID, err)
-		}
-		registry.GetGlobalRegistry().RegisterClient(auth.ID, auth.Provider, []*registry.ModelInfo{{ID: model}})
-		id := auth.ID
-		t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient(id) })
+		register(t, manager, model, auth)
 	}
 	return manager
+}
+
+func register(t *testing.T, manager *coreauth.Manager, model string, auth *coreauth.Auth) {
+	t.Helper()
+	if _, err := manager.Register(coreauth.WithSkipPersist(context.Background()), auth); err != nil {
+		t.Fatalf("Register(%s): %v", auth.ID, err)
+	}
+	registry.GetGlobalRegistry().RegisterClient(auth.ID, auth.Provider, []*registry.ModelInfo{{ID: model}})
+	id := auth.ID
+	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient(id) })
+}
+
+// observe records the quota headers of a response on the credential, as the manager
+// does after every upstream call.
+func observe(t *testing.T, manager *coreauth.Manager, auth *coreauth.Auth, resetIn time.Duration) {
+	t.Helper()
+	current, ok := manager.GetByID(auth.ID)
+	if !ok {
+		t.Fatalf("GetByID(%s) not found", auth.ID)
+	}
+	current.Quota.Signals = liveClaudeAuth(auth.ID, resetIn).Quota.Signals
+	current.Quota.ObservedAt = time.Now()
+	if _, err := manager.Update(coreauth.WithSkipPersist(context.Background()), current); err != nil {
+		t.Fatalf("Update(%s): %v", auth.ID, err)
+	}
 }
 
 func sessionOpts(sessionID string) cliproxyexecutor.Options {
@@ -74,9 +93,8 @@ func TestAffinityKeepsBoundSessionAndRoutesNewSessionsBySoonestReset(t *testing.
 	const model = "srf-affinity-model"
 	late := liveClaudeAuth("srf-affinity-late", 96*time.Hour)
 	soon := liveClaudeAuth("srf-affinity-soon", 20*time.Hour)
-	// Only the late account has a known reset at first, so the first session binds to it.
-	soon.Quota.Signals = nil
-	manager := newAffinityManager(t, model, late, soon)
+	// The late account is the only one at first, so the first session binds to it.
+	manager := newAffinityManager(t, model, late)
 	ctx := context.Background()
 
 	pick := func(sessionID string) string {
@@ -89,15 +107,11 @@ func TestAffinityKeepsBoundSessionAndRoutesNewSessionsBySoonestReset(t *testing.
 	}
 
 	if got := pick("session-old"); got != late.ID {
-		t.Fatalf("first session = %s, want %s (only known reset)", got, late.ID)
+		t.Fatalf("first session = %s, want %s (only account)", got, late.ID)
 	}
 
-	// The soon account's weekly reset becomes known, as after its first response.
-	updated := soon.Clone()
-	updated.Quota.Signals = liveClaudeAuth(soon.ID, 20*time.Hour).Quota.Signals
-	if _, err := manager.Update(coreauth.WithSkipPersist(ctx), updated); err != nil {
-		t.Fatalf("Update: %v", err)
-	}
+	// An account whose week resets sooner is added.
+	register(t, manager, model, soon)
 
 	if got := pick("session-old"); got != late.ID {
 		t.Fatalf("bound session moved to %s, want it to keep %s", got, late.ID)
@@ -109,6 +123,44 @@ func TestAffinityKeepsBoundSessionAndRoutesNewSessionsBySoonestReset(t *testing.
 	}
 	if got := pick("session-old"); got != late.ID {
 		t.Fatalf("bound session moved to %s after new sessions, want %s", got, late.ID)
+	}
+}
+
+// After a restart upstream has no quota signals for any account. Each account is probed
+// once, and once their resets are known new sessions go to the soonest one, even though
+// the late account answered first.
+func TestAfterRestartEveryAccountIsProbedThenSoonestWins(t *testing.T) {
+	const model = "srf-restart-model"
+	late := liveClaudeAuth("srf-restart-a-late", 0)
+	soon := liveClaudeAuth("srf-restart-b-soon", 0)
+	late.Quota = coreauth.QuotaState{}
+	soon.Quota = coreauth.QuotaState{}
+	manager := newAffinityManager(t, model, late, soon)
+
+	pick := func(sessionID string) string {
+		t.Helper()
+		auth, err := manager.SelectAuth(context.Background(), "claude", model, sessionOpts(sessionID))
+		if err != nil {
+			t.Fatalf("SelectAuth(%s): %v", sessionID, err)
+		}
+		return auth.ID
+	}
+
+	if got := pick("session-1"); got != late.ID {
+		t.Fatalf("session-1 = %s, want probe of %s", got, late.ID)
+	}
+	observe(t, manager, late, 96*time.Hour)
+	if got := pick("session-2"); got != soon.ID {
+		t.Fatalf("session-2 = %s, want probe of unobserved %s", got, soon.ID)
+	}
+	observe(t, manager, soon, 20*time.Hour)
+	for _, sessionID := range []string{"session-3", "session-4"} {
+		if got := pick(sessionID); got != soon.ID {
+			t.Fatalf("%s = %s, want soonest reset %s", sessionID, got, soon.ID)
+		}
+	}
+	if got := pick("session-1"); got != late.ID {
+		t.Fatalf("session-1 moved to %s, want it to keep %s", got, late.ID)
 	}
 }
 
