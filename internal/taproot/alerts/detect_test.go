@@ -40,6 +40,8 @@ func TestConditions(t *testing.T) {
 	codex := Account{AuthIndex: "x1", Provider: "codex", Label: "codex-one"}
 	broken := claude("b")
 	broken.LoginBroken, broken.LoginReason = true, "refresh token invalid"
+	serving := broken
+	serving.StillServes, serving.ServesUntil = true, t0.Add(time.Hour)
 	tests := []struct {
 		name string
 		snap Snapshot
@@ -85,6 +87,11 @@ func TestConditions(t *testing.T) {
 			want: []string{"limit:a:five_hour", "login:b", "pool:claude"},
 		},
 		{
+			name: "a broken login whose token still serves keeps the pool open",
+			snap: Snapshot{Now: t0, Accounts: []Account{claude("a"), serving}, Quota: []ingest.QuotaObservation{obs("a", "claude", "five_hour", 1, time.Hour, "rejected")}},
+			want: []string{"limit:a:five_hour", "login:b"},
+		},
+		{
 			name: "grant with resets left expiring within a day",
 			snap: Snapshot{Now: t0, Accounts: []Account{claude("a")}, Grants: map[string][]Grant{"a": {
 				{ID: "soon", ResetsLeft: 2, EndsAt: t0.Add(23 * time.Hour)},
@@ -119,6 +126,19 @@ func TestPoolEmptyNamesTheFirstAccountBack(t *testing.T) {
 	want := t0.Add(3 * time.Hour).Unix()
 	if !strings.Contains(c.Alert.Description, "<t:"+itoa(want)+":f>") {
 		t.Fatalf("pool alert should name a's reset %d: %s", want, c.Alert.Description)
+	}
+}
+
+func TestPoolDelaysOnlyForBrokenLogins(t *testing.T) {
+	broken := claude("b")
+	broken.LoginBroken = true
+	limitA := obs("a", "claude", "five_hour", 1, time.Hour, "rejected")
+	limitB := obs("b", "claude", "five_hour", 1, time.Hour, "rejected")
+	if c := Conditions(Snapshot{Now: t0, Accounts: []Account{claude("a"), claude("b")}, Quota: []ingest.QuotaObservation{limitA, limitB}})["pool:claude"]; c.Delay != 0 {
+		t.Fatalf("a pool empty from limits alone should post at once, delay = %v", c.Delay)
+	}
+	if c := Conditions(Snapshot{Now: t0, Accounts: []Account{claude("a"), broken}, Quota: []ingest.QuotaObservation{limitA}})["pool:claude"]; c.Delay != loginDelay {
+		t.Fatalf("a pool empty because of a login should wait the login delay, delay = %v", c.Delay)
 	}
 }
 
@@ -251,5 +271,23 @@ func TestDetectorForgetsQuietKeys(t *testing.T) {
 	}
 	if _, changed := d.Step(t0.Add(32*time.Minute), nil); changed {
 		t.Fatal("an idle step should not report a change")
+	}
+}
+
+func TestDetectorHoldsAnAlertUntilItsEnd(t *testing.T) {
+	d := NewDetector(30*time.Minute, 2*time.Minute)
+	grant := map[string]Condition{"grant:a:g": {Alert: Message{Key: "grant:a:g", Title: "alert"}, Until: t0.Add(20 * time.Hour)}}
+	if msgs, _ := d.Step(t0, grant); len(msgs) != 1 {
+		t.Fatalf("first step = %v", msgs)
+	}
+	d.Step(t0.Add(time.Hour), nil)
+	d.Step(t0.Add(3*time.Hour), nil)
+	if msgs, _ := d.Step(t0.Add(4*time.Hour), grant); len(msgs) != 0 {
+		t.Fatalf("an unseen grant came back and alerted again: %v", msgs)
+	}
+	d.Step(t0.Add(21*time.Hour), nil)
+	d.Step(t0.Add(22*time.Hour), nil)
+	if len(d.tracks) != 0 {
+		t.Fatalf("tracks = %v, want none after the end", d.tracks)
 	}
 }

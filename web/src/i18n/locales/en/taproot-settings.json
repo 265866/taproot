@@ -83,6 +83,8 @@
       "state_active": "On",
       "state_off": "Off",
       "state_none": "No webhook",
+      "state_invalid": "Invalid webhook",
+      "webhook_invalid": "The webhook in taproot.yaml is not a Discord webhook URL, so alerts are off. Paste a new webhook below, or remove it.",
       "webhook_set": "Webhook ending in {{hint}}",
       "webhook_label": "Discord webhook URL",
       "replace_label": "Replace the webhook",

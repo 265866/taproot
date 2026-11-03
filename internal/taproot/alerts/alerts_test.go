@@ -63,10 +63,17 @@ func openDB(t *testing.T, dir string) *store.DB {
 
 func newHarness(t *testing.T, db *store.DB, fake *fakeDiscord, auths ...*coreauth.Auth) *harness {
 	t.Helper()
+	return newHarnessAt(t, db, fake, t0, auths...)
+}
+
+// newHarnessAt starts a service whose clock reads start, as a restart later
+// in a test does.
+func newHarnessAt(t *testing.T, db *store.DB, fake *fakeDiscord, start time.Time, auths ...*coreauth.Auth) *harness {
+	t.Helper()
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 	t.Setenv(OriginEnv, srv.URL)
-	h := &harness{feed: &fakeFeed{}, auths: &fakeAuths{list: auths}, fake: fake, now: t0}
+	h := &harness{feed: &fakeFeed{}, auths: &fakeAuths{list: auths}, fake: fake, now: start}
 	svc, err := New(Config{DiscordWebhook: testWebhook}, db, h.feed)
 	if err != nil {
 		t.Fatal(err)
@@ -156,28 +163,57 @@ func TestServiceLimitAlertSurvivesRestartAndRecovers(t *testing.T) {
 	}
 }
 
+// expiresAt sets when a's access token expires, the way upstream reads it.
+func expiresAt(a *coreauth.Auth, at time.Time) *coreauth.Auth {
+	a.Metadata["expired"] = at.Format(time.RFC3339)
+	return a
+}
+
+// rejected401 marks a terminal 401 with no refresh pending
+// (coreauth.HasUnauthorizedAuthFailure).
+func rejected401(a *coreauth.Auth) *coreauth.Auth {
+	a.Unavailable, a.Status = true, coreauth.StatusError
+	a.LastError = &coreauth.Error{Code: "unauthorized", Message: "unauthorized", HTTPStatus: http.StatusUnauthorized}
+	return a
+}
+
+func (h *harness) setAuths(list ...*coreauth.Auth) {
+	h.auths.mu.Lock()
+	h.auths.list = list
+	h.auths.mu.Unlock()
+}
+
+func (h *harness) body(t *testing.T, i int) string {
+	t.Helper()
+	h.fake.mu.Lock()
+	defer h.fake.mu.Unlock()
+	return string(h.fake.bodies[i])
+}
+
 func TestServicePoolEmptyAndLoginBroken(t *testing.T) {
 	fake := &fakeDiscord{}
-	a, b := claudeAuth("a", "main"), claudeAuth("b", "spare")
+	a, b := claudeAuth("a", "main"), expiresAt(claudeAuth("b", "spare"), t0.Add(-time.Hour))
 	b.RequiresSignIn = true
 	b.Status, b.StatusMessage = coreauth.StatusError, "refresh_token_reused: token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig"
 	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
 
 	h.feed.hook([]ingest.QuotaObservation{{AuthIndex: a.EnsureIndex(), Provider: "claude", Window: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0, AccountWide: true}})
 	h.step(t, 0)
-	got := h.titles(t, 2)
-	if got[0] != "Claude account hit its weekly limit" || got[1] != "Claude pool is empty" {
+	if got := h.titles(t, 1); got[0] != "Claude account hit its weekly limit" {
 		t.Fatalf("titles = %q", got)
 	}
+	// The pool counts b only once its login has stayed broken for the delay.
 	h.step(t, loginDelay)
-	if got := h.titles(t, 3); got[2] != "Claude login broken" {
+	got := h.titles(t, 3)
+	if got[1] != "Claude login broken" || got[2] != "Claude pool is empty" {
 		t.Fatalf("titles = %q", got)
 	}
-	h.fake.mu.Lock()
-	login := string(h.fake.bodies[2])
-	h.fake.mu.Unlock()
+	login := h.body(t, 1)
 	if strings.Contains(login, "eyJhbGci") || !strings.Contains(login, "refresh\\\\_token\\\\_reused") {
 		t.Fatalf("login alert should carry the sanitized reason: %s", login)
+	}
+	if !strings.Contains(login, "serves no requests") {
+		t.Fatalf("an expired token should say the account serves nothing: %s", login)
 	}
 
 	// Signing in again fixes b, which also refills the pool.
@@ -188,6 +224,183 @@ func TestServicePoolEmptyAndLoginBroken(t *testing.T) {
 	h.step(t, settle)
 	got = h.titles(t, 5)
 	if got[3] != "Claude login works again" || got[4] != "Claude pool has capacity again" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// TestRemovingOrDisablingAnAccountDropsItsAlertsSilently: an account that
+// leaves alerts' scope did not recover, so nothing says it works again.
+func TestRemovingOrDisablingAnAccountDropsItsAlertsSilently(t *testing.T) {
+	fake := &fakeDiscord{}
+	a, b := claudeAuth("a", "main"), expiresAt(claudeAuth("b", "spare"), t0.Add(-time.Hour))
+	b.RequiresSignIn = true
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	h.feed.hook([]ingest.QuotaObservation{{AuthIndex: a.EnsureIndex(), Provider: "claude", Window: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0, AccountWide: true}})
+	h.step(t, 0)
+	h.step(t, loginDelay)
+	h.titles(t, 3) // limit:a, login:b, pool:claude
+
+	// Removing b drops login:b. The pool is still empty: a is at its limit.
+	h.setAuths(claudeAuth("a", "main"))
+	h.step(t, time.Minute)
+	h.step(t, settle)
+	h.step(t, cooldown)
+	h.titles(t, 3)
+
+	// Disabling a drops limit:a, and pool:claude with it.
+	disabled := claudeAuth("a", "main")
+	disabled.Disabled, disabled.Status = true, coreauth.StatusDisabled
+	h.setAuths(disabled)
+	h.step(t, time.Minute)
+	h.step(t, settle)
+	h.step(t, cooldown)
+	h.titles(t, 3)
+	if len(h.svc.detector.tracks) != 0 {
+		t.Fatalf("tracks = %v, want none", h.svc.detector.tracks)
+	}
+}
+
+// TestUserDisabledAccountsAreOutOfScope: upstream never disables an account
+// itself, so a disabled one is the user's choice whatever its last error.
+// It gets no login or pool alert and no grant read.
+func TestUserDisabledAccountsAreOutOfScope(t *testing.T) {
+	var mu sync.Mutex
+	reads := 0
+	grants := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reads++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"cedar_ember":{"eligible":true,"grants":[{"id":"g","resets_left":1,"ends_at":"` + t0.Add(time.Hour).Format(time.RFC3339) + `"}]}}`))
+	}))
+	defer grants.Close()
+	statusOnly := claudeAuth("a", "status-disabled")
+	statusOnly.Status = coreauth.StatusDisabled
+	afterGrant := claudeAuth("b", "disabled-after-invalid-grant")
+	afterGrant.Disabled, afterGrant.Status = true, coreauth.StatusDisabled
+	afterGrant.LastError = &coreauth.Error{Code: "invalid_grant", Message: "invalid_grant: refresh token revoked", HTTPStatus: http.StatusBadRequest}
+	if !coreauth.HasDisabledInvalidGrantFailure(afterGrant) {
+		t.Fatal("fixture should look like a disabled invalid_grant account to upstream")
+	}
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, statusOnly, afterGrant)
+	h.svc.grants.url = grants.URL
+
+	h.step(t, 0)
+	h.step(t, loginDelay)
+	h.step(t, grantInterval)
+	h.titles(t, 0)
+	mu.Lock()
+	defer mu.Unlock()
+	if reads != 0 {
+		t.Fatalf("grant reads = %d, want none for disabled accounts", reads)
+	}
+}
+
+// TestRestartKeepsALoginAlertOpenUntilTheCredentialWorks: upstream keeps
+// RequiresSignIn in memory only, so after a restart a broken login looks
+// healthy until a refresh fails again. Only a refresh after startup or a new
+// access token ends the episode.
+func TestRestartKeepsALoginAlertOpenUntilTheCredentialWorks(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		works func(a *coreauth.Auth, now time.Time)
+	}{
+		{"refresh after startup", func(a *coreauth.Auth, now time.Time) { a.LastRefreshedAt = now }},
+		{"new sign-in", func(a *coreauth.Auth, _ time.Time) { a.Metadata["access_token"] = "tok-b-new" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openDB(t, t.TempDir())
+			fake := &fakeDiscord{}
+			spare := func() *coreauth.Auth { return expiresAt(claudeAuth("b", "spare"), t0.Add(-time.Hour)) }
+			broken := spare()
+			broken.RequiresSignIn = true
+			h := newHarness(t, db, fake, broken)
+			h.step(t, 0)
+			h.step(t, loginDelay)
+			if got := h.titles(t, 2); got[0] != "Claude login broken" || got[1] != "Claude pool is empty" {
+				t.Fatalf("titles = %q", got)
+			}
+
+			// After the restart upstream has forgotten RequiresSignIn, and an
+			// old refresh time proves nothing.
+			restarted := spare()
+			restarted.LastRefreshedAt = t0.Add(-time.Hour)
+			h2 := newHarnessAt(t, db, fake, h.now.Add(time.Minute), restarted)
+			h2.step(t, 0)
+			h2.step(t, settle)
+			h2.step(t, cooldown)
+			h2.titles(t, 2)
+
+			fixed := spare()
+			tc.works(fixed, h2.now)
+			h2.setAuths(fixed)
+			h2.step(t, time.Minute)
+			h2.step(t, settle)
+			if got := h2.titles(t, 4); got[2] != "Claude login works again" || got[3] != "Claude pool has capacity again" {
+				t.Fatalf("titles = %q", got)
+			}
+		})
+	}
+}
+
+// TestPoolWaitsOutTheLoginDelay covers a lone account that upstream marks
+// with a terminal 401 while it retries: a short failure posts nothing.
+func TestPoolWaitsOutTheLoginDelay(t *testing.T) {
+	fake := &fakeDiscord{}
+	codex := func() *coreauth.Auth {
+		return &coreauth.Auth{ID: "x", Provider: "codex", Label: "codex-one", Status: coreauth.StatusActive, Metadata: map[string]any{"access_token": "tok-x"}}
+	}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, rejected401(codex()))
+	h.step(t, 0)
+	h.step(t, time.Minute)
+	h.titles(t, 0)
+
+	h.setAuths(codex())
+	h.step(t, 30*time.Second)
+	h.step(t, settle)
+	h.step(t, cooldown)
+	h.titles(t, 0)
+
+	h.setAuths(rejected401(codex()))
+	h.step(t, 0)
+	h.titles(t, 0)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 2); got[0] != "Codex login broken" || got[1] != "Codex pool is empty" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// TestLoginWithAValidTokenStillServes covers upstream's canServeWithAccessToken:
+// an account that needs sign-in keeps serving until its access token
+// expires, so the pool stays open and the alert says until when.
+func TestLoginWithAValidTokenStillServes(t *testing.T) {
+	fake := &fakeDiscord{}
+	expiry := t0.Add(5 * time.Hour)
+	a, b := claudeAuth("a", "main"), expiresAt(claudeAuth("b", "spare"), expiry)
+	b.RequiresSignIn = true
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	h.feed.hook([]ingest.QuotaObservation{{AuthIndex: a.EnsureIndex(), Provider: "claude", Window: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0, AccountWide: true}})
+
+	h.step(t, 0)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 2); got[1] != "Claude login broken" {
+		t.Fatalf("titles = %q", got)
+	}
+	var p webhookPayload
+	if err := json.Unmarshal([]byte(h.body(t, 1)), &p); err != nil {
+		t.Fatal(err)
+	}
+	login := p.Embeds[0].Description
+	if !strings.Contains(login, "keeps working until") || !strings.Contains(login, "<t:"+itoa(expiry.Unix())+":f>") || strings.Contains(login, "serves no requests") {
+		t.Fatalf("login alert should say b works until its token expires: %s", login)
+	}
+	h.step(t, time.Hour)
+	h.titles(t, 2)
+
+	// Once the token expires, b no longer serves and the pool is empty.
+	h.step(t, 4*time.Hour)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 3); got[2] != "Claude pool is empty" {
 		t.Fatalf("titles = %q", got)
 	}
 }
@@ -247,6 +460,49 @@ func TestServiceReadsGrantsReadOnly(t *testing.T) {
 	}
 }
 
+// TestGrantAlertDoesNotRepeatWithinItsWindow: after a restart the grant
+// reads are empty, and a failed read leaves them empty for the grant
+// interval. The warning must still not come back for the same grant.
+func TestGrantAlertDoesNotRepeatWithinItsWindow(t *testing.T) {
+	var mu sync.Mutex
+	failing := false
+	grants := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		fail := failing
+		mu.Unlock()
+		if fail {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"cedar_ember":{"eligible":true,"grants":[{"id":"g","resets_left":1,"ends_at":"` + t0.Add(20*time.Hour).Format(time.RFC3339) + `"}]}}`))
+	}))
+	defer grants.Close()
+	db := openDB(t, t.TempDir())
+	fake := &fakeDiscord{}
+	h := newHarness(t, db, fake, claudeAuth("a", "main"))
+	h.svc.grants.url = grants.URL
+	h.step(t, 0)
+	h.step(t, 0)
+	if got := h.titles(t, 1); got[0] != "Claude reset grant expires soon" {
+		t.Fatalf("titles = %q", got)
+	}
+
+	mu.Lock()
+	failing = true
+	mu.Unlock()
+	h2 := newHarnessAt(t, db, fake, h.now.Add(time.Minute), claudeAuth("a", "main"))
+	h2.svc.grants.url = grants.URL
+	h2.step(t, 0)
+	h2.step(t, settle)
+	h2.step(t, cooldown)
+	mu.Lock()
+	failing = false
+	mu.Unlock()
+	h2.step(t, grantInterval)
+	h2.step(t, 0)
+	h2.titles(t, 1)
+}
+
 func TestTestEndpoint(t *testing.T) {
 	fake := &fakeDiscord{}
 	h := newHarness(t, openDB(t, t.TempDir()), fake)
@@ -278,10 +534,36 @@ func TestTestEndpoint(t *testing.T) {
 	}
 }
 
-func TestNewRejectsAnInvalidWebhook(t *testing.T) {
-	_, err := New(Config{DiscordWebhook: "https://example.com/hook/" + fakeToken}, openDB(t, t.TempDir()), &fakeFeed{})
-	if err == nil || strings.Contains(err.Error(), fakeToken) {
-		t.Fatalf("err = %v", err)
+// TestNewKeepsAlertsOffForAnInvalidWebhook covers a hand-edited taproot.yaml:
+// the proxy still starts, alerts stay off, and the URL never reaches the log.
+func TestNewKeepsAlertsOffForAnInvalidWebhook(t *testing.T) {
+	logs := captureLogs(t)
+	bad := "https://example.com/hook/" + fakeToken
+	svc, err := New(Config{DiscordWebhook: bad}, openDB(t, t.TempDir()), &fakeFeed{})
+	if err != nil {
+		t.Fatalf("an invalid webhook must not stop startup: %v", err)
+	}
+	if svc.Active() || svc.webhook() != "" || !svc.WebhookInvalid() {
+		t.Fatalf("active = %v, webhook set = %v, invalid = %v", svc.Active(), svc.webhook() != "", svc.WebhookInvalid())
+	}
+	out := logs.String()
+	if !strings.Contains(out, "level=error") || !strings.Contains(out, "discord-webhook") || strings.Contains(out, fakeToken) || strings.Contains(out, "example.com") {
+		t.Fatalf("log should name the setting without the URL:\n%s", out)
+	}
+
+	r := gin.New()
+	svc.Routes(r.Group("/taproot/api/v1"))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "invalid_webhook") || strings.Contains(w.Body.String(), fakeToken) {
+		t.Fatalf("test send = %d %s", w.Code, w.Body)
+	}
+
+	if err := svc.SetConfig(Config{DiscordWebhook: testWebhook}); err != nil {
+		t.Fatal(err)
+	}
+	if !svc.Active() || svc.WebhookInvalid() {
+		t.Fatal("a valid replacement should turn alerts on")
 	}
 }
 
@@ -300,5 +582,80 @@ func TestParseGrantStatus(t *testing.T) {
 	}
 	if _, err := parseGrantStatus([]byte(`{"five_hour":{}}`)); err == nil {
 		t.Fatal("a response without cedar_ember should fail")
+	}
+}
+
+func TestDiscordOriginOverrideIsLoopbackOnlyAndLogged(t *testing.T) {
+	logs := captureLogs(t)
+	t.Setenv(OriginEnv, "http://not-loopback.example.invalid")
+	svc, err := New(Config{DiscordWebhook: testWebhook}, openDB(t, t.TempDir()), &fakeFeed{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target, _ := svc.sender.target(testWebhook); target != testWebhook {
+		t.Fatalf("a non-loopback origin must be ignored, target = %q", target)
+	}
+	if !strings.Contains(logs.String(), "ignoring non-loopback") {
+		t.Fatalf("ignored override should be logged:\n%s", logs)
+	}
+
+	t.Setenv(OriginEnv, "http://127.0.0.1:9999")
+	svc, err = New(Config{DiscordWebhook: testWebhook}, openDB(t, t.TempDir()), &fakeFeed{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target, _ := svc.sender.target(testWebhook); target != "http://127.0.0.1:9999/api/webhooks/123456789/"+fakeToken {
+		t.Fatalf("loopback target = %q", target)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "local Discord origin in use") || strings.Contains(out, fakeToken) {
+		t.Fatalf("active override should be logged without the webhook:\n%s", out)
+	}
+}
+
+// TestTestEndpointMakesOneShortAttempt keeps the dashboard request short:
+// a 429 comes back as rate_limited with Discord's wait, and a hung Discord
+// fails within the bound.
+func TestTestEndpointMakesOneShortAttempt(t *testing.T) {
+	fake := &fakeDiscord{statuses: []func(http.ResponseWriter){
+		status(http.StatusTooManyRequests, `{"message":"You are being rate limited.","retry_after":89.2}`),
+	}}
+	h := newHarness(t, openDB(t, t.TempDir()), fake)
+	r := gin.New()
+	h.svc.Routes(r.Group("/taproot/api/v1"))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	var body struct {
+		Error struct {
+			Code       string `json:"code"`
+			RetryAfter int    `json:"retryAfter"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if w.Code != http.StatusTooManyRequests || body.Error.Code != "rate_limited" || body.Error.RetryAfter != 90 || w.Header().Get("Retry-After") != "90" {
+		t.Fatalf("rate limited test send = %d %s %v", w.Code, w.Body, w.Header())
+	}
+	if fake.count() != 1 {
+		t.Fatalf("posts = %d, want a single attempt", fake.count())
+	}
+
+	release := make(chan struct{})
+	hung := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer hung.Close()
+	defer close(release)
+	h.svc.sender = NewSender(h.svc.webhook, hung.URL)
+	prev := testSendTimeout
+	testSendTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { testSendTimeout = prev })
+	start := time.Now()
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if w.Code != http.StatusBadGateway || time.Since(start) > 5*time.Second || strings.Contains(w.Body.String(), fakeToken) {
+		t.Fatalf("hung test send = %d %s after %v", w.Code, w.Body, time.Since(start))
 	}
 }

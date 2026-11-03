@@ -2,13 +2,16 @@ package alerts
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -66,6 +69,9 @@ type Service struct {
 
 	cfgMu sync.RWMutex
 	cfg   Config
+	// webhookInvalid marks a webhook from taproot.yaml that fails
+	// validation. Alerts stay off until settings replace or clear it.
+	webhookInvalid bool
 
 	authMu sync.RWMutex
 	auths  authLister
@@ -76,33 +82,63 @@ type Service struct {
 	grantMu      sync.Mutex
 	grantReads   map[string]grantRead
 	grantPolling bool
+
+	// startedAt and restoredLogins belong to the evaluation goroutine;
+	// loadState sets them before that goroutine starts.
+	startedAt time.Time
+	// restoredLogins holds the login alerts alert_state had open, by auth
+	// index. Upstream keeps RequiresSignIn in memory only, so after a restart
+	// a broken login looks healthy until a refresh fails again. These stay
+	// broken until the credential shows it works.
+	restoredLogins map[string]restoredLogin
 }
 
-// New validates the config and prepares the service. Start runs it.
+type restoredLogin struct {
+	seen  bool
+	token [sha256.Size]byte
+}
+
+// New prepares the service. Start runs it. An invalid webhook keeps alerts
+// off instead of failing, so a typo in taproot.yaml cannot stop the proxy.
 func New(cfg Config, db *store.DB, feed QuotaFeed) (*Service, error) {
 	if db == nil || feed == nil {
 		return nil, errors.New("alerts need the store and the ingest quota feed")
 	}
 	cfg.DiscordWebhook = strings.TrimSpace(cfg.DiscordWebhook)
-	if cfg.DiscordWebhook != "" {
-		if err := ValidateWebhook(cfg.DiscordWebhook); err != nil {
-			return nil, fmt.Errorf("alerts discord-webhook: %w", err)
-		}
+	invalid := cfg.DiscordWebhook != "" && ValidateWebhook(cfg.DiscordWebhook) != nil
+	if invalid {
+		log.Error("taproot alerts: alerts.discord-webhook in taproot.yaml is not a Discord webhook URL; alerts are off until settings replace it")
 	}
 	s := &Service{
-		db:         db,
-		feed:       feed,
-		detector:   NewDetector(cooldown, settle),
-		grants:     grantReader{url: grantStatusURL},
-		now:        time.Now,
-		wake:       make(chan struct{}, 1),
-		cfg:        cfg,
-		quota:      map[quotaKey]ingest.QuotaObservation{},
-		grantReads: map[string]grantRead{},
+		db:             db,
+		feed:           feed,
+		detector:       NewDetector(cooldown, settle),
+		grants:         grantReader{url: grantStatusURL},
+		now:            time.Now,
+		wake:           make(chan struct{}, 1),
+		cfg:            cfg,
+		webhookInvalid: invalid,
+		quota:          map[quotaKey]ingest.QuotaObservation{},
+		grantReads:     map[string]grantRead{},
 	}
-	s.sender = NewSender(s.webhook, os.Getenv(OriginEnv))
+	s.sender = NewSender(s.webhook, discordOrigin())
 	feed.OnQuota(s.observe)
 	return s, nil
+}
+
+// discordOrigin reads OriginEnv. Only a loopback origin is accepted, because
+// the webhook token travels in the path and must not leave the machine.
+func discordOrigin() string {
+	raw := strings.TrimSpace(os.Getenv(OriginEnv))
+	if raw == "" {
+		return ""
+	}
+	if !ingest.IsLoopbackURL(raw) {
+		log.WithField("env", OriginEnv).Warn("taproot alerts: ignoring non-loopback Discord origin")
+		return ""
+	}
+	log.WithField("env", OriginEnv).WithField("origin", raw).Warn("taproot alerts: local Discord origin in use; alerts do not reach Discord")
+	return raw
 }
 
 // Config returns the alerts section as taproot.yaml should hold it.
@@ -121,19 +157,34 @@ func (s *Service) SetConfig(cfg Config) error {
 		}
 	}
 	s.cfgMu.Lock()
-	s.cfg = cfg
+	s.cfg, s.webhookInvalid = cfg, false
 	s.cfgMu.Unlock()
 	s.signal()
 	return nil
 }
 
+// Active reports whether alerts are sent: a valid webhook is set and the
+// switch is on.
+func (s *Service) Active() bool {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg.Active() && !s.webhookInvalid
+}
+
+// WebhookInvalid reports whether taproot.yaml holds a webhook that is not a
+// Discord webhook URL.
+func (s *Service) WebhookInvalid() bool {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.webhookInvalid
+}
+
 // webhook is the URL deliveries use, or "" when alerts are off.
 func (s *Service) webhook() string {
-	cfg := s.Config()
-	if !cfg.Active() {
+	if !s.Active() {
 		return ""
 	}
-	return cfg.DiscordWebhook
+	return s.Config().DiscordWebhook
 }
 
 // AttachAuthManager receives the runtime credential manager once the server is built.
@@ -208,7 +259,7 @@ func (s *Service) run(ctx context.Context) {
 // evaluate runs one detector step. It does nothing while alerts are off or
 // before the auth manager has loaded, so neither state produces false alerts.
 func (s *Service) evaluate(ctx context.Context) {
-	if !s.Config().Active() {
+	if !s.Active() {
 		return
 	}
 	auths := s.authList()
@@ -216,9 +267,11 @@ func (s *Service) evaluate(ctx context.Context) {
 		return
 	}
 	now := s.now()
-	accounts := accountsFrom(auths, now)
+	accounts := accountsFrom(auths, now, s.heldLogins(auths))
 	s.pollGrants(ctx, auths, now)
+	forgot := s.detector.Forget(accounts)
 	msgs, changed := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
+	changed = changed || forgot
 	for _, m := range msgs {
 		s.sender.Enqueue(m)
 	}
@@ -244,30 +297,42 @@ func (s *Service) snapshot(now time.Time, accounts []Account) Snapshot {
 	return snap
 }
 
-// accountsFrom keeps credentials that serve traffic, plus those upstream
-// disabled because their refresh grant was rejected.
-func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
+// accountsFrom keeps the accounts in scope, with their login state. held
+// marks restored login alerts that stay broken (see heldLogins).
+func accountsFrom(auths []*coreauth.Auth, now time.Time, held map[string]bool) []Account {
 	out := make([]Account, 0, len(auths))
 	for _, a := range auths {
-		if a == nil {
-			continue
-		}
-		disabledBroken := coreauth.HasDisabledInvalidGrantFailure(a)
-		if (a.Disabled || a.Status == coreauth.StatusDisabled) && !disabledBroken {
+		if !inScope(a) {
 			continue
 		}
 		idx := a.EnsureIndex()
 		if idx == "" {
 			continue
 		}
-		broken := disabledBroken || a.RequiresSignIn || coreauth.HasUnauthorizedAuthFailure(a)
+		rejected := coreauth.HasUnauthorizedAuthFailure(a)
+		broken := a.RequiresSignIn || rejected || held[idx]
 		acct := Account{AuthIndex: idx, Provider: strings.ToLower(strings.TrimSpace(a.Provider)), Label: safeLabel(authLabel(a)), LoginBroken: broken}
 		if broken {
 			acct.LoginReason = loginReason(a, now)
+			// Upstream keeps serving a sign-in-required account while its access
+			// token is valid (canServeWithAccessToken in conductor_lifecycle.go).
+			if !rejected && a.HasValidAccessToken(now) {
+				acct.StillServes = true
+				if exp, ok := a.AccessTokenExpirationTime(); ok {
+					acct.ServesUntil = exp
+				}
+			}
 		}
 		out = append(out, acct)
 	}
 	return out
+}
+
+// inScope reports whether alerts watch a. Upstream sets Disabled and
+// StatusDisabled only from the auth file's "disabled" flag, which the user
+// sets, so a disabled account is out of scope whatever its last error.
+func inScope(a *coreauth.Auth) bool {
+	return a != nil && !a.Disabled && a.Status != coreauth.StatusDisabled
 }
 
 func authLabel(a *coreauth.Auth) string {
@@ -315,7 +380,7 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 	var due []*coreauth.Auth
 	present := map[string]bool{}
 	for _, a := range auths {
-		if a == nil || a.Disabled || !strings.EqualFold(strings.TrimSpace(a.Provider), "claude") || a.RequiresSignIn {
+		if !inScope(a) || !strings.EqualFold(strings.TrimSpace(a.Provider), "claude") || a.RequiresSignIn {
 			continue
 		}
 		idx := a.EnsureIndex()
@@ -361,7 +426,12 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 	}()
 }
 
+// loadState restores the detector's memory. Login alerts that were open
+// stay open until the credential shows it works (see restoredLogins); one
+// whose recovery was already pending recovers as usual.
 func (s *Service) loadState(ctx context.Context) error {
+	s.startedAt = s.now()
+	s.restoredLogins = map[string]restoredLogin{}
 	rows, err := s.db.QueryContext(ctx, `SELECT key, state FROM alert_state`)
 	if err != nil {
 		return err
@@ -381,8 +451,50 @@ func (s *Service) loadState(ctx context.Context) error {
 			continue
 		}
 		s.detector.tracks[key] = &t
+		if idx, ok := strings.CutPrefix(key, "login:"); ok && t.Active && t.Notified {
+			s.restoredLogins[idx] = restoredLogin{}
+		}
 	}
 	return rows.Err()
+}
+
+// heldLogins returns the restored login alerts that still lack evidence the
+// credential works: a successful refresh after startup, or an access token
+// other than the one first seen after startup. Accounts no longer in scope
+// are let go; Forget drops their tracks.
+func (s *Service) heldLogins(auths []*coreauth.Auth) map[string]bool {
+	if len(s.restoredLogins) == 0 {
+		return nil
+	}
+	present := map[string]bool{}
+	for _, a := range auths {
+		if !inScope(a) {
+			continue
+		}
+		idx := a.EnsureIndex()
+		r, ok := s.restoredLogins[idx]
+		if !ok {
+			continue
+		}
+		present[idx] = true
+		token, _ := a.Metadata["access_token"].(string)
+		sum := sha256.Sum256([]byte(token))
+		switch {
+		case a.LastRefreshedAt.After(s.startedAt), r.seen && sum != r.token:
+			delete(s.restoredLogins, idx)
+		case !r.seen:
+			s.restoredLogins[idx] = restoredLogin{seen: true, token: sum}
+		}
+	}
+	held := map[string]bool{}
+	for idx := range s.restoredLogins {
+		if present[idx] {
+			held[idx] = true
+		} else {
+			delete(s.restoredLogins, idx)
+		}
+	}
+	return held
 }
 
 // saveState replaces the stored detector memory, so a restart neither
@@ -423,15 +535,32 @@ func (s *Service) handleTest(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": gin.H{"code": "no_webhook", "message": "set a Discord webhook first"}})
 		return
 	}
+	if s.WebhookInvalid() {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": gin.H{"code": "invalid_webhook", "message": "the webhook in taproot.yaml is not a Discord webhook URL; replace it first"}})
+		return
+	}
 	msg := Message{
 		Key: "test", Severity: SeverityInfo, At: s.now(),
 		Title:       "taproot test alert",
 		Description: "Alerts from taproot reach this channel.",
 	}
-	if err := s.sender.Send(c.Request.Context(), hook, msg); err != nil {
-		log.WithError(err).Warn("taproot alerts: test delivery failed")
-		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{"error": gin.H{"code": "delivery_failed", "message": err.Error()}})
+	ctx, cancel := context.WithTimeout(c.Request.Context(), testSendTimeout)
+	defer cancel()
+	err := s.sender.SendOnce(ctx, hook, msg)
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{"sent": true})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"sent": true})
+	log.WithError(err).Warn("taproot alerts: test delivery failed")
+	var de *DeliveryError
+	if errors.As(err, &de) && de.Status == http.StatusTooManyRequests {
+		secs := int(math.Ceil(de.RetryAfter.Seconds()))
+		c.Header("Retry-After", strconv.Itoa(secs))
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": gin.H{
+			"code": "rate_limited", "retryAfter": secs,
+			"message": fmt.Sprintf("Discord is rate limiting this webhook; try again in %d s", secs),
+		}})
+		return
+	}
+	c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{"error": gin.H{"code": "delivery_failed", "message": err.Error()}})
 }

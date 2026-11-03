@@ -49,6 +49,8 @@ type ScheduleSetter interface {
 type AlertsSetter interface {
 	Config() alerts.Config
 	SetConfig(alerts.Config) error
+	Active() bool
+	WebhookInvalid() bool
 }
 
 // Deps are the modules and paths the settings endpoints read and change.
@@ -160,7 +162,10 @@ type alertsView struct {
 	Enabled     bool   `json:"enabled"`
 	WebhookSet  bool   `json:"webhookSet"`
 	WebhookHint string `json:"webhookHint"`
-	Active      bool   `json:"active"`
+	// WebhookInvalid means taproot.yaml holds a URL that is not a Discord
+	// webhook, so alerts are off until it is replaced or cleared.
+	WebhookInvalid bool `json:"webhookInvalid"`
+	Active         bool `json:"active"`
 }
 
 type infoView struct {
@@ -214,7 +219,7 @@ func (s *Settings) current() view {
 		cfg := s.deps.Alerts.Config()
 		alertsSection = &alertsView{
 			Enabled: cfg.Enabled == nil || *cfg.Enabled, WebhookSet: cfg.DiscordWebhook != "",
-			WebhookHint: alerts.MaskWebhook(cfg.DiscordWebhook), Active: cfg.Active(),
+			WebhookHint: alerts.MaskWebhook(cfg.DiscordWebhook), WebhookInvalid: s.deps.Alerts.WebhookInvalid(), Active: s.deps.Alerts.Active(),
 		}
 	}
 	return view{

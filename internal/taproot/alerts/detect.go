@@ -37,13 +37,17 @@ type Message struct {
 }
 
 // Account is a credential as alerts see it: present in the auth manager and
-// either enabled or disabled by upstream for a broken login.
+// not disabled by the user.
 type Account struct {
 	AuthIndex   string
 	Provider    string
 	Label       string
 	LoginBroken bool
 	LoginReason string
+	// StillServes marks a broken login whose current access token upstream
+	// still uses, until ServesUntil when that is known.
+	StillServes bool
+	ServesUntil time.Time
 }
 
 // Grant is one Claude reset grant (cedar_ember) read from the usage endpoint.
@@ -72,6 +76,10 @@ type Condition struct {
 	// Delay is how long the condition must hold before it is posted, for
 	// states upstream can set briefly while it retries.
 	Delay time.Duration
+	// Until, when set, keeps a posted alert's episode open until then even
+	// while the condition is not seen, for a condition that cannot recover
+	// before it ends, such as a grant's expiry.
+	Until time.Time
 }
 
 const grantWarnWithin = 24 * time.Hour
@@ -194,6 +202,15 @@ func loginCondition(key string, a Account) Condition {
 		{Name: "Account", Value: a.Label, Inline: true},
 		{Name: "Provider", Value: providerName(a.Provider), Inline: true},
 	}
+	desc := fmt.Sprintf("**%s** can no longer refresh its credential and serves no requests until you sign in again from OAuth Login.", a.Label)
+	if a.StillServes {
+		until := "its current access token expires"
+		if !a.ServesUntil.IsZero() {
+			until += " at " + discordTime(a.ServesUntil)
+		}
+		desc = fmt.Sprintf("**%s** can no longer refresh its credential. It keeps working until %s; sign in again from OAuth Login before then.", a.Label, until)
+		fields = append(fields, Field{Name: "Works until", Value: resetText(a.ServesUntil), Inline: true})
+	}
 	if a.LoginReason != "" {
 		fields = append(fields, Field{Name: "Reason", Value: a.LoginReason})
 	}
@@ -201,7 +218,7 @@ func loginCondition(key string, a Account) Condition {
 		Alert: Message{
 			Key: key, Severity: SeverityWarning,
 			Title:       fmt.Sprintf("%s login broken", providerName(a.Provider)),
-			Description: fmt.Sprintf("**%s** can no longer refresh its credential. Sign in again from OAuth Login.", a.Label),
+			Description: desc,
 			Fields:      fields,
 		},
 		Recovery: &Message{
@@ -214,7 +231,8 @@ func loginCondition(key string, a Account) Condition {
 }
 
 // poolCondition reports a provider whose every account is at an account-wide
-// limit or needs sign-in.
+// limit or needs sign-in and no longer serves. When a broken login is part of
+// the reason, the pool waits out the login delay too.
 func poolCondition(provider string, list []Account, limited map[string]bool, limitedUntil map[string]time.Time) (Condition, bool) {
 	if len(list) == 0 {
 		return Condition{}, false
@@ -224,7 +242,7 @@ func poolCondition(provider string, list []Account, limited map[string]bool, lim
 	broken := 0
 	for _, a := range list {
 		switch {
-		case a.LoginBroken:
+		case a.LoginBroken && !a.StillServes:
 			broken++
 		case limited[a.AuthIndex]:
 			if t := limitedUntil[a.AuthIndex]; !t.IsZero() && (back.IsZero() || t.Before(back)) {
@@ -237,6 +255,10 @@ func poolCondition(provider string, list []Account, limited map[string]bool, lim
 	name := providerName(provider)
 	key := "pool:" + provider
 	desc := fmt.Sprintf("Every %s account is out of quota or needs sign-in, so %s requests fail.", name, name)
+	var delay time.Duration
+	if broken > 0 {
+		delay = loginDelay
+	}
 	backText := "no known reset"
 	if !back.IsZero() {
 		desc += fmt.Sprintf(" The first one back is **%s** at %s.", backLabel, discordTime(back))
@@ -261,6 +283,7 @@ func poolCondition(provider string, list []Account, limited map[string]bool, lim
 			Title:       fmt.Sprintf("%s pool has capacity again", name),
 			Description: fmt.Sprintf("At least one %s account is usable again.", name),
 		},
+		Delay: delay,
 	}, true
 }
 
@@ -281,6 +304,7 @@ func grantCondition(key string, a Account, g Grant) Condition {
 				{Name: "Expires", Value: discordTime(g.EndsAt), Inline: true},
 			},
 		},
+		Until: g.EndsAt,
 	}
 }
 
@@ -291,6 +315,8 @@ type track struct {
 	ChangedAt time.Time `json:"changedAt"`
 	LastAlert time.Time `json:"lastAlert"`
 	Recovery  *Message  `json:"recovery,omitempty"`
+	// Until is the posted condition's Until.
+	Until time.Time `json:"until,omitzero"`
 }
 
 // Detector turns conditions into messages. A key alerts once per episode; a
@@ -330,7 +356,7 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 		msg := c.Alert
 		msg.At = now
 		out = append(out, msg)
-		t.Notified, t.LastAlert, t.Recovery, changed = true, now, c.Recovery, true
+		t.Notified, t.LastAlert, t.Recovery, t.Until, changed = true, now, c.Recovery, c.Until, true
 	}
 	for key, t := range d.tracks {
 		if _, ok := active[key]; ok {
@@ -338,6 +364,9 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 		}
 		if t.Active {
 			t.Active, t.ChangedAt, changed = false, now, true
+		}
+		if t.Notified && now.Before(t.Until) {
+			continue
 		}
 		if t.Notified && now.Sub(t.ChangedAt) >= d.settle {
 			if t.Recovery != nil {
@@ -354,6 +383,29 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out, changed
+}
+
+// Forget drops, without a recovery, the tracks of accounts and providers no
+// longer in accounts: an account the user removed or disabled did not
+// recover. Pool keys name a provider; every other key names an auth index.
+func (d *Detector) Forget(accounts []Account) (changed bool) {
+	indexes, providers := map[string]bool{}, map[string]bool{}
+	for _, a := range accounts {
+		indexes[a.AuthIndex], providers[a.Provider] = true, true
+	}
+	for key := range d.tracks {
+		kind, subject, _ := strings.Cut(key, ":")
+		if kind == "pool" {
+			if providers[subject] {
+				continue
+			}
+		} else if idx, _, _ := strings.Cut(subject, ":"); indexes[idx] {
+			continue
+		}
+		delete(d.tracks, key)
+		changed = true
+	}
+	return changed
 }
 
 func providerName(p string) string {

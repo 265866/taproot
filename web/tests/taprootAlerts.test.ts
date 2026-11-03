@@ -24,11 +24,18 @@ const render = (settings: AlertsSettings) =>
     )
   );
 
-const none: AlertsSettings = { enabled: true, webhookSet: false, webhookHint: '', active: false };
+const none: AlertsSettings = {
+  enabled: true,
+  webhookSet: false,
+  webhookHint: '',
+  webhookInvalid: false,
+  active: false,
+};
 const active: AlertsSettings = {
   enabled: true,
   webhookSet: true,
   webhookHint: '…a1B2c3',
+  webhookInvalid: false,
   active: true,
 };
 const hook = 'https://discord.com/api/webhooks/1234567890/abc_DEF-123';

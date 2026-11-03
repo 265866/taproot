@@ -42,7 +42,7 @@ func devUsageURL(env, fallback string) string {
 	if raw == "" {
 		return fallback
 	}
-	if !isLoopbackURL(raw) {
+	if !IsLoopbackURL(raw) {
 		log.WithField("env", env).Warn("taproot ingest: ignoring non-loopback development usage URL")
 		return fallback
 	}
@@ -50,7 +50,8 @@ func devUsageURL(env, fallback string) string {
 	return raw
 }
 
-func isLoopbackURL(raw string) bool {
+// IsLoopbackURL reports whether raw is an http(s) URL on 127.0.0.1, localhost, or ::1.
+func IsLoopbackURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return false
