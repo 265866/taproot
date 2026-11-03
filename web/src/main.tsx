@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@/styles/global.scss';
+import '@/i18n';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import { purgeLegacyStorage } from '@/utils/legacyStorage';
 import App from './App.tsx';
