@@ -10,7 +10,9 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { purgeLegacyStorage, LEGACY_STORAGE_KEYS } from '@/utils/legacyStorage';
 
 let status = 200;
+let denial: unknown = { error: 'denied' };
 let authorization: string | null = 'unset';
+let requestHeader: string | null = null;
 let server: ReturnType<typeof Bun.serve>;
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -25,12 +27,11 @@ beforeAll(() => {
     port: 0,
     fetch(request) {
       authorization = request.headers.get('authorization');
+      requestHeader = request.headers.get('x-taproot-request');
       if (new URL(request.url).pathname !== '/v8/management/config') {
         return new Response('not found', { status: 404 });
       }
-      return status === 200
-        ? Response.json({ debug: false })
-        : Response.json({ error: 'denied' }, { status });
+      return status === 200 ? Response.json({ debug: false }) : Response.json(denial, { status });
     },
   });
 });
@@ -43,7 +44,12 @@ afterAll(() => {
 
 afterEach(() => {
   useConfigStore.getState().clearCache();
-  useAuthStore.setState({ connectionStatus: 'disconnected', connectionFailure: null });
+  useAuthStore.setState({
+    connectionStatus: 'disconnected',
+    connectionFailure: null,
+    connectionFailureNode: null,
+  });
+  denial = { error: 'denied' };
 });
 
 const connectTo = () => {
@@ -60,6 +66,35 @@ describe('same-origin management connection', () => {
       connectionFailure: null,
     });
     expect(authorization).toBeNull();
+    // The guard refuses state-changing GETs without it; every client request carries it.
+    expect(requestHeader).toBe('1');
+  });
+
+  test('names the device to add when the guard says it is outside admin-nodes', async () => {
+    status = 403;
+    denial = {
+      error: {
+        code: 'not_admin_node',
+        message: 'this device is not in access.admin-nodes in taproot.yaml',
+        node: 'worker.tailnet-0000.ts.net',
+      },
+    };
+    expect(await connectTo()).toBe(false);
+    expect(useAuthStore.getState()).toMatchObject({
+      connectionStatus: 'error',
+      connectionFailure: 'not_admin',
+      connectionFailureNode: 'worker.tailnet-0000.ts.net',
+    });
+  });
+
+  test('a plain guard 403 stays access denied', async () => {
+    status = 403;
+    denial = { error: { code: 'forbidden', message: 'caller is not allowed' } };
+    expect(await connectTo()).toBe(false);
+    expect(useAuthStore.getState()).toMatchObject({
+      connectionFailure: 'forbidden',
+      connectionFailureNode: null,
+    });
   });
 
   for (const refused of [401, 403]) {
@@ -118,14 +153,18 @@ describe('legacy management-center storage', () => {
 });
 
 describe('connection gate', () => {
-  const render = (status: ConnectionStatus, failure: ConnectionFailure | null = null) =>
+  const render = (
+    status: ConnectionStatus,
+    failure: ConnectionFailure | null = null,
+    node: string | null = null
+  ) =>
     renderToStaticMarkup(
       createElement(
         I18nextProvider,
         { i18n },
         createElement(
           ConnectionGateView,
-          { status, failure, onRetry: () => {} },
+          { status, failure, node, onRetry: () => {} },
           createElement('main', null, 'dashboard-body')
         )
       )
@@ -141,6 +180,16 @@ describe('connection gate', () => {
     expect(html).toContain('Try again');
     expect(html).not.toContain('dashboard-body');
     expect(html).not.toMatch(/type="password"|<input/);
+  });
+
+  test('tells a device outside admin-nodes how to get access', () => {
+    const html = render('error', 'not_admin', 'worker.tailnet-0000.ts.net');
+    expect(html).toContain('worker.tailnet-0000.ts.net');
+    expect(html).toContain('access.admin-nodes in taproot.yaml');
+    expect(html).not.toContain('Access denied');
+    const unnamed = render('error', 'not_admin');
+    expect(unnamed).toContain('access.admin-nodes in taproot.yaml');
+    expect(unnamed).toContain('MagicDNS name');
   });
 
   test('names an unreachable server separately', () => {

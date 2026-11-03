@@ -63,6 +63,46 @@ var navigablePaths = map[string]bool{
 	"/devin/callback":       true,
 }
 
+// RequestHeader must be "1" on GETs that change state, for every caller but
+// loopback. A cross-site page cannot add a custom header without a CORS
+// preflight, and the guard rejects the preflight's Origin. Browsers send no
+// Sec-Fetch-* headers to plain-http tailnet names, so without this a
+// cross-site no-cors GET would reach these handlers. Loopback is exempt:
+// browsers do send Sec-Fetch-* to localhost and loopback addresses, and
+// upstream's TUI calls these routes over 127.0.0.1 without the header.
+const RequestHeader = "X-Taproot-Request"
+
+// sideEffectGETs are admin GET routes that change state: draining the usage
+// queue, and starting or adopting an OAuth login. Read-only GETs, including
+// plugin pages and plugin management routes, do not need RequestHeader.
+// The OAuth callbacks stay out: providers reach them by navigation, and they
+// only act on a pending login whose random state the caller must know.
+var sideEffectGETs = map[string]bool{
+	"/v0/management/usage-queue":               true,
+	"/v8/management/observability/usage/queue": true,
+	"/v8/management/oauth/auth-url":            true,
+	"/v0/management/get-auth-status":           true,
+	"/v8/management/oauth/status":              true,
+}
+
+// sideEffectGET also matches /v0/management/<provider>-auth-url, which covers
+// the built-in providers and the ones plugins add.
+func sideEffectGET(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	path := r.URL.Path
+	return sideEffectGETs[path] ||
+		(strings.HasPrefix(path, "/v0/management/") && strings.HasSuffix(path, "-auth-url"))
+}
+
+// isDashboardShell is the dashboard page itself. Every admitted caller may
+// load it: it is static and holds no data, and it is how a device that is
+// not in admin-nodes learns why the API refuses it.
+func isDashboardShell(r *http.Request) bool {
+	return r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead)
+}
+
 // classify matches on URL.Path, the same value gin routes on.
 func classify(path string) surface {
 	if adminPaths[path] {
@@ -180,4 +220,18 @@ func quoteHeader(v string) string {
 		v = v[:100]
 	}
 	return strconv.Quote(v)
+}
+
+// RESPFilter admits Redis-protocol connections on the proxy port from loopback
+// only. Upstream serves its usage queue there outside gin, where the guard
+// never runs, and taproot does not use the queue.
+func RESPFilter(remote net.Addr) bool {
+	if remote == nil {
+		return false
+	}
+	addrPort, err := netip.ParseAddrPort(remote.String())
+	if err != nil {
+		return false
+	}
+	return addrPort.Addr().Unmap().IsLoopback()
 }

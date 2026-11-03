@@ -16,11 +16,14 @@
 //   - trusted-cidrs reach the proxy only. They hold host-local addresses, such
 //     as the LAN address that server's 127.0.1.1 publish arrives from.
 //   - A tailnet address reaches the proxy when tailscaled's whois login is in
-//     allow-logins. It reaches the admin surface when, in addition, the node is
-//     not the server's own node, and, if admin-nodes is set, the node is listed
-//     there. The server's own node is excluded because every process and
-//     container on the host connects through it, and they all resolve to the
-//     host owner's login.
+//     allow-logins. It reaches the admin surface only when, in addition, its
+//     node is listed in admin-nodes and is not the server's own node. With
+//     admin-nodes empty, no tailnet caller is an admin. The server's own node
+//     is excluded because every process and container on the host connects
+//     through it, and they all resolve to the host owner's login.
+//
+// Every admitted caller may load the dashboard page itself, which is static,
+// so a device outside admin-nodes sees why the API refuses it.
 //
 // The server's own node comes from tailscaled's LocalAPI status. Until it has
 // been read once, tailnet callers get no admin access and only local host
@@ -33,12 +36,22 @@
 //
 //   - a Host that is not one of the server's names (DNS rebinding),
 //   - an Origin whose host and port differ from the request's Host, which
-//     covers CORS preflights and websocket upgrades,
+//     covers CORS preflights, websocket upgrades, and every cross-site
+//     request a browser sends with a method other than GET or HEAD,
 //   - Sec-Fetch-Site cross-site or same-site, except top-level navigations to
-//     the dashboard and the OAuth callbacks.
+//     the dashboard and the OAuth callbacks. Browsers send Sec-Fetch-* only to
+//     https and loopback targets, so over plain http to a tailnet name this
+//     layer does nothing,
+//   - a GET that changes state without RequestHeader, from any caller but
+//     loopback. This closes the gap the previous point leaves: a cross-site
+//     no-cors GET carries no Origin and cannot read the response, but it
+//     would still run the handler.
 //
 // Command-line clients send none of these headers. The dashboard response
 // also forbids framing (see package web).
+//
+// Upstream also serves a Redis-protocol usage queue on the proxy port, outside
+// gin. RESPFilter limits it to loopback.
 package access
 
 import (
@@ -84,11 +97,11 @@ type Config struct {
 	Enabled *bool `yaml:"enabled"`
 	// AllowLogins lists admitted Tailscale login names. Absent means DefaultAllowLogins.
 	AllowLogins []string `yaml:"allow-logins"`
-	// AdminNodes, when set, limits the admin surface to these tailnet nodes.
-	// An entry is a MagicDNS name, either the full name
-	// (desktop.tailnet-0000.ts.net) or its first label for nodes in the
-	// server's own tailnet (desktop). Control assigns these names; the
-	// device-reported hostname is not used.
+	// AdminNodes lists the tailnet nodes that reach the admin surface. Empty
+	// means no tailnet node does; loopback still does. An entry is a MagicDNS
+	// name, either the full name (desktop.tailnet-0000.ts.net) or its
+	// first label for nodes in the server's own tailnet (desktop).
+	// Control assigns these names; the device-reported hostname is not used.
 	AdminNodes []string `yaml:"admin-nodes"`
 	// TrustedCIDRs reach the proxy surface without a whois lookup. Use single
 	// host-local addresses (/32), never a whole LAN.
@@ -119,6 +132,9 @@ type Identity struct {
 	Admin bool
 	// notAdmin says why Admin is false.
 	notAdmin string
+	// unlistedNode is true when Admin is false only because the node is not
+	// in admin-nodes.
+	unlistedNode bool
 }
 
 // Guard decides whether a request may reach the proxy or the admin surface.
@@ -126,7 +142,7 @@ type Guard struct {
 	enabled    bool
 	trusted    []netip.Prefix
 	allow      atomic.Pointer[[]string]
-	adminNodes []string
+	adminNodes atomic.Pointer[[]string]
 	extraHosts map[string]bool
 	secret     string
 	whois      func(context.Context, netip.Addr) (peer, error)
@@ -180,12 +196,8 @@ func New(cfg Config) (*Guard, error) {
 		}
 		g.trusted = append(g.trusted, prefix.Masked())
 	}
-	for _, raw := range cfg.AdminNodes {
-		node := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
-		if node == "" || strings.ContainsAny(node, " /:") {
-			return nil, fmt.Errorf("admin-nodes: invalid node name %q", raw)
-		}
-		g.adminNodes = append(g.adminNodes, node)
+	if err := g.SetAdminNodes(cfg.AdminNodes); err != nil {
+		return nil, fmt.Errorf("admin-nodes: %w", err)
 	}
 	for _, raw := range cfg.ExtraHosts {
 		host := hostOnly(raw)
@@ -215,7 +227,7 @@ func New(cfg Config) (*Guard, error) {
 	}
 	g.secret = secret
 	log.Infof("taproot access: guard enabled with %d allowed logins, %d admin nodes, %d trusted CIDRs, %d extra hosts, tailscaled socket %s",
-		len(logins), len(g.adminNodes), len(g.trusted), len(g.extraHosts), socket)
+		len(logins), len(g.AdminNodes()), len(g.trusted), len(g.extraHosts), socket)
 	return g, nil
 }
 
@@ -265,6 +277,53 @@ func (g *Guard) AllowLogins() []string {
 	return nil
 }
 
+// SetAdminNodes replaces the admin node list at runtime. Entries are
+// lowercased without a trailing dot. An empty list is allowed and leaves only
+// loopback with admin access.
+func (g *Guard) SetAdminNodes(nodes []string) error {
+	normalized, err := normalizeAdminNodes(nodes)
+	if err != nil {
+		return err
+	}
+	if prev := g.adminNodes.Swap(&normalized); len(normalized) == 0 && (prev == nil || len(*prev) > 0) {
+		log.Warn("taproot access: admin-nodes is empty, so no tailnet device is an admin (management API, settings, backups); only loopback is. Add your devices to access.admin-nodes in taproot.yaml")
+	}
+	return nil
+}
+
+func normalizeAdminNodes(nodes []string) ([]string, error) {
+	normalized := make([]string, 0, len(nodes))
+	for _, raw := range nodes {
+		node := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
+		if node == "" || strings.ContainsAny(node, " /:@") {
+			return nil, fmt.Errorf("invalid node name %q", raw)
+		}
+		if !slices.Contains(normalized, node) {
+			normalized = append(normalized, node)
+		}
+	}
+	return normalized, nil
+}
+
+// AdminNodes returns the current admin node list.
+func (g *Guard) AdminNodes() []string {
+	if p := g.adminNodes.Load(); p != nil {
+		return slices.Clone(*p)
+	}
+	return nil
+}
+
+// AdminNodesInclude reports whether a candidate admin-nodes list would admit
+// the node a whois named, using the same matching as the guard. Settings uses
+// it to refuse a change that removes the caller's own device.
+func (g *Guard) AdminNodesInclude(nodes []string, node string) bool {
+	normalized, err := normalizeAdminNodes(nodes)
+	if err != nil {
+		return false
+	}
+	return matchAdminNode(normalized, node, g.self(context.Background()))
+}
+
 // IdentityFrom returns the identity the middleware admitted for this request.
 func IdentityFrom(c *gin.Context) (Identity, bool) {
 	v, ok := c.Get(identityKey)
@@ -295,19 +354,31 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		surf := classify(path)
 		self := sync.OnceValue(func() *selfNode { return g.self(context.WithoutCancel(r.Context())) })
 		id, reason := g.admit(r.Context(), r.RemoteAddr, self)
-		if reason == "" && surf == surfaceAdmin && !id.Admin {
-			reason = id.notAdmin
-		}
 		if reason == "" {
 			reason = g.browserCheck(r, self)
+		}
+		denial := gin.H{"code": "forbidden", "message": "caller is not allowed"}
+		if reason == "" && surf == surfaceAdmin && !id.Admin && !isDashboardShell(r) {
+			reason = id.notAdmin
+			if id.unlistedNode {
+				// Only an allowlisted login on a request that passed the
+				// browser checks gets here, so naming its own node discloses
+				// nothing new.
+				denial = gin.H{
+					"code":    "not_admin_node",
+					"message": "this device is not in access.admin-nodes in taproot.yaml",
+					"node":    id.Node,
+				}
+			}
+		}
+		if reason == "" && id.Via != ViaLoopback && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
+			reason = "state-changing GET without " + RequestHeader
+			denial = gin.H{"code": "request_header_required", "message": "this request changes state; send " + RequestHeader + ": 1"}
 		}
 		if reason != "" {
 			// Upstream's log formatter drops fields it does not know, so the details go in the message.
 			log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, path, surf, r.RemoteAddr, reason)
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{
-				"code":    "forbidden",
-				"message": "caller is not allowed",
-			}})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": denial})
 			return
 		}
 		c.Set(identityKey, id)
@@ -367,29 +438,33 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 		id.notAdmin = "this server's own tailnet node is unknown, so tailnet callers reach the proxy only"
 	case containsAddr(s.IPs, addr) || (p.StableID != "" && p.StableID == s.StableID):
 		id.notAdmin = "this server's own node reaches the proxy only"
-	case !g.isAdminNode(p.Node, s):
-		id.notAdmin = "node " + p.Node + " not in admin-nodes"
+	case !matchAdminNode(*g.adminNodes.Load(), p.Node, s):
+		id.notAdmin = "node " + quoteHeader(p.Node) + " not in admin-nodes"
+		id.unlistedNode = true
 	default:
 		id.Admin = true
 	}
 	return id, ""
 }
 
-// isAdminNode matches a whois MagicDNS name against admin-nodes. A short
-// entry matches only nodes in the server's own tailnet.
-func (g *Guard) isAdminNode(node string, self *selfNode) bool {
-	if len(g.adminNodes) == 0 {
-		return true
-	}
+// matchAdminNode matches a whois MagicDNS name against admin-nodes. A short
+// entry matches only nodes in the server's own tailnet. An empty list or an
+// empty name matches nothing.
+func matchAdminNode(adminNodes []string, node string, self *selfNode) bool {
 	node = strings.ToLower(node)
+	if node == "" {
+		return false
+	}
 	short := ""
-	if _, suffix, ok := strings.Cut(self.DNSName, "."); ok && suffix != "" {
-		short, _ = strings.CutSuffix(node, "."+suffix)
-		if short == node {
-			short = ""
+	if self != nil {
+		if _, suffix, ok := strings.Cut(self.DNSName, "."); ok && suffix != "" {
+			short, _ = strings.CutSuffix(node, "."+suffix)
+			if short == node {
+				short = ""
+			}
 		}
 	}
-	for _, entry := range g.adminNodes {
+	for _, entry := range adminNodes {
 		if entry == node || (short != "" && entry == short) {
 			return true
 		}

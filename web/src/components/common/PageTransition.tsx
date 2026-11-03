@@ -56,6 +56,13 @@ const clearLayerStyles = (element: HTMLElement | null) => {
 };
 
 type Layer = {
+  /**
+   * React key for the layer. location.key cannot serve: every location reached without history
+   * state (the first load, an edited or typed hash) has the key "default", so two layers could
+   * share it and React would remount the page when the exiting one is removed.
+   */
+  id: number;
+  /** location.key, used to find a layer again when navigating back. */
   key: string;
   location: Location;
   status: LayerStatus;
@@ -80,10 +87,12 @@ export function PageTransition({
   const enterScrollOffsetRef = useRef(0);
   const scrollPositionsRef = useRef(new Map<string, number>());
   const nextLayersRef = useRef<Layer[] | null>(null);
+  const nextLayerIdRef = useRef(1);
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [layers, setLayers] = useState<Layer[]>(() => [
     {
+      id: 0,
       key: location.key,
       location,
       status: 'current',
@@ -139,7 +148,9 @@ export function PageTransition({
 
     // When using iOS-style stacking, history POP within the same "section" can have equal route order.
     // In that case, prefer treating navigation to an existing layer as a backward (pop) transition.
-    if (nextVariant === 'ios' && layers.some((layer) => layer.key === location.key)) {
+    const isKnownLocation =
+      location.key !== 'default' && layers.some((layer) => layer.key === location.key);
+    if (nextVariant === 'ios' && isKnownLocation) {
       nextDirection = 'backward';
     }
 
@@ -159,6 +170,7 @@ export function PageTransition({
       return fromSegments[0] === toSegments[0] && toSegments.length === 1;
     })();
 
+    const nextId = nextLayerIdRef.current++;
     setLayers((prev) => {
       const variant = transitionVariantRef.current;
       const direction = transitionDirectionRef.current;
@@ -170,7 +182,7 @@ export function PageTransition({
         .filter((_, idx) => idx !== resolvedCurrentIndex)
         .map((layer): Layer => ({ ...layer, status: 'stacked' }));
 
-      const nextCurrent: Layer = { key: location.key, location, status: 'current' };
+      const nextCurrent: Layer = { id: nextId, key: location.key, location, status: 'current' };
 
       if (!previousCurrent) {
         nextLayersRef.current = [nextCurrent];
@@ -186,7 +198,9 @@ export function PageTransition({
           return [...previousStack, exitingLayer, nextCurrent];
         }
 
-        const targetIndex = prev.findIndex((layer) => layer.key === location.key);
+        const targetIndex = isKnownLocation
+          ? prev.findIndex((layer) => layer.key === location.key)
+          : -1;
         if (targetIndex !== -1) {
           const targetStack: Layer[] = prev.slice(0, targetIndex + 1).map((layer, idx): Layer => {
             const isTarget = idx === targetIndex;
@@ -431,7 +445,7 @@ export function PageTransition({
           const shouldKeepStacked = layer.status === 'stacked' && index === keepStackedIndex;
           return (
             <div
-              key={layer.key}
+              key={layer.id}
               className={[
                 'page-transition__layer',
                 layer.status === 'exiting' ? 'page-transition__layer--exit' : '',

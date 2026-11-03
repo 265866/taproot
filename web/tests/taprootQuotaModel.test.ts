@@ -156,6 +156,29 @@ describe('fromApi', () => {
     expect(groups[0].accounts[0].windows[0].utilization).toBe(1);
   });
 
+  test('leaves removed accounts out of every pool', () => {
+    const series: QuotaSeries = {
+      authIndex: 'gone',
+      provider: 'claude',
+      window: 'seven_day',
+      periodSeconds: 604800,
+      points: [{ t: '2026-11-01T00:00:00Z', utilization: 0.5 }],
+      resets: [],
+    };
+    const groups = buildProviderGroups(
+      [
+        account('c1', 'claude'),
+        account('gone', 'claude', { removed: true, removedAt: '2026-11-02T00:00:00Z' }),
+        account('old', 'codex', { removed: true }),
+      ],
+      [{ authIndex: 'gone', provider: 'claude', windows: [] }],
+      [series]
+    );
+    expect(groups.map((g) => g.provider)).toEqual(['claude']);
+    expect(groups[0].accounts.map((a) => a.authIndex)).toEqual(['c1']);
+    expect(groups[0].hasQuotaData).toBe(false);
+  });
+
   test('includes accounts that only appear in quota data, with an empty label', () => {
     const groups = buildProviderGroups(
       [],

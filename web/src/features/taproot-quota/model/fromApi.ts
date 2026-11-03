@@ -77,15 +77,18 @@ export function compareProviders(a: string, b: string): number {
 
 /**
  * One group per provider found in /accounts or /quota/current, with each account's latest
- * windows and recorded series.
+ * windows and recorded series. Removed accounts are left out of every pool; /accounts keeps them
+ * only so usage history stays labelled.
  */
 export function buildProviderGroups(
   accounts: TaprootAccount[],
   current: AccountQuota[],
   series: QuotaSeries[]
 ): ProviderGroup[] {
+  const removed = new Set(accounts.filter((a) => a.removed).map((a) => a.authIndex));
   const byIndex = new Map<string, QuotaAccount>();
   const ensure = (authIndex: string, provider: string) => {
+    if (removed.has(authIndex)) return null;
     let account = byIndex.get(authIndex);
     if (!account) {
       account = {
@@ -103,18 +106,20 @@ export function buildProviderGroups(
   };
   for (const a of accounts) {
     const account = ensure(a.authIndex, a.provider);
+    if (!account) continue;
     account.label = a.label || a.email || '';
     account.plan = a.plan;
     account.disabled = a.disabled;
   }
   for (const c of current) {
     const account = ensure(c.authIndex, c.provider);
+    if (!account) continue;
     account.windows = c.windows
       .map(toWindowObservation)
       .filter((w): w is WindowObservation => w !== null);
   }
   for (const s of series) {
-    ensure(s.authIndex, s.provider).series.push(toWindowSeries(s));
+    ensure(s.authIndex, s.provider)?.series.push(toWindowSeries(s));
   }
 
   const groups = new Map<string, ProviderGroup>();

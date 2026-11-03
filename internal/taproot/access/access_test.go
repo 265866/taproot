@@ -2,11 +2,14 @@ package access
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -82,15 +85,26 @@ func doMethod(e http.Handler, method, remote, path string, headers map[string]st
 
 func assertForbidden(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
+	assertDenied(t, rec, "forbidden")
+}
+
+type deniedBody struct {
+	Error struct{ Code, Message, Node string }
+}
+
+func assertDenied(t *testing.T, rec *httptest.ResponseRecorder, code string) deniedBody {
+	t.Helper()
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
 	}
-	var body struct {
-		Error struct{ Code, Message string }
+	var body deniedBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error.Code != code {
+		t.Fatalf("body = %s, want {error:{code:%s}}", rec.Body, code)
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error.Code != "forbidden" {
-		t.Fatalf("body = %s, want {error:{code:forbidden}}", rec.Body)
+	if h := rec.Header().Get("Access-Control-Allow-Origin"); h != "" {
+		t.Fatalf("denial carries Access-Control-Allow-Origin %q", h)
 	}
+	return body
 }
 
 func me(t *testing.T, e http.Handler, remote string, headers map[string]string) meResponse {
@@ -156,7 +170,7 @@ func TestDeniesUnknownLogin(t *testing.T) {
 
 func TestSpoofedIdentityHeadersChangeNothing(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
 	spoof := map[string]string{
 		"X-Forwarded-For":            "127.0.0.1, " + adminIP,
 		"X-Real-IP":                  adminIP,
@@ -196,7 +210,7 @@ func TestAdmitsLoopback(t *testing.T) {
 
 func TestAdmitsAllowlistedLogin(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
 	if rec := do(e, adminIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -235,7 +249,7 @@ func TestAdmitsTrustedCIDRWithoutWhois(t *testing.T) {
 
 func TestSelfNodeReachesProxyOnly(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, got := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
+	e, got := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
 	for _, remote := range []string{selfIP + ":40000", "[" + selfIPv6 + "]:40000"} {
 		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
 			t.Fatalf("self node %s proxy status = %d, want 200", remote, rec.Code)
@@ -268,7 +282,7 @@ func TestSelfNodeMatchedByStableIDToo(t *testing.T) {
 
 func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	g.now = func() time.Time { return now }
 	e, _ := testEngine(g)
@@ -317,27 +331,178 @@ func TestAdminNodes(t *testing.T) {
 	if rec := do(e, otherNodeIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("unlisted node proxy status = %d, want 200", rec.Code)
 	}
-	assertForbidden(t, do(e, otherNodeIP+":40000", "/v8/management/config", nil))
-	assertForbidden(t, do(e, otherNodeIP+":40000", "/taproot/api/v1/me", nil))
+	// An unlisted node of an allowed login learns which node to list.
+	body := assertDenied(t, do(e, otherNodeIP+":40000", "/v8/management/config", nil), "not_admin_node")
+	if body.Error.Node != "worker."+tailnetSuffix || !strings.Contains(body.Error.Message, "access.admin-nodes") {
+		t.Fatalf("not_admin_node body = %+v", body)
+	}
+	assertDenied(t, do(e, otherNodeIP+":40000", "/taproot/api/v1/me", nil), "not_admin_node")
+	// A browser request from another site gets no detail.
+	assertForbidden(t, do(e, otherNodeIP+":40000", "/v8/management/config", map[string]string{"Origin": "http://evil.example"}))
+	// The server's own node is not told to list itself.
+	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
 
 	full := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"worker." + tailnetSuffix}})
 	e, _ = testEngine(full)
 	if rec := do(e, otherNodeIP+":40000", "/v8/management/config", nil); rec.Code != http.StatusOK {
 		t.Fatalf("full-name entry admin status = %d, want 200", rec.Code)
 	}
-	assertForbidden(t, do(e, adminIP+":40000", "/v8/management/config", nil))
+	assertDenied(t, do(e, adminIP+":40000", "/v8/management/config", nil), "not_admin_node")
 
 	// A short entry does not match a node from another tailnet.
 	peers := defaultPeers()
 	peers["100.90.0.1"] = fakePeer{login: "alice@github", node: "laptop.other.ts.net."}
 	ts2 := newFakeTailscaled(t, peers)
 	e, _ = testEngine(newTestGuard(t, Config{TailscaleSocket: ts2.socket, AdminNodes: []string{"laptop"}}))
-	assertForbidden(t, do(e, "100.90.0.1:1", "/v8/management/config", nil))
+	assertDenied(t, do(e, "100.90.0.1:1", "/v8/management/config", nil), "not_admin_node")
+}
+
+// Without admin-nodes no tailnet caller is an admin, whatever its login.
+// Loopback still is.
+func TestEmptyAdminNodesDenyEveryTailnetCaller(t *testing.T) {
+	ts := newFakeTailscaled(t, defaultPeers())
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	e, _ := testEngine(g)
+	for _, remote := range []string{adminIP + ":40000", otherNodeIP + ":40000"} {
+		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
+			t.Fatalf("%s proxy status = %d, want 200", remote, rec.Code)
+		}
+		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me"} {
+			assertDenied(t, do(e, remote, path, nil), "not_admin_node")
+		}
+	}
+	if got := me(t, e, "127.0.0.1:1", nil); !got.Admin || got.Via != string(ViaLoopback) {
+		t.Fatalf("loopback /me = %+v, want admin", got)
+	}
+
+	// Listing the node at runtime applies at once.
+	if err := g.SetAdminNodes([]string{" Laptop. "}); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.AdminNodes(); len(got) != 1 || got[0] != "laptop" {
+		t.Fatalf("AdminNodes = %v", got)
+	}
+	if got := me(t, e, adminIP+":40000", nil); !got.Admin {
+		t.Fatalf("listed node /me = %+v, want admin", got)
+	}
+	if err := g.SetAdminNodes([]string{"bad name"}); err == nil {
+		t.Fatal("SetAdminNodes accepted a name with a space")
+	}
+	if !g.AdminNodesInclude([]string{"laptop"}, "laptop."+tailnetSuffix) || g.AdminNodesInclude([]string{"worker"}, "laptop."+tailnetSuffix) || g.AdminNodesInclude(nil, "laptop."+tailnetSuffix) {
+		t.Fatal("AdminNodesInclude does not match the guard's rule")
+	}
+}
+
+// admin-nodes matches only the control-assigned name. A whois without one
+// (ComputedName comes from the device's own hostname) matches nothing.
+func TestAdminNodesIgnoreComputedName(t *testing.T) {
+	peers := defaultPeers()
+	peers[adminIP] = fakePeer{login: "alice@github", node: "laptop", noName: true}
+	ts := newFakeTailscaled(t, peers)
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
+	if rec := do(e, adminIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("proxy status = %d, want 200", rec.Code)
+	}
+	assertDenied(t, do(e, adminIP+":40000", "/v8/management/config", nil), "not_admin_node")
+}
+
+// Every admitted caller may load the dashboard page; nobody else may.
+func TestDashboardShellOpenToAdmittedCallers(t *testing.T) {
+	ts := newFakeTailscaled(t, defaultPeers())
+	e := gin.New()
+	e.Use(newTestGuard(t, Config{TailscaleSocket: ts.socket, TrustedCIDRs: []string{"192.168.0.88/32"}}).Middleware())
+	e.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "shell") })
+	e.HEAD("/", func(c *gin.Context) { c.Status(http.StatusOK) })
+	e.POST("/", func(c *gin.Context) { c.String(http.StatusOK, "post") })
+	for _, remote := range []string{adminIP + ":1", selfIP + ":1", "192.168.0.88:1", "127.0.0.1:1"} {
+		if rec := do(e, remote, "/", nil); rec.Code != http.StatusOK {
+			t.Fatalf("GET / from %s = %d, want 200", remote, rec.Code)
+		}
+		if rec := doMethod(e, http.MethodHead, remote, "/", nil); rec.Code != http.StatusOK {
+			t.Fatalf("HEAD / from %s = %d, want 200", remote, rec.Code)
+		}
+	}
+	assertDenied(t, doMethod(e, http.MethodPost, adminIP+":1", "/", nil), "not_admin_node")
+	for _, remote := range []string{outsiderIP + ":1", strayIP + ":1", "203.0.113.9:1"} {
+		assertForbidden(t, do(e, remote, "/", nil))
+	}
+}
+
+// GETs that change state need RequestHeader from every caller but loopback.
+func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
+	ts := newFakeTailscaled(t, defaultPeers())
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
+	e := gin.New()
+	e.Use(g.Middleware())
+	ran := 0
+	handler := func(c *gin.Context) { ran++; c.String(http.StatusOK, "ok") }
+	stateful := []string{
+		"/v0/management/usage-queue",
+		"/v8/management/observability/usage/queue",
+		"/v0/management/anthropic-auth-url",
+		"/v0/management/codex-auth-url",
+		"/v0/management/some-plugin-auth-url",
+		"/v8/management/oauth/auth-url",
+		"/v0/management/get-auth-status",
+		"/v8/management/oauth/status",
+	}
+	readOnly := []string{
+		"/v0/management/config",
+		"/v0/management/auth-files/download",
+		"/v0/management/claude-keep-rolling/state",
+		"/v0/resource/plugins/claude-keep-rolling/status",
+		"/v0/management/oauth-callback",
+		"/taproot/api/v1/settings",
+	}
+	for _, path := range append(slices.Clone(stateful), readOnly...) {
+		e.GET(path, handler)
+	}
+	for _, path := range stateful {
+		ran = 0
+		assertDenied(t, do(e, adminIP+":1", path, nil), "request_header_required")
+		assertDenied(t, do(e, adminIP+":1", path, map[string]string{RequestHeader: "yes"}), "request_header_required")
+		if ran != 0 {
+			t.Fatalf("%s ran without the header", path)
+		}
+		if rec := do(e, adminIP+":1", path, map[string]string{RequestHeader: "1"}); rec.Code != http.StatusOK {
+			t.Fatalf("%s with header = %d, want 200", path, rec.Code)
+		}
+		if rec := do(e, "127.0.0.1:1", path, nil); rec.Code != http.StatusOK {
+			t.Fatalf("loopback %s without header = %d, want 200", path, rec.Code)
+		}
+		// An unlisted node is told about admin-nodes first.
+		assertDenied(t, do(e, otherNodeIP+":1", path, nil), "not_admin_node")
+	}
+	for _, path := range readOnly {
+		if rec := do(e, adminIP+":1", path, nil); rec.Code != http.StatusOK {
+			t.Fatalf("read-only %s without header = %d, want 200", path, rec.Code)
+		}
+	}
+}
+
+func TestRESPFilterAdmitsLoopbackOnly(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"127.0.0.1:5000":          true,
+		"[::1]:5000":              true,
+		"[::ffff:127.0.0.1]:5000": true,
+		adminIP + ":5000":        false,
+		selfIP + ":5000":          false,
+		"192.168.0.88:5000":      false,
+		"[" + selfIPv6 + "]:5000": false,
+	} {
+		ap := netip.MustParseAddrPort(addr)
+		if got := RESPFilter(net.TCPAddrFromAddrPort(ap)); got != want {
+			t.Errorf("RESPFilter(%s) = %v, want %v", addr, got, want)
+		}
+	}
+	if RESPFilter(nil) {
+		t.Error("RESPFilter(nil) = true")
+	}
 }
 
 func TestBrowserChecks(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, ExtraHosts: []string{"proxy.home.arpa"}}))
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, ExtraHosts: []string{"proxy.home.arpa"}, AdminNodes: []string{"laptop"}}))
 	admin := adminIP + ":40000"
 	for _, tc := range []struct {
 		name    string
@@ -603,7 +768,7 @@ access:
 
 func TestConcurrentRequestsAndAllowlistUpdates(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
 	e, _ := testEngine(g)
 	var wg sync.WaitGroup
 	for i := range 16 {

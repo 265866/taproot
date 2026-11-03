@@ -8,6 +8,13 @@
 
 export const TAPROOT_API_BASE = '/taproot/api/v1';
 
+/**
+ * Sent on every dashboard API request. Taproot's guard refuses state-changing GETs (OAuth starts,
+ * the usage queue) without it, because another site can make a browser send a plain GET but not
+ * a custom header.
+ */
+export const TAPROOT_REQUEST_HEADERS = { 'X-Taproot-Request': '1' } as const;
+
 export type TaprootVia = 'loopback' | 'tailnet' | 'cidr';
 export type UsageBucket = '5m' | '1h' | '1d';
 export type UsageGroupBy = 'model' | 'account' | 'provider' | 'session';
@@ -33,6 +40,12 @@ export interface TaprootAccount {
   email: string;
   plan: string;
   disabled: boolean;
+  /**
+   * True when the credential left the server. Removed accounts stay listed so history keeps its
+   * labels, but they belong to no pool. Servers older than this field omit it.
+   */
+  removed?: boolean;
+  removedAt?: string | null;
   firstSeen: string | null;
   lastSeen: string | null;
 }
@@ -223,7 +236,8 @@ export interface RestoreResult {
 }
 
 export interface TaprootSettings {
-  access: { enabled: boolean; allowLogins: string[] };
+  /** adminNodes: tailnet devices that reach the admin surface; empty means loopback only. */
+  access: { enabled: boolean; allowLogins: string[]; adminNodes: string[] };
   requestLogs: {
     /** Negative disables the age limit. */
     maxDays: number;
@@ -239,7 +253,7 @@ export interface TaprootSettings {
 
 /** A `PUT /settings` body: absent sections and fields stay as they are. */
 export interface TaprootSettingsUpdate {
-  access?: { allowLogins?: string[] };
+  access?: { allowLogins?: string[]; adminNodes?: string[] };
   requestLogs?: Partial<TaprootSettings['requestLogs']>;
   backups?: Partial<TaprootSettings['backups']>;
   ingest?: { pollInterval?: string };
@@ -322,8 +336,12 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       method,
       headers:
         options.body === undefined
-          ? { Accept: 'application/json' }
-          : { Accept: 'application/json', 'Content-Type': 'application/json' },
+          ? { Accept: 'application/json', ...TAPROOT_REQUEST_HEADERS }
+          : {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              ...TAPROOT_REQUEST_HEADERS,
+            },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       credentials: 'same-origin',
     });

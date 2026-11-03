@@ -71,7 +71,7 @@ func serve(h http.Handler, method, remote, path string, headers map[string]strin
 // from NoRoute, taproot's own API, and unknown paths.
 func TestRealServerGuardsEveryRoute(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
 	h := newRealServer(t, g).Handler()
 
 	wsUpgrade := map[string]string{
@@ -139,7 +139,7 @@ func TestRealServerGuardsEveryRoute(t *testing.T) {
 // config.yaml.
 func TestRealServerKeylessManagement(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
 	srv := newRealServer(t, g)
 	h := srv.Handler()
 

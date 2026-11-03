@@ -49,6 +49,9 @@
     "connecting": "Connecting to the server…",
     "forbidden_title": "Access denied",
     "forbidden_body": "This server only admits allowlisted Tailscale accounts. Connect from a device signed in to an allowed account.",
+    "not_admin_title": "This device can't manage taproot",
+    "not_admin_body": "Your Tailscale account is allowed, but this device isn't an admin device. To manage taproot from it, add {{node}} to access.admin-nodes in taproot.yaml on the server, or add it under Settings from a device that is already listed. Then try again.",
+    "not_admin_body_unnamed": "Your Tailscale account is allowed, but this device isn't an admin device. To manage taproot from it, add the device's MagicDNS name to access.admin-nodes in taproot.yaml on the server, or add it under Settings from a device that is already listed. Then try again.",
     "unreachable_title": "Server unreachable",
     "unreachable_body": "The management API did not answer. Check that the server is running.",
     "retry": "Try again"
