@@ -35,30 +35,28 @@ export const THEMES: Record<'light' | 'white' | 'dark', Record<string, string>> 
   dark: { ...light, ...rawTokens(themes, "[data-theme='dark']") },
 };
 
-/** Resolves `var(--name)` chains and parses a hex or rgba() value; null for anything else. */
-export function color(tokens: Record<string, string>, name: string): Rgba | null {
+/** Resolves `var(--name)` chains and parses the hex or rgba() value the token ends at. */
+export function mustColor(tokens: Record<string, string>, name: string): Rgba {
   let value = tokens[name];
   for (let depth = 0; value && depth < 8; depth++) {
     const ref = value.match(/^var\(--([\w-]+)\)$/);
     if (!ref) break;
     value = tokens[ref[1]];
   }
-  return value ? parseColor(value) : null;
-}
-
-export function mustColor(tokens: Record<string, string>, name: string): Rgba {
-  const parsed = color(tokens, name);
+  const parsed = value ? parseColor(value) : null;
   if (!parsed) throw new Error(`--${name} is not a literal color (${tokens[name]})`);
   return parsed;
 }
 
-export function parseColor(value: string): Rgba | null {
+function parseColor(value: string): Rgba | null {
   const hex = value.match(/^#([0-9a-f]{6})$/i);
   if (hex) {
     const n = parseInt(hex[1], 16);
     return { r: n >> 16, g: (n >> 8) & 255, b: n & 255, a: 1 };
   }
-  const rgba = value.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)$/);
+  const rgba = value.match(
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)$/
+  );
   if (rgba) {
     const [r, g, b] = [rgba[1], rgba[2], rgba[3]].map(Number);
     return { r, g, b, a: rgba[4] === undefined ? 1 : Number(rgba[4]) };
