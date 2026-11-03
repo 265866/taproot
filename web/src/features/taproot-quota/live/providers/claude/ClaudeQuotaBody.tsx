@@ -181,7 +181,7 @@ export function ClaudeQuotaBody({
             <div
               key={window.id}
               className={classes.quotaRow}
-              title={soon ? t('quota_management.soonest_row_hint') : undefined}
+              title={soon ? t('taproot_quota.soonest_row_hint') : undefined}
             >
               <div className={classes.quotaRowHeader}>
                 <span className={classes.quotaModel}>{windowLabel}</span>

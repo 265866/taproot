@@ -186,7 +186,7 @@ export function XaiQuotaBody({ quota, classes }: QuotaBodyProps<XaiQuotaState>) 
       {hasWeeklyData && (
         <div
           className={classes.quotaRow}
-          title={weeklySoon ? t('quota_management.soonest_row_hint') : undefined}
+          title={weeklySoon ? t('taproot_quota.soonest_row_hint') : undefined}
         >
           <div className={classes.quotaRowHeader}>
             <span className={classes.quotaModel}>{t('xai_quota.weekly_limit')}</span>

@@ -1,7 +1,7 @@
 /** Hash-route paths shared by the route table, the sidebar, and in-page links. */
 export const ROUTES = {
   dashboard: '/',
-  quota: '/taproot-quota',
+  quota: '/quota',
   usage: '/usage',
   requestLogs: '/request-logs',
   authFiles: '/auth-files',
@@ -13,6 +13,5 @@ export const ROUTES = {
   backups: '/backups',
   settings: '/settings',
   system: '/system',
-  legacyQuota: '/quota',
   legacyLogs: '/logs',
 } as const;

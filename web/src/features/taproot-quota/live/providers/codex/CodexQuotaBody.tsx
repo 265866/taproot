@@ -143,7 +143,7 @@ export function CodexQuotaBody({ quota, classes }: QuotaBodyProps<CodexQuotaStat
                     ? `${classes.codexResetCreditRow} ${classes.codexResetCreditRowSoon}`
                     : classes.codexResetCreditRow
                 }
-                title={soon ? t('quota_management.soonest_row_hint') : undefined}
+                title={soon ? t('taproot_quota.soonest_row_hint') : undefined}
               >
                 <span className={classes.codexResetCreditLabel}>
                   {t('codex_quota.reset_credit_number', { index: index + 1 })}
@@ -184,7 +184,7 @@ export function CodexQuotaBody({ quota, classes }: QuotaBodyProps<CodexQuotaStat
             <div
               key={window.id}
               className={classes.quotaRow}
-              title={soon ? t('quota_management.soonest_row_hint') : undefined}
+              title={soon ? t('taproot_quota.soonest_row_hint') : undefined}
             >
               <div className={classes.quotaRowHeader}>
                 <span className={classes.quotaModel}>{windowLabel}</span>

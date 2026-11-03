@@ -7,10 +7,12 @@ import i18n from '@/i18n';
 import { normalizeClaudeUsageSnapshot } from '@/services/api/claudeUsage';
 import { apiCallApi, getApiCallErrorMessage, type ApiCallResult } from '@/services/api/apiCall';
 import { apiClient } from '@/services/api/client';
-import { CLAUDE_CONFIG, hasClaudeUsageData } from '@/features/taproot-quota/live/providers/claude/data';
+import {
+  CLAUDE_CONFIG,
+  hasClaudeUsageData,
+} from '@/features/taproot-quota/live/providers/claude/data';
 import { ClaudeQuotaBody } from '@/features/taproot-quota/live/providers/claude/ClaudeQuotaBody';
-import { buildTimelineLane } from '@/features/quota/quotaTimelineModel';
-import { nextRecoveryMs } from '@/features/taproot-quota/live/resetSchedule';
+import { collectQuotaRowInstants } from '@/features/taproot-quota/live/resetSchedule';
 import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
 import {
   captureQuotaCacheGeneration,
@@ -26,6 +28,14 @@ import {
 import { getQuotaCacheKey } from '@/utils/quota/identity';
 import type { ClaudeQuotaState } from '@/types';
 import fixture from './fixtures/claude-oauth-usage.json';
+
+/** The soonest reset still ahead of `now` across a card's rows, or null. */
+const nextRecoveryMs = (quota: unknown, now: number): number | null => {
+  const ahead = collectQuotaRowInstants('claude', quota)
+    .map((instant) => instant.atMs)
+    .filter((at) => at > now);
+  return ahead.length > 0 ? Math.min(...ahead) : null;
+};
 
 const translations = i18n.cloneInstance({ lng: 'en' });
 const observedAt = '2026-10-10T00:00:00Z';
@@ -225,7 +235,7 @@ describe('Claude quota usage reads', () => {
       await CLAUDE_CONFIG.fetchQuota(file, translations.t)
     );
     expect(state.windows.map((window) => window.id)).not.toContain('cloud-session-credits');
-    expect(nextRecoveryMs('claude', state, Date.parse('2026-10-31T00:00:00Z'))).toBe(
+    expect(nextRecoveryMs(state, Date.parse('2026-10-31T00:00:00Z'))).toBe(
       Date.parse('2026-11-01T00:00:00Z')
     );
   });
@@ -347,7 +357,7 @@ describe('Claude quota usage reads', () => {
     }
   );
 
-  test('stores raw API-call data once for cards, page counters, recovery sorting, and timeline', async () => {
+  test('stores raw API-call data once for cards and reset instants', async () => {
     const post = spyOn(apiClient, 'post').mockImplementation(async (_path, request) => ({
       status_code: 200,
       header: {},
@@ -371,18 +381,9 @@ describe('Claude quota usage reads', () => {
           (entry) => entry.status === 'success'
         )
       ).toHaveLength(1);
-      expect(nextRecoveryMs('claude', stored, Date.parse(observedAt))).toBe(
+      expect(nextRecoveryMs(stored, Date.parse(observedAt))).toBe(
         Date.parse('2026-10-15T09:00:00Z')
       );
-      expect(
-        buildTimelineLane({
-          provider: 'claude',
-          name: file.name,
-          displayName: file.name,
-          quota: stored,
-          maxPeriodHours: 14 * 24,
-        }).anchorMs
-      ).toBe(Date.parse('2026-10-15T09:00:00Z'));
       expect(post).toHaveBeenCalledTimes(2);
       store.setClaudeQuota((previous) => previous);
       expect(CLAUDE_CONFIG.storeSelector(useQuotaStore.getState())[file.name]).toBe(state);

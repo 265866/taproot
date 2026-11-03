@@ -60,7 +60,7 @@ export function KimiQuotaBody({ quota, classes }: QuotaBodyProps<KimiQuotaState>
           <div
             key={row.id}
             className={classes.quotaRow}
-            title={soon ? t('quota_management.soonest_row_hint') : undefined}
+            title={soon ? t('taproot_quota.soonest_row_hint') : undefined}
           >
             <div className={classes.quotaRowHeader}>
               <span className={classes.quotaModel}>{rowLabel}</span>

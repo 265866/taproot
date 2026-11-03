@@ -209,7 +209,7 @@ export function AntigravityQuotaBody({ quota, classes }: QuotaBodyProps<Antigrav
                               ? `${classes.quotaReset} ${classes.quotaResetRelativeSoon}`
                               : classes.quotaReset
                           }
-                          title={soon ? t('quota_management.soonest_row_hint') : undefined}
+                          title={soon ? t('taproot_quota.soonest_row_hint') : undefined}
                         >
                           {resetLabel}
                         </span>

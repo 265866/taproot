@@ -4,7 +4,6 @@ import { AuthFilesPage } from '@/features/authFiles/AuthFilesPage';
 import { AuthFilesOAuthExcludedEditPage } from '@/pages/AuthFilesOAuthExcludedEditPage';
 import { AuthFilesOAuthModelAliasEditPage } from '@/pages/AuthFilesOAuthModelAliasEditPage';
 import { OAuthPage } from '@/features/oauth/OAuthPage';
-import { QuotaPage } from '@/features/quota/QuotaPage';
 import { RoutingPage } from '@/features/routing/RoutingPage';
 import { PluginResourcePage } from '@/features/plugins/PluginResourcePage';
 import { PluginsPage } from '@/features/plugins/PluginsPage';
@@ -48,7 +47,6 @@ const createMainRoutes = (supportsPlugin: boolean) => [
   { path: ROUTES.settings, element: <TaprootSettingsPage /> },
   { path: ROUTES.system, element: <SystemPage /> },
   // Upstream pages a later unit replaces; reachable by URL and from their placeholders.
-  { path: ROUTES.legacyQuota, element: <QuotaPage /> },
   { path: ROUTES.legacyLogs, element: <LogsPage /> },
   { path: '*', element: <Navigate to={ROUTES.dashboard} replace /> },
 ];

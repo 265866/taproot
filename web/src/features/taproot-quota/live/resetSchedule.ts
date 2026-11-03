@@ -8,14 +8,6 @@
  *
  * Pure and React-free: `nowMs` is passed in, the quota state is read
  * structurally, and nothing here imports the store.
- *
- * Related but deliberately separate from `buildTimelineLane` in
- * quotaTimelineModel.ts. That reads the same five shapes to pick *one* window
- * per credential — the longest that fits the visible span, because a fortnight
- * drawn from 5-hour windows is 67 unreadable slivers. This wants *every*
- * instant and the *soonest* of them. Same inputs, opposite selection rules;
- * merging them would mean one function with a mode flag and two sets of pinned
- * tests fighting each other.
  */
 
 import { parseIsoToMs } from '@/utils/quota';
@@ -221,21 +213,4 @@ export function pickUrgentRowId(
     instants.filter((instant) => instant.atMs - nowMs > 0 && instant.atMs - nowMs < HOUR_MS),
     nowMs
   );
-}
-
-/**
- * Soonest upcoming recovery instant for a whole credential — the sort key for
- * "soonest recovery first". Null when nothing is loaded or nothing is pending.
- */
-export function nextRecoveryMs(
-  provider: QuotaProviderType,
-  quota: unknown,
-  nowMs: number
-): number | null {
-  let best: number | null = null;
-  for (const instant of collectQuotaRowInstants(provider, quota)) {
-    if (instant.atMs <= nowMs) continue;
-    if (best === null || instant.atMs < best) best = instant.atMs;
-  }
-  return best;
 }

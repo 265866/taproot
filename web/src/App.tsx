@@ -16,26 +16,10 @@ function RootShell() {
   );
 }
 
-// DEV-only design previews: statically false in production builds, so the
-// branch and its dynamic import are dropped from the single-file bundle.
-const devPreviewRoutes = import.meta.env.DEV
-  ? [
-      {
-        path: '/__preview/quota-tiers',
-        HydrateFallback: () => null,
-        lazy: async () => {
-          const { QuotaTierPreview } = await import('@/features/quota/preview/QuotaTierPreview');
-          return { Component: QuotaTierPreview };
-        },
-      },
-    ]
-  : [];
-
 const router = createHashRouter([
   {
     element: <RootShell />,
     children: [
-      ...devPreviewRoutes,
       {
         path: '/*',
         element: (

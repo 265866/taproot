@@ -1,7 +1,7 @@
 @use '../../../../styles/mixins' as *;
 
 /* ============================================================
- * 额度卡片 body 的全页外衣（类型化契约见 features/quota/types.ts）。
+ * 额度卡片 body 的全页外衣（类型化契约见 features/taproot-quota/live/types.ts）。
  *
  * 两段构成：
  * 1. 额度行 / 水位条 / Antigravity 分组 —— mono 遥测风，与紧凑外衣同族；
