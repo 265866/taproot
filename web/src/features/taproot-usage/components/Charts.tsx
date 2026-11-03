@@ -51,7 +51,7 @@ const CHART_MARGIN = { top: 6, right: 6, bottom: 0, left: 0 };
  * Past this many buckets a stacked area replaces bars: hourly 7-day views have 168 buckets, and
  * a rect per bucket per series made range switches stall the main thread for hundreds of ms.
  */
-export const MAX_BAR_BUCKETS = 48;
+const MAX_BAR_BUCKETS = 48;
 
 function useAnimate(): boolean {
   return !useMediaQuery('(prefers-reduced-motion: reduce)');

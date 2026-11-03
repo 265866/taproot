@@ -8,7 +8,7 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
-export const PRESET_SPAN_MS: Record<Exclude<RangePreset, 'custom'>, number> = {
+const PRESET_SPAN_MS: Record<Exclude<RangePreset, 'custom'>, number> = {
   '24h': DAY_MS,
   '7d': 7 * DAY_MS,
   '30d': 30 * DAY_MS,
@@ -22,11 +22,6 @@ export interface TimeWindow {
 /** Hourly buckets up to a week, daily beyond: 24 to 168 points, or one point per day. */
 export function chooseBucket(window: TimeWindow): UsageBucket {
   return window.toMs - window.fromMs <= 7 * DAY_MS ? '1h' : '1d';
-}
-
-export function bucketMs(bucket: UsageBucket): number {
-  if (bucket === '5m') return 5 * MINUTE_MS;
-  return bucket === '1h' ? HOUR_MS : DAY_MS;
 }
 
 /**
