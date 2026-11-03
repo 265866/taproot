@@ -444,10 +444,25 @@ export function IconSidebarDashboard({ size = 20, ...props }: IconProps) {
   );
 }
 
-export function IconSidebarQuickStart({ size = 20, ...props }: IconProps) {
+/** Lucide "chart-column". */
+export function IconSidebarUsage({ size = 20, ...props }: IconProps) {
   return (
     <svg {...baseSvgProps} width={size} height={size} {...props}>
-      <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+      <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+      <path d="M18 17V9" />
+      <path d="M13 17V5" />
+      <path d="M8 17v-3" />
+    </svg>
+  );
+}
+
+/** Lucide "archive". */
+export function IconSidebarBackups({ size = 20, ...props }: IconProps) {
+  return (
+    <svg {...baseSvgProps} width={size} height={size} {...props}>
+      <rect width="20" height="5" x="2" y="3" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="M10 12h4" />
     </svg>
   );
 }
@@ -467,8 +482,6 @@ export function IconSidebarStore({ size = 20, ...props }: IconProps) {
     </svg>
   );
 }
-
-export const IconSidebarProviders = IconNetwork;
 
 export function IconSidebarAuthFiles({ size = 20, ...props }: IconProps) {
   return (
@@ -499,6 +512,8 @@ export function IconSidebarQuota({ size = 20, ...props }: IconProps) {
 }
 
 export const IconSidebarLogs = IconScrollText;
+
+export const IconSidebarSettings = IconSettings;
 
 export function IconSidebarSystem({ size = 20, ...props }: IconProps) {
   return (
