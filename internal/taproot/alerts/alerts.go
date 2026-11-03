@@ -283,16 +283,11 @@ func (s *Service) snapshot(now time.Time, accounts []Account) Snapshot {
 	return snap
 }
 
-// accountsFrom keeps credentials that serve traffic, plus those upstream
-// disabled because their refresh grant was rejected.
+// accountsFrom keeps the accounts in scope, with their login state.
 func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
 	out := make([]Account, 0, len(auths))
 	for _, a := range auths {
-		if a == nil {
-			continue
-		}
-		disabledBroken := coreauth.HasDisabledInvalidGrantFailure(a)
-		if (a.Disabled || a.Status == coreauth.StatusDisabled) && !disabledBroken {
+		if !inScope(a) {
 			continue
 		}
 		idx := a.EnsureIndex()
@@ -300,13 +295,13 @@ func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
 			continue
 		}
 		rejected := coreauth.HasUnauthorizedAuthFailure(a)
-		broken := disabledBroken || a.RequiresSignIn || rejected
+		broken := a.RequiresSignIn || rejected
 		acct := Account{AuthIndex: idx, Provider: strings.ToLower(strings.TrimSpace(a.Provider)), Label: safeLabel(authLabel(a)), LoginBroken: broken}
 		if broken {
 			acct.LoginReason = loginReason(a, now)
 			// Upstream keeps serving a sign-in-required account while its access
 			// token is valid (canServeWithAccessToken in conductor_lifecycle.go).
-			if !disabledBroken && !rejected && a.HasValidAccessToken(now) {
+			if !rejected && a.HasValidAccessToken(now) {
 				acct.StillServes = true
 				if exp, ok := a.AccessTokenExpirationTime(); ok {
 					acct.ServesUntil = exp
@@ -316,6 +311,13 @@ func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
 		out = append(out, acct)
 	}
 	return out
+}
+
+// inScope reports whether alerts watch a. Upstream sets Disabled and
+// StatusDisabled only from the auth file's "disabled" flag, which the user
+// sets, so a disabled account is out of scope whatever its last error.
+func inScope(a *coreauth.Auth) bool {
+	return a != nil && !a.Disabled && a.Status != coreauth.StatusDisabled
 }
 
 func authLabel(a *coreauth.Auth) string {
@@ -363,7 +365,7 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 	var due []*coreauth.Auth
 	present := map[string]bool{}
 	for _, a := range auths {
-		if a == nil || a.Disabled || !strings.EqualFold(strings.TrimSpace(a.Provider), "claude") || a.RequiresSignIn {
+		if !inScope(a) || !strings.EqualFold(strings.TrimSpace(a.Provider), "claude") || a.RequiresSignIn {
 			continue
 		}
 		idx := a.EnsureIndex()

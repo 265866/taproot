@@ -253,6 +253,42 @@ func TestRemovingOrDisablingAnAccountDropsItsAlertsSilently(t *testing.T) {
 	}
 }
 
+// TestUserDisabledAccountsAreOutOfScope: upstream never disables an account
+// itself, so a disabled one is the user's choice whatever its last error.
+// It gets no login or pool alert and no grant read.
+func TestUserDisabledAccountsAreOutOfScope(t *testing.T) {
+	var mu sync.Mutex
+	reads := 0
+	grants := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reads++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"cedar_ember":{"eligible":true,"grants":[{"id":"g","resets_left":1,"ends_at":"` + t0.Add(time.Hour).Format(time.RFC3339) + `"}]}}`))
+	}))
+	defer grants.Close()
+	statusOnly := claudeAuth("a", "status-disabled")
+	statusOnly.Status = coreauth.StatusDisabled
+	afterGrant := claudeAuth("b", "disabled-after-invalid-grant")
+	afterGrant.Disabled, afterGrant.Status = true, coreauth.StatusDisabled
+	afterGrant.LastError = &coreauth.Error{Code: "invalid_grant", Message: "invalid_grant: refresh token revoked", HTTPStatus: http.StatusBadRequest}
+	if !coreauth.HasDisabledInvalidGrantFailure(afterGrant) {
+		t.Fatal("fixture should look like a disabled invalid_grant account to upstream")
+	}
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, statusOnly, afterGrant)
+	h.svc.grants.url = grants.URL
+
+	h.step(t, 0)
+	h.step(t, loginDelay)
+	h.step(t, grantInterval)
+	h.titles(t, 0)
+	mu.Lock()
+	defer mu.Unlock()
+	if reads != 0 {
+		t.Fatalf("grant reads = %d, want none for disabled accounts", reads)
+	}
+}
+
 // TestPoolWaitsOutTheLoginDelay covers a lone account that upstream marks
 // with a terminal 401 while it retries: a short failure posts nothing.
 func TestPoolWaitsOutTheLoginDelay(t *testing.T) {

@@ -37,7 +37,7 @@ type Message struct {
 }
 
 // Account is a credential as alerts see it: present in the auth manager and
-// either enabled or disabled by upstream for a broken login.
+// not disabled by the user.
 type Account struct {
 	AuthIndex   string
 	Provider    string
