@@ -3,8 +3,8 @@ import { en } from '@/i18n/resources';
 import { readFileSync } from 'node:fs';
 
 const readSource = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
-const page = readSource('src/features/logs/LogsPage.tsx');
-const styles = readSource('src/features/logs/LogsPage.module.scss');
+const page = readSource('src/features/taproot-logs/appLogs/AppLogsPanel.tsx');
+const styles = readSource('src/features/taproot-logs/appLogs/AppLogsPanel.module.scss');
 const layout = readSource('src/styles/layout.scss');
 
 // Structural guards complement the browser viewport/interaction checks. They do not
@@ -54,9 +54,9 @@ describe('log workspace layout contract', () => {
     expect(styles).toContain('width: max-content');
     expect(styles).toContain('flex-wrap: nowrap');
     expect(styles).toContain('.logRow:focus-within .copyButton');
-    expect(page).toContain("aria-label={t('logs.copy_line')}");
+    expect(page).toContain("aria-label={t('taproot_logs.app.copy_line')}");
     expect(page).toContain('tabIndex={0}');
-    expect(page).toContain("aria-label={t('logs.log_content')}");
+    expect(page).toContain("aria-label={t('taproot_logs.app.log_content')}");
     expect(page).toContain('aria-pressed={autoRefresh}');
   });
 
@@ -70,11 +70,11 @@ describe('log workspace layout contract', () => {
   });
 
   test('routine buffer eviction does not add a persistent warning banner', () => {
-    expect(page).not.toContain("t('logs.buffer_evicted')");
+    expect(page).not.toContain("t('taproot_logs.app.buffer_evicted')");
     expect(page).not.toContain('logBuffer.evicted > 0');
     // A lost reading position and a backend cursor reset remain actionable notices.
-    expect(page).toContain("t('logs.history_evicted')");
-    expect(page).toContain("t('logs.cursor_reset_notice')");
+    expect(page).toContain("t('taproot_logs.app.history_evicted')");
+    expect(page).toContain("t('taproot_logs.app.cursor_reset_notice')");
   });
 
   test('toolbar controls share one sizing rule rather than mixing small variants', () => {
@@ -90,9 +90,9 @@ describe('log workspace layout contract', () => {
 
   test('all supported locales describe both filtering and display settings', () => {
     const messages = en;
-    expect(messages.logs.filter_panel_title).toBeTruthy();
-    expect(messages.logs.show_raw_logs).toBeTruthy();
-    expect(messages.logs.wrap_lines).toBeTruthy();
-    expect(messages.logs.hide_management_logs).toBeTruthy();
+    expect(messages.taproot_logs.app.filter_panel_title).toBeTruthy();
+    expect(messages.taproot_logs.app.show_raw_logs).toBeTruthy();
+    expect(messages.taproot_logs.app.wrap_lines).toBeTruthy();
+    expect(messages.taproot_logs.app.hide_management_logs).toBeTruthy();
   });
 });

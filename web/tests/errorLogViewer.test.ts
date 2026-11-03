@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import {
   errorLogViewerReducer,
   type ErrorLogViewerState,
-} from '../src/features/logs/model/errorLogViewer';
-import { createLogRequestGuard } from '../src/features/logs/model/logRequests';
+} from '../src/features/taproot-logs/appLogs/model/errorLogViewer';
+import { createLogRequestGuard } from '../src/features/taproot-logs/appLogs/model/logRequests';
 
 const item = { name: 'example-error.log', size: 32, modified: 1700000000 };
 const closed: ErrorLogViewerState = { status: 'closed' };
@@ -93,7 +93,7 @@ describe('error log viewer state machine', () => {
 
 test('viewer UI derives controls and content from a single discriminated state', () => {
   const source = readFileSync(
-    new URL('../src/features/logs/LogsPage.tsx', import.meta.url),
+    new URL('../src/features/taproot-logs/appLogs/AppLogsPanel.tsx', import.meta.url),
     'utf8'
   );
   expect(source).toContain('useReducer(errorLogViewerReducer');

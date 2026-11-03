@@ -14,5 +14,4 @@ export const ROUTES = {
   settings: '/settings',
   system: '/system',
   legacyQuota: '/quota',
-  legacyLogs: '/logs',
 } as const;

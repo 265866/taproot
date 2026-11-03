@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { applyLogPage, emptyLogBuffer } from '../src/features/logs/model/logBuffer';
+import { applyLogPage, emptyLogBuffer } from '../src/features/taproot-logs/appLogs/model/logBuffer';
 import {
   createLogParserCache,
   filterLogEntries,
   searchLogEntries,
-} from '../src/features/logs/model/logSelectors';
+} from '../src/features/taproot-logs/appLogs/model/logSelectors';
 
 const access = (path: string, status = 200) =>
   `[2026-06-15 10:00:00] [abcd1234] [info ] [gin_logger.go:1] ${status} | 1ms | ::1 | POST "${path}"`;

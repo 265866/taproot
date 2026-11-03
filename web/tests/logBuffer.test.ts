@@ -5,7 +5,7 @@ import {
   emptyLogBuffer,
   shouldCatchUp,
   LOG_PAGE_SIZE,
-} from '../src/features/logs/model/logBuffer';
+} from '../src/features/taproot-logs/appLogs/model/logBuffer';
 
 describe('cursor log buffer', () => {
   test('preserves identical lines and stable IDs across pages', () => {

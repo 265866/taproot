@@ -1,0 +1,136 @@
+.tree {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  overflow-x: auto;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--bg-tertiary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 0;
+  }
+}
+
+.chevron {
+  flex: none;
+  width: 14px;
+  align-self: center;
+  color: var(--text-tertiary);
+  transition: transform var(--dur-hover, 120ms) var(--ease-out-strong, ease-out);
+}
+
+.chevronClosed {
+  transform: rotate(-90deg);
+}
+
+.spacer {
+  flex: none;
+  width: 14px;
+}
+
+.children {
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-color);
+}
+
+.key {
+  color: var(--text-secondary);
+}
+
+.colon,
+.mark {
+  color: var(--text-tertiary);
+}
+
+.close {
+  padding-left: 14px;
+}
+
+.summary {
+  margin: 0 6px;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.string {
+  color: var(--provider-claude);
+}
+
+.number {
+  color: var(--provider-codex);
+}
+
+.boolean,
+.null {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.object,
+.array {
+  color: inherit;
+}
+
+.more,
+.inlineMore {
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+}
+
+.more {
+  margin: 4px 0 4px 14px;
+  padding: 2px 10px;
+}
+
+.inlineMore {
+  margin-left: 8px;
+  padding: 0 8px;
+  font-family: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

@@ -143,7 +143,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
         setError('');
         return;
       }
-      setError(getErrorMessage(err) || t('logs.load_error'));
+      setError(getErrorMessage(err) || t('taproot_logs.app.load_error'));
       nextReadAtRef.current = Date.now() + retryDelayRef.current;
       retryDelayRef.current = Math.min(retryDelayRef.current * 2, 60000);
     } finally {
@@ -156,17 +156,17 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
 
   const clearLogs = async () => {
     if (cpaNeedsFileLogging) {
-      showNotification(t('logs.cpa_file_logging_required'), 'warning');
+      showNotification(t('taproot_logs.app.cpa_file_logging_required'), 'warning');
       return;
     }
     if (fileLoggingRequired) {
-      showNotification(t('logs.file_logging_required'), 'warning');
+      showNotification(t('taproot_logs.app.file_logging_required'), 'warning');
       return;
     }
     const session = requests.session.capture();
     showConfirmation({
-      title: t('logs.clear_confirm_title', { defaultValue: 'Clear Logs' }),
-      message: t('logs.clear_application_confirm'),
+      title: t('taproot_logs.app.clear_confirm_title', { defaultValue: 'Clear Logs' }),
+      message: t('taproot_logs.app.clear_application_confirm'),
       variant: 'danger',
       confirmText: t('common.confirm'),
       onConfirm: async () => {
@@ -184,7 +184,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
           if (!requests.logs.isCurrent(request)) return;
           resetLogPosition();
           setFileLoggingRequired(false);
-          showNotification(t('logs.clear_success'), 'success');
+          showNotification(t('taproot_logs.app.clear_success'), 'success');
         } catch (err: unknown) {
           if (!requests.logs.isCurrent(request)) return;
           clearFailed = true;

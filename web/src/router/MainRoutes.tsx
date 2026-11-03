@@ -10,7 +10,6 @@ import { PluginResourcePage } from '@/features/plugins/PluginResourcePage';
 import { PluginsPage } from '@/features/plugins/PluginsPage';
 import { PluginStorePage } from '@/features/plugins/PluginStorePage';
 import { ConfigPage } from '@/features/config/ConfigPage';
-import { LogsPage } from '@/features/logs/LogsPage';
 import { SystemPage } from '@/pages/SystemPage';
 import { TaprootQuotaPage } from '@/features/taproot-quota/TaprootQuotaPage';
 import { TaprootUsagePage } from '@/features/taproot-usage/TaprootUsagePage';
@@ -49,7 +48,7 @@ const createMainRoutes = (supportsPlugin: boolean) => [
   { path: ROUTES.system, element: <SystemPage /> },
   // Upstream pages a later unit replaces; reachable by URL and from their placeholders.
   { path: ROUTES.legacyQuota, element: <QuotaPage /> },
-  { path: ROUTES.legacyLogs, element: <LogsPage /> },
+  { path: '/logs', element: <Navigate to={`${ROUTES.requestLogs}?tab=app`} replace /> },
   { path: '*', element: <Navigate to={ROUTES.dashboard} replace /> },
 ];
 

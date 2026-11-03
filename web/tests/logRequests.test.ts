@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   createLogRequestGuard,
   createLogRequestQueue,
-} from '../src/features/logs/model/logRequests';
+} from '../src/features/taproot-logs/appLogs/model/logRequests';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -169,9 +169,9 @@ describe('log request ownership', () => {
 });
 
 describe('logs controller lifecycle wiring', () => {
-  const page = readFileSync(new URL('../src/features/logs/LogsPage.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../src/features/taproot-logs/appLogs/AppLogsPanel.tsx', import.meta.url), 'utf8');
   const source = readFileSync(
-    new URL('../src/features/logs/hooks/useLogStream.ts', import.meta.url),
+    new URL('../src/features/taproot-logs/appLogs/hooks/useLogStream.ts', import.meta.url),
     'utf8'
   );
 

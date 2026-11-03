@@ -326,7 +326,10 @@ export function MainLayout() {
   const headerRef = useRef<HTMLElement | null>(null);
 
   const brandName = t('title.main');
-  const isLogsPage = location.pathname.startsWith(ROUTES.legacyLogs);
+  // The app log tail sizes itself to the viewport, so its tab gets the fixed-height layout.
+  const isLogsPage =
+    location.pathname === ROUTES.requestLogs &&
+    new URLSearchParams(location.search).get('tab') === 'app';
   const isPluginResourcePage = location.pathname.startsWith('/plugin-pages');
   const showSidebarLabels = !sidebarCollapsed || sidebarOpen;
 
