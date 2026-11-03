@@ -33,7 +33,9 @@ type RestoreResult struct {
 // Restore verifies the backup, saves the current state as a pre-restore
 // backup, replaces the config and auth files, and stages the database
 // snapshot for ApplyPendingRestore on the next start. A backup that fails
-// verification changes nothing.
+// verification changes nothing. The restore marker is written last, so a
+// failure while replacing files leaves the database alone; the files are then
+// put back from the pre-restore backup.
 func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -47,11 +49,8 @@ func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error)
 		return RestoreResult{}, fmt.Errorf("resolve database path: %w", err)
 	}
 	dbTmp := dbPath + restoreTmpSuffix
-	staged := false
+	dbStaged := dbPath + restorePendingSuffix
 	defer func() {
-		if staged {
-			return
-		}
 		if errRemove := os.Remove(dbTmp); errRemove != nil && !errors.Is(errRemove, os.ErrNotExist) {
 			log.WithError(errRemove).Warn("taproot backups: remove restore staging")
 		}
@@ -61,37 +60,77 @@ func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error)
 	if err != nil {
 		return RestoreResult{}, err
 	}
+	// Pruning waits until the restore is done and spares its source, which
+	// may be the oldest archive.
 	pre, err := b.createLocked(ctx, ReasonPreRestore)
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("pre-restore backup: %w", err)
 	}
-
-	if err := os.Rename(dbTmp, dbPath+restorePendingSuffix); err != nil {
-		return RestoreResult{}, fmt.Errorf("stage database: %w", err)
+	err = b.applyFiles(c.files)
+	if err == nil {
+		err = b.stageDatabase(dbTmp, dbStaged, dbPath, id)
 	}
-	staged = true
-	marker, err := json.Marshal(pendingRestore{DB: dbPath, BackupID: id})
 	if err != nil {
-		return RestoreResult{}, fmt.Errorf("encode restore marker: %w", err)
-	}
-	if err := writeFileAtomic(filepath.Join(b.paths.DataDir, pendingMarkerName), marker); err != nil {
-		return RestoreResult{}, err
-	}
-
-	for name, dest := range map[string]string{configEntry: b.paths.ConfigFile, taprootEntry: b.paths.TaprootFile} {
-		data, ok := c.files[name]
-		if !ok || dest == "" {
-			continue
+		if errRollback := b.rollbackFiles(pre.ID); errRollback != nil {
+			return RestoreResult{}, fmt.Errorf("%w; putting files back from %s also failed: %v", err, pre.ID, errRollback)
 		}
-		if err := writeFileAtomic(dest, data); err != nil {
-			return RestoreResult{}, err
-		}
+		return RestoreResult{}, fmt.Errorf("%w; files put back from %s", err, pre.ID)
 	}
-	if err := b.restoreAuth(c.files); err != nil {
-		return RestoreResult{}, err
-	}
+	b.prune(id)
 	log.WithFields(log.Fields{"id": id, "preRestore": pre.ID}).Info("taproot backups: restored; database swaps in on next start")
 	return RestoreResult{PreRestoreBackupID: pre.ID}, nil
+}
+
+// stageDatabase moves the extracted snapshot to its pending name and then
+// writes the marker that makes ApplyPendingRestore swap it in.
+func (b *Backups) stageDatabase(dbTmp, dbStaged, dbPath, id string) error {
+	if err := os.Rename(dbTmp, dbStaged); err != nil {
+		return fmt.Errorf("stage database: %w", err)
+	}
+	marker, err := json.Marshal(pendingRestore{DB: dbPath, BackupID: id})
+	if err == nil {
+		err = writeFileAtomic(filepath.Join(b.paths.DataDir, pendingMarkerName), marker)
+	}
+	if err != nil {
+		if errRemove := os.Remove(dbStaged); errRemove != nil {
+			log.WithError(errRemove).Warn("taproot backups: remove staged database")
+		}
+		return fmt.Errorf("write restore marker: %w", err)
+	}
+	return nil
+}
+
+// applyFiles writes the config files and makes the auth dir match files.
+func (b *Backups) applyFiles(files map[string][]byte) error {
+	for _, f := range []struct{ name, dest string }{{configEntry, b.paths.ConfigFile}, {taprootEntry, b.paths.TaprootFile}} {
+		data, ok := files[f.name]
+		if !ok || f.dest == "" {
+			continue
+		}
+		if err := writeFileAtomic(f.dest, data); err != nil {
+			return err
+		}
+	}
+	return b.restoreAuth(files)
+}
+
+// rollbackFiles puts back the config and auth files saved in a pre-restore
+// backup after a restore failed partway.
+func (b *Backups) rollbackFiles(preID string) error {
+	staging, err := os.MkdirTemp(b.dir, tempPrefix)
+	if err != nil {
+		return fmt.Errorf("create rollback staging: %w", err)
+	}
+	defer func() {
+		if errRemove := os.RemoveAll(staging); errRemove != nil {
+			log.WithError(errRemove).Warn("taproot backups: remove rollback staging")
+		}
+	}()
+	c, err := extractVerified(filepath.Join(b.dir, preID+archiveExt), filepath.Join(staging, dbEntry))
+	if err != nil {
+		return err
+	}
+	return b.applyFiles(c.files)
 }
 
 // restoreAuth makes the auth dir hold exactly the backup's auth files. Files
