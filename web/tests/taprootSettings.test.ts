@@ -83,6 +83,25 @@ describe('admin devices', () => {
     expect(adminNodesUpdate([], onLaptop)).toMatchObject({ ok: false, error: 'node_lockout' });
   });
 
+  test('accepts stable-ID pins, keeps their case, and counts them for the own device', () => {
+    const pinned: TaprootMe = { ...onLaptop, nodeId: 'nAbC123CNTRL' };
+    expect(adminNodesUpdate([' ID:nAbC123CNTRL '], loopback)).toEqual({
+      ok: true,
+      update: { adminNodes: ['id:nAbC123CNTRL'] },
+    });
+    expect(adminNodesUpdate(['id:nAbC123CNTRL'], pinned).ok).toBe(true);
+    // Another device's ID, or this ID in the wrong case, does not keep this device.
+    expect(adminNodesUpdate(['id:nOther9CNTRL'], pinned)).toMatchObject({ error: 'node_lockout' });
+    expect(adminNodesUpdate(['id:nabc123cntrl'], pinned)).toMatchObject({ error: 'node_lockout' });
+    // Without a reported ID, an ID entry cannot be this device.
+    expect(adminNodesUpdate(['id:nAbC123CNTRL'], onLaptop)).toMatchObject({
+      error: 'node_lockout',
+    });
+    for (const bad of ['id:', 'id:a b', 'id:a/b', 'id:x@y']) {
+      expect(adminNodesUpdate([bad], loopback)).toMatchObject({ ok: false, error: 'node_format' });
+    }
+  });
+
   test('rejects names that are not MagicDNS names', () => {
     for (const bad of ['two words', 'a/b', 'host:8317', 'me@github', '-lead', 'trail-']) {
       expect(adminNodesUpdate([bad], loopback)).toEqual({

@@ -23,7 +23,7 @@
     },
     "admin_nodes": {
       "title": "Admin devices",
-      "description": "Tailnet devices that may use this dashboard and the management API, by MagicDNS name: desktop, or the full desktop.tailnet-0000.ts.net. Other devices signed in to an allowed login reach the proxy only.",
+      "description": "Tailnet devices that may use this dashboard and the management API. Pin a device by its stable ID (id:nAbC123CNTRL), or name it by MagicDNS name (desktop or desktop.tailnet-0000.ts.net). IDs are safer: after a listed device is renamed or removed, another of your devices can take its name. Other devices signed in to an allowed login reach the proxy only.",
       "disabled": "The access guard is turned off in taproot.yaml, so every caller is an admin and this list has no effect.",
       "list_label": "Admin devices",
       "empty": "No admin devices. Only local connections can manage taproot.",
@@ -31,9 +31,10 @@
       "remove": "Remove {{node}}",
       "cannot_remove_self": "You cannot remove the device you are using",
       "add_label": "Device to make an admin",
-      "add_placeholder": "device or device.tailnet.ts.net",
+      "add_placeholder": "id:nAbC123CNTRL or device name",
       "add": "Add",
       "own_hint": "You are using {{node}}, which must stay on the list.",
+      "own_hint_id": "You are using {{node}} (id:{{id}}), which must stay on the list. Add id:{{id}} to pin this device by its ID.",
       "local_hint": "You are connected locally, which is always an admin. With the list empty, no tailnet device can manage taproot."
     },
     "retention": {

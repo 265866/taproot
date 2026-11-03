@@ -30,7 +30,10 @@ export interface TaprootMe {
   login: string;
   displayName: string;
   node: string;
+  /** The node's stable ID; an admin-nodes entry "id:<nodeId>" pins this device. */
+  nodeId?: string;
   via: TaprootVia;
+  admin?: boolean;
 }
 
 export interface TaprootAccount {

@@ -43,9 +43,21 @@ export function accessUpdate(
 
 /** A MagicDNS name: `desktop` or `desktop.tailnet-0000.ts.net`. */
 const NODE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
+/** A stable node ID pin: `id:nExample1CNTRL`. IDs are case-sensitive. */
+const NODE_ID = /^id:[^\s/:@]+$/;
+const ID_PREFIX = 'id:';
 
 export function normalizeNode(node: string): string {
-  return node.trim().toLowerCase().replace(/\.$/, '');
+  const trimmed = node.trim();
+  if (trimmed.slice(0, ID_PREFIX.length).toLowerCase() === ID_PREFIX) {
+    return ID_PREFIX + trimmed.slice(ID_PREFIX.length).trim();
+  }
+  return trimmed.toLowerCase().replace(/\.$/, '');
+}
+
+/** The caller's own node ID, when they reached taproot through the tailnet. */
+export function ownNodeId(me: TaprootMe | null): string | null {
+  return me?.via === 'tailnet' && me.nodeId ? me.nodeId : null;
 }
 
 /** The caller's own device, when they reached taproot through the tailnet. */
@@ -57,7 +69,8 @@ export function ownNode(me: TaprootMe | null): string | null {
  * Whether an admin-nodes entry names a device: its full MagicDNS name, or its first label. The
  * server also requires a short entry's device to be in its own tailnet, and has the last word.
  */
-export function entryMatchesNode(entry: string, node: string): boolean {
+export function entryMatchesNode(entry: string, node: string, nodeId?: string | null): boolean {
+  if (entry.startsWith(ID_PREFIX)) return !!nodeId && entry === ID_PREFIX + nodeId;
   return entry === node || entry === node.split('.')[0];
 }
 
@@ -69,11 +82,12 @@ export function adminNodesUpdate(
   for (const raw of nodes) {
     const node = normalizeNode(raw);
     if (!node) continue;
-    if (!NODE.test(node)) return fail('node_format', raw.trim());
+    if (!NODE.test(node) && !NODE_ID.test(node)) return fail('node_format', raw.trim());
     if (!normalized.includes(node)) normalized.push(node);
   }
   const own = ownNode(me);
-  if (own && !normalized.some((entry) => entryMatchesNode(entry, own))) {
+  const ownId = ownNodeId(me);
+  if (own && !normalized.some((entry) => entryMatchesNode(entry, own, ownId))) {
     return fail('node_lockout', own);
   }
   return { ok: true, update: { adminNodes: normalized } };

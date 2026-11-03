@@ -23,6 +23,7 @@ import {
   normalizeNode,
   ownLogin,
   ownNode,
+  ownNodeId,
   retentionForm,
   retentionUpdate,
   type BackupsForm,
@@ -355,6 +356,7 @@ function AdminNodesSection({
   const [nodes, setNodes, dirty, reset] = useDraft(settings.adminNodes);
   const [adding, setAdding] = useState('');
   const own = ownNode(me);
+  const ownId = ownNodeId(me);
 
   return (
     <SectionForm
@@ -383,7 +385,7 @@ function AdminNodesSection({
         adding={adding}
         setAdding={setAdding}
         normalize={normalizeNode}
-        isOwn={(node) => own !== null && entryMatchesNode(node, own)}
+        isOwn={(node) => own !== null && entryMatchesNode(node, own, ownId)}
         disabled={!settings.enabled}
         labels={{
           list: t('taproot_settings.admin_nodes.list_label'),
@@ -398,7 +400,9 @@ function AdminNodesSection({
       />
       <p className={styles.hint}>
         {own
-          ? t('taproot_settings.admin_nodes.own_hint', { node: own })
+          ? ownId
+            ? t('taproot_settings.admin_nodes.own_hint_id', { node: own, id: ownId })
+            : t('taproot_settings.admin_nodes.own_hint', { node: own })
           : t('taproot_settings.admin_nodes.local_hint')}
       </p>
     </SectionForm>
