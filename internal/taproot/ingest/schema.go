@@ -99,5 +99,8 @@ func init() {
 	store.Register(
 		store.Migration{Module: "ingest", Version: 1, SQL: schemaV1},
 		store.Migration{Module: "ingest", Version: 2, SQL: seedPricesSQL()},
+		// removed_at marks accounts whose credential left the auth manager.
+		// The row stays so historical usage keeps its label.
+		store.Migration{Module: "ingest", Version: 3, SQL: `ALTER TABLE accounts ADD COLUMN removed_at INTEGER`},
 	)
 }

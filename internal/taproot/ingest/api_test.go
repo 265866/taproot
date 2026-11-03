@@ -294,7 +294,7 @@ func TestQuotaRoutes(t *testing.T) {
 	}
 	w := a.Windows[0]
 	if w.Window != "five_hour" || w.Utilization != 0.25 || w.PeriodSeconds != 18000 || w.Status != "allowed" ||
-		w.ResetsAt == nil || *w.ResetsAt != "2026-11-02T11:00:00Z" || w.ObservedAt != "2026-11-02T11:10:02Z" {
+		w.ResetsAt == nil || *w.ResetsAt != "2026-11-02T11:00:00Z" || w.ObservedAt != "2026-11-02T11:10:00.4Z" || !w.AccountWide {
 		t.Fatalf("window %+v", w)
 	}
 	// auth-c has usage but no quota headers: listed with no windows.

@@ -222,11 +222,7 @@ func (i *Ingest) flush(ctx context.Context) error {
 		if e.AuthIndex == "" || len(r.ResponseHeaders) == 0 {
 			continue
 		}
-		observedAt := now
-		if !r.RequestedAt.IsZero() {
-			observedAt = r.RequestedAt.Add(r.Latency)
-		}
-		for _, o := range parseQuotaHeaders(e.Provider, r.ResponseHeaders, observedAt.UTC()) {
+		for _, o := range parseQuotaHeaders(e.Provider, r.ResponseHeaders, headersObservedAt(r, now).UTC()) {
 			o.AuthIndex = e.AuthIndex
 			allObs = append(allObs, o)
 		}
@@ -254,6 +250,21 @@ func (i *Ingest) flush(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// headersObservedAt estimates when the response headers arrived. A long
+// stream's headers are as old as its first token; stamping them at stream end
+// would let them overwrite newer readings from requests that overlapped it.
+func headersObservedAt(r usage.Record, now time.Time) time.Time {
+	switch {
+	case r.RequestedAt.IsZero():
+		return now
+	case r.TTFT > 0:
+		return r.RequestedAt.Add(r.TTFT)
+	case r.Stream:
+		return r.RequestedAt
+	}
+	return r.RequestedAt.Add(r.Latency)
 }
 
 // Routes registers ingest endpoints under the taproot API group.

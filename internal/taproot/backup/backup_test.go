@@ -713,13 +713,14 @@ func TestSetScheduleAppliesAtRuntime(t *testing.T) {
 	}
 	cancel()
 
-	// A lower keep prunes at the next backup. The manual backup lands in the
-	// same second and sorts after the scheduled one.
+	// A lower keep prunes at the next backup, per reason: two manual backups
+	// leave the newer one and the scheduled one.
 	if err := f.b.SetSchedule("off", 1); err != nil {
 		t.Fatal(err)
 	}
 	f.create(t)
-	if got := f.list(t); len(got) != 1 || got[0].Reason != ReasonManual {
+	newest := f.create(t)
+	if got := f.list(t); len(got) != 2 || got[0].ID != newest.ID || got[1].Reason != ReasonScheduled {
 		t.Fatalf("after keep=1: %+v", got)
 	}
 }

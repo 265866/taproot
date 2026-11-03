@@ -77,8 +77,12 @@ var bucketSizes = map[string]time.Duration{"5m": 5 * time.Minute, "1h": time.Hou
 
 var groupByValues = map[string]bool{"model": true, "account": true, "provider": true, "session": true}
 
+// summaryBuilder keys buckets by their start. Fixed-size buckets start on
+// multiples of their size; days start at local midnight in loc, so they can be
+// 23 or 25 hours long.
 type summaryBuilder struct {
 	bucketMs int64
+	loc      *time.Location
 	groupBy  string
 	buckets  map[int64]map[string]*agg
 	total    *agg
@@ -102,8 +106,35 @@ func (s *summaryBuilder) groupKey(provider, authIndex, model, session string) st
 	return k
 }
 
+func (s *summaryBuilder) bucketStart(tsMs int64) int64 {
+	if s.loc == nil {
+		return tsMs - tsMs%s.bucketMs
+	}
+	y, m, d := time.UnixMilli(tsMs).In(s.loc).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, s.loc).UnixMilli()
+}
+
+func (s *summaryBuilder) nextBucket(start int64) int64 {
+	if s.loc == nil {
+		return start + s.bucketMs
+	}
+	y, m, d := time.UnixMilli(start).In(s.loc).Date()
+	return time.Date(y, m, d+1, 0, 0, 0, 0, s.loc).UnixMilli()
+}
+
+// hourAligned reports whether every bucket boundary in [fromMs, toMs) falls on
+// a UTC hour, which the hourly rollup needs. Zones with half-hour offsets fail.
+func (s *summaryBuilder) hourAligned(fromMs, toMs int64) bool {
+	for b := s.bucketStart(fromMs); b < toMs; b = s.nextBucket(b) {
+		if b%hourMs != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *summaryBuilder) target(tsMs int64, key string) *agg {
-	b := tsMs - tsMs%s.bucketMs
+	b := s.bucketStart(tsMs)
 	groups := s.buckets[b]
 	if groups == nil {
 		groups = map[string]*agg{}
@@ -206,9 +237,22 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 		return
 	}
 	s := &summaryBuilder{bucketMs: bucket.Milliseconds(), groupBy: groupBy, buckets: map[int64]map[string]*agg{}, total: newAgg()}
+	// tz is an IANA zone name; days run from its midnight. Shorter buckets
+	// stay on UTC boundaries.
+	if raw := strings.TrimSpace(c.Query("tz")); raw != "" {
+		loc, err := time.LoadLocation(raw)
+		if err != nil || strings.EqualFold(raw, "local") {
+			badRequest(c, "tz: want an IANA time zone such as America/Los_Angeles")
+			return
+		}
+		if bucketName == "1d" {
+			s.loc = loc
+		}
+	}
 	fromMs, toMs := ms(from), ms(to)
-	firstBucket := fromMs - fromMs%s.bucketMs
-	if (toMs-firstBucket)/s.bucketMs >= maxBucketCount {
+	firstBucket := s.bucketStart(fromMs)
+	// Days are at least 23 hours, so this bounds the count in any zone.
+	if (toMs-firstBucket)/min(s.bucketMs, 23*hourMs) >= maxBucketCount {
 		badRequest(c, "range holds more than %d %s buckets", maxBucketCount, bucketName)
 		return
 	}
@@ -217,12 +261,13 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := s.collect(ctx, i.db, fromMs, toMs, bucketName != "5m" && groupBy != "session"); err != nil {
+	useRollup := bucketName != "5m" && groupBy != "session" && s.hourAligned(fromMs, toMs)
+	if err := s.collect(ctx, i.db, fromMs, toMs, useRollup); err != nil {
 		internalError(c, err)
 		return
 	}
-	out := make([]summaryBucket, 0, (toMs-firstBucket)/s.bucketMs+1)
-	for b := firstBucket; b < toMs; b += s.bucketMs {
+	out := make([]summaryBucket, 0, (toMs-firstBucket)/s.bucketMs+2)
+	for b := firstBucket; b < toMs; b = s.nextBucket(b) {
 		groups := map[string]Totals{}
 		for k, a := range s.buckets[b] {
 			groups[k] = a.totals(pb)

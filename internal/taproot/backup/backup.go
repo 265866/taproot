@@ -23,7 +23,9 @@ import (
 type Config struct {
 	// DailyAt is the local time of the scheduled backup as HH:MM, or "off".
 	DailyAt string `yaml:"daily-at"`
-	// Keep is how many backups to retain. Zero or less means the default.
+	// Keep is how many backups to retain of each reason (scheduled, manual,
+	// pre-restore), so manual and pre-restore backups never push out
+	// scheduled ones. Zero or less means the default.
 	Keep int `yaml:"keep"`
 }
 
@@ -263,7 +265,11 @@ func nextRun(now time.Time, hour, minute int) time.Time {
 func (b *Backups) Create(ctx context.Context, reason Reason) (Entry, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.createLocked(ctx, reason)
+	entry, err := b.createLocked(ctx, reason)
+	if err == nil {
+		b.prune("")
+	}
+	return entry, err
 }
 
 func (b *Backups) createLocked(ctx context.Context, reason Reason) (Entry, error) {
@@ -308,7 +314,6 @@ func (b *Backups) createLocked(ctx context.Context, reason Reason) (Entry, error
 	if err != nil {
 		return Entry{}, fmt.Errorf("stat backup: %w", err)
 	}
-	b.prune()
 	return Entry{ID: id, CreatedAt: createdAt, Bytes: info.Size(), Reason: reason, Files: len(m.Files)}, nil
 }
 
@@ -415,20 +420,27 @@ func (b *Backups) authFiles() (map[string]string, error) {
 	return files, nil
 }
 
-func (b *Backups) prune() {
+// prune keeps the newest keep backups of each reason, so a burst of manual
+// backups or restores cannot evict the scheduled history. protect is never
+// removed; a restore passes the archive it restored.
+func (b *Backups) prune(protect string) {
 	entries, err := b.List()
 	if err != nil {
 		log.WithError(err).Warn("taproot backups: list for retention")
 		return
 	}
 	_, keep := b.Schedule()
-	for i := keep; i < len(entries); i++ {
-		path := filepath.Join(b.dir, entries[i].ID+archiveExt)
-		if errRemove := os.Remove(path); errRemove != nil {
-			log.WithError(errRemove).WithField("id", entries[i].ID).Warn("taproot backups: prune")
+	seen := map[Reason]int{}
+	for _, e := range entries {
+		seen[e.Reason]++
+		if seen[e.Reason] <= keep || e.ID == protect {
 			continue
 		}
-		log.WithField("id", entries[i].ID).Info("taproot backups: pruned")
+		if errRemove := os.Remove(filepath.Join(b.dir, e.ID+archiveExt)); errRemove != nil {
+			log.WithError(errRemove).WithField("id", e.ID).Warn("taproot backups: prune")
+			continue
+		}
+		log.WithField("id", e.ID).Info("taproot backups: pruned")
 	}
 }
 

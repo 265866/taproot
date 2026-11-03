@@ -27,6 +27,12 @@ type requestLogger struct {
 	enabled  atomic.Bool
 	excluder atomic.Pointer[excluder]
 	now      func() time.Time
+
+	// streams holds writers that may still hold budget. Upstream's Finalize
+	// skips Close when request-log was switched off mid-stream, so SetEnabled
+	// releases what those writers hold.
+	streamsMu sync.Mutex
+	streams   map[*streamWriter]struct{}
 }
 
 var (
@@ -36,8 +42,36 @@ var (
 
 func (l *requestLogger) IsEnabled() bool { return l.enabled.Load() }
 
-// SetEnabled follows request-log on config reload.
-func (l *requestLogger) SetEnabled(enabled bool) { l.enabled.Store(enabled) }
+// SetEnabled follows request-log on config reload. Turning it off abandons
+// in-flight streaming records, because their Close may never come.
+func (l *requestLogger) SetEnabled(enabled bool) {
+	l.enabled.Store(enabled)
+	if enabled {
+		return
+	}
+	l.streamsMu.Lock()
+	live := l.streams
+	l.streams = nil
+	l.streamsMu.Unlock()
+	for w := range live {
+		w.abandon()
+	}
+}
+
+func (l *requestLogger) trackStream(w *streamWriter) {
+	l.streamsMu.Lock()
+	defer l.streamsMu.Unlock()
+	if l.streams == nil {
+		l.streams = make(map[*streamWriter]struct{})
+	}
+	l.streams[w] = struct{}{}
+}
+
+func (l *requestLogger) untrackStream(w *streamWriter) {
+	l.streamsMu.Lock()
+	delete(l.streams, w)
+	l.streamsMu.Unlock()
+}
 
 // SetErrorLogsMaxFiles is accepted for config reload compatibility. Taproot's
 // max-days and max-bytes govern error-only records along with the rest.
@@ -108,7 +142,7 @@ func (l *requestLogger) LogStreamingRequest(url, method string, headers map[stri
 	if !l.IsEnabled() {
 		return &logging.NoOpStreamingLogWriter{}, nil
 	}
-	return &streamWriter{
+	w := &streamWriter{
 		logger: l,
 		c: capture{
 			url:            url,
@@ -119,7 +153,13 @@ func (l *requestLogger) LogStreamingRequest(url, method string, headers map[stri
 			requestTime:    l.now(),
 			streaming:      true,
 		},
-	}, nil
+	}
+	l.trackStream(w)
+	// A switch-off between the check above and tracking would miss w.
+	if !l.IsEnabled() {
+		w.abandon()
+	}
+	return w, nil
 }
 
 func cleanupSources(sources ...*logging.FileBodySource) {
@@ -268,6 +308,7 @@ func (w *streamWriter) Close() error {
 	}
 	w.closed = true
 	l := w.logger
+	l.untrackStream(w)
 	l.engine.budget.release(w.reserved)
 	w.reserved = 0
 
@@ -288,6 +329,20 @@ func (w *streamWriter) Close() error {
 	c.finishedAt = l.now()
 	l.engine.submit(&c)
 	return nil
+}
+
+// abandon drops the record and returns its budget without storing anything.
+func (w *streamWriter) abandon() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return
+	}
+	w.closed = true
+	w.logger.untrackStream(w)
+	w.logger.engine.budget.release(w.reserved)
+	w.reserved = 0
+	w.chunks = bytes.Buffer{}
 }
 
 var geminiModelPattern = regexp.MustCompile(`/models/([^/:?]+)`)
