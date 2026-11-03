@@ -8,7 +8,7 @@ import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { ProviderTabs } from '@/features/authFiles/components/ProviderTabs';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNow } from '@/hooks/useNow';
-import { usePrivacyStore, useThemeStore } from '@/stores';
+import { useShowEmails, useThemeStore } from '@/stores';
 import { Ledger } from './components/Ledger';
 import { ProviderCard } from './components/ProviderCard';
 import { Segmented } from './components/Segmented';
@@ -37,7 +37,7 @@ export function TaprootQuotaPage() {
   const [view, setView] = useState<ChartView>('remaining');
   const [burnHours, setBurnHours] = useState<BurnWindowHours>(3);
   const [future, setFuture] = useState<FutureUsage>('same');
-  const showEmails = usePrivacyStore((state) => state.showEmails);
+  const showEmails = useShowEmails();
   const { data, loading, error, refresh } = useQuotaData(range);
   const quotaRefresh = useQuotaRefresh(refresh);
 

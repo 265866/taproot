@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 
 interface PrivacyState {
@@ -12,3 +13,13 @@ export const usePrivacyStore = create<PrivacyState>((set) => ({
   setShowEmails: (showEmails) => set({ showEmails }),
   toggleShowEmails: () => set((state) => ({ showEmails: !state.showEmails })),
 }));
+
+const readShowEmails = () => usePrivacyStore.getState().showEmails;
+
+/**
+ * The current email preference. The dashboard only renders in the browser, so the server snapshot
+ * reads the live value too; zustand's would pin static renders to the initial state.
+ */
+export function useShowEmails(): boolean {
+  return useSyncExternalStore(usePrivacyStore.subscribe, readShowEmails, readShowEmails);
+}

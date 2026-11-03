@@ -15,13 +15,15 @@ const DOTS = '•••';
 const MAX_LOCAL = 64;
 const MAX_DOMAIN = 253;
 
-/** Auth file prefixes the server writes before the email (`claude-<hash>-`, `codex-<hash>-`). */
+/**
+ * Auth file prefixes the server writes before the email (`claude-<hash>-`, `codex-<hash>-`). The
+ * dashboard often shows names without `.json`, so a prefix with a hash counts on its own.
+ */
 const FILE_PREFIX =
-  /^(?:claude|codex|antigravity|gemini|xai|kimi|qwen|iflow|aistudio|devin|vertex)-(?:[0-9a-f]{8,64}-)?/;
+  /^(?:claude|codex|antigravity|gemini|xai|kimi|qwen|iflow|aistudio|devin|vertex)-([0-9a-f]{8,64}-)?/;
 
 /** Meta writes `meta-<email with @ as _>-<16 hex>.json`, so its file names carry no `@`. */
-const META_FILE =
-  /\bmeta-([A-Za-z0-9._-]+)_([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)-([0-9a-f]{16})\.json/g;
+const META_FILE = /\bmeta-([A-Za-z0-9._-]+)_([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)-([0-9a-f]{16})\b/g;
 
 const LOCAL_CHAR = /[A-Za-z0-9._%+-]/;
 const DOMAIN_CHAR = /[A-Za-z0-9.-]/;
@@ -65,7 +67,7 @@ function maskMetaFiles(text: string): string {
   return text.replace(
     META_FILE,
     (_match, local: string, domain: string, hash: string) =>
-      `meta-${maskAddress(local, domain, '_')}-${hash}.json`
+      `meta-${maskAddress(local, domain, '_')}-${hash}`
   );
 }
 
@@ -92,9 +94,10 @@ export function maskEmails(text: string): string {
       continue;
     }
 
-    // Keep a server-written file prefix readable only inside a file name.
+    // Keep a server-written file prefix readable only where it is surely one.
     const isFileName = /\.json[.-]*$/i.test(source.slice(at + 1 + domain.length, end));
-    const prefix = isFileName ? (FILE_PREFIX.exec(local)?.[0] ?? '') : '';
+    const file = FILE_PREFIX.exec(local);
+    const prefix = file && (isFileName || file[1]) ? file[0] : '';
     const kept = prefix.length < local.length ? prefix : '';
     out += source.slice(cursor, start) + kept + maskAddress(local.slice(kept.length), domain);
     cursor = at + 1 + domain.length;

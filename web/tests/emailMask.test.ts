@@ -69,6 +69,18 @@ describe('maskEmails', () => {
       );
     });
 
+    test('keeps a hashed prefix when the name is shown without .json', () => {
+      expect(maskEmails('claude-ab12cd34-anthropic1@sl.example.org')).toBe(
+        'claude-ab12cd34-an•••1@s•••.run'
+      );
+      expect(maskEmails('codex-1a2b3c4d-first-last@example.com-team')).toBe(
+        'codex-1a2b3c4d-fi•••t@e•••.com-team'
+      );
+      expect(maskEmails('meta-anthropic1_sl.example.org-0123456789abcdef')).toBe(
+        'meta-an•••1_s•••.run-0123456789abcdef'
+      );
+    });
+
     test('masks a provider-named local part in full outside a file name', () => {
       expect(maskEmails('claude-bot@example.com')).toBe('cl•••t@e•••.com');
     });

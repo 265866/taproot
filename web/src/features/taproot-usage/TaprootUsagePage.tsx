@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useTranslation } from 'react-i18next';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
-import { usePrivacyStore } from '@/stores';
+import { useShowEmails } from '@/stores';
 import { taprootApi, type UsageGroupBy } from '@/services/api/taproot';
 import { useTaprootQuery } from './hooks/useTaprootQuery';
 import { GROUP_BYS, USAGE_TABS, useUsageParams, type UsageTab } from './hooks/useUsageParams';
@@ -47,7 +47,7 @@ export function TaprootUsagePage() {
   const [params, setParams] = useUsageParams();
   const [anchorMs, setAnchorMs] = useState(() => Date.now());
   const [refreshKey, setRefreshKey] = useState(0);
-  const showEmails = usePrivacyStore((state) => state.showEmails);
+  const showEmails = useShowEmails();
   const [customDraft, setCustomDraft] = useState(() => ({
     from: params.from || toLocalDateInput(Date.now() - 6 * 86_400_000),
     to: params.to || toLocalDateInput(Date.now()),

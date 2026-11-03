@@ -1,4 +1,4 @@
-import { usePrivacyStore } from '@/stores/usePrivacyStore';
+import { useShowEmails } from '@/stores/usePrivacyStore';
 import { maskEmails } from '@/utils/emailMask';
 
 const reveal = (text: string): string => text;
@@ -8,6 +8,6 @@ const reveal = (text: string): string => text;
  * copy, and download keep the real values.
  */
 export function useEmailMask(): { showEmails: boolean; mask: (text: string) => string } {
-  const showEmails = usePrivacyStore((state) => state.showEmails);
+  const showEmails = useShowEmails();
   return { showEmails, mask: showEmails ? reveal : maskEmails };
 }
