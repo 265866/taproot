@@ -66,7 +66,6 @@ export function PluginsPage() {
   const navigate = useNavigate();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
-  const managementKey = useAuthStore((state) => state.managementKey);
   const clearConfigCache = useConfigStore((state) => state.clearCache);
   const showNotification = useNotificationStore((state) => state.showNotification);
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
@@ -74,7 +73,6 @@ export function PluginsPage() {
   const [data, setData] = useState<PluginListResponse | null>(null);
   const [storeLogos, setStoreLogos] = useState<{
     apiBase: string;
-    managementKey: string;
     entries: PluginStoreEntry[];
   } | null>(null);
   const [filter, setFilter] = useState('');
@@ -141,7 +139,7 @@ export function PluginsPage() {
     void pluginStoreApi.list().then(
       (response) => {
         if (!cancelled) {
-          setStoreLogos({ apiBase, managementKey, entries: response.plugins });
+          setStoreLogos({ apiBase, entries: response.plugins });
         }
       },
       () => {
@@ -151,12 +149,10 @@ export function PluginsPage() {
     return () => {
       cancelled = true;
     };
-  }, [connected, apiBase, managementKey, data]);
+  }, [connected, apiBase, data]);
 
   const logoEntries =
-    connected && storeLogos?.apiBase === apiBase && storeLogos.managementKey === managementKey
-      ? storeLogos.entries
-      : [];
+    connected && storeLogos?.apiBase === apiBase ? storeLogos.entries : [];
 
   const pluginStats = useMemo(() => {
     const plugins = data?.plugins ?? [];

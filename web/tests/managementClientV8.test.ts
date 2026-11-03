@@ -4,21 +4,19 @@ import { apiClient } from '../src/services/api/client';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 afterEach(() => {
-  apiClient.setConfig({ apiBase: '', managementKey: '' });
+  apiClient.setConfig({ apiBase: '' });
   if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
   else Reflect.deleteProperty(globalThis, 'window');
 });
 
 describe('v8 management transport', () => {
-  test('uses the v8 prefix, bearer authentication and bare JSON scalar writes', async () => {
-    apiClient.setConfig({
-      apiBase: 'https://proxy.invalid/gateway/v8/management',
-      managementKey: 'fixture-only',
-    });
+  test('uses the v8 prefix, sends no credentials, and writes bare JSON scalars', async () => {
+    apiClient.setConfig({ apiBase: 'https://proxy.invalid/gateway/v8/management' });
     const adapter: AxiosAdapter = async (config) => {
       expect(config.baseURL).toBe('https://proxy.invalid/gateway/v8/management');
       expect(config.url).toBe('/config/observability/logs/debug');
-      expect(config.headers.Authorization).toBe('Bearer fixture-only');
+      // The server injects management credentials for admitted callers.
+      expect(config.headers.Authorization).toBeUndefined();
       expect(config.data).toBe('false');
       return { data: { status: 'ok' }, status: 200, statusText: 'OK', headers: {}, config };
     };
@@ -36,7 +34,7 @@ describe('v8 management transport', () => {
         },
       },
     });
-    apiClient.setConfig({ apiBase: 'http://proxy.invalid', managementKey: 'fixture-only' });
+    apiClient.setConfig({ apiBase: 'http://proxy.invalid' });
     const adapter: AxiosAdapter = async (config) => ({
       data: {},
       status: 200,
@@ -54,7 +52,7 @@ describe('v8 management transport', () => {
   });
 });
 
-test('captured SIWC transport keeps original credentials and suppresses stale events, including ABA', async () => {
+test('captured transport keeps the original base and suppresses stale events, including ABA', async () => {
   const events: Event[] = [];
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -65,12 +63,12 @@ test('captured SIWC transport keeps original credentials and suppresses stale ev
       },
     },
   });
-  apiClient.setConfig({ apiBase: 'https://original.invalid', managementKey: 'original-fixture' });
+  apiClient.setConfig({ apiBase: 'https://original.invalid' });
   const captured = apiClient.captureConnection();
-  apiClient.setConfig({ apiBase: 'https://new.invalid', managementKey: 'new-fixture' });
+  apiClient.setConfig({ apiBase: 'https://new.invalid' });
   const adapter: AxiosAdapter = async (config) => {
     expect(config.baseURL).toBe('https://original.invalid/v8/management');
-    expect(config.headers.Authorization).toBe('Bearer original-fixture');
+    expect(config.headers.Authorization).toBeUndefined();
     return {
       data: {},
       status: 200,
@@ -80,7 +78,7 @@ test('captured SIWC transport keeps original credentials and suppresses stale ev
     };
   };
   await captured.delete('/oauth/session', { params: { state: 'original-session' }, adapter });
-  apiClient.setConfig({ apiBase: 'https://original.invalid', managementKey: 'original-fixture' });
+  apiClient.setConfig({ apiBase: 'https://original.invalid' });
   await captured.delete('/oauth/session', { params: { state: 'original-session' }, adapter });
   expect(events).toEqual([]);
   const unauthorized: AxiosAdapter = async (config) => {

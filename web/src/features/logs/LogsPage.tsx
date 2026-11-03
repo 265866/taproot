@@ -57,7 +57,6 @@ export function LogsPage() {
   const { showNotification } = useNotificationStore();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
-  const managementKey = useAuthStore((state) => state.managementKey);
   const config = useConfigStore((state) => state.config);
   const requestLogEnabled = config?.requestLog ?? false;
 
@@ -236,9 +235,7 @@ export function LogsPage() {
     const unsubscribeAuth = useAuthStore.subscribe((next, previous) => {
       if (
         next.apiBase === previous.apiBase &&
-        next.managementKey === previous.managementKey &&
-        next.connectionStatus === previous.connectionStatus &&
-        next.isAuthenticated === previous.isAuthenticated
+        next.connectionStatus === previous.connectionStatus
       )
         return;
       invalidateSession();
@@ -262,7 +259,7 @@ export function LogsPage() {
     if (connectionStatus !== 'connected') return;
     void loadErrorLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, connectionStatus, apiBase, managementKey, requestLogEnabled]);
+  }, [activeTab, connectionStatus, apiBase, requestLogEnabled]);
 
   const [parseEntries] = useState(createLogParserCache);
   const entries = useMemo(() => parseEntries(logBuffer), [logBuffer, parseEntries]);

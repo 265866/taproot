@@ -32,14 +32,12 @@ const createProviderRecentRequestsCache = (): ProviderRecentRequestsCache => ({
 
 export const createProviderRecentRequestsCacheController = () => {
   let currentApiBase = '';
-  let currentManagementKey = '';
   let currentCache = createProviderRecentRequestsCache();
 
   return {
-    forScope(apiBase: string, managementKey: string): ProviderRecentRequestsCache {
-      if (apiBase !== currentApiBase || managementKey !== currentManagementKey) {
+    forScope(apiBase: string): ProviderRecentRequestsCache {
+      if (apiBase !== currentApiBase) {
         currentApiBase = apiBase;
-        currentManagementKey = managementKey;
         currentCache = createProviderRecentRequestsCache();
       }
       return currentCache;
@@ -104,11 +102,7 @@ const fetchProviderRecentRequests = async (
 export function useProviderRecentRequests(options: UseProviderRecentRequestsOptions = {}) {
   const enabled = options.enabled ?? true;
   const apiBase = useAuthStore((state) => state.apiBase);
-  const managementKey = useAuthStore((state) => state.managementKey);
-  const cache = useMemo(
-    () => providerRecentRequestsCacheController.forScope(apiBase, managementKey),
-    [apiBase, managementKey]
-  );
+  const cache = useMemo(() => providerRecentRequestsCacheController.forScope(apiBase), [apiBase]);
   const [usageState, setUsageState] = useState(() => ({
     cache,
     value: cache.cachedUsageByProvider,

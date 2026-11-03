@@ -16,13 +16,10 @@ import { configApi, versionApi } from '@/services/api';
 import { useApiKeysForModels } from '@/hooks/useApiKeysForModels';
 import { formatDateTimeValue } from '@/utils/format';
 import { classifyModels } from '@/utils/models';
-import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import iconGemini from '@/assets/icons/gemini.svg';
 import iconClaude from '@/assets/icons/claude.svg';
 import iconMeta from '@/assets/icons/meta.svg';
-import iconDevinLight from '@/assets/icons/devin.svg';
-import iconDevinDark from '@/assets/icons/devin-dark.svg';
 import iconOpenaiLight from '@/assets/icons/openai-light.svg';
 import iconOpenaiDark from '@/assets/icons/openai-dark.svg';
 import iconQwen from '@/assets/icons/qwen.svg';
@@ -39,7 +36,6 @@ import iconStepfunDark from '@/assets/icons/stepfun-dark.svg';
 import styles from './SystemPage.module.scss';
 
 const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: string }> = {
-  devin: { light: iconDevinLight, dark: iconDevinDark },
   gpt: { light: iconOpenaiLight, dark: iconOpenaiDark },
   claude: iconClaude,
   meta: iconMeta,
@@ -82,7 +78,7 @@ const compareVersions = (latest?: string | null, current?: string | null) => {
 
 export function SystemPage() {
   const { t, i18n } = useTranslation();
-  const { showNotification, showConfirmation } = useNotificationStore();
+  const { showNotification } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const auth = useAuthStore();
   const config = useConfigStore((state) => state.config);
@@ -163,22 +159,6 @@ export function SystemPage() {
       const text = `${t('system_info.models_error')}${suffix}`;
       setModelStatus({ type: 'error', message: text });
     }
-  };
-
-  const handleClearLoginStorage = () => {
-    showConfirmation({
-      title: t('system_info.clear_login_title', { defaultValue: 'Clear Login Storage' }),
-      message: t('system_info.clear_login_confirm'),
-      variant: 'danger',
-      confirmText: t('common.confirm'),
-      onConfirm: () => {
-        auth.logout();
-        if (typeof localStorage === 'undefined') return;
-        const keysToRemove = [STORAGE_KEY_AUTH, 'isLoggedIn', 'apiBase', 'apiUrl', 'managementKey'];
-        keysToRemove.forEach((key) => localStorage.removeItem(key));
-        showNotification(t('notification.login_storage_cleared'), 'success');
-      },
-    });
   };
 
   const openRequestLogModal = useCallback(() => {
@@ -467,14 +447,6 @@ export function SystemPage() {
           )}
         </Card>
 
-        <Card title={t('system_info.clear_login_title')}>
-          <p className={styles.sectionDescription}>{t('system_info.clear_login_desc')}</p>
-          <div className={styles.clearLoginActions}>
-            <Button variant="danger" onClick={handleClearLoginStorage}>
-              {t('system_info.clear_login_button')}
-            </Button>
-          </div>
-        </Card>
       </div>
 
       <Modal

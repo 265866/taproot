@@ -19,7 +19,6 @@ import { parseApiErrorResponse } from './apiError';
 class ApiClient {
   private instance: AxiosInstance;
   private apiBase: string = '';
-  private managementKey: string = '';
   private connectionRevision = 0;
 
   constructor(private readonly emitEvents: () => boolean = () => true) {
@@ -38,11 +37,10 @@ class ApiClient {
    */
   setConfig(config: ApiClientConfig): void {
     const apiBase = computeApiUrl(config.apiBase);
-    if (apiBase !== this.apiBase || config.managementKey !== this.managementKey) {
+    if (apiBase !== this.apiBase) {
       this.connectionRevision += 1;
     }
     this.apiBase = apiBase;
-    this.managementKey = config.managementKey;
 
     if (config.timeout) {
       this.instance.defaults.timeout = config.timeout;
@@ -56,12 +54,11 @@ class ApiClient {
     return this.connectionRevision;
   }
 
-  /** Pin credentials and suppress response side effects after the owning connection changes. */
+  /** Pin the base URL and suppress response side effects after the owning connection changes. */
   captureConnection(): ApiClient {
     const revision = this.connectionRevision;
     const client = new ApiClient(() => this.connectionRevision === revision);
     client.apiBase = this.apiBase;
-    client.managementKey = this.managementKey;
     return client;
   }
 
@@ -123,14 +120,9 @@ class ApiClient {
     // Request interceptor
     this.instance.interceptors.request.use(
       (config) => {
-        // Set baseURL
+        // The server injects management credentials for allowed callers; the
+        // browser never holds a management key.
         config.baseURL = this.apiBase;
-
-        // Add authorization header
-        if (this.managementKey) {
-          config.headers.Authorization = `Bearer ${this.managementKey}`;
-        }
-
         return config;
       },
       (error) => Promise.reject(this.handleError(error))
