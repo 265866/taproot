@@ -160,7 +160,7 @@
   }
 }
 
-/* ---------- 尾部「+」：hover 时墨色填充，暗示「添加一个凭证」 ---------- */
+/* ---------- 尾部「+」：hover 时强调色填充，暗示「添加一个凭证」 ---------- */
 
 .trail {
   display: flex;
@@ -185,9 +185,9 @@
   }
 
   .tile:hover .trail {
-    background: var(--text-primary);
-    border-color: var(--text-primary);
-    color: var(--bg-secondary);
+    background: var(--button-primary-bg);
+    border-color: var(--button-primary-bg);
+    color: var(--button-primary-text);
   }
 
   .tile:active {

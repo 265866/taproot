@@ -178,17 +178,16 @@
   }
 }
 
-/* 墨色药丸：浅色主题下是深墨，深色主题自动反相为浅纸 */
 .primaryAction {
-  background: var(--text-primary);
-  color: var(--bg-secondary);
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
   border: 1px solid transparent;
 
   @media (hover: hover) and (pointer: fine) {
     &:hover {
       transform: translateY(-1px);
-      background: color-mix(in srgb, var(--text-primary) 86%, var(--bg-secondary));
-      box-shadow: 0 12px 26px color-mix(in srgb, var(--text-primary) 22%, transparent);
+      background: var(--button-primary-hover);
+      box-shadow: 0 12px 26px color-mix(in srgb, var(--button-primary-bg) 30%, transparent);
     }
   }
 
