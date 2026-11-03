@@ -106,6 +106,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, fmt.Errorf("taproot ingest: %w", err)
 	}
+	usage.AttachDevices(guard)
 	logs, err := reqlog.New(tp.RequestLogs, db, dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("taproot request logs: %w", err)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 	log "github.com/sirupsen/logrus"
 )
@@ -36,6 +37,7 @@ type event struct {
 	Tokens          tokenSums
 	ServiceTier     string
 	Source          string
+	Device          access.Device
 }
 
 func eventFromRecord(r usage.Record, now time.Time) event {
@@ -168,8 +170,9 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 		event_key, ts, request_id, trace_id, session_id, parent_session_id, provider, model, alias,
 		auth_index, auth_id, stream, failed, status_code, latency_ms, ttft_ms,
 		input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens,
-		cache_write_5m_tokens, cache_write_1h_tokens, service_tier, source
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+		cache_write_5m_tokens, cache_write_1h_tokens, service_tier, source,
+		device_id, device_name, device_login, device_via
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare event insert: %w", err)
 	}
@@ -180,6 +183,7 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 	}()
 
 	deltas := map[rollupKey]*rollupDelta{}
+	deviceDeltas := deviceRollup{}
 	type seen struct {
 		provider    string
 		first, last int64
@@ -194,7 +198,8 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 		res, err := stmt.ExecContext(ctx, e.Key, ms(e.TS), e.RequestID, e.TraceID, e.SessionID, e.ParentSessionID,
 			e.Provider, e.Model, e.Alias, e.AuthIndex, e.AuthID, boolInt(e.Stream), boolInt(e.Failed), e.StatusCode,
 			e.LatencyMs, ttft, e.Tokens.Input, e.Tokens.Output, e.Tokens.Reasoning, e.Tokens.CacheRead,
-			e.Tokens.CacheWrite, e.Tokens.CacheWrite5m, e.Tokens.CacheWrite1h, e.ServiceTier, e.Source)
+			e.Tokens.CacheWrite, e.Tokens.CacheWrite5m, e.Tokens.CacheWrite1h, e.ServiceTier, e.Source,
+			e.Device.ID, e.Device.Name, e.Device.Login, string(e.Device.Via))
 		if err != nil {
 			return inserted, fmt.Errorf("insert event: %w", err)
 		}
@@ -213,6 +218,7 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 			deltas[k] = d
 		}
 		d.addEvent(e)
+		deviceDeltas.add(e)
 		if e.AuthIndex != "" {
 			a := accounts[e.AuthIndex]
 			t := ms(e.TS)
@@ -228,6 +234,9 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 		if err := applyRollupDelta(ctx, c, k, d); err != nil {
 			return inserted, err
 		}
+	}
+	if err := deviceDeltas.apply(ctx, c); err != nil {
+		return inserted, err
 	}
 	for idx, a := range accounts {
 		if _, err := c.ExecContext(ctx, `INSERT INTO accounts (auth_index, provider, first_seen, last_seen) VALUES (?,?,?,?)

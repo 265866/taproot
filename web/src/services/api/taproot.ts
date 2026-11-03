@@ -17,7 +17,7 @@ export const TAPROOT_REQUEST_HEADERS = { 'X-Taproot-Request': '1' } as const;
 
 export type TaprootVia = 'loopback' | 'tailnet' | 'cidr';
 export type UsageBucket = '5m' | '1h' | '1d';
-export type UsageGroupBy = 'model' | 'account' | 'provider' | 'session';
+export type UsageGroupBy = 'model' | 'account' | 'provider' | 'session' | 'device';
 export type QuotaWindowId =
   | 'five_hour'
   | 'seven_day'
@@ -138,6 +138,54 @@ export interface UsageEvent {
   /** False when no price pattern matches the model, so costUSD is 0. */
   priced: boolean;
   source: string;
+  /** Empty for requests recorded before device attribution, or with no known device. */
+  deviceId?: string;
+  deviceName?: string;
+  deviceLogin?: string;
+}
+
+/** One row of `GET /usage/devices`; internal/taproot/ingest/devices.go owns the shape. */
+export interface UsageDevice {
+  /** `node:<StableID>`, `local`, `cidr:<address>`, or empty for requests without a device. */
+  deviceId: string;
+  name: string;
+  login: string;
+  via: TaprootVia | '';
+  lastSeen: string;
+  requests: number;
+  failures: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cacheWrite5mTokens: number;
+  cacheWrite1hTokens: number;
+  costUSD: number;
+  /** Cache read ÷ (cache read + cache write + input); null without tokens. */
+  cacheHitRatio: number | null;
+  /** Claude main-conversation requests only; subagents (with a parent session) are left out. */
+  mainConversation: {
+    requests: number;
+    /** Requests whose cache writes carried a 5m/1h split. */
+    splitRequests: number;
+    cacheWriteTokens: number;
+    cacheWrite5mTokens: number;
+    cacheWrite1hTokens: number;
+    /** 5m ÷ (5m + 1h) cache-write tokens; null without split-known writes. */
+    fiveMinuteShare: number | null;
+    /**
+     * An estimate, not a measurement: 5m writes after a 5 to 60 minute pause in the same
+     * session count as re-writes a one-hour TTL would have avoided.
+     */
+    estimate: {
+      rewriteRequests: number;
+      rewriteTokens: number;
+      rewriteCostUSD: number;
+      oneHourPremiumUSD: number;
+      netSavingsUSD: number;
+    };
+  };
 }
 
 export interface UsageSession {
@@ -287,6 +335,8 @@ export interface UsageEventFilter extends TimeRange, Page {
   authIndex?: string;
   model?: string;
   sessionId?: string;
+  /** A device ID; `(none)` selects requests without a device. */
+  deviceId?: string;
   failed?: boolean;
 }
 
@@ -396,6 +446,8 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       request<{ events: UsageEvent[]; nextCursor: string | null }>('GET', '/usage/events', {
         query: { ...filter },
       }),
+    usageDevices: (query: TimeRange) =>
+      request<{ devices: UsageDevice[] }>('GET', '/usage/devices', { query: { ...query } }),
     usageSessions: (query: TimeRange & Page) =>
       request<{ sessions: UsageSession[]; nextCursor: string | null }>('GET', '/usage/sessions', {
         query: { ...query },

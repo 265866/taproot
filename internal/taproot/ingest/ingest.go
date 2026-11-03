@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -71,6 +72,8 @@ type Ingest struct {
 
 	authMu sync.RWMutex
 	auths  authLister
+
+	devices atomic.Pointer[deviceSource]
 
 	claudeUsageURL string
 	codexUsageURL  string
@@ -224,6 +227,7 @@ func (i *Ingest) flush(ctx context.Context) error {
 	allObs := make([]observation, 0, len(obs))
 	for _, r := range records {
 		e := eventFromRecord(r, now)
+		e.Device = i.requestDevice(r.TraceID)
 		events = append(events, e)
 		if e.AuthIndex == "" || len(r.ResponseHeaders) == 0 {
 			continue
@@ -283,6 +287,7 @@ func (i *Ingest) Routes(r *gin.RouterGroup) {
 	r.GET("/usage/summary", i.handleUsageSummary)
 	r.GET("/usage/events", i.handleUsageEvents)
 	r.GET("/usage/sessions", i.handleUsageSessions)
+	r.GET("/usage/devices", i.handleUsageDevices)
 	r.GET("/prices", i.handleGetPrices)
 	r.PUT("/prices", i.handlePutPrices)
 }

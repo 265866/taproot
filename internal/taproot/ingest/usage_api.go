@@ -75,7 +75,7 @@ func (a *agg) totals(pb *priceBook) Totals {
 
 var bucketSizes = map[string]time.Duration{"5m": 5 * time.Minute, "1h": time.Hour, "1d": 24 * time.Hour}
 
-var groupByValues = map[string]bool{"model": true, "account": true, "provider": true, "session": true}
+var groupByValues = map[string]bool{"model": true, "account": true, "provider": true, "session": true, "device": true}
 
 // summaryBuilder keys buckets by their start. Fixed-size buckets start on
 // multiples of their size; days start at local midnight in loc, so they can be
@@ -88,9 +88,11 @@ type summaryBuilder struct {
 	total    *agg
 }
 
-func (s *summaryBuilder) groupKey(provider, authIndex, model, session string) string {
+func (s *summaryBuilder) groupKey(provider, authIndex, model, session, device string) string {
 	var k string
 	switch s.groupBy {
+	case "device":
+		k = device
 	case "account":
 		k = authIndex
 	case "provider":
@@ -152,7 +154,7 @@ func (s *summaryBuilder) scanRaw(ctx context.Context, q querier, fromMs, toMs in
 	if fromMs >= toMs {
 		return nil
 	}
-	rows, err := q.QueryContext(ctx, `SELECT ts, provider, auth_index, model, session_id, failed, latency_ms, COALESCE(ttft_ms, 0),
+	rows, err := q.QueryContext(ctx, `SELECT ts, provider, auth_index, model, session_id, device_id, failed, latency_ms, COALESCE(ttft_ms, 0),
 		input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens, cache_write_1h_tokens
 		FROM usage_events WHERE ts >= ? AND ts < ?`, fromMs, toMs)
 	if err != nil {
@@ -161,16 +163,16 @@ func (s *summaryBuilder) scanRaw(ctx context.Context, q querier, fromMs, toMs in
 	defer closeRows(rows)
 	for rows.Next() {
 		var (
-			ts, latency, ttft                     int64
-			provider, authIndex, model, sessionID string
-			failed                                int
-			t                                     tokenSums
+			ts, latency, ttft                               int64
+			provider, authIndex, model, sessionID, deviceID string
+			failed                                          int
+			t                                               tokenSums
 		)
-		if err := rows.Scan(&ts, &provider, &authIndex, &model, &sessionID, &failed, &latency, &ttft,
+		if err := rows.Scan(&ts, &provider, &authIndex, &model, &sessionID, &deviceID, &failed, &latency, &ttft,
 			&t.Input, &t.Output, &t.Reasoning, &t.CacheRead, &t.CacheWrite, &t.CacheWrite5m, &t.CacheWrite1h); err != nil {
 			return fmt.Errorf("scan event: %w", err)
 		}
-		for _, a := range []*agg{s.target(ts, s.groupKey(provider, authIndex, model, sessionID)), s.total} {
+		for _, a := range []*agg{s.target(ts, s.groupKey(provider, authIndex, model, sessionID, deviceID)), s.total} {
 			a.requests++
 			if failed != 0 {
 				a.failures++
@@ -204,7 +206,7 @@ func (s *summaryBuilder) scanRollup(ctx context.Context, q querier, fromHour, to
 			&t.Input, &t.Output, &t.Reasoning, &t.CacheRead, &t.CacheWrite, &t.CacheWrite5m, &t.CacheWrite1h, &latBlob, &ttftBlob); err != nil {
 			return fmt.Errorf("scan rollup: %w", err)
 		}
-		for _, a := range []*agg{s.target(hour*hourMs, s.groupKey(provider, authIndex, model, "")), s.total} {
+		for _, a := range []*agg{s.target(hour*hourMs, s.groupKey(provider, authIndex, model, "", "")), s.total} {
 			a.requests += requests
 			a.failures += failures
 			a.addTokens(model, t)
@@ -233,7 +235,7 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 	}
 	groupBy := c.DefaultQuery("groupBy", "model")
 	if !groupByValues[groupBy] {
-		badRequest(c, "groupBy: want model, account, provider, or session")
+		badRequest(c, "groupBy: want model, account, provider, session, or device")
 		return
 	}
 	s := &summaryBuilder{bucketMs: bucket.Milliseconds(), groupBy: groupBy, buckets: map[int64]map[string]*agg{}, total: newAgg()}
@@ -261,7 +263,8 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	useRollup := bucketName != "5m" && groupBy != "session" && s.hourAligned(fromMs, toMs)
+	// The hourly rollup has no session or device column.
+	useRollup := bucketName != "5m" && groupBy != "session" && groupBy != "device" && s.hourAligned(fromMs, toMs)
 	if err := s.collect(ctx, i.db, fromMs, toMs, useRollup); err != nil {
 		internalError(c, err)
 		return
@@ -327,11 +330,15 @@ type UsageEvent struct {
 	CostUSD            float64 `json:"costUSD"`
 	Priced             bool    `json:"priced"`
 	Source             string  `json:"source"`
+	DeviceID           string  `json:"deviceId"`
+	DeviceName         string  `json:"deviceName"`
+	DeviceLogin        string  `json:"deviceLogin"`
 }
 
 const eventColumns = `id, event_key, ts, request_id, trace_id, session_id, parent_session_id, provider, model, alias,
 	auth_index, auth_id, stream, failed, status_code, latency_ms, ttft_ms, input_tokens, output_tokens, reasoning_tokens,
-	cache_read_tokens, cache_write_tokens, cache_write_5m_tokens, cache_write_1h_tokens, service_tier, source`
+	cache_read_tokens, cache_write_tokens, cache_write_5m_tokens, cache_write_1h_tokens, service_tier, source,
+	device_id, device_name, device_login`
 
 func scanEvent(rows *sql.Rows, pb *priceBook) (UsageEvent, int64, error) {
 	var (
@@ -342,7 +349,8 @@ func scanEvent(rows *sql.Rows, pb *priceBook) (UsageEvent, int64, error) {
 	err := rows.Scan(&e.ID, &e.EventKey, &ts, &e.RequestID, &e.TraceID, &e.SessionID, &e.ParentSessionID, &e.Provider,
 		&e.Model, &e.Alias, &e.AuthIndex, &e.AuthID, &stream, &failed, &e.StatusCode, &e.LatencyMs, &e.TTFTMs,
 		&e.InputTokens, &e.OutputTokens, &e.ReasoningTokens, &e.CacheReadTokens, &e.CacheWriteTokens,
-		&e.CacheWrite5mTokens, &e.CacheWrite1hTokens, &e.ServiceTier, &e.Source)
+		&e.CacheWrite5mTokens, &e.CacheWrite1hTokens, &e.ServiceTier, &e.Source,
+		&e.DeviceID, &e.DeviceName, &e.DeviceLogin)
 	if err != nil {
 		return e, 0, fmt.Errorf("scan event: %w", err)
 	}
@@ -373,6 +381,14 @@ func (i *Ingest) handleUsageEvents(c *gin.Context) {
 			where = append(where, column+" = ?")
 			args = append(args, v)
 		}
+	}
+	// "(none)", the summary's key for events without a device, selects them.
+	if v := strings.TrimSpace(c.Query("deviceId")); v != "" {
+		if v == noneGroupKey {
+			v = ""
+		}
+		where = append(where, "device_id = ?")
+		args = append(args, v)
 	}
 	switch strings.TrimSpace(c.Query("failed")) {
 	case "":

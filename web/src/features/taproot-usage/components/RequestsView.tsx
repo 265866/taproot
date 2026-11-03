@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select } from '@/components/ui/Select';
-import { taprootApi, type TaprootAccount, type UsageEvent } from '@/services/api/taproot';
+import {
+  taprootApi,
+  type TaprootAccount,
+  type UsageDevice,
+  type UsageEvent,
+} from '@/services/api/taproot';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
 import type { FailedFilter } from '../hooks/useUsageParams';
 import { toIso, type TimeWindow } from '../logic/range';
 import { DASH, formatDateTime, formatMs, formatTokens, formatUSDPrecise } from '../logic/format';
+import { deviceFilterKey } from '../logic/devices';
 import { RequestDrawer } from './RequestDrawer';
 import styles from '../TaprootUsage.module.scss';
 
@@ -15,6 +21,7 @@ export interface RequestFilters {
   account: string;
   model: string;
   session: string;
+  device: string;
   failed: FailedFilter;
 }
 
@@ -25,7 +32,10 @@ interface Props {
   onFiltersChange: (patch: Partial<RequestFilters>) => void;
   accounts: readonly TaprootAccount[];
   models: readonly string[];
+  devices: readonly UsageDevice[];
   accountLabel: (authIndex: string) => string;
+  deviceLabel: (deviceKey: string) => string;
+  showEmails: boolean;
 }
 
 export function RequestsView({
@@ -35,10 +45,13 @@ export function RequestsView({
   onFiltersChange,
   accounts,
   models,
+  devices,
   accountLabel,
+  deviceLabel,
+  showEmails,
 }: Props) {
   const { t } = useTranslation();
-  const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filters.account}|${filters.model}|${filters.session}|${filters.failed}`;
+  const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filters.account}|${filters.model}|${filters.session}|${filters.device}|${filters.failed}`;
   // cursors[i] opens page i; page 0 has none.
   const [paging, setPaging] = useState<{
     key: string;
@@ -61,6 +74,7 @@ export function RequestsView({
       authIndex: filters.account || undefined,
       model: filters.model || undefined,
       sessionId: filters.session || undefined,
+      deviceId: filters.device || undefined,
       failed: filters.failed === '' ? undefined : filters.failed === 'true',
       cursor,
       limit: PAGE_SIZE,
@@ -84,6 +98,14 @@ export function RequestsView({
       ...list.map((m) => ({ value: m, label: m })),
     ];
   }, [models, filters.model, t]);
+  const deviceOptions = useMemo(() => {
+    const keys = devices.map((d) => deviceFilterKey(d.deviceId));
+    if (filters.device && !keys.includes(filters.device)) keys.unshift(filters.device);
+    return [
+      { value: '', label: t('taproot_usage.requests.any_device') },
+      ...keys.map((key) => ({ value: key, label: deviceLabel(key) })),
+    ];
+  }, [devices, filters.device, deviceLabel, t]);
   const statusOptions = useMemo(
     () => [
       { value: '', label: t('taproot_usage.requests.any_status') },
@@ -106,7 +128,9 @@ export function RequestsView({
     setPaging({ ...current, page: current.page - 1 });
   };
 
-  const hasFilters = Boolean(filters.account || filters.model || filters.session || filters.failed);
+  const hasFilters = Boolean(
+    filters.account || filters.model || filters.session || filters.device || filters.failed
+  );
 
   return (
     <section className={styles.panel}>
@@ -157,6 +181,16 @@ export function RequestsView({
           />
         </label>
         <label>
+          {t('taproot_usage.requests.device')}
+          <Select
+            value={filters.device}
+            options={deviceOptions}
+            onChange={(value) => onFiltersChange({ device: value })}
+            ariaLabel={t('taproot_usage.requests.device')}
+            size="sm"
+          />
+        </label>
+        <label>
           {t('taproot_usage.requests.status')}
           <Select
             value={filters.failed}
@@ -172,7 +206,7 @@ export function RequestsView({
           disabled={!hasFilters}
           onClick={() => {
             setSessionDraft('');
-            onFiltersChange({ account: '', model: '', session: '', failed: '' });
+            onFiltersChange({ account: '', model: '', session: '', device: '', failed: '' });
           }}
         >
           {t('taproot_usage.requests.clear')}
@@ -200,6 +234,7 @@ export function RequestsView({
               <tr>
                 <th>{t('taproot_usage.requests.time')}</th>
                 <th>{t('taproot_usage.requests.account')}</th>
+                <th>{t('taproot_usage.requests.device')}</th>
                 <th>{t('taproot_usage.requests.model')}</th>
                 <th className={styles.num}>{t('taproot_usage.requests.tokens')}</th>
                 <th className={styles.num}>{t('taproot_usage.kpi.cache_read')}</th>
@@ -227,6 +262,7 @@ export function RequestsView({
                     </button>
                   </td>
                   <td>{accountLabel(e.authIndex)}</td>
+                  <td>{deviceLabel(deviceFilterKey(e.deviceId ?? ''))}</td>
                   <td>{e.model || DASH}</td>
                   <td className={styles.num}>
                     {formatTokens(e.inputTokens)} / {formatTokens(e.outputTokens)}
@@ -285,6 +321,8 @@ export function RequestsView({
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         accountLabel={accountLabel}
+        deviceLabel={deviceLabel}
+        showEmails={showEmails}
         onFilterSession={(sessionId) => {
           setDrawerOpen(false);
           onFiltersChange({ session: sessionId });
