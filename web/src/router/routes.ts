@@ -13,5 +13,4 @@ export const ROUTES = {
   backups: '/backups',
   settings: '/settings',
   system: '/system',
-  legacyLogs: '/logs',
 } as const;

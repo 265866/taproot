@@ -1,6 +1,77 @@
 {
   "taproot_settings": {
     "title": "Settings",
-    "placeholder": "Access allowlist, log retention, and backup schedule land here next."
+    "description": "The parts of taproot.yaml you can change here. Each section applies at once and is written to taproot.yaml after the server accepts it.",
+    "loading": "Loading settings…",
+    "load_failed": "Could not load settings: {{message}}",
+    "save": "Save",
+    "reset": "Reset",
+    "saved": "{{section}} saved",
+    "access": {
+      "title": "Access",
+      "description": "Tailscale logins that may use the proxy, the management API, and this dashboard. Loopback and trusted networks are always admitted.",
+      "disabled": "The access guard is turned off in taproot.yaml, so every caller is admitted and this list has no effect.",
+      "list_label": "Allowed logins",
+      "you": "you",
+      "remove": "Remove {{login}}",
+      "cannot_remove_self": "You cannot remove your own login",
+      "add_label": "Login to allow",
+      "add_placeholder": "login@github",
+      "add": "Add",
+      "own_hint": "You are signed in as {{login}}, which must stay on the list.",
+      "local_hint": "You are connected locally, so no login of yours is checked. Keep at least one login you use from the tailnet."
+    },
+    "retention": {
+      "title": "Request log retention",
+      "description": "Older records are pruned first when either limit is reached. Changes apply at the next pruning pass.",
+      "days_limited": "Keep at most",
+      "days_unit": "days",
+      "size_limited": "Cap the request log folder at",
+      "size_label": "Size limit, such as 20 GB",
+      "exclude_label": "Never record these paths",
+      "exclude_hint": "One per line: a path, or a method and a path. * matches within a path segment.",
+      "keep_404": "Record 404s for routes the proxy does not serve"
+    },
+    "backups": {
+      "title": "Backup schedule",
+      "description": "A daily snapshot of config, credentials, and the database.",
+      "scheduled": "Back up daily",
+      "at": "at",
+      "server_time": "server time",
+      "keep": "Keep the newest",
+      "keep_unit": "backups",
+      "keep_hint": "Lowering this removes the oldest backups after the next one is written."
+    },
+    "ingest": {
+      "title": "Quota polling",
+      "description": "How often taproot asks Anthropic and OpenAI for the quota of accounts that have had no traffic.",
+      "label": "Poll every",
+      "hint": "A Go duration such as 15m or 1h30m; 0 stops polling. Takes effect after a restart.",
+      "restart_required": "Saved as {{saved}}. Taproot polls every {{active}} until it restarts."
+    },
+    "about": {
+      "title": "About",
+      "you": "You",
+      "you_tailnet": "{{name}} ({{login}}) from {{node}}",
+      "you_loopback": "Local connection from {{node}}",
+      "you_cidr": "Trusted network address {{node}}",
+      "you_disabled": "Access guard off",
+      "server_version": "Taproot version",
+      "dashboard_version": "Dashboard version",
+      "data_dir": "Data folder",
+      "config_path": "Settings file"
+    },
+    "errors": {
+      "login_format": "{{detail}} is not a Tailscale login (name@provider).",
+      "logins_empty": "Allow at least one login.",
+      "lockout": "Keep your own login, {{detail}}, or you lose access.",
+      "days_range": "Days must be a whole number from 1 to 3650.",
+      "size_format": "Write the size as a number and unit, such as 20 GB or 512 MB.",
+      "size_min": "The size limit must be at least 1 MB.",
+      "exclude_format": "{{detail}} must be a path starting with /, optionally after a method.",
+      "keep_range": "Keep must be a whole number from 1 to 1000.",
+      "time_format": "Use a 24-hour time such as 03:13.",
+      "duration_format": "Use a duration such as 15m or 1h30m, or 0."
+    }
   }
 }

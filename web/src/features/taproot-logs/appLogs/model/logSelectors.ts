@@ -1,10 +1,10 @@
-import { parseLogLine } from '@/features/logs/model/logParsing';
+import { parseLogLine } from './logParsing';
 import {
   resolveStatusGroup,
   type ParsedLogLine,
   type HttpMethod,
   type StatusGroup,
-} from '@/features/logs/model/logTypes';
+} from './logTypes';
 import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
 import type { LogBuffer } from './logBuffer';
 

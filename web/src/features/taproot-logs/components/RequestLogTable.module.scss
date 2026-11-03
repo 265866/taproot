@@ -1,0 +1,212 @@
+.wrap {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-tertiary);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    vertical-align: middle;
+  }
+}
+
+.row {
+  position: relative;
+
+  &:hover td {
+    background: var(--bg-tertiary);
+  }
+
+  &:focus-within td {
+    background: var(--bg-tertiary);
+  }
+
+  &:last-child td {
+    border-bottom: 0;
+  }
+}
+
+.rowLink {
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  &:focus-visible {
+    outline: none;
+
+    &::after {
+      outline: 2px solid var(--primary-color);
+      outline-offset: -2px;
+    }
+  }
+}
+
+.method {
+  color: var(--text-secondary);
+}
+
+.flags {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+
+  span {
+    padding: 0 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-tertiary);
+    font-size: 11px;
+  }
+}
+
+.time {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.model,
+.session {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.session {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+}
+
+.num {
+  text-align: right !important;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.status {
+  display: inline-block;
+  min-width: 38px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.success {
+  background: color-mix(in srgb, var(--success-color) 16%, transparent);
+  color: var(--success-color);
+}
+
+.info {
+  background: var(--provider-codex-soft);
+  color: var(--provider-codex);
+}
+
+.warn {
+  background: var(--amber-10);
+  color: var(--amber-color);
+}
+
+.error {
+  background: var(--destructive-10);
+  color: var(--error-color);
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  padding: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+.end {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+// Narrow screens: each row becomes a small card; cells label themselves.
+@media (max-width: 760px) {
+  .table {
+    thead {
+      display: none;
+    }
+
+    tbody,
+    tr,
+    td {
+      display: block;
+    }
+
+    td {
+      padding: 0;
+      border: 0;
+    }
+  }
+
+  .row {
+    display: grid !important;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 4px 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-color);
+
+    &:hover td,
+    &:focus-within td {
+      background: none;
+    }
+
+    &:hover,
+    &:focus-within {
+      background: var(--bg-tertiary);
+    }
+
+    > td:nth-child(3) {
+      grid-column: 1 / -1;
+      order: -1;
+    }
+
+    > td:nth-child(n + 4) {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      text-align: right;
+
+      &::before {
+        content: attr(data-label);
+        color: var(--text-tertiary);
+        text-align: left;
+      }
+    }
+  }
+
+  .num {
+    text-align: right;
+  }
+}

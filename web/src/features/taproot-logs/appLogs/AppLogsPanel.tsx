@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useReducer, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link, useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -27,16 +28,14 @@ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { logsApi, responseDataToText, type ErrorLogFile } from '@/services/api/logs';
+import { taprootApi } from '@/services/api/taproot';
+import { ROUTES } from '@/router/routes';
 import { INITIAL_VISIBLE_LINES } from './model/logBuffer';
 import { useLogStream } from './hooks/useLogStream';
 import { copyToClipboard } from '@/utils/clipboard';
 import { getErrorMessage } from '@/utils/helpers';
 import { downloadBlob } from '@/utils/download';
-import {
-  createLogParserCache,
-  searchLogEntries,
-  filterLogEntries,
-} from '@/features/logs/model/logSelectors';
+import { createLogParserCache, searchLogEntries, filterLogEntries } from './model/logSelectors';
 import { Select } from '@/components/ui/Select';
 import { formatUnixTimestamp } from '@/utils/format';
 import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
@@ -46,14 +45,19 @@ import { errorLogViewerReducer } from './model/errorLogViewer';
 import { shouldExitLogFullscreen } from './model/logFullscreen';
 import { useLogFilters } from './hooks/useLogFilters';
 import { isNearBottom, useLogScroller } from './hooks/useLogScroller';
-import styles from './LogsPage.module.scss';
+import styles from './AppLogsPanel.module.scss';
 
 const INITIAL_DISPLAY_LINES = INITIAL_VISIBLE_LINES;
 
 type TabType = 'logs' | 'errors';
 
-export function LogsPage() {
+/**
+ * The application log tail and upstream's error log files, carried over from the previous logs
+ * viewer. Request ids in log lines open taproot's own request log detail.
+ */
+export function AppLogsPanel() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { showNotification } = useNotificationStore();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
@@ -77,8 +81,6 @@ export function LogsPage() {
     status: 'closed',
   });
   const selectedErrorLog = errorLogViewer.status === 'closed' ? null : errorLogViewer.item;
-  const [viewerRequestId, setViewerRequestId] = useState<string | null>(null);
-  const [requestLogDownloading, setRequestLogDownloading] = useState(false);
   const [fullscreenLogs, setFullscreenLogs] = useState(false);
 
   const [requests] = useState(() => ({
@@ -117,7 +119,7 @@ export function LogsPage() {
   const downloadLogs = () => {
     const text = logBuffer.buffer.join('\n');
     downloadBlob({ filename: 'logs.txt', blob: new Blob([text], { type: 'text/plain' }) });
-    showNotification(t('logs.download_success'), 'success');
+    showNotification(t('taproot_logs.app.download_success'), 'success');
   };
 
   const loadErrorLogs = async () => {
@@ -139,7 +141,9 @@ export function LogsPage() {
       setErrorLogs([]);
       const message = getErrorMessage(err);
       setErrorLogsError(
-        message ? `${t('logs.error_logs_load_error')}: ${message}` : t('logs.error_logs_load_error')
+        message
+          ? `${t('taproot_logs.app.error_logs_load_error')}: ${message}`
+          : t('taproot_logs.app.error_logs_load_error')
       );
     } finally {
       if (requests.errors.isCurrent(request)) setLoadingErrors(false);
@@ -154,7 +158,7 @@ export function LogsPage() {
       const response = await logsApi.downloadErrorLog(name);
       if (!requests.session.isCurrent(session)) return;
       downloadBlob({ filename: name, blob: new Blob([response.data], { type: 'text/plain' }) });
-      showNotification(t('logs.error_log_download_success'), 'success');
+      showNotification(t('taproot_logs.app.error_log_download_success'), 'success');
     } catch (err: unknown) {
       if (!requests.session.isCurrent(session)) return;
       const message = getErrorMessage(err);
@@ -165,39 +169,47 @@ export function LogsPage() {
     }
   };
 
-  const openErrorLog = async (item: ErrorLogFile, byRequestId?: string) => {
-    setViewerRequestId(byRequestId ?? null);
+  const openErrorLog = async (item: ErrorLogFile) => {
     const requestId = requests.viewer.invalidate();
     dispatchErrorLogViewer({ type: 'open', item });
 
     try {
-      if (item.size && item.size > 2 * 1024 * 1024) throw new Error(t('logs.preview_too_large'));
-      const response = byRequestId
-        ? await logsApi.downloadRequestLogById(byRequestId)
-        : await logsApi.downloadErrorLog(item.name);
+      if (item.size && item.size > 2 * 1024 * 1024)
+        throw new Error(t('taproot_logs.app.preview_too_large'));
+      const response = await logsApi.downloadErrorLog(item.name);
       if (response.data instanceof Blob && response.data.size > 2 * 1024 * 1024) {
-        throw new Error(t('logs.preview_too_large'));
+        throw new Error(t('taproot_logs.app.preview_too_large'));
       }
       const text = await responseDataToText(response.data);
       if (!requests.viewer.isCurrent(requestId)) return;
       dispatchErrorLogViewer({ type: 'ready', text });
     } catch (err: unknown) {
       if (!requests.viewer.isCurrent(requestId)) return;
-      const message =
-        byRequestId &&
-        typeof err === 'object' &&
-        err !== null &&
-        'status' in err &&
-        err.status === 404
-          ? `${t('logs.request_log_missing')} ${getErrorMessage(err)}`
-          : getErrorMessage(err);
+      const message = getErrorMessage(err);
       dispatchErrorLogViewer({
         type: 'error',
         message: message
-          ? `${t('logs.error_log_open_failed')}: ${message}`
-          : t('logs.error_log_open_failed'),
+          ? `${t('taproot_logs.app.error_log_open_failed')}: ${message}`
+          : t('taproot_logs.app.error_log_open_failed'),
       });
     }
+  };
+
+  // Log lines carry the last 8 characters of a request id; find the full id in taproot's request
+  // logs and open it, or fall back to a search when the short id is ambiguous or missing.
+  const openRequestLog = async (shortId: string) => {
+    const search = new URLSearchParams({ q: shortId });
+    try {
+      const { logs } = await taprootApi.requestLogs({ q: shortId, limit: 2 });
+      const match = logs.filter((log) => log.requestId.endsWith(shortId));
+      if (match.length === 1) {
+        navigate(`${ROUTES.requestLogs}?requestId=${encodeURIComponent(match[0].requestId)}`);
+        return;
+      }
+    } catch {
+      // The search page shows the error itself.
+    }
+    navigate(`${ROUTES.requestLogs}?${search.toString()}`);
   };
 
   const closeErrorLogViewer = () => {
@@ -212,8 +224,8 @@ export function LogsPage() {
     if (!requests.session.isCurrent(session)) return;
     showNotification(
       ok
-        ? t('logs.error_log_copy_success')
-        : t('logs.copy_failed', { defaultValue: 'Copy failed' }),
+        ? t('taproot_logs.app.error_log_copy_success')
+        : t('taproot_logs.app.copy_failed', { defaultValue: 'Copy failed' }),
       ok ? 'success' : 'error'
     );
   };
@@ -238,8 +250,6 @@ export function LogsPage() {
       invalidateSession();
       resetErrors();
       dispatchErrorLogViewer({ type: 'close' });
-      setViewerRequestId(null);
-      setRequestLogDownloading(false);
     });
     const unsubscribeConfig = useConfigStore.subscribe((next, previous) => {
       if (next.config?.requestLog !== previous.config?.requestLog) resetErrors();
@@ -342,32 +352,12 @@ export function LogsPage() {
   const copyLogLine = async (raw: string) => {
     const ok = await copyToClipboard(raw);
     if (ok) {
-      showNotification(t('logs.copy_success', { defaultValue: 'Copied to clipboard' }), 'success');
-    } else {
-      showNotification(t('logs.copy_failed', { defaultValue: 'Copy failed' }), 'error');
-    }
-  };
-
-  const downloadRequestLog = async (id: string) => {
-    const session = requests.session.capture();
-    setRequestLogDownloading(true);
-    try {
-      const response = await logsApi.downloadRequestLogById(id);
-      if (!requests.session.isCurrent(session)) return;
-      downloadBlob({
-        filename: `request-${id}.log`,
-        blob: new Blob([response.data], { type: 'text/plain' }),
-      });
-      showNotification(t('logs.request_log_download_success'), 'success');
-    } catch (err: unknown) {
-      if (!requests.session.isCurrent(session)) return;
-      const message = getErrorMessage(err);
       showNotification(
-        `${t('notification.download_failed')}${message ? `: ${message}` : ''}`,
-        'error'
+        t('taproot_logs.app.copy_success', { defaultValue: 'Copied to clipboard' }),
+        'success'
       );
-    } finally {
-      if (requests.session.isCurrent(session)) setRequestLogDownloading(false);
+    } else {
+      showNotification(t('taproot_logs.app.copy_failed', { defaultValue: 'Copy failed' }), 'error');
     }
   };
 
@@ -394,15 +384,14 @@ export function LogsPage() {
   return (
     <div className={styles.container}>
       <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{t('logs.title')}</h1>
-        <div className={styles.tabBar} role="group" aria-label={t('logs.title')}>
+        <div className={styles.tabBar} role="group" aria-label={t('taproot_logs.app.title')}>
           <button
             type="button"
             className={`${styles.tabItem} ${activeTab === 'logs' ? styles.tabActive : ''}`}
             aria-pressed={activeTab === 'logs'}
             onClick={() => setActiveTab('logs')}
           >
-            {t('logs.log_content')}
+            {t('taproot_logs.app.log_content')}
           </button>
           <button
             type="button"
@@ -413,7 +402,7 @@ export function LogsPage() {
               setActiveTab('errors');
             }}
           >
-            {t('logs.error_logs_modal_title')}
+            {t('taproot_logs.app.error_logs_modal_title')}
           </button>
         </div>
       </header>
@@ -429,8 +418,8 @@ export function LogsPage() {
               <div className="status-badge warning">
                 {t(
                   cpaNeedsFileLogging
-                    ? 'logs.cpa_file_logging_required'
-                    : 'logs.file_logging_required'
+                    ? 'taproot_logs.app.cpa_file_logging_required'
+                    : 'taproot_logs.app.file_logging_required'
                 )}
               </div>
             )}
@@ -448,20 +437,23 @@ export function LogsPage() {
                 <span className={styles.statusDot} aria-hidden="true" />
                 {t(
                   catchingUp && autoRefresh
-                    ? 'logs.read_status_catching_up'
+                    ? 'taproot_logs.app.read_status_catching_up'
                     : autoRefresh
-                      ? 'logs.read_status_live'
-                      : 'logs.read_status_paused'
+                      ? 'taproot_logs.app.read_status_live'
+                      : 'taproot_logs.app.read_status_paused'
                 )}
                 {lastUpdated && (
                   <>
                     {' '}
-                    · {t('logs.last_updated', { time: new Date(lastUpdated).toLocaleTimeString() })}
+                    ·{' '}
+                    {t('taproot_logs.app.last_updated', {
+                      time: new Date(lastUpdated).toLocaleTimeString(),
+                    })}
                   </>
                 )}
               </div>
               <div className={styles.bufferStatus}>
-                {t('logs.buffer_scope', {
+                {t('taproot_logs.app.buffer_scope', {
                   count: logBuffer.buffer.length,
                   matched: filteredLines.length,
                 })}
@@ -470,12 +462,12 @@ export function LogsPage() {
             <div className={styles.notices}>
               {wasReset && (
                 <div className="hint" role="status">
-                  {t('logs.cursor_reset_notice')}
+                  {t('taproot_logs.app.cursor_reset_notice')}
                 </div>
               )}
               {historyEvicted && (
                 <div className="hint" role="status">
-                  {t('logs.history_evicted')}
+                  {t('taproot_logs.app.history_evicted')}
                 </div>
               )}
             </div>
@@ -486,7 +478,7 @@ export function LogsPage() {
                 size="sm"
                 onClick={resumeFollowing}
               >
-                {t('logs.resume_following', { count: pendingLines })}
+                {t('taproot_logs.app.resume_following', { count: pendingLines })}
               </Button>
             )}
 
@@ -495,8 +487,8 @@ export function LogsPage() {
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t('logs.search_placeholder')}
-                  aria-label={t('logs.search_placeholder')}
+                  placeholder={t('taproot_logs.app.search_placeholder')}
+                  aria-label={t('taproot_logs.app.search_placeholder')}
                   className={styles.searchInput}
                   rightElement={
                     searchQuery ? (
@@ -504,8 +496,8 @@ export function LogsPage() {
                         type="button"
                         className={styles.searchClear}
                         onClick={() => setSearchQuery('')}
-                        title={t('logs.clear_search')}
-                        aria-label={t('logs.clear_search')}
+                        title={t('taproot_logs.app.clear_search')}
+                        aria-label={t('taproot_logs.app.clear_search')}
                       >
                         <IconX size={16} />
                       </button>
@@ -521,9 +513,9 @@ export function LogsPage() {
                 fullWidth={false}
                 value={levelFilter}
                 onChange={setLevelFilter}
-                ariaLabel={t('logs.level_filter')}
+                ariaLabel={t('taproot_logs.app.level_filter')}
                 options={[
-                  { value: '', label: t('logs.all_levels') },
+                  { value: '', label: t('taproot_logs.app.all_levels') },
                   ...['trace', 'debug', 'info', 'warn', 'error', 'fatal'].map((level) => ({
                     value: level,
                     label: level.toUpperCase(),
@@ -538,15 +530,19 @@ export function LogsPage() {
                   className={styles.filterPanelToggle}
                   onClick={() => setStructuredFiltersExpanded((prev) => !prev)}
                   aria-haspopup="dialog"
-                  aria-label={t('logs.filter_panel_title')}
-                  title={t('logs.filter_panel_title')}
+                  aria-label={t('taproot_logs.app.filter_panel_title')}
+                  title={t('taproot_logs.app.filter_panel_title')}
                 >
                   <span className={styles.filterPanelButtonContent}>
                     <IconSlidersHorizontal size={16} />
-                    <span className={styles.filterPanelLabel}>{t('logs.filter_panel_title')}</span>
+                    <span className={styles.filterPanelLabel}>
+                      {t('taproot_logs.app.filter_panel_title')}
+                    </span>
                     {structuredFilterCount > 0 && (
                       <span className={styles.filterPanelCount}>
-                        {t('logs.filter_panel_active_count', { count: structuredFilterCount })}
+                        {t('taproot_logs.app.filter_panel_active_count', {
+                          count: structuredFilterCount,
+                        })}
                       </span>
                     )}
                   </span>
@@ -556,7 +552,7 @@ export function LogsPage() {
               <Modal
                 open={structuredFiltersExpanded}
                 onClose={() => setStructuredFiltersExpanded(false)}
-                title={t('logs.filter_panel_title')}
+                title={t('taproot_logs.app.filter_panel_title')}
                 width={640}
                 footer={
                   <Button variant="secondary" onClick={() => setStructuredFiltersExpanded(false)}>
@@ -566,7 +562,9 @@ export function LogsPage() {
               >
                 <div id={structuredFiltersPanelId} className={styles.structuredFilters}>
                   <div className={styles.filterChipGroup}>
-                    <span className={styles.filterChipLabel}>{t('logs.filter_method')}</span>
+                    <span className={styles.filterChipLabel}>
+                      {t('taproot_logs.app.filter_method')}
+                    </span>
                     <div className={styles.filterChipList}>
                       {HTTP_METHODS.map((method) => {
                         const active = filters.methodFilters.includes(method);
@@ -588,7 +586,9 @@ export function LogsPage() {
                   </div>
 
                   <div className={styles.filterChipGroup}>
-                    <span className={styles.filterChipLabel}>{t('logs.filter_status')}</span>
+                    <span className={styles.filterChipLabel}>
+                      {t('taproot_logs.app.filter_status')}
+                    </span>
                     <div className={styles.filterChipList}>
                       {STATUS_GROUPS.map((statusGroup) => {
                         const active = filters.statusFilters.includes(statusGroup);
@@ -602,7 +602,7 @@ export function LogsPage() {
                             disabled={count === 0 && !active}
                             aria-pressed={active}
                           >
-                            {t(`logs.filter_status_${statusGroup}`)} ({count})
+                            {t(`taproot_logs.app.filter_status_${statusGroup}`)} ({count})
                           </button>
                         );
                       })}
@@ -610,10 +610,14 @@ export function LogsPage() {
                   </div>
 
                   <div className={styles.filterChipGroup}>
-                    <span className={styles.filterChipLabel}>{t('logs.filter_path')}</span>
+                    <span className={styles.filterChipLabel}>
+                      {t('taproot_logs.app.filter_path')}
+                    </span>
                     <div className={styles.filterChipList}>
                       {filters.pathOptions.length === 0 ? (
-                        <span className={styles.filterChipHint}>{t('logs.filter_path_empty')}</span>
+                        <span className={styles.filterChipHint}>
+                          {t('taproot_logs.app.filter_path_empty')}
+                        </span>
                       ) : (
                         filters.pathOptions.map(({ path, count }) => {
                           const active = filters.pathFilters.includes(path);
@@ -640,7 +644,7 @@ export function LogsPage() {
                     onClick={filters.clearStructuredFilters}
                     disabled={!filters.hasStructuredFilters}
                   >
-                    {t('logs.clear_filters')}
+                    {t('taproot_logs.app.clear_filters')}
                   </Button>
                 </div>
 
@@ -648,7 +652,7 @@ export function LogsPage() {
                   <ToggleSwitch
                     checked={wrapLogs}
                     onChange={setWrapLogs}
-                    label={t('logs.wrap_lines')}
+                    label={t('taproot_logs.app.wrap_lines')}
                   />
                   <ToggleSwitch
                     checked={hideManagementLogs}
@@ -656,7 +660,9 @@ export function LogsPage() {
                     label={
                       <span className={styles.switchLabel}>
                         <IconEyeOff size={16} />
-                        {t('logs.hide_management_logs', { prefix: MANAGEMENT_API_PREFIX })}
+                        {t('taproot_logs.app.hide_management_logs', {
+                          prefix: MANAGEMENT_API_PREFIX,
+                        })}
                       </span>
                     }
                   />
@@ -667,12 +673,12 @@ export function LogsPage() {
                     label={
                       <span
                         className={styles.switchLabel}
-                        title={t('logs.show_raw_logs_hint', {
+                        title={t('taproot_logs.app.show_raw_logs_hint', {
                           defaultValue: 'Show original log text for easier multi-line copy',
                         })}
                       >
                         <IconCode size={16} />
-                        {t('logs.show_raw_logs', { defaultValue: 'Show raw logs' })}
+                        {t('taproot_logs.app.show_raw_logs', { defaultValue: 'Show raw logs' })}
                       </span>
                     }
                   />
@@ -686,8 +692,8 @@ export function LogsPage() {
                   onClick={() => loadLogs(false)}
                   disabled={refreshDisabled}
                   className={styles.actionButton}
-                  title={t('logs.refresh_button')}
-                  aria-label={t('logs.refresh_button')}
+                  title={t('taproot_logs.app.refresh_button')}
+                  aria-label={t('taproot_logs.app.refresh_button')}
                 >
                   <IconRefreshCw size={16} />
                 </Button>
@@ -696,8 +702,8 @@ export function LogsPage() {
                   size="sm"
                   className={styles.actionButton}
                   aria-pressed={autoRefresh}
-                  aria-label={t('logs.reading_enabled')}
-                  title={t('logs.reading_enabled')}
+                  aria-label={t('taproot_logs.app.reading_enabled')}
+                  title={t('taproot_logs.app.reading_enabled')}
                   onClick={() => setAutoRefresh(!autoRefresh)}
                   disabled={autoRefreshDisabled}
                 >
@@ -709,8 +715,8 @@ export function LogsPage() {
                   onClick={downloadLogs}
                   disabled={logBuffer.buffer.length === 0}
                   className={styles.actionButton}
-                  title={t('logs.download_cached')}
-                  aria-label={t('logs.download_cached')}
+                  title={t('taproot_logs.app.download_cached')}
+                  aria-label={t('taproot_logs.app.download_cached')}
                 >
                   <IconDownload size={16} />
                 </Button>
@@ -720,8 +726,8 @@ export function LogsPage() {
                   onClick={clearLogs}
                   disabled={clearDisabled}
                   className={styles.actionButton}
-                  title={t('logs.clear_button')}
-                  aria-label={t('logs.clear_button')}
+                  title={t('taproot_logs.app.clear_button')}
+                  aria-label={t('taproot_logs.app.clear_button')}
                 >
                   <IconTrash2 size={16} />
                 </Button>
@@ -732,10 +738,14 @@ export function LogsPage() {
                   className={styles.actionButton}
                   aria-pressed={fullscreenLogs}
                   aria-label={
-                    fullscreenLogs ? t('logs.exit_fullscreen_button') : t('logs.fullscreen_button')
+                    fullscreenLogs
+                      ? t('taproot_logs.app.exit_fullscreen_button')
+                      : t('taproot_logs.app.fullscreen_button')
                   }
                   title={
-                    fullscreenLogs ? t('logs.exit_fullscreen_button') : t('logs.fullscreen_button')
+                    fullscreenLogs
+                      ? t('taproot_logs.app.exit_fullscreen_button')
+                      : t('taproot_logs.app.fullscreen_button')
                   }
                 >
                   <span className={styles.buttonContent}>
@@ -747,7 +757,7 @@ export function LogsPage() {
 
             <div className={styles.viewerArea}>
               {loading && logBuffer.buffer.length === 0 ? (
-                <div className="hint">{t('logs.loading')}</div>
+                <div className="hint">{t('taproot_logs.app.loading')}</div>
               ) : logBuffer.buffer.length > 0 && filteredLines.length > 0 ? (
                 <div
                   ref={logViewerRef}
@@ -761,7 +771,7 @@ export function LogsPage() {
                   onScroll={handleLogScroll}
                   tabIndex={0}
                   role="region"
-                  aria-label={t('logs.log_content')}
+                  aria-label={t('taproot_logs.app.log_content')}
                   aria-busy={loading}
                 >
                   {canLoadMore && (
@@ -773,17 +783,19 @@ export function LogsPage() {
                           setVisibleCount((count) => Math.min(filteredLines.length, count + 200))
                         }
                       >
-                        {t('logs.filter_load_more')}
+                        {t('taproot_logs.app.filter_load_more')}
                       </Button>
                       <div className={styles.loadMoreStats}>
-                        <span>{t('logs.loaded_lines', { count: parsedVisibleLines.length })}</span>
+                        <span>
+                          {t('taproot_logs.app.loaded_lines', { count: parsedVisibleLines.length })}
+                        </span>
                         {removedCount > 0 && (
                           <span className={styles.loadMoreCount}>
-                            {t('logs.filtered_lines', { count: removedCount })}
+                            {t('taproot_logs.app.filtered_lines', { count: removedCount })}
                           </span>
                         )}
                         <span className={styles.loadMoreCount}>
-                          {t('logs.hidden_lines', { count: logState.visibleFrom })}
+                          {t('taproot_logs.app.hidden_lines', { count: logState.visibleFrom })}
                         </span>
                       </div>
                     </div>
@@ -811,7 +823,7 @@ export function LogsPage() {
                             onDoubleClick={() => {
                               void copyLogLine(line.raw);
                             }}
-                            title={t('logs.double_click_copy_hint', {
+                            title={t('taproot_logs.app.double_click_copy_hint', {
                               defaultValue: 'Double-click to copy',
                             })}
                           >
@@ -846,14 +858,11 @@ export function LogsPage() {
                                 <button
                                   type="button"
                                   className={[styles.badge, styles.requestIdBadge].join(' ')}
-                                  title={t('logs.view_request', { id: line.requestId })}
-                                  aria-label={t('logs.view_request', { id: line.requestId })}
-                                  onClick={() =>
-                                    void openErrorLog(
-                                      { name: `request-${line.requestId}.log` },
-                                      line.requestId
-                                    )
-                                  }
+                                  title={t('taproot_logs.app.view_request', { id: line.requestId })}
+                                  aria-label={t('taproot_logs.app.view_request', {
+                                    id: line.requestId,
+                                  })}
+                                  onClick={() => void openRequestLog(line.requestId ?? '')}
                                 >
                                   {line.requestId}
                                 </button>
@@ -899,9 +908,9 @@ export function LogsPage() {
                                 variant="ghost"
                                 size="sm"
                                 className={styles.copyButton}
-                                title={t('logs.copy_line')}
+                                title={t('taproot_logs.app.copy_line')}
                                 onClick={() => void copyLogLine(line.raw)}
-                                aria-label={t('logs.copy_line')}
+                                aria-label={t('taproot_logs.app.copy_line')}
                               >
                                 <IconCopy size={14} />
                               </Button>
@@ -914,24 +923,27 @@ export function LogsPage() {
                 </div>
               ) : logBuffer.buffer.length > 0 ? (
                 <EmptyState
-                  title={t('logs.search_empty_title')}
-                  description={t('logs.search_empty_desc')}
+                  title={t('taproot_logs.app.search_empty_title')}
+                  description={t('taproot_logs.app.search_empty_desc')}
                 />
               ) : showFileLoggingRequired ? (
                 <EmptyState
                   title={t(
                     cpaNeedsFileLogging
-                      ? 'logs.cpa_file_logging_required_title'
-                      : 'logs.file_logging_required_title'
+                      ? 'taproot_logs.app.cpa_file_logging_required_title'
+                      : 'taproot_logs.app.file_logging_required_title'
                   )}
                   description={t(
                     cpaNeedsFileLogging
-                      ? 'logs.cpa_file_logging_required_desc'
-                      : 'logs.file_logging_required_desc'
+                      ? 'taproot_logs.app.cpa_file_logging_required_desc'
+                      : 'taproot_logs.app.file_logging_required_desc'
                   )}
                 />
               ) : (
-                <EmptyState title={t('logs.empty_title')} description={t('logs.empty_desc')} />
+                <EmptyState
+                  title={t('taproot_logs.app.empty_title')}
+                  description={t('taproot_logs.app.empty_desc')}
+                />
               )}
             </div>
           </Card>
@@ -940,7 +952,7 @@ export function LogsPage() {
         {activeTab === 'errors' && (
           <Card
             className={styles.errorCard}
-            title={t('logs.error_logs_modal_title')}
+            title={t('taproot_logs.app.error_logs_modal_title')}
             extra={
               <Button
                 variant="secondary"
@@ -954,15 +966,13 @@ export function LogsPage() {
             }
           >
             <div className={styles.errorBody}>
-              <div className="hint">{t('logs.error_logs_description')}</div>
+              <div className="hint">{t('taproot_logs.app.error_logs_description')}</div>
 
-              {requestLogEnabled && (
-                <div>
-                  <div className="status-badge warning">
-                    {t('logs.error_logs_request_log_enabled')}
-                  </div>
-                </div>
-              )}
+              <div className="hint">
+                <Link className={styles.failedLink} to={`${ROUTES.requestLogs}?status=error`}>
+                  {t('taproot_logs.app.error_logs_failed_requests')}
+                </Link>
+              </div>
 
               {errorLogsError && <div className="error-box">{errorLogsError}</div>}
 
@@ -970,7 +980,7 @@ export function LogsPage() {
                 {loadingErrors ? (
                   <div className="hint">{t('common.loading')}</div>
                 ) : errorLogs.length === 0 ? (
-                  <div className="hint">{t('logs.error_logs_empty')}</div>
+                  <div className="hint">{t('taproot_logs.app.error_logs_empty')}</div>
                 ) : (
                   <div className="item-list">
                     {errorLogs.map((item) => (
@@ -993,7 +1003,7 @@ export function LogsPage() {
                           >
                             <span className={styles.buttonContent}>
                               <IconEye size={16} />
-                              {t('logs.error_logs_open')}
+                              {t('taproot_logs.app.error_logs_open')}
                             </span>
                           </Button>
                           <Button
@@ -1002,7 +1012,7 @@ export function LogsPage() {
                             onClick={() => downloadErrorLog(item.name)}
                             disabled={disableControls}
                           >
-                            {t('logs.error_logs_download')}
+                            {t('taproot_logs.app.error_logs_download')}
                           </Button>
                         </div>
                       </div>
@@ -1018,7 +1028,7 @@ export function LogsPage() {
       <Modal
         open={errorLogViewer.status !== 'closed'}
         onClose={closeErrorLogViewer}
-        title={selectedErrorLog?.name ?? t('logs.error_log_view_title')}
+        title={selectedErrorLog?.name ?? t('taproot_logs.app.error_log_view_title')}
         width={960}
         footer={
           <>
@@ -1036,13 +1046,11 @@ export function LogsPage() {
             </Button>
             <Button
               onClick={() => {
-                if (viewerRequestId) void downloadRequestLog(viewerRequestId);
-                else if (selectedErrorLog) void downloadErrorLog(selectedErrorLog.name);
+                if (selectedErrorLog) void downloadErrorLog(selectedErrorLog.name);
               }}
-              loading={requestLogDownloading}
               disabled={errorLogViewer.status === 'closed' || errorLogViewer.status === 'loading'}
             >
-              {t('logs.error_logs_download')}
+              {t('taproot_logs.app.error_logs_download')}
             </Button>
           </>
         }
@@ -1051,11 +1059,11 @@ export function LogsPage() {
           {selectedErrorLog && (
             <div className={styles.errorLogViewerMeta}>
               <span>
-                {t('logs.error_logs_size')}:{' '}
+                {t('taproot_logs.app.error_logs_size')}:{' '}
                 {selectedErrorLog.size ? `${(selectedErrorLog.size / 1024).toFixed(1)} KB` : '-'}
               </span>
               <span>
-                {t('logs.error_logs_modified')}:{' '}
+                {t('taproot_logs.app.error_logs_modified')}:{' '}
                 {selectedErrorLog.modified ? formatUnixTimestamp(selectedErrorLog.modified) : '-'}
               </span>
             </div>
@@ -1070,7 +1078,7 @@ export function LogsPage() {
                 {errorLogViewer.text}
               </pre>
             ) : (
-              <div className="hint">{t('logs.error_log_empty_content')}</div>
+              <div className="hint">{t('taproot_logs.app.error_log_empty_content')}</div>
             ))}
         </div>
       </Modal>

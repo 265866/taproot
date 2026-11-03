@@ -8,7 +8,6 @@ const keys = [
   'read_status_catching_up',
   'last_updated',
   'buffer_scope',
-  'buffer_evicted',
   'cursor_reset_notice',
   'history_evicted',
   'resume_following',
@@ -16,7 +15,6 @@ const keys = [
   'all_levels',
   'view_request',
   'copy_line',
-  'request_log_missing',
   'download_cached',
   'clear_application_confirm',
   'clear_search',
@@ -28,9 +26,9 @@ describe('log interaction translations', () => {
   for (const [locale, document] of Object.entries({ en })) {
     test(`${locale} includes all new actions, status labels and matching interpolation`, () => {
       for (const key of keys) {
-        expect(document.logs[key].trim().length).toBeGreaterThan(0);
-        expect(document.logs[key].match(/\{\{\w+\}\}/g) ?? []).toEqual(
-          en.logs[key].match(/\{\{\w+\}\}/g) ?? []
+        expect(document.taproot_logs.app[key].trim().length).toBeGreaterThan(0);
+        expect(document.taproot_logs.app[key].match(/\{\{\w+\}\}/g) ?? []).toEqual(
+          en.taproot_logs.app[key].match(/\{\{\w+\}\}/g) ?? []
         );
       }
     });

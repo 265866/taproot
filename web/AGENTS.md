@@ -13,8 +13,8 @@ There is no login page, management-key prompt, or key storage. `src/router/Conne
 
 Removed for good (do not reintroduce): Quick Start, AI Providers and API-key provider editing, sponsor or affiliate content, Kimi China, Devin, Vertex, SIWC, Config panel API-key editing, and non-English locales. Their backend code stays in the Go tree; only the dashboard drops them.
 
-- `src/features/`: feature-owned pages, components, hooks, types, and logic: `dashboard`, `authFiles` (including credential policy editors under `policy/`), `oauth`, `routing` (OAuth credentials only), `config`, `logs` (the previous logs viewer at `#/logs`), and `plugins`.
-- `src/features/taproot-{quota,usage,logs,backups,settings}/`: taproot sections. Each belongs to the workstream named in the plan; this shell only provides placeholders and routes. `taproot-quota` (at `#/quota`) keeps its pure projection model in `model/` and the live provider adapters, which Auth Files also uses, in `live/`.
+- `src/features/`: feature-owned pages, components, hooks, types, and logic: `dashboard`, `authFiles` (including credential policy editors under `policy/`), `oauth`, `routing` (OAuth credentials only), `config`, and `plugins`.
+- `src/features/taproot-{quota,usage,logs,backups,settings}/`: taproot sections. Each belongs to the workstream named in the plan. `taproot-quota` (at `#/quota`) keeps its pure projection model in `model/` and the live provider adapters, which Auth Files also uses, in `live/`. `taproot-logs` also holds the application log tail (`appLogs/`, the `?tab=app` tab of `#/request-logs`), which replaced the previous `#/logs` viewer.
 - `src/pages/`: remaining route pages outside the feature layout (system, and the auth-file OAuth excluded-model and model-alias editors).
 - `src/components/`, `src/hooks/`, `src/utils/`: shared UI, hooks, and utilities. Keep feature-specific code inside its feature.
 - `src/services/api/`: API clients, domain endpoints, and backend data normalization.

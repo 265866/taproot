@@ -644,3 +644,63 @@ func TestConfigValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSetScheduleAppliesAtRuntime(t *testing.T) {
+	f := newFixture(t, Config{DailyAt: "off", Keep: 3})
+	if at, keep := f.b.Schedule(); at != "off" || keep != 3 {
+		t.Fatalf("Schedule() = %q, %d; want off, 3", at, keep)
+	}
+	for _, bad := range []struct {
+		at   string
+		keep int
+	}{{"25:00", 3}, {"3pm", 3}, {"03:13", 0}, {"03:13", -1}} {
+		if err := f.b.SetSchedule(bad.at, bad.keep); err == nil {
+			t.Errorf("SetSchedule(%q, %d) accepted", bad.at, bad.keep)
+		}
+	}
+	if at, keep := f.b.Schedule(); at != "off" || keep != 3 {
+		t.Fatalf("rejected changes leaked: %q, %d", at, keep)
+	}
+
+	// The loop starts while the schedule is off; turning it on must wake it.
+	// The fake clock sits 50ms before 03:13, so the timer fires almost at once.
+	clock := time.Date(2026, 11, 2, 3, 12, 59, 950_000_000, time.Local)
+	f.b.now = func() time.Time { return clock }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.b.Start(ctx)
+	if err := f.b.SetSchedule("03:13", 2); err != nil {
+		t.Fatal(err)
+	}
+	if at, keep := f.b.Schedule(); at != "03:13" || keep != 2 {
+		t.Fatalf("Schedule() = %q, %d; want 03:13, 2", at, keep)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		entries, err := f.b.List()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) > 0 {
+			if entries[0].Reason != ReasonScheduled {
+				t.Fatalf("reason = %s, want scheduled", entries[0].Reason)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no scheduled backup after enabling the schedule")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+
+	// A lower keep prunes at the next backup. The manual backup lands in the
+	// same second and sorts after the scheduled one.
+	if err := f.b.SetSchedule("off", 1); err != nil {
+		t.Fatal(err)
+	}
+	f.create(t)
+	if got := f.list(t); len(got) != 1 || got[0].Reason != ReasonManual {
+		t.Fatalf("after keep=1: %+v", got)
+	}
+}

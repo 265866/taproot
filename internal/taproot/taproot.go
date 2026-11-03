@@ -17,6 +17,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/backup"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/reqlog"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/settings"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/web"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
@@ -119,6 +120,18 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, fmt.Errorf("taproot backups: %w", err)
 	}
+	editable, err := settings.New(settings.Deps{
+		Access:        guard,
+		AccessEnabled: tp.Access.Enabled == nil || *tp.Access.Enabled,
+		Logs:          logs,
+		Backups:       backups,
+		PollInterval:  tp.Ingest.PollInterval,
+		ConfigPath:    tpPath,
+		DataDir:       dataDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("taproot settings: %w", err)
+	}
 
 	usage.Start(ctx)
 	logs.Start(ctx)
@@ -136,6 +149,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 			usage.Routes(group)
 			logs.Routes(group)
 			backups.Routes(group)
+			editable.Routes(group)
 		}),
 	}
 	if factory := logs.LoggerFactory(); factory != nil {

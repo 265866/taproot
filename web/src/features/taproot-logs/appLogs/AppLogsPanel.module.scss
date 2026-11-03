@@ -1,4 +1,4 @@
-@use '../../styles/mixins' as *;
+@use '@/styles/mixins' as *;
 
 .container {
   --log-control-height: 40px;
@@ -682,4 +682,10 @@
   .filters {
     padding-block: 4px;
   }
+}
+
+.failedLink {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

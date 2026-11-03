@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { parseLogLine } from '../src/features/logs/model/logParsing';
+import { parseLogLine } from '../src/features/taproot-logs/appLogs/model/logParsing';
 import {
   buildLogPathOptions,
   normalizeLogPathFilters,
-} from '../src/features/logs/hooks/useLogFilters';
+} from '../src/features/taproot-logs/appLogs/hooks/useLogFilters';
 
 const prefix = '[2026-06-08 12:34:56] [a1b2c3d4] [info ] [gin_logger.go:110]';
 

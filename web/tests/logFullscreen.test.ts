@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { shouldExitLogFullscreen } from '../src/features/logs/model/logFullscreen';
+import { shouldExitLogFullscreen } from '../src/features/taproot-logs/appLogs/model/logFullscreen';
 
 describe('log fullscreen Escape handling', () => {
   test('an unhandled Escape exits fullscreen', () => {

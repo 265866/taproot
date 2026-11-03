@@ -3,7 +3,7 @@ import {
   countPendingLogLines,
   findVisibleLogAnchor,
   getLogAnchorAdjustment,
-} from '../src/features/logs/hooks/useLogScroller';
+} from '../src/features/taproot-logs/appLogs/hooks/useLogScroller';
 
 describe('log scroll anchors', () => {
   test('captures a partially visible row using its original, sparse stream ID', () => {
