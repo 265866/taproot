@@ -2,7 +2,6 @@
 
 import type { QuotaAccount, ProviderGroup } from './fromApi';
 import {
-  EPSILON,
   drainAt,
   isAccountWide,
   projectAccount,
@@ -109,35 +108,4 @@ export function poolNow(group: ProviderGroup, now: number): PoolNow {
     unobserved: accounts.filter((a) => !a.windows.some(isAccountWide)).length,
     nextReset: projection.nextReset,
   };
-}
-
-export type AccountStatus =
-  | { kind: 'available' }
-  | { kind: 'blocked'; until: number | null }
-  | { kind: 'disabled' }
-  | { kind: 'no_data' };
-
-/** Whether an account can serve requests now, and if not, when it can again. */
-export function accountStatus(
-  account: Pick<QuotaAccount, 'disabled' | 'windows'>,
-  projection: Pick<AccountProjection, 'remainingNow' | 'resets'> | undefined,
-  now: number
-): AccountStatus {
-  if (account.disabled) return { kind: 'disabled' };
-  if (!projection || !account.windows.some(isAccountWide)) return { kind: 'no_data' };
-  if (projection.remainingNow > EPSILON) return { kind: 'available' };
-  const reset = projection.resets.find((r) => r.t > now);
-  return { kind: 'blocked', until: reset ? reset.t : null };
-}
-
-/** Window ids across accounts, shortest period first (5-hour before weekly). */
-export function windowColumns(accounts: Pick<QuotaAccount, 'windows'>[]): string[] {
-  const periods = new Map<string, number>();
-  for (const a of accounts) {
-    for (const w of a.windows)
-      periods.set(w.window, Math.max(periods.get(w.window) ?? 0, w.periodMs));
-  }
-  return [...periods.entries()]
-    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
-    .map(([id]) => id);
 }

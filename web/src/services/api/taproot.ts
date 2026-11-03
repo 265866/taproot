@@ -291,14 +291,22 @@ export interface RequestLogFilter extends Partial<TimeRange>, Page {
 export class TaprootApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /** Seconds to wait before retrying, from a 429's body or `Retry-After` header. */
+  readonly retryAfter?: number;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, retryAfter?: number) {
     super(message);
     this.name = 'TaprootApiError';
     this.status = status;
     this.code = code;
+    if (retryAfter !== undefined) this.retryAfter = retryAfter;
   }
 }
+
+const seconds = (value: unknown): number | undefined => {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.ceil(n) : undefined;
+};
 
 type QueryValue = string | number | boolean | undefined;
 
@@ -318,15 +326,19 @@ export function buildTaprootUrl(
 async function readError(response: Response): Promise<TaprootApiError> {
   let code = 'http_error';
   let message = `${response.status} ${response.statusText}`.trim();
+  let retryAfter = seconds(response.headers.get('Retry-After'));
   try {
     const body: unknown = await response.json();
-    const error = (body as { error?: { code?: unknown; message?: unknown } } | null)?.error;
+    const error = (
+      body as { error?: { code?: unknown; message?: unknown; retryAfter?: unknown } } | null
+    )?.error;
     if (typeof error?.code === 'string') code = error.code;
     if (typeof error?.message === 'string' && error.message) message = error.message;
+    retryAfter = seconds(error?.retryAfter) ?? retryAfter;
   } catch {
     // Not JSON (for example a proxy error page); keep the status line.
   }
-  return new TaprootApiError(response.status, code, message);
+  return new TaprootApiError(response.status, code, message, retryAfter);
 }
 
 export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof fetch = fetch) {
@@ -361,6 +373,9 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
     quotaCurrent: () => request<{ accounts: AccountQuota[] }>('GET', '/quota/current'),
     quotaSeries: (range: TimeRange & { provider?: string }) =>
       request<{ series: QuotaSeries[] }>('GET', '/quota/series', { query: { ...range } }),
+    /** Reads one account's usage endpoint now; at most once per 30 s per account (429). */
+    quotaRefresh: (authIndex: string) =>
+      request<AccountQuota>('POST', '/quota/refresh', { body: { authIndex } }),
 
     /** `tz` is an IANA zone; daily buckets then start at its midnight instead of UTC's. */
     usageSummary: (

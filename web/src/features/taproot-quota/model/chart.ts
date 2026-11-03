@@ -1,6 +1,6 @@
 /**
  * Chart rows for a provider card: the recorded line up to now and the projected line after it,
- * in percent, plus labels for reset jumps. Pure; the component only draws them.
+ * in percent. Pure; the component only draws them.
  */
 
 import { drainAt, valueAt, type Point } from './projection';
@@ -11,15 +11,6 @@ export interface ChartRow {
   t: number;
   recorded?: number;
   projected?: number;
-}
-
-export interface JumpLabel {
-  t: number;
-  /** Value after the jump, in percent. */
-  value: number;
-  /** Size of the jump, in percent. */
-  gain: number;
-  projected: boolean;
 }
 
 /** Restricts a polyline to `[a, b]`, interpolating the ends. */
@@ -68,29 +59,6 @@ export function remainingRows(
     }
   });
   return rows;
-}
-
-/** Upward jumps of at least `minGain` (fraction), at least `minSpacingMs` apart. */
-export function jumpLabels(
-  points: Point[],
-  from: number,
-  to: number,
-  projected: boolean,
-  minGain = 0.05,
-  minSpacingMs = 0
-): JumpLabel[] {
-  const labels: JumpLabel[] = [];
-  for (let i = 1; i < points.length; i++) {
-    const p = points[i - 1];
-    const q = points[i];
-    if (q.t !== p.t || q.t < from || q.t > to) continue;
-    const gain = q.v - p.v;
-    if (gain < minGain) continue;
-    const prev = labels[labels.length - 1];
-    if (prev && q.t - prev.t < minSpacingMs) continue;
-    labels.push({ t: q.t, value: q.v * 100, gain: gain * 100, projected });
-  }
-  return labels;
 }
 
 /**

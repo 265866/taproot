@@ -17,8 +17,11 @@ export const PROVIDER_ORDER = ['claude', 'codex'] as const;
 export interface QuotaAccount extends AccountInput {
   provider: string;
   label: string;
+  email: string;
   plan: string;
   disabled: boolean;
+  /** Last usage event on the account, epoch ms. */
+  lastSeen: number | null;
 }
 
 export interface ProviderGroup {
@@ -42,6 +45,7 @@ export function toWindowObservation(w: QuotaWindowState): WindowObservation | nu
     ...(typeof w.accountWide === 'boolean' ? { accountWide: w.accountWide } : {}),
     utilization: w.utilization,
     resetsAt: parseTime(w.resetsAt),
+    ...(w.status ? { status: w.status } : {}),
     observedAt,
     periodMs: Math.max(0, w.periodSeconds) * 1000,
   };
@@ -95,8 +99,10 @@ export function buildProviderGroups(
         authIndex,
         provider: provider.toLowerCase(),
         label: '',
+        email: '',
         plan: '',
         disabled: false,
+        lastSeen: null,
         windows: [],
         series: [],
       };
@@ -108,8 +114,10 @@ export function buildProviderGroups(
     const account = ensure(a.authIndex, a.provider);
     if (!account) continue;
     account.label = a.label || a.email || '';
+    account.email = a.email || '';
     account.plan = a.plan;
     account.disabled = a.disabled;
+    account.lastSeen = parseTime(a.lastSeen);
   }
   for (const c of current) {
     const account = ensure(c.authIndex, c.provider);

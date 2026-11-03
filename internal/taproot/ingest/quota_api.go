@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strings"
@@ -31,38 +32,8 @@ type quotaAccountJSON struct {
 // credential was removed are left out.
 func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 	ctx := c.Request.Context()
-	// SQLite fills bare columns from the row that holds MAX(observed_at).
-	rows, err := i.db.QueryContext(ctx, `SELECT auth_index, provider, window_name, utilization, resets_at, status, period_seconds, MAX(observed_at)
-		FROM quota_observations WHERE auth_index NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)
-		GROUP BY auth_index, window_name`)
+	byAccount, err := i.currentWindows(ctx, "")
 	if err != nil {
-		internalError(c, err)
-		return
-	}
-	byAccount := map[string]*quotaAccountJSON{}
-	for rows.Next() {
-		var (
-			w                   quotaWindowJSON
-			authIndex, provider string
-			resetsAt            *int64
-			observed            int64
-		)
-		if err := rows.Scan(&authIndex, &provider, &w.Window, &w.Utilization, &resetsAt, &w.Status, &w.PeriodSeconds, &observed); err != nil {
-			closeRows(rows)
-			internalError(c, err)
-			return
-		}
-		w.ResetsAt, w.ObservedAt = formatNullableMs(resetsAt), formatMs(observed)
-		w.AccountWide = accountWideWindow(w.Window)
-		a := byAccount[authIndex]
-		if a == nil {
-			a = &quotaAccountJSON{AuthIndex: authIndex, Provider: provider, Windows: []quotaWindowJSON{}}
-			byAccount[authIndex] = a
-		}
-		a.Windows = append(a.Windows, w)
-	}
-	closeRows(rows)
-	if err := rows.Err(); err != nil {
 		internalError(c, err)
 		return
 	}
@@ -89,7 +60,6 @@ func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 	}
 	out := make([]quotaAccountJSON, 0, len(byAccount))
 	for _, a := range byAccount {
-		sort.Slice(a.Windows, func(x, y int) bool { return a.Windows[x].Window < a.Windows[y].Window })
 		out = append(out, *a)
 	}
 	sort.Slice(out, func(x, y int) bool {
@@ -99,6 +69,51 @@ func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 		return out[x].AuthIndex < out[y].AuthIndex
 	})
 	c.JSON(http.StatusOK, gin.H{"accounts": out})
+}
+
+// currentWindows reads the latest observation of every window, for one
+// account or, with an empty authIndex, for every account not removed.
+func (i *Ingest) currentWindows(ctx context.Context, authIndex string) (map[string]*quotaAccountJSON, error) {
+	where := "auth_index NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)"
+	var args []any
+	if authIndex != "" {
+		where += " AND auth_index = ?"
+		args = append(args, authIndex)
+	}
+	// SQLite fills bare columns from the row that holds MAX(observed_at).
+	rows, err := i.db.QueryContext(ctx, `SELECT auth_index, provider, window_name, utilization, resets_at, status, period_seconds, MAX(observed_at)
+		FROM quota_observations WHERE `+where+` GROUP BY auth_index, window_name`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer closeRows(rows)
+	byAccount := map[string]*quotaAccountJSON{}
+	for rows.Next() {
+		var (
+			w                   quotaWindowJSON
+			authIndex, provider string
+			resetsAt            *int64
+			observed            int64
+		)
+		if err := rows.Scan(&authIndex, &provider, &w.Window, &w.Utilization, &resetsAt, &w.Status, &w.PeriodSeconds, &observed); err != nil {
+			return nil, err
+		}
+		w.ResetsAt, w.ObservedAt = formatNullableMs(resetsAt), formatMs(observed)
+		w.AccountWide = accountWideWindow(w.Window)
+		a := byAccount[authIndex]
+		if a == nil {
+			a = &quotaAccountJSON{AuthIndex: authIndex, Provider: provider, Windows: []quotaWindowJSON{}}
+			byAccount[authIndex] = a
+		}
+		a.Windows = append(a.Windows, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, a := range byAccount {
+		sort.Slice(a.Windows, func(x, y int) bool { return a.Windows[x].Window < a.Windows[y].Window })
+	}
+	return byAccount, nil
 }
 
 type quotaPointJSON struct {

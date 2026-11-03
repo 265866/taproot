@@ -8,6 +8,7 @@ import { ProviderTabs } from '@/features/authFiles/components/ProviderTabs';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNow } from '@/hooks/useNow';
 import { useThemeStore } from '@/stores';
+import { Ledger } from './components/Ledger';
 import { ProviderCard } from './components/ProviderCard';
 import { Segmented } from './components/Segmented';
 import type { ChartView } from './model/chart';
@@ -21,6 +22,8 @@ import {
 } from './model/poolView';
 import { defaultRange, isDefaultRange, lastDay, shiftRange, type DateRange } from './model/range';
 import { useQuotaData } from './useQuotaData';
+import { accountName } from './model/format';
+import { REFRESHABLE_PROVIDERS, useQuotaRefresh } from './useQuotaRefresh';
 import styles from './TaprootQuotaPage.module.scss';
 
 export function TaprootQuotaPage() {
@@ -33,12 +36,12 @@ export function TaprootQuotaPage() {
   const [view, setView] = useState<ChartView>('remaining');
   const [burnHours, setBurnHours] = useState<BurnWindowHours>(3);
   const [future, setFuture] = useState<FutureUsage>('same');
-  const [showAccounts, setShowAccounts] = useState(false);
   const [showEmails, setShowEmails] = useState(false);
   const { data, loading, error, refresh } = useQuotaData(range);
+  const quotaRefresh = useQuotaRefresh(refresh);
 
-  const refreshAll = useCallback(() => refresh(), [refresh]);
-  useHeaderRefresh(refreshAll);
+  const reload = useCallback(() => refresh(), [refresh]);
+  useHeaderRefresh(reload);
 
   const groups = useMemo(() => data?.groups ?? [], [data]);
   const liveByProvider = useMemo(() => liveEntriesByProvider(data?.files ?? []), [data]);
@@ -59,6 +62,16 @@ export function TaprootQuotaPage() {
   );
   const activeTab = tabTypes.includes(tab) ? tab : 'all';
   const visible = activeTab === 'all' ? groups : groups.filter((g) => g.provider === activeTab);
+
+  const refreshAll = () =>
+    void quotaRefresh.refreshAll(
+      groups.flatMap((g) =>
+        g.accounts
+          .filter((a) => !a.disabled && REFRESHABLE_PROVIDERS.has(a.provider))
+          .map((a) => ({ authIndex: a.authIndex, name: accountName(a, showEmails) }))
+      )
+    );
+  const refreshBusy = quotaRefresh.allRunning || (loading && data !== null);
 
   const futureOptions = (Object.keys(FUTURE_USAGE) as FutureUsage[]).map((value) => ({
     value,
@@ -86,9 +99,9 @@ export function TaprootQuotaPage() {
             {showEmails ? <IconEyeOff size={15} /> : <IconEye size={15} />}
             {t(showEmails ? 'taproot_quota.hide_emails' : 'taproot_quota.show_emails')}
           </Button>
-          <Button size="sm" onClick={() => void refresh()} loading={loading && data !== null}>
-            {!(loading && data !== null) && <IconRefreshCw size={15} />}
-            {t('taproot_quota.refresh')}
+          <Button size="sm" onClick={refreshAll} loading={refreshBusy}>
+            {!refreshBusy && <IconRefreshCw size={15} />}
+            {t('taproot_quota.ledger.refresh_all')}
           </Button>
         </div>
       </header>
@@ -140,14 +153,6 @@ export function TaprootQuotaPage() {
             />
           </div>
         </div>
-        <button
-          type="button"
-          className={`${styles.toggle} ${showAccounts ? styles.segmentActive : ''}`}
-          aria-pressed={showAccounts}
-          onClick={() => setShowAccounts((v) => !v)}
-        >
-          {t('taproot_quota.controls.accounts')}
-        </button>
         <div className={styles.rangeNav}>
           <span className={styles.rangeLabel} aria-live="polite">
             {t('taproot_quota.controls.range', {
@@ -208,13 +213,19 @@ export function TaprootQuotaPage() {
               view={view}
               burnWindowHours={burnHours}
               future={future}
-              showAccounts={showAccounts}
               showEmails={showEmails}
               resolvedTheme={resolvedTheme}
               liveEntries={liveByProvider.get(group.provider) ?? []}
-              liveByAuthIndex={liveByAuthIndex}
             />
           ))}
+          <Ledger
+            groups={visible.filter((g) => g.hasQuotaData || REFRESHABLE_PROVIDERS.has(g.provider))}
+            files={data.files}
+            showEmails={showEmails}
+            resolvedTheme={resolvedTheme}
+            liveByAuthIndex={liveByAuthIndex}
+            refresh={quotaRefresh}
+          />
         </div>
       ) : null}
     </div>

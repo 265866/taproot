@@ -54,6 +54,15 @@ beforeAll(() => {
           files: 6,
         });
       }
+      if (path === '/quota/refresh') {
+        return Response.json(
+          { error: { code: 'rate_limited', message: 'try again in 18s', retryAfter: 18 } },
+          { status: 429, headers: { 'Retry-After': '18' } }
+        );
+      }
+      if (url.pathname.startsWith('/limited/')) {
+        return new Response('slow down', { status: 429, headers: { 'Retry-After': '7' } });
+      }
       if (url.pathname.startsWith('/denied/')) {
         return Response.json(
           { error: { code: 'forbidden', message: 'login not allowed' } },
@@ -132,6 +141,23 @@ describe('taproot API client', () => {
     const error = await denied.me().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(TaprootApiError);
     expect(error).toMatchObject({ status: 403, code: 'forbidden', message: 'login not allowed' });
+  });
+
+  test('posts a quota refresh and carries retryAfter from a 429', async () => {
+    const error = await client.quotaRefresh('abc').catch((caught: unknown) => caught);
+    expect(seen.at(-1)).toMatchObject({
+      method: 'POST',
+      path: '/taproot/api/v1/quota/refresh',
+      body: { authIndex: 'abc' },
+      requestHeader: '1',
+    });
+    expect(error).toMatchObject({ status: 429, code: 'rate_limited', retryAfter: 18 });
+    const limited = createTaprootClient(`http://127.0.0.1:${server.port}/limited`);
+    expect(await limited.me().catch((caught: unknown) => caught)).toMatchObject({
+      status: 429,
+      code: 'http_error',
+      retryAfter: 7,
+    });
   });
 
   test('keeps the status line when the error body is not JSON', async () => {

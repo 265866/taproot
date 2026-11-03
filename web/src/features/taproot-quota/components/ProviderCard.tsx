@@ -8,7 +8,7 @@ import {
 } from '@/features/authFiles/constants';
 import type { ResolvedTheme } from '@/types';
 import type { QuotaFileEntry } from '../live/logic';
-import { drainRows, jumpLabels, niceCeiling, remainingRows, type ChartView } from '../model/chart';
+import { drainRows, niceCeiling, remainingRows, type ChartView } from '../model/chart';
 import {
   accountName,
   compactDuration,
@@ -20,7 +20,6 @@ import {
 import type { ProviderGroup } from '../model/fromApi';
 import { buildPoolView, type FutureUsage } from '../model/poolView';
 import { lastDay, type DateRange } from '../model/range';
-import { AccountRows } from './AccountRows';
 import { LiveQuotaGrid } from './LiveQuota';
 import { PoolChart } from './PoolChart';
 import styles from '../TaprootQuotaPage.module.scss';
@@ -37,11 +36,9 @@ interface ProviderCardProps {
   view: ChartView;
   burnWindowHours: number;
   future: FutureUsage;
-  showAccounts: boolean;
   showEmails: boolean;
   resolvedTheme: ResolvedTheme;
   liveEntries: QuotaFileEntry[];
-  liveByAuthIndex: Map<string, QuotaFileEntry>;
 }
 
 function ProviderTitle({
@@ -74,9 +71,9 @@ function ProviderTitle({
   );
 }
 
-/** A provider's pooled quota: headline, stats, recorded and projected chart, and accounts. */
+/** A provider's pooled quota: headline, stats, and the recorded and projected chart. */
 export function ProviderCard(props: ProviderCardProps) {
-  const { group, now, range, view, burnWindowHours, future, showAccounts, showEmails } = props;
+  const { group, now, range, view, burnWindowHours, future, showEmails } = props;
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage;
   const burnWindowMs = burnWindowHours * 3_600_000;
@@ -99,17 +96,10 @@ export function ProviderCard(props: ProviderCardProps) {
         burnWindowMs
       );
       const peak = Math.max(0, ...rows.map((r) => Math.max(r.recorded ?? 0, r.projected ?? 0)));
-      return { rows, labels: [], yMax: niceCeiling(peak) };
+      return { rows, yMax: niceCeiling(peak) };
     }
-    const span = range.to - range.from;
-    const spacing = span / 30;
-    const labels = [
-      ...jumpLabels(pool.recorded, range.from, Math.min(now, range.to), false, 0.1, spacing),
-      ...jumpLabels(projection.points, Math.max(now, range.from), range.to, true, 0.1, spacing),
-    ];
     return {
       rows: remainingRows(pool.recorded, projection.points, range.from, range.to, now),
-      labels,
       yMax: Math.max(1, projection.capacity) * 100,
     };
   }, [view, pool.recorded, projection.points, projection.capacity, range, now, burnWindowMs]);
@@ -217,7 +207,6 @@ export function ProviderCard(props: ProviderCardProps) {
           </div>
           <PoolChart
             rows={chart.rows}
-            labels={chart.labels}
             view={view}
             from={range.from}
             to={range.to}
@@ -242,16 +231,6 @@ export function ProviderCard(props: ProviderCardProps) {
             </span>
           </div>
         </>
-      )}
-      {showAccounts && (
-        <AccountRows
-          provider={group.provider}
-          view={pool}
-          range={range}
-          now={now}
-          showEmails={showEmails}
-          liveByAuthIndex={props.liveByAuthIndex}
-        />
       )}
     </section>
   );

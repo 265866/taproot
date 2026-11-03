@@ -71,6 +71,8 @@ export interface WindowObservation {
   /** Fraction used, 0..1. */
   utilization: number;
   resetsAt: number | null;
+  /** Upstream status, such as `allowed` or `rejected`; absent when not reported. */
+  status?: string;
   observedAt: number;
   periodMs: number;
 }
