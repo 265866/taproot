@@ -1,22 +1,26 @@
 import { Fragment, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { IconRefreshCw } from '@/components/ui/icons';
 import type { HeaderMetaSegment } from '../uiState';
 import styles from './ConfigHeader.module.scss';
 
 export type ConfigHeaderProps = {
-  /** ▍mono meta 行的段落序列（uiState.buildHeaderMeta 的产物）。 */
+  /** Segments of the mono meta line, built by uiState.buildHeaderMeta. */
   meta: HeaderMetaSegment[];
   reloadDisabled: boolean;
   reloading: boolean;
   onReload: () => void;
-  /** 移动端上移到头部动作行的 ModeSwitch 槽位（桌面端为 null，ModeSwitch 在 tabs 行右端）。 */
+  /**
+   * The ModeSwitch slot in the header actions on mobile. Null on desktop, where the ModeSwitch sits
+   * at the right end of the tabs row.
+   */
   extraActions?: ReactNode;
 };
 
 /**
- * 配置面板头部：标题领衔 + ▍mono 遥测 meta 行 + 重载 ghost。
- * 保存动作不在头部常驻 —— 由 FloatingSaveBar 在 dirty 时承载。
+ * Config panel header: the title, a mono telemetry meta line, and a ghost reload button. Saving
+ * does not live here; FloatingSaveBar carries it while the draft is dirty.
  */
 export function ConfigHeader({
   meta,
@@ -58,6 +62,7 @@ export function ConfigHeader({
       </div>
       <div className={styles.actions} data-reveal>
         {extraActions}
+        <ShowEmailsToggle />
         <button
           type="button"
           className={styles.ghostAction}

@@ -3,6 +3,8 @@ import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { yaml } from '@codemirror/lang-yaml';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { keymap } from '@codemirror/view';
+import { useEmailMask } from '@/hooks/useEmailMask';
+import { maskEmailsInEditor } from './emailMaskExtension';
 
 type ConfigSourceEditorProps = {
   value: string;
@@ -21,9 +23,16 @@ export default function ConfigSourceEditor({
   editable,
   placeholder,
 }: ConfigSourceEditorProps) {
+  const { showEmails } = useEmailMask();
   const extensions = useMemo(
-    () => [yaml(), search(), highlightSelectionMatches(), keymap.of(searchKeymap)],
-    []
+    () => [
+      yaml(),
+      search(),
+      highlightSelectionMatches(),
+      keymap.of(searchKeymap),
+      ...(showEmails ? [] : [maskEmailsInEditor]),
+    ],
+    [showEmails]
   );
 
   return (

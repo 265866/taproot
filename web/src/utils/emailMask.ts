@@ -62,46 +62,70 @@ export function addressDomain(run: string): string | null {
   return null;
 }
 
-function maskMetaFiles(text: string): string {
-  if (!text.includes('meta-')) return text;
-  return text.replace(
-    META_FILE,
-    (_match, local: string, domain: string, hash: string) =>
-      `meta-${maskAddress(local, domain, '_')}-${hash}`
-  );
+/** One email in a text: the span `[from, to)` and what to show instead. */
+export interface EmailMatch {
+  from: number;
+  to: number;
+  masked: string;
 }
 
-/** Masks every email-shaped substring in `text`. Already-masked text comes back unchanged. */
-export function maskEmails(text: string): string {
-  if (!text) return text;
-  const source = maskMetaFiles(text);
-  let at = source.indexOf('@');
-  if (at === -1) return source;
+function findMetaFiles(text: string): EmailMatch[] {
+  if (!text.includes('meta-')) return [];
+  return [...text.matchAll(META_FILE)].map((match) => {
+    const [whole, local, domain, hash] = match;
+    return {
+      from: match.index,
+      to: match.index + whole.length,
+      masked: `meta-${maskAddress(local, domain, '_')}-${hash}`,
+    };
+  });
+}
 
-  let out = '';
+/** Every email-shaped span in `text`, in order and without overlaps. */
+export function findEmails(text: string): EmailMatch[] {
+  if (!text) return [];
+  const matches = findMetaFiles(text);
   let cursor = 0;
+  let at = text.indexOf('@');
   while (at !== -1) {
     let start = at;
-    while (start > cursor && at - start < MAX_LOCAL && LOCAL_CHAR.test(source[start - 1])) start--;
-    while (start < at && source[start] === '.') start++;
+    while (start > cursor && at - start < MAX_LOCAL && LOCAL_CHAR.test(text[start - 1])) start--;
+    while (start < at && text[start] === '.') start++;
     let end = at + 1;
-    while (end < source.length && end - at <= MAX_DOMAIN && DOMAIN_CHAR.test(source[end])) end++;
+    while (end < text.length && end - at <= MAX_DOMAIN && DOMAIN_CHAR.test(text[end])) end++;
 
-    const local = source.slice(start, at);
-    const domain = local && !local.endsWith('.') ? addressDomain(source.slice(at + 1, end)) : null;
+    const local = text.slice(start, at);
+    const domain = local && !local.endsWith('.') ? addressDomain(text.slice(at + 1, end)) : null;
     if (!domain) {
-      at = source.indexOf('@', at + 1);
+      at = text.indexOf('@', at + 1);
       continue;
     }
 
     // Keep a server-written file prefix readable only where it is surely one.
-    const isFileName = /\.json[.-]*$/i.test(source.slice(at + 1 + domain.length, end));
+    const isFileName = /\.json[.-]*$/i.test(text.slice(at + 1 + domain.length, end));
     const file = FILE_PREFIX.exec(local);
     const prefix = file && (isFileName || file[1]) ? file[0] : '';
-    const kept = prefix.length < local.length ? prefix : '';
-    out += source.slice(cursor, start) + kept + maskAddress(local.slice(kept.length), domain);
+    const kept = prefix.length < local.length ? prefix.length : 0;
     cursor = at + 1 + domain.length;
-    at = source.indexOf('@', cursor);
+    matches.push({
+      from: start + kept,
+      to: cursor,
+      masked: maskAddress(local.slice(kept), domain),
+    });
+    at = text.indexOf('@', cursor);
   }
-  return out + source.slice(cursor);
+  return matches.sort((a, b) => a.from - b.from);
+}
+
+/** Masks every email-shaped substring in `text`. Already-masked text comes back unchanged. */
+export function maskEmails(text: string): string {
+  const matches = findEmails(text);
+  if (matches.length === 0) return text;
+  let out = '';
+  let cursor = 0;
+  for (const match of matches) {
+    out += text.slice(cursor, match.from) + match.masked;
+    cursor = match.to;
+  }
+  return out + text.slice(cursor);
 }
