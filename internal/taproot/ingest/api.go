@@ -142,10 +142,14 @@ type accountJSON struct {
 	Disabled  bool    `json:"disabled"`
 	FirstSeen *string `json:"firstSeen"`
 	LastSeen  *string `json:"lastSeen"`
+	// Removed accounts no longer exist in the auth manager. They stay listed
+	// so historical usage keeps its labels, and quota views leave them out.
+	Removed   bool    `json:"removed"`
+	RemovedAt *string `json:"removedAt"`
 }
 
 func (i *Ingest) handleAccounts(c *gin.Context) {
-	rows, err := i.db.QueryContext(c.Request.Context(), `SELECT auth_index, provider, label, email, plan, disabled, first_seen, last_seen
+	rows, err := i.db.QueryContext(c.Request.Context(), `SELECT auth_index, provider, label, email, plan, disabled, first_seen, last_seen, removed_at
 		FROM accounts ORDER BY provider, label, auth_index`)
 	if err != nil {
 		internalError(c, err)
@@ -155,16 +159,17 @@ func (i *Ingest) handleAccounts(c *gin.Context) {
 	out := []accountJSON{}
 	for rows.Next() {
 		var (
-			a           accountJSON
-			disabled    int
-			first, last *int64
+			a                    accountJSON
+			disabled             int
+			first, last, removed *int64
 		)
-		if err := rows.Scan(&a.AuthIndex, &a.Provider, &a.Label, &a.Email, &a.Plan, &disabled, &first, &last); err != nil {
+		if err := rows.Scan(&a.AuthIndex, &a.Provider, &a.Label, &a.Email, &a.Plan, &disabled, &first, &last, &removed); err != nil {
 			internalError(c, err)
 			return
 		}
 		a.Disabled = disabled != 0
 		a.FirstSeen, a.LastSeen = formatNullableMs(first), formatNullableMs(last)
+		a.Removed, a.RemovedAt = removed != nil, formatNullableMs(removed)
 		out = append(out, a)
 	}
 	if err := rows.Err(); err != nil {

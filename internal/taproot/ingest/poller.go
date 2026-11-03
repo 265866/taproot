@@ -31,13 +31,16 @@ const (
 
 // refreshAccounts copies labels, emails, plans, and disabled flags from the
 // auth manager. Accounts the manager no longer knows keep their last values,
-// so historical rows stay labelled.
+// so historical rows stay labelled, and are marked removed so quota views
+// stop counting them. An empty list is treated as not loaded yet.
 func (i *Ingest) refreshAccounts(ctx context.Context) error {
 	auths := i.authList()
 	if len(auths) == 0 {
 		return nil
 	}
+	now := i.now().UnixMilli()
 	return withImmediateTx(ctx, i.db.DB, func(c *sql.Conn) error {
+		present := map[string]bool{}
 		for _, a := range auths {
 			if a == nil {
 				continue
@@ -46,14 +49,42 @@ func (i *Ingest) refreshAccounts(ctx context.Context) error {
 			if idx == "" {
 				continue
 			}
+			present[idx] = true
 			email := authEmail(a)
 			label := firstNonEmpty(a.Label, email, strings.TrimSuffix(filepath.Base(a.FileName), filepath.Ext(a.FileName)))
 			if _, err := c.ExecContext(ctx, `INSERT INTO accounts (auth_index, provider, label, email, plan, disabled) VALUES (?,?,?,?,?,?)
 				ON CONFLICT(auth_index) DO UPDATE SET provider=excluded.provider, label=excluded.label,
 					email=excluded.email, plan=CASE WHEN excluded.plan='' THEN accounts.plan ELSE excluded.plan END,
-					disabled=excluded.disabled`,
+					disabled=excluded.disabled, removed_at=NULL`,
 				idx, strings.ToLower(a.Provider), label, email, authPlan(a), boolInt(a.Disabled)); err != nil {
 				return fmt.Errorf("upsert account %s: %w", idx, err)
+			}
+		}
+		if len(present) == 0 {
+			return nil
+		}
+		rows, err := c.QueryContext(ctx, `SELECT auth_index FROM accounts WHERE removed_at IS NULL`)
+		if err != nil {
+			return fmt.Errorf("list accounts: %w", err)
+		}
+		var gone []string
+		for rows.Next() {
+			var idx string
+			if err := rows.Scan(&idx); err != nil {
+				closeRows(rows)
+				return fmt.Errorf("scan account: %w", err)
+			}
+			if !present[idx] {
+				gone = append(gone, idx)
+			}
+		}
+		closeRows(rows)
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("list accounts: %w", err)
+		}
+		for _, idx := range gone {
+			if _, err := c.ExecContext(ctx, `UPDATE accounts SET removed_at = ? WHERE auth_index = ?`, now, idx); err != nil {
+				return fmt.Errorf("mark account %s removed: %w", idx, err)
 			}
 		}
 		return nil

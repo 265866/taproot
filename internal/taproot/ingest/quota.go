@@ -125,6 +125,43 @@ func parseAnthropicHeaders(h http.Header, observedAt time.Time) []observation {
 	return out
 }
 
+// accountWideWindow reports whether a window limits every request on the
+// account. Model- and feature-scoped windows (seven_day_opus, Codex
+// additional limits, code review) only limit their own traffic.
+func accountWideWindow(window string) bool {
+	switch window {
+	case "five_hour", "seven_day", "codex_primary", "codex_secondary":
+		return true
+	}
+	return false
+}
+
+// codexWindowName names a Codex header family the way the wham/usage poller
+// names the same limit, so one limit is one series. Additional limits arrive
+// as x-codex-<short namespace>-* on HTTP (with a -limit-name header) and as
+// x-codex-additional-<limit name>-* on the websocket path; both map to
+// codex_<normalized limit name>_<slot>.
+func codexWindowName(h http.Header, ns string) string {
+	limit, slot := ns, ""
+	for _, s := range []string{"primary", "secondary"} {
+		if ns == s {
+			return "codex_" + s
+		}
+		if cut, ok := strings.CutSuffix(ns, "-"+s); ok {
+			limit, slot = cut, s
+			break
+		}
+	}
+	if slot == "" {
+		return "codex_" + normalizeWindowName(ns)
+	}
+	name := normalizeWindowName(headerValue(h, codexHeaderPrefix+limit+"-limit-name"))
+	if name == "" {
+		name = normalizeWindowName(strings.TrimPrefix(limit, "additional-"))
+	}
+	return "codex_" + name + "_" + slot
+}
+
 // parseCodexHeaders reads every x-codex-<namespace>-used-percent family:
 // x-codex-primary-*, x-codex-secondary-*, and namespaced additional limits
 // such as x-codex-bengalfox-primary-*.
@@ -145,7 +182,7 @@ func parseCodexHeaders(h http.Header, observedAt time.Time) []observation {
 		}
 		o := observation{
 			Provider:    "codex",
-			Window:      "codex_" + strings.ReplaceAll(ns, "-", "_"),
+			Window:      codexWindowName(h, ns),
 			Utilization: used / 100,
 			ObservedAt:  observedAt,
 			Source:      "header",

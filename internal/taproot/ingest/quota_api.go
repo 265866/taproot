@@ -15,6 +15,9 @@ type quotaWindowJSON struct {
 	Status        string  `json:"status"`
 	ObservedAt    string  `json:"observedAt"`
 	PeriodSeconds int64   `json:"periodSeconds"`
+	// AccountWide is false for model- and feature-scoped windows, which do not
+	// limit the account's other traffic.
+	AccountWide bool `json:"accountWide"`
 }
 
 type quotaAccountJSON struct {
@@ -24,12 +27,14 @@ type quotaAccountJSON struct {
 }
 
 // handleQuotaCurrent returns the latest observation of every window, plus
-// enabled Claude and Codex accounts that have none yet.
+// enabled Claude and Codex accounts that have none yet. Accounts whose
+// credential was removed are left out.
 func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 	ctx := c.Request.Context()
 	// SQLite fills bare columns from the row that holds MAX(observed_at).
 	rows, err := i.db.QueryContext(ctx, `SELECT auth_index, provider, window_name, utilization, resets_at, status, period_seconds, MAX(observed_at)
-		FROM quota_observations GROUP BY auth_index, window_name`)
+		FROM quota_observations WHERE auth_index NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)
+		GROUP BY auth_index, window_name`)
 	if err != nil {
 		internalError(c, err)
 		return
@@ -48,6 +53,7 @@ func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 			return
 		}
 		w.ResetsAt, w.ObservedAt = formatNullableMs(resetsAt), formatMs(observed)
+		w.AccountWide = accountWideWindow(w.Window)
 		a := byAccount[authIndex]
 		if a == nil {
 			a = &quotaAccountJSON{AuthIndex: authIndex, Provider: provider, Windows: []quotaWindowJSON{}}
@@ -60,7 +66,7 @@ func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 		internalError(c, err)
 		return
 	}
-	acct, err := i.db.QueryContext(ctx, `SELECT auth_index, provider FROM accounts WHERE disabled = 0 AND provider IN ('claude', 'codex')`)
+	acct, err := i.db.QueryContext(ctx, `SELECT auth_index, provider FROM accounts WHERE disabled = 0 AND removed_at IS NULL AND provider IN ('claude', 'codex')`)
 	if err != nil {
 		internalError(c, err)
 		return
@@ -107,6 +113,7 @@ type quotaSeriesJSON struct {
 	PeriodSeconds int64            `json:"periodSeconds"`
 	Points        []quotaPointJSON `json:"points"`
 	Resets        []string         `json:"resets"`
+	AccountWide   bool             `json:"accountWide"`
 }
 
 // handleQuotaSeries returns every stored observation in range per account
@@ -116,7 +123,7 @@ func (i *Ingest) handleQuotaSeries(c *gin.Context) {
 	if !ok {
 		return
 	}
-	where := "observed_at >= ? AND observed_at < ?"
+	where := "observed_at >= ? AND observed_at < ? AND auth_index NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)"
 	args := []any{ms(from), ms(to)}
 	if p := strings.ToLower(strings.TrimSpace(c.Query("provider"))); p != "" {
 		where += " AND provider = ?"
@@ -145,7 +152,7 @@ func (i *Ingest) handleQuotaSeries(c *gin.Context) {
 			return
 		}
 		if cur == nil || cur.AuthIndex != authIndex || cur.Window != window {
-			out = append(out, quotaSeriesJSON{AuthIndex: authIndex, Provider: provider, Window: window, Points: []quotaPointJSON{}, Resets: []string{}})
+			out = append(out, quotaSeriesJSON{AuthIndex: authIndex, Provider: provider, Window: window, Points: []quotaPointJSON{}, Resets: []string{}, AccountWide: accountWideWindow(window)})
 			cur = &out[len(out)-1]
 			resetSeen = map[int64]bool{}
 		}
