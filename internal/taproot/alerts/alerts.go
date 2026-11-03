@@ -1,0 +1,437 @@
+package alerts
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	log "github.com/sirupsen/logrus"
+)
+
+const (
+	evalInterval = 30 * time.Second
+	cooldown     = 30 * time.Minute
+	settle       = 2 * time.Minute
+	// grantInterval is how often one Claude account's reset grants are read.
+	grantInterval = 3 * time.Hour
+	// OriginEnv points deliveries at a local fake Discord for end-to-end tests.
+	OriginEnv = "TAPROOT_ALERTS_DISCORD_ORIGIN"
+)
+
+func init() {
+	store.Register(store.Migration{Module: "alerts", Version: 1, SQL: `CREATE TABLE alert_state (
+		key TEXT PRIMARY KEY,
+		state TEXT NOT NULL
+	) WITHOUT ROWID`})
+}
+
+// QuotaFeed is ingest's quota hook.
+type QuotaFeed interface {
+	OnQuota(func([]ingest.QuotaObservation))
+	LatestQuota(ctx context.Context) ([]ingest.QuotaObservation, error)
+}
+
+type authLister interface {
+	List() []*coreauth.Auth
+}
+
+type quotaKey struct{ authIndex, window string }
+
+type grantRead struct {
+	at     time.Time
+	grants []Grant
+}
+
+// Service watches quota and credentials and posts alerts.
+type Service struct {
+	db       *store.DB
+	feed     QuotaFeed
+	sender   *Sender
+	detector *Detector
+	grants   grantReader
+	now      func() time.Time
+	wake     chan struct{}
+
+	cfgMu sync.RWMutex
+	cfg   Config
+
+	authMu sync.RWMutex
+	auths  authLister
+
+	quotaMu sync.Mutex
+	quota   map[quotaKey]ingest.QuotaObservation
+
+	grantMu      sync.Mutex
+	grantReads   map[string]grantRead
+	grantPolling bool
+}
+
+// New validates the config and prepares the service. Start runs it.
+func New(cfg Config, db *store.DB, feed QuotaFeed) (*Service, error) {
+	if db == nil || feed == nil {
+		return nil, errors.New("alerts need the store and the ingest quota feed")
+	}
+	cfg.DiscordWebhook = strings.TrimSpace(cfg.DiscordWebhook)
+	if cfg.DiscordWebhook != "" {
+		if err := ValidateWebhook(cfg.DiscordWebhook); err != nil {
+			return nil, fmt.Errorf("alerts discord-webhook: %w", err)
+		}
+	}
+	s := &Service{
+		db:         db,
+		feed:       feed,
+		detector:   NewDetector(cooldown, settle),
+		grants:     grantReader{url: grantStatusURL},
+		now:        time.Now,
+		wake:       make(chan struct{}, 1),
+		cfg:        cfg,
+		quota:      map[quotaKey]ingest.QuotaObservation{},
+		grantReads: map[string]grantRead{},
+	}
+	s.sender = NewSender(s.webhook, os.Getenv(OriginEnv))
+	feed.OnQuota(s.observe)
+	return s, nil
+}
+
+// Config returns the alerts section as taproot.yaml should hold it.
+func (s *Service) Config() Config {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg
+}
+
+// SetConfig replaces the webhook and switch after validating the webhook.
+func (s *Service) SetConfig(cfg Config) error {
+	cfg.DiscordWebhook = strings.TrimSpace(cfg.DiscordWebhook)
+	if cfg.DiscordWebhook != "" {
+		if err := ValidateWebhook(cfg.DiscordWebhook); err != nil {
+			return err
+		}
+	}
+	s.cfgMu.Lock()
+	s.cfg = cfg
+	s.cfgMu.Unlock()
+	s.signal()
+	return nil
+}
+
+// webhook is the URL deliveries use, or "" when alerts are off.
+func (s *Service) webhook() string {
+	cfg := s.Config()
+	if !cfg.Active() {
+		return ""
+	}
+	return cfg.DiscordWebhook
+}
+
+// AttachAuthManager receives the runtime credential manager once the server is built.
+func (s *Service) AttachAuthManager(m *coreauth.Manager) {
+	if m == nil {
+		return
+	}
+	s.authMu.Lock()
+	s.auths = m
+	s.authMu.Unlock()
+	s.signal()
+}
+
+func (s *Service) authList() []*coreauth.Auth {
+	s.authMu.RLock()
+	src := s.auths
+	s.authMu.RUnlock()
+	if src == nil {
+		return nil
+	}
+	return src.List()
+}
+
+// observe is ingest's hook; it runs on ingest's flush goroutine.
+func (s *Service) observe(obs []ingest.QuotaObservation) {
+	s.quotaMu.Lock()
+	for _, o := range obs {
+		k := quotaKey{o.AuthIndex, o.Window}
+		if prev, ok := s.quota[k]; !ok || !o.ObservedAt.Before(prev.ObservedAt) {
+			s.quota[k] = o
+		}
+	}
+	s.quotaMu.Unlock()
+	s.signal()
+}
+
+func (s *Service) signal() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+// Start loads saved alert state and the latest stored quota, then runs until ctx ends.
+func (s *Service) Start(ctx context.Context) {
+	if err := s.loadState(ctx); err != nil {
+		log.WithError(err).Warn("taproot alerts: load alert state")
+	}
+	latest, err := s.feed.LatestQuota(ctx)
+	if err != nil {
+		log.WithError(err).Warn("taproot alerts: load latest quota")
+	}
+	s.observe(latest)
+	go s.sender.Run(ctx)
+	go s.run(ctx)
+}
+
+func (s *Service) run(ctx context.Context) {
+	ticker := time.NewTicker(evalInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-s.wake:
+		}
+		s.evaluate(ctx)
+	}
+}
+
+// evaluate runs one detector step. It does nothing while alerts are off or
+// before the auth manager has loaded, so neither state produces false alerts.
+func (s *Service) evaluate(ctx context.Context) {
+	if !s.Config().Active() {
+		return
+	}
+	auths := s.authList()
+	if len(auths) == 0 {
+		return
+	}
+	now := s.now()
+	accounts := accountsFrom(auths, now)
+	s.pollGrants(ctx, auths, now)
+	msgs, changed := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
+	for _, m := range msgs {
+		s.sender.Enqueue(m)
+	}
+	if changed {
+		if err := s.saveState(ctx); err != nil {
+			log.WithError(err).Warn("taproot alerts: save alert state")
+		}
+	}
+}
+
+func (s *Service) snapshot(now time.Time, accounts []Account) Snapshot {
+	snap := Snapshot{Now: now, Accounts: accounts, Grants: map[string][]Grant{}}
+	s.quotaMu.Lock()
+	for _, o := range s.quota {
+		snap.Quota = append(snap.Quota, o)
+	}
+	s.quotaMu.Unlock()
+	s.grantMu.Lock()
+	for idx, r := range s.grantReads {
+		snap.Grants[idx] = r.grants
+	}
+	s.grantMu.Unlock()
+	return snap
+}
+
+// accountsFrom keeps credentials that serve traffic, plus those upstream
+// disabled because their refresh grant was rejected.
+func accountsFrom(auths []*coreauth.Auth, now time.Time) []Account {
+	out := make([]Account, 0, len(auths))
+	for _, a := range auths {
+		if a == nil {
+			continue
+		}
+		disabledBroken := coreauth.HasDisabledInvalidGrantFailure(a)
+		if (a.Disabled || a.Status == coreauth.StatusDisabled) && !disabledBroken {
+			continue
+		}
+		idx := a.EnsureIndex()
+		if idx == "" {
+			continue
+		}
+		broken := disabledBroken || a.RequiresSignIn || coreauth.HasUnauthorizedAuthFailure(a)
+		acct := Account{AuthIndex: idx, Provider: strings.ToLower(strings.TrimSpace(a.Provider)), Label: safeLabel(authLabel(a)), LoginBroken: broken}
+		if broken {
+			acct.LoginReason = loginReason(a, now)
+		}
+		out = append(out, acct)
+	}
+	return out
+}
+
+func authLabel(a *coreauth.Auth) string {
+	if l := strings.TrimSpace(a.Label); l != "" {
+		return l
+	}
+	if v, ok := a.Metadata["email"].(string); ok && strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	if v := strings.TrimSpace(a.Attributes["email"]); v != "" {
+		return v
+	}
+	if a.FileName != "" {
+		return strings.TrimSuffix(filepath.Base(a.FileName), filepath.Ext(a.FileName))
+	}
+	return a.EnsureIndex()
+}
+
+// loginReason is upstream's sanitized failure text, which already has
+// tokens, codes, and URLs redacted.
+func loginReason(a *coreauth.Auth, now time.Time) string {
+	msg := ""
+	switch {
+	case a.RefreshError != nil && strings.TrimSpace(a.RefreshError.Message) != "":
+		msg = a.RefreshError.Message
+	case strings.TrimSpace(a.StatusMessage) != "":
+		msg = a.StatusMessage
+	case a.LastError != nil:
+		msg = a.LastError.Message
+	}
+	if msg = strings.TrimSpace(coreauth.SanitizeRenewalMessage(msg)); msg == "" {
+		msg = a.RenewalStateAt(now)
+	}
+	return safeLabel(msg)
+}
+
+// pollGrants starts a background read of reset grants for Claude accounts
+// not read within grantInterval. One read runs at a time.
+func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now time.Time) {
+	s.grantMu.Lock()
+	defer s.grantMu.Unlock()
+	if s.grantPolling {
+		return
+	}
+	var due []*coreauth.Auth
+	present := map[string]bool{}
+	for _, a := range auths {
+		if a == nil || a.Disabled || !strings.EqualFold(strings.TrimSpace(a.Provider), "claude") || a.RequiresSignIn {
+			continue
+		}
+		idx := a.EnsureIndex()
+		present[idx] = true
+		if r, ok := s.grantReads[idx]; !ok || now.Sub(r.at) >= grantInterval {
+			due = append(due, a)
+			// Record the attempt now so a failure waits a full interval too.
+			s.grantReads[idx] = grantRead{at: now, grants: r.grants}
+		}
+	}
+	for idx := range s.grantReads {
+		if !present[idx] {
+			delete(s.grantReads, idx)
+		}
+	}
+	if len(due) == 0 {
+		return
+	}
+	s.grantPolling = true
+	go func() {
+		defer func() {
+			s.grantMu.Lock()
+			s.grantPolling = false
+			s.grantMu.Unlock()
+		}()
+		for _, a := range due {
+			if ctx.Err() != nil {
+				return
+			}
+			idx := a.EnsureIndex()
+			grants, err := s.grants.read(ctx, a)
+			if err != nil {
+				log.WithError(err).WithField("auth_index", idx).Debug("taproot alerts: read reset grants")
+				continue
+			}
+			s.grantMu.Lock()
+			if r, ok := s.grantReads[idx]; ok {
+				s.grantReads[idx] = grantRead{at: r.at, grants: grants}
+			}
+			s.grantMu.Unlock()
+		}
+		s.signal()
+	}()
+}
+
+func (s *Service) loadState(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, state FROM alert_state`)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if errClose := rows.Close(); errClose != nil {
+			log.WithError(errClose).Debug("taproot alerts: close rows")
+		}
+	}()
+	for rows.Next() {
+		var key, raw string
+		if err := rows.Scan(&key, &raw); err != nil {
+			return err
+		}
+		var t track
+		if err := json.Unmarshal([]byte(raw), &t); err != nil {
+			continue
+		}
+		s.detector.tracks[key] = &t
+	}
+	return rows.Err()
+}
+
+// saveState replaces the stored detector memory, so a restart neither
+// repeats alerts nor loses pending recoveries.
+func (s *Service) saveState(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if errRollback := tx.Rollback(); errRollback != nil && !errors.Is(errRollback, sql.ErrTxDone) {
+			log.WithError(errRollback).Debug("taproot alerts: rollback")
+		}
+	}()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM alert_state`); err != nil {
+		return err
+	}
+	for key, t := range s.detector.tracks {
+		raw, err := json.Marshal(t)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO alert_state (key, state) VALUES (?, ?)`, key, string(raw)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// Routes registers the alerts endpoints under the taproot API group.
+func (s *Service) Routes(r *gin.RouterGroup) {
+	r.POST("/alerts/test", s.handleTest)
+}
+
+func (s *Service) handleTest(c *gin.Context) {
+	hook := s.Config().DiscordWebhook
+	if hook == "" {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": gin.H{"code": "no_webhook", "message": "set a Discord webhook first"}})
+		return
+	}
+	msg := Message{
+		Key: "test", Severity: SeverityInfo, At: s.now(),
+		Title:       "taproot test alert",
+		Description: "Alerts from taproot reach this channel.",
+	}
+	if err := s.sender.Send(c.Request.Context(), hook, msg); err != nil {
+		log.WithError(err).Warn("taproot alerts: test delivery failed")
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{"error": gin.H{"code": "delivery_failed", "message": err.Error()}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sent": true})
+}

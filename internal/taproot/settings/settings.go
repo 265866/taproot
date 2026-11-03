@@ -1,6 +1,6 @@
 // Package settings serves the editable subset of taproot.yaml: the access
 // allowlist, request log retention, the backup schedule, and the ingest poll
-// interval. A change is applied to the running modules first and written to
+// interval, and the alerts webhook. A change is applied to the running modules first and written to
 // taproot.yaml only after every live setter accepted it.
 package settings
 
@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/buildinfo"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/alerts"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/reqlog"
 	log "github.com/sirupsen/logrus"
 )
@@ -44,12 +45,20 @@ type ScheduleSetter interface {
 	SetSchedule(dailyAt string, keep int) error
 }
 
+// AlertsSetter is the alerts module's runtime webhook and switch.
+type AlertsSetter interface {
+	Config() alerts.Config
+	SetConfig(alerts.Config) error
+}
+
 // Deps are the modules and paths the settings endpoints read and change.
 type Deps struct {
 	Access        AccessLists
 	AccessEnabled bool
 	Logs          RetentionSetter
 	Backups       ScheduleSetter
+	// Alerts is optional; without it the alerts section is left out.
+	Alerts AlertsSetter
 	// PollInterval is the ingest poll-interval the process started with.
 	// Ingest reads it once, so a change applies after a restart.
 	PollInterval string
@@ -146,6 +155,14 @@ type ingestView struct {
 	RestartRequired    bool   `json:"restartRequired"`
 }
 
+// alertsView never carries the webhook itself, only its last characters.
+type alertsView struct {
+	Enabled     bool   `json:"enabled"`
+	WebhookSet  bool   `json:"webhookSet"`
+	WebhookHint string `json:"webhookHint"`
+	Active      bool   `json:"active"`
+}
+
 type infoView struct {
 	ConfigPath string `json:"configPath"`
 	DataDir    string `json:"dataDir"`
@@ -159,6 +176,7 @@ type view struct {
 	RequestLogs requestLogsView `json:"requestLogs"`
 	Backups     backupsView     `json:"backups"`
 	Ingest      ingestView      `json:"ingest"`
+	Alerts      *alertsView     `json:"alerts,omitempty"`
 	Info        infoView        `json:"info"`
 }
 
@@ -181,11 +199,24 @@ type update struct {
 	Ingest *struct {
 		PollInterval *string `json:"pollInterval"`
 	} `json:"ingest"`
+	Alerts *struct {
+		// DiscordWebhook replaces the webhook; "" clears it.
+		DiscordWebhook *string `json:"discordWebhook"`
+		Enabled        *bool   `json:"enabled"`
+	} `json:"alerts"`
 }
 
 func (s *Settings) current() view {
 	ret := s.deps.Logs.Retention()
 	dailyAt, keep := s.deps.Backups.Schedule()
+	var alertsSection *alertsView
+	if s.deps.Alerts != nil {
+		cfg := s.deps.Alerts.Config()
+		alertsSection = &alertsView{
+			Enabled: cfg.Enabled == nil || *cfg.Enabled, WebhookSet: cfg.DiscordWebhook != "",
+			WebhookHint: alerts.MaskWebhook(cfg.DiscordWebhook), Active: cfg.Active(),
+		}
+	}
 	return view{
 		Access: accessView{
 			Enabled:     s.deps.AccessEnabled,
@@ -201,6 +232,7 @@ func (s *Settings) current() view {
 			ActivePollInterval: formatDuration(s.activePoll),
 			RestartRequired:    s.configPoll != s.activePoll,
 		},
+		Alerts: alertsSection,
 		Info: infoView{
 			ConfigPath: s.deps.ConfigPath, DataDir: s.deps.DataDir,
 			Version: buildinfo.Version, Commit: buildinfo.Commit, BuildDate: buildinfo.BuildDate,
@@ -349,6 +381,33 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 		}
 		if afterKeep != beforeKeep {
 			edits = append(edits, yamlEdit{path: []string{"backups", "keep"}, value: afterKeep})
+		}
+	}
+
+	if a := u.Alerts; a != nil {
+		if s.deps.Alerts == nil {
+			rollback()
+			return badRequest("alerts_unavailable", "alerts are not running")
+		}
+		before := s.deps.Alerts.Config()
+		next := before
+		if a.DiscordWebhook != nil {
+			next.DiscordWebhook = strings.TrimSpace(*a.DiscordWebhook)
+		}
+		if a.Enabled != nil {
+			enabled := *a.Enabled
+			next.Enabled = &enabled
+		}
+		if err := s.deps.Alerts.SetConfig(next); err != nil {
+			rollback()
+			return badRequest("invalid_alerts", "discord webhook: %v", err)
+		}
+		undo = append(undo, func() { s.restore("alerts", s.deps.Alerts.SetConfig(before)) })
+		if next.DiscordWebhook != before.DiscordWebhook {
+			edits = append(edits, yamlEdit{path: []string{"alerts", "discord-webhook"}, value: next.DiscordWebhook})
+		}
+		if next.Enabled != nil && (before.Enabled == nil || *before.Enabled != *next.Enabled) {
+			edits = append(edits, yamlEdit{path: []string{"alerts", "enabled"}, value: *next.Enabled})
 		}
 	}
 

@@ -1,0 +1,26 @@
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+
+  // The shared badge stacks whatever follows it; here the hint sits beside it.
+  :global(.status-badge) {
+    margin-bottom: 0;
+
+    + * {
+      display: inline;
+    }
+  }
+}
+
+.actions {
+  flex-wrap: wrap;
+}
+
+.leading {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
+}

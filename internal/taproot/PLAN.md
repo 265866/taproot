@@ -59,6 +59,7 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 | ingest | `internal/taproot/ingest` | Usage events, quota observations, pricing |
 | reqlog | `internal/taproot/reqlog` | Request log storage, index, retention |
 | backup | `internal/taproot/backup` | Scheduled snapshots, download, restore |
+| alerts | `internal/taproot/alerts` | Discord alerts and their dedupe state |
 | web | `internal/taproot/web` | The embedded dashboard build |
 
 ### Access
@@ -169,6 +170,27 @@ The guard splits the server into two surfaces. The package comment in `internal/
   - It then replaces the config files and auth files, and restarts the database from the snapshot on the next start.
 - **Security.** Backups contain OAuth tokens. They stay under the data dir with mode 0600.
 
+### Alerts
+
+Taproot posts to one Discord channel through a webhook. The webhook URL is the only setting.
+
+- **Config.** `alerts.discord-webhook` in `taproot.yaml`, plus `alerts.enabled` (default on when a webhook is set). Settings shows whether a webhook is set by its last six characters only, and sets, replaces, or clears it. The server accepts only `https://discord.com/api/webhooks/<id>/<token>` and its `discordapp.com`, `ptb.`, `canary.`, and `/api/v<n>/` forms. The URL is a credential: it is never logged, never returned by the API, and lives only in `taproot.yaml` (and so in backups, which are 0600).
+- **Events.** Each has a stable dedupe key.
+
+  | Event | Key | Fires when | Recovery |
+  |---|---|---|---|
+  | Limit hit | `limit:<authIndex>:<window>` | A window's latest observation is `rejected` or at utilization 1 or more, and its reset is still ahead | The window is below its limit, or its reset passed |
+  | Pool empty | `pool:<provider>` | Every account of a provider that the manager lists as enabled (or that upstream disabled after `invalid_grant`) is at an account-wide limit or needs sign-in. The message names the first account back and when | One account is usable |
+  | Login broken | `login:<authIndex>` | For 2 minutes, upstream marks the credential `RequiresSignIn` or a terminal 401 (`HasUnauthorizedAuthFailure`), or disabled it after `invalid_grant`. The message carries upstream's sanitized reason | The credential works again |
+  | Reset grant expiring | `grant:<authIndex>:<grantId>` | A Claude `cedar_ember` grant has resets left and ends within 24 hours | None |
+
+- **Flapping.** A key alerts once per episode. A recovery waits until the condition stays clear for 2 minutes, so a shorter flap continues the episode. A new alert for the same key waits 30 minutes after the previous one. The detector's state is stored in `alert_state`, so a restart neither repeats an alert nor drops a pending recovery.
+- **Sources.** Quota comes from ingest in-process: `Ingest.OnQuota` publishes every observation of a committed flush, and `LatestQuota` seeds the module at start. Account state comes from the auth manager, which `taproot.go` attaches in the router configurator. Quota rows of accounts the manager no longer lists are ignored. Nothing is evaluated while alerts are off or before the manager has loaded.
+- **Reset grants.** For each enabled Claude account, at most every 3 hours, alerts reads `GET https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1` with the account's current access token, as the dashboard's `claudeResetGrants.ts` does. It never refreshes a token and never redeems a grant.
+- **Delivery.** One embed per message: title, description, a color by severity, timestamp, and fields. Times use Discord's `<t:…>` markup, so each reader sees local time. `allowed_mentions` is empty and labels are markdown-escaped, so account or grant text cannot ping or reformat. A queue of 64 messages feeds one sender. It honors `retry_after` on 429, retries network errors and 5xx with backoff, gives up after 4 attempts, and logs failures without the URL. A full queue drops the message with a warning, so the proxy never waits.
+- **Test button.** `POST /taproot/api/v1/alerts/test` posts a test message synchronously and returns Discord's status on failure.
+- **End-to-end testing.** `TAPROOT_ALERTS_DISCORD_ORIGIN=http://127.0.0.1:<port>` sends deliveries to a local fake Discord. It keeps the webhook path and replaces only the scheme and host.
+
 ### Web
 
 - `web/` builds to one `dist/index.html` (`vite-plugin-singlefile`).
@@ -204,7 +226,8 @@ The guard splits the server into two surfaces. The package comment in `internal/
 | `POST /backups` | Creates a backup now and returns the new entry |
 | `GET /backups/:id/download` | The `tar.zst` file |
 | `POST /backups/:id/restore` | `{restored: true, preRestoreBackupId}` |
-| `GET /settings` and `PUT /settings` | The editable subset of `taproot.yaml`: retention, schedule, poller interval, `allow-logins`, `admin-nodes` |
+| `GET /settings` and `PUT /settings` | The editable subset of `taproot.yaml`: retention, schedule, poller interval, `allow-logins`, `admin-nodes`, and alerts (`{enabled, webhookSet, webhookHint, active}`; `PUT` takes `{discordWebhook, enabled}`, and `discordWebhook: ""` clears it) |
+| `POST /alerts/test` | `{sent: true}`, or 409 `no_webhook`, or 502 `delivery_failed` |
 
 `Totals` is `{requests, failures, inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWriteTokens, cacheWrite5mTokens, cacheWrite1hTokens, costUSD, latencyP50Ms, latencyP95Ms, ttftP50Ms, ttftP95Ms}`.
 
@@ -257,6 +280,6 @@ The guard splits the server into two surfaces. The package comment in `internal/
 - **Request log segments.** Segments roll on idle (15m), age (6h), day change, or 64 MiB raw, not hourly. On the real fixture, per-session segments compressed 97x, while per-session-hour segments compressed 73x. The 64 MiB cap keeps the worst lookup under 50 ms.
 - **Plugin resource routes** (`/v0/resource/plugins/*`) are guarded but get no injected key. Upstream serves them unauthenticated and forwards headers to plugin code.
 - **RESP usage queue.** Upstream multiplexes this Redis-protocol queue on the proxy port, outside gin, so the guard never sees it, and the generated `MANAGEMENT_PASSWORD` enables remote `AUTH`. The security recheck (F2) showed a tailnet peer authenticating with the secret. Taproot does not use the queue, so the RESP connection filter (see "Upstream boundary") closes every RESP connection that does not come from loopback, before any reply. Drop the hook if upstream adds a switch to disable the queue.
-- **Poller timeout.** The idle-account poller's 30 s timeout on its read-only usage probe is an intended exception to AGENTS.md's no-timeout rule. That rule targets proxied upstream traffic.
+- **Poller timeout.** The idle-account poller's 30 s timeout on its read-only usage probe is an intended exception to AGENTS.md's no-timeout rule. That rule targets proxied upstream traffic. The alerts module's reset-grant read (30 s) and Discord webhook POST (15 s) are exceptions for the same reason.
 - **Shutdown drain.** Setup runs on `context.Background()`, so request-log records still queued at shutdown are recovered from the open segment on the next start rather than drained. Usage events still queued are lost. The flush interval is 1 s.
 - **Mounts on server.** On server, `config.yaml` lives in the mounted `/data` directory, which is what restore's atomic rename needs. The tailscaled socket must be mounted at `/var/run/tailscale/tailscaled.sock`. After deploying, `GET /taproot/api/v1/me` from a tailnet client listed in `admin-nodes` must report `via: "tailnet"` and `admin: true`, and the same request from worker must get 403 `not_admin_node`. If it reports loopback, the port forwarding is rewriting source addresses and the guard would admit everyone. From server itself, `curl http://100.64.0.1:8317/taproot/api/v1/me` must return 403 and `curl http://100.64.0.1:8317/v1/models` must not, which shows the server's own node is proxy-only. `127.0.1.1:8317` from server gets 403 on both unless `192.168.0.88/32` is in `trusted-cidrs` (see "Security model").
