@@ -255,7 +255,9 @@ func (s *Service) evaluate(ctx context.Context) {
 	now := s.now()
 	accounts := accountsFrom(auths, now)
 	s.pollGrants(ctx, auths, now)
+	forgot := s.detector.Forget(accounts)
 	msgs, changed := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
+	changed = changed || forgot
 	for _, m := range msgs {
 		s.sender.Enqueue(m)
 	}

@@ -375,6 +375,29 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 	return out, changed
 }
 
+// Forget drops, without a recovery, the tracks of accounts and providers no
+// longer in accounts: an account the user removed or disabled did not
+// recover. Pool keys name a provider; every other key names an auth index.
+func (d *Detector) Forget(accounts []Account) (changed bool) {
+	indexes, providers := map[string]bool{}, map[string]bool{}
+	for _, a := range accounts {
+		indexes[a.AuthIndex], providers[a.Provider] = true, true
+	}
+	for key := range d.tracks {
+		kind, subject, _ := strings.Cut(key, ":")
+		if kind == "pool" {
+			if providers[subject] {
+				continue
+			}
+		} else if idx, _, _ := strings.Cut(subject, ":"); indexes[idx] {
+			continue
+		}
+		delete(d.tracks, key)
+		changed = true
+	}
+	return changed
+}
+
 func providerName(p string) string {
 	switch strings.ToLower(p) {
 	case "claude":

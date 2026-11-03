@@ -221,6 +221,38 @@ func TestServicePoolEmptyAndLoginBroken(t *testing.T) {
 	}
 }
 
+// TestRemovingOrDisablingAnAccountDropsItsAlertsSilently: an account that
+// leaves alerts' scope did not recover, so nothing says it works again.
+func TestRemovingOrDisablingAnAccountDropsItsAlertsSilently(t *testing.T) {
+	fake := &fakeDiscord{}
+	a, b := claudeAuth("a", "main"), expiresAt(claudeAuth("b", "spare"), t0.Add(-time.Hour))
+	b.RequiresSignIn = true
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	h.feed.hook([]ingest.QuotaObservation{{AuthIndex: a.EnsureIndex(), Provider: "claude", Window: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0, AccountWide: true}})
+	h.step(t, 0)
+	h.step(t, loginDelay)
+	h.titles(t, 3) // limit:a, login:b, pool:claude
+
+	// Removing b drops login:b. The pool is still empty: a is at its limit.
+	h.setAuths(claudeAuth("a", "main"))
+	h.step(t, time.Minute)
+	h.step(t, settle)
+	h.step(t, cooldown)
+	h.titles(t, 3)
+
+	// Disabling a drops limit:a, and pool:claude with it.
+	disabled := claudeAuth("a", "main")
+	disabled.Disabled, disabled.Status = true, coreauth.StatusDisabled
+	h.setAuths(disabled)
+	h.step(t, time.Minute)
+	h.step(t, settle)
+	h.step(t, cooldown)
+	h.titles(t, 3)
+	if len(h.svc.detector.tracks) != 0 {
+		t.Fatalf("tracks = %v, want none", h.svc.detector.tracks)
+	}
+}
+
 // TestPoolWaitsOutTheLoginDelay covers a lone account that upstream marks
 // with a terminal 401 while it retries: a short failure posts nothing.
 func TestPoolWaitsOutTheLoginDelay(t *testing.T) {
