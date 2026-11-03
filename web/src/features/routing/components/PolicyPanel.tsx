@@ -16,6 +16,15 @@ export interface PolicyPanelProps {
 }
 
 function StrategyMark({ strategy }: { strategy: RoutingStrategy }) {
+  if (strategy === 'soonest-reset-first') {
+    // A clock: the next reset decides.
+    return (
+      <svg width="18" height="10" viewBox="0 0 18 10" aria-hidden="true" focusable="false">
+        <circle cx={9} cy={5} r={4} fill="none" stroke="currentColor" strokeWidth={1.2} />
+        <path d="M9 2.8V5l1.6 1.2" fill="none" stroke="currentColor" strokeWidth={1.2} />
+      </svg>
+    );
+  }
   // Three dots: even (round-robin), graded (weighted), first one filled (fill-first).
   const opacities =
     strategy === 'round-robin'

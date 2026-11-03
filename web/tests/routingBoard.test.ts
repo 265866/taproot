@@ -82,6 +82,11 @@ describe('routing board reading', () => {
       maxRetryCredentials: 0,
     });
     expect(readRoutingSettings({ routing: { strategy: 'bogus' } }).strategy).toBe('round-robin');
+    for (const raw of ['soonest-reset-first', 'Soonest_Reset_First', 'srf']) {
+      expect(readRoutingSettings({ routing: { strategy: raw } }).strategy).toBe(
+        'soonest-reset-first'
+      );
+    }
   });
 
   test('reads every credential as a member and ignores config API keys', () => {
@@ -318,6 +323,18 @@ describe('route preview', () => {
     expect(preview.hasActive).toBe(false);
     const off = preview.tiers[2].members.find((member) => member.key === 'cred:off.json');
     expect(off?.state).toBe('disabled');
+  });
+
+  test('soonest reset first has no fixed split and saves under its backend name', () => {
+    const current = board();
+    const draft = draftFromBoard(current);
+    draft.settings = { ...draft.settings, strategy: 'soonest-reset-first' };
+    const preview = resolveRoute(current, draft, catalog, null, 0);
+    expect(preview.tiers[0].state).toBe('active');
+    expect(preview.tiers[0].members.every((member) => member.share === null)).toBe(true);
+    expect(buildRoutingConfigPatch(buildRoutingPlan(current, draft))).toEqual({
+      routing: { strategy: 'soonest-reset-first' },
+    });
   });
 
   test('fill-first has no fixed split', () => {

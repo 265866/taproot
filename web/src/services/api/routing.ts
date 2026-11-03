@@ -45,6 +45,9 @@ export function normalizeRoutingStrategy(value: unknown): RoutingStrategy {
     return 'weighted-round-robin';
   }
   if (['fill-first', 'fillfirst', 'ff'].includes(text)) return 'fill-first';
+  if (['soonest-reset-first', 'soonestresetfirst', 'srf'].includes(text)) {
+    return 'soonest-reset-first';
+  }
   // CPA runs an unrecognised strategy as round-robin.
   return 'round-robin';
 }

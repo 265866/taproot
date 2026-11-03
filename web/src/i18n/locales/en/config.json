@@ -363,6 +363,7 @@
           "strategy_round_robin": "Round Robin",
           "strategy_weighted_round_robin": "Weighted Round Robin",
           "strategy_fill_first": "Fill First",
+          "strategy_soonest_reset_first": "Soonest Reset First",
           "session_affinity_ttl": "Session Affinity TTL",
           "force_model_prefix": "Force Model Prefix",
           "force_model_prefix_desc": "Unprefixed model requests only use credentials without prefix",
