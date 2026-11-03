@@ -76,6 +76,11 @@ export interface RetentionForm {
   days: string;
   sizeLimited: boolean;
   size: string;
+  /**
+   * The server's byte budget. `size` shows it rounded, so it is sent back exactly while the size
+   * text is unedited.
+   */
+  savedBytes: number;
   excludePaths: string;
   keepUnrouted404: boolean;
 }
@@ -86,6 +91,7 @@ export function retentionForm(settings: TaprootSettings['requestLogs']): Retenti
     days: settings.maxDays > 0 ? String(settings.maxDays) : '14',
     sizeLimited: settings.maxBytes > 0,
     size: settings.maxBytes > 0 ? formatSize(settings.maxBytes) : '20 GB',
+    savedBytes: settings.maxBytes,
     excludePaths: settings.excludePaths.join('\n'),
     keepUnrouted404: settings.keepUnrouted404,
   };
@@ -106,7 +112,9 @@ export function retentionUpdate(
     maxDays = days;
   }
   let maxBytes = -1;
-  if (form.sizeLimited) {
+  if (form.sizeLimited && form.savedBytes > 0 && form.size.trim() === formatSize(form.savedBytes)) {
+    maxBytes = form.savedBytes;
+  } else if (form.sizeLimited) {
     const bytes = parseSize(form.size);
     if (bytes === null) return fail('size_format');
     if (bytes < MIN_BYTES) return fail('size_min');

@@ -98,6 +98,26 @@ describe('request log retention', () => {
     expect(retentionUpdate(retentionForm(server))).toEqual({ ok: true, update: server });
   });
 
+  test('keeps an odd byte budget exactly unless the size text is edited', () => {
+    // 1,500,000,000 bytes shows as "1.4 GB", which parses back to 1,503,238,554.
+    const odd = retentionForm({ ...server, maxBytes: 1_500_000_000 });
+    expect(odd.size).toBe('1.4 GB');
+    expect(retentionUpdate({ ...odd, days: '30' })).toMatchObject({
+      ok: true,
+      update: { maxDays: 30, maxBytes: 1_500_000_000 },
+    });
+    // Turning the limit off and on again with the same text still keeps it.
+    expect(retentionUpdate({ ...odd, size: ' 1.4 GB ' })).toMatchObject({
+      update: { maxBytes: 1_500_000_000 },
+    });
+    expect(retentionUpdate({ ...odd, size: '1.5 GB' })).toMatchObject({
+      update: { maxBytes: 1_610_612_736 },
+    });
+    expect(retentionUpdate({ ...odd, sizeLimited: false })).toMatchObject({
+      update: { maxBytes: -1 },
+    });
+  });
+
   test('negative limits mean off and come back as -1', () => {
     const form = retentionForm({ ...server, maxDays: -1, maxBytes: -1 });
     expect(form.daysLimited).toBe(false);
