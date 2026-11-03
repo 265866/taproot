@@ -33,7 +33,7 @@ import {
   IconSidebarUsage,
   IconChevronDown,
 } from '@/components/ui/icons';
-import { TAPROOT_MARK_DATA_URL } from '@/assets/taprootMark';
+import { TaprootMark } from '@/components/common/TaprootMark';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import { AUTH_FILES_CHANGED_EVENT } from '@/features/authFiles/authFilesEvents';
 import {
@@ -1009,7 +1009,7 @@ export function MainLayout() {
         >
           <div className="sidebar-header">
             <div className="sidebar-brand" title={brandName}>
-              <img src={TAPROOT_MARK_DATA_URL} alt="" className="sidebar-brand-logo" />
+              <TaprootMark className="sidebar-brand-logo" />
               {showSidebarLabels && (
                 <span className="sidebar-brand-text">
                   <span className="sidebar-brand-title">{brandName}</span>

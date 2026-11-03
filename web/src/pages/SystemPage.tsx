@@ -16,7 +16,7 @@ import { configApi, versionApi } from '@/services/api';
 import { useApiKeysForModels } from '@/hooks/useApiKeysForModels';
 import { formatDateTimeValue } from '@/utils/format';
 import { classifyModels } from '@/utils/models';
-import { TAPROOT_MARK_DATA_URL } from '@/assets/taprootMark';
+import { TaprootMark } from '@/components/common/TaprootMark';
 import iconGemini from '@/assets/icons/gemini.svg';
 import iconClaude from '@/assets/icons/claude.svg';
 import iconMeta from '@/assets/icons/meta.svg';
@@ -284,7 +284,7 @@ export function SystemPage() {
       <div className={styles.content}>
         <Card className={styles.aboutCard}>
           <div className={styles.aboutHeader}>
-            <img src={TAPROOT_MARK_DATA_URL} alt="" className={styles.aboutLogo} />
+            <TaprootMark className={styles.aboutLogo} />
             <div className={styles.aboutTitle}>{t('system_info.about_title')}</div>
           </div>
 
