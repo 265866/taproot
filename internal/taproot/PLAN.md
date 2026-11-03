@@ -139,11 +139,14 @@ The guard splits the server into two surfaces. The package comment in `internal/
   - latency, time to first token
   - tokens: input, output, reasoning, cache read, cache creation, and the 5m and 1h cache-creation splits
   - service tier
+  - device: the caller the access guard admitted (`node:<StableID>` for a tailnet node, `local` for loopback), with its name, login, and how it was reached. Ingest migration 4 added these columns and an hourly device rollup backfilled from existing events. Events recorded before it have no device.
 - **Quota observations from headers.** Each record's `ResponseHeaders` supplies quota observations:
   - Anthropic: `anthropic-ratelimit-unified-{5h,7d,...}-{utilization,reset,status}`
   - Codex: the `x-codex-*` primary and secondary used-percent, window, and reset headers
   - A row goes to `quota_observations(auth_index, provider, window, utilization, resets_at, status, observed_at)` when a value changes, or when 5 minutes have passed since the last row for that account and window.
 - **Polling idle accounts.** A poller covers accounts with no recent traffic. It reads the same usage endpoints the dashboard's quota adapters read (`api.anthropic.com/api/oauth/usage`, `chatgpt.com/backend-api/wham/usage`), through the auth manager's credentials. The default interval is 15 minutes, it is configurable, and `0` disables it.
+- **Manual refresh.** `POST /quota/refresh` polls one account's usage endpoint on request, at most once per 30 seconds per account. Refreshed observations are always stored, so the account's `observedAt` moves even when nothing changed.
+- **Development overrides.** `TAPROOT_DEV_CLAUDE_USAGE_URL` and `TAPROOT_DEV_CODEX_USAGE_URL` replace the two usage endpoints, so a local dashboard can exercise quota refresh against a fake server. Only loopback URLs (`127.0.0.1`, `localhost`, `::1`) are accepted; any other value is ignored with a warning, so a stray variable cannot send tokens off the machine.
 - **Account labels.** `accounts(auth_index, provider, label, email, plan, first_seen, last_seen, disabled)` is refreshed from the auth manager. It gives imported and historical rows labels.
 - **Pricing.**
   - The `prices(model_pattern, input, output, cache_read, cache_write_5m, cache_write_1h, per Mtok USD, source, updated_at)` table is seeded with current list prices and is editable.
@@ -213,9 +216,11 @@ Taproot posts to one Discord channel through a webhook. The webhook URL is the o
 | `GET /me` | `{login, displayName, node, via, admin}` |
 | `GET /accounts` | `{accounts: [{authIndex, provider, label, email, plan, disabled, removed, removedAt, firstSeen, lastSeen}]}`. Removed accounts stay listed for labels; pools skip them. |
 | `GET /quota/current` | `{accounts: [{authIndex, provider, windows: [{window: "five_hour"\|"seven_day"\|"seven_day_opus"\|"codex_primary"\|"codex_secondary"\|..., utilization (0..1), resetsAt, status, observedAt, periodSeconds}]}]}` |
+| `POST /quota/refresh` | Body `{authIndex}`. Polls that account's usage endpoint now and returns `{authIndex, provider, windows}`, with windows shaped as in `/quota/current`. Each account can refresh once per 30 s; a faster request gets 429 `{error: {code: "rate_limited", message, retryAfter}}` (whole seconds) and a `Retry-After` header. Other errors: 404 `not_found`, 400 `unsupported_provider` (Claude and Codex only), 502 `upstream_failed` |
 | `GET /quota/series?from&to&provider` | `{series: [{authIndex, provider, window, periodSeconds, points: [{t, utilization}], resets: [t]}]}` |
-| `GET /usage/summary?from&to&bucket&groupBy=model\|account\|provider\|session` | `{totals: Totals, buckets: [{t, groups: {[key]: Totals}}]}` |
-| `GET /usage/events?from&to&authIndex&model&sessionId&failed&cursor&limit` | `{events: [UsageEvent], nextCursor}` |
+| `GET /usage/summary?from&to&bucket&groupBy=model\|account\|provider\|session\|device` | `{totals: Totals, buckets: [{t, groups: {[key]: Totals}}]}`. With `groupBy=device`, events without a device group under `(none)`. |
+| `GET /usage/events?from&to&authIndex&model&sessionId&deviceId&failed&cursor&limit` | `{events: [UsageEvent], nextCursor}`. Each event carries `deviceId`, `deviceName`, and `deviceLogin`; `deviceId=(none)` selects events without a device. |
+| `GET /usage/devices?from&to` | `{devices: [{deviceId, name, login, via, lastSeen, requests, failures, inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWriteTokens, cacheWrite5mTokens, cacheWrite1hTokens, costUSD, cacheHitRatio, mainConversation}]}`. `mainConversation` covers the device's Claude main-conversation requests: `{requests, splitRequests, cacheWriteTokens, cacheWrite5mTokens, cacheWrite1hTokens, fiveMinuteShare, estimate: {rewriteRequests, rewriteTokens, rewriteCostUSD, oneHourPremiumUSD, netSavingsUSD}}`, where `estimate` guesses what a one-hour cache TTL would change. |
 | `GET /usage/sessions?from&to&cursor&limit` | `{sessions: [{sessionId, firstAt, lastAt, requests, accounts: [authIndex], models: [string], totals: Totals, accountSwitches}]}` |
 | `GET /prices` and `PUT /prices` | `{prices: [Price]}` |
 | `GET /request-logs?from&to&q&status&model&authIndex&sessionId&cursor&limit` | `{logs: [RequestLogMeta], nextCursor}` |
