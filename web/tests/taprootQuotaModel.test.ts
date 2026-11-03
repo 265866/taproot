@@ -21,7 +21,6 @@ import {
 import {
   clipPolyline,
   drainRows,
-  jumpLabels,
   niceCeiling,
   remainingRows,
 } from '@/features/taproot-quota/model/chart';
@@ -302,14 +301,6 @@ describe('chart', () => {
     const rows = remainingRows(recorded, projected, 0, 8, 10);
     expect(rows.every((r) => r.projected === undefined)).toBe(true);
     expect(rows[rows.length - 1]).toEqual({ t: 8, recorded: 100 });
-  });
-
-  test('labels upward jumps only, above the minimum gain', () => {
-    expect(jumpLabels(projected, 0, 40, true)).toEqual([
-      { t: 30, value: 100, gain: 100, projected: true },
-    ]);
-    expect(jumpLabels(recorded, 0, 10, false)).toEqual([]);
-    expect(jumpLabels(projected, 0, 40, true, 1.5)).toEqual([]);
   });
 
   test('drain rows split at now', () => {

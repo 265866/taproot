@@ -4,7 +4,6 @@ import {
   Area,
   CartesianGrid,
   ComposedChart,
-  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -13,14 +12,13 @@ import {
   type TooltipContentProps,
 } from 'recharts';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import type { ChartRow, ChartView, JumpLabel } from '../model/chart';
+import type { ChartRow, ChartView } from '../model/chart';
 import { formatMoment, formatWeekdayDay } from '../model/format';
 import { dayTicks } from '../model/range';
 import styles from '../TaprootQuotaPage.module.scss';
 
 interface PoolChartProps {
   rows: ChartRow[];
-  labels: JumpLabel[];
   view: ChartView;
   from: number;
   to: number;
@@ -36,7 +34,6 @@ const formatAxisPercent = (value: number) => `${Math.round(value)}%`;
 
 export function PoolChart({
   rows,
-  labels,
   view,
   from,
   to,
@@ -142,19 +139,6 @@ export function PoolChart({
               }}
             />
           )}
-          {labels.map((label) => (
-            <ReferenceDot
-              key={`${label.projected ? 'p' : 'r'}${label.t}`}
-              x={label.t}
-              y={Math.min(label.value, yMax)}
-              r={0}
-              label={{
-                value: `+${Math.round(label.gain)}%`,
-                position: 'top',
-                className: styles.jumpLabel,
-              }}
-            />
-          ))}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

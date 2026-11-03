@@ -8,7 +8,7 @@ import {
 } from '@/features/authFiles/constants';
 import type { ResolvedTheme } from '@/types';
 import type { QuotaFileEntry } from '../live/logic';
-import { drainRows, jumpLabels, niceCeiling, remainingRows, type ChartView } from '../model/chart';
+import { drainRows, niceCeiling, remainingRows, type ChartView } from '../model/chart';
 import {
   accountName,
   compactDuration,
@@ -99,17 +99,10 @@ export function ProviderCard(props: ProviderCardProps) {
         burnWindowMs
       );
       const peak = Math.max(0, ...rows.map((r) => Math.max(r.recorded ?? 0, r.projected ?? 0)));
-      return { rows, labels: [], yMax: niceCeiling(peak) };
+      return { rows, yMax: niceCeiling(peak) };
     }
-    const span = range.to - range.from;
-    const spacing = span / 30;
-    const labels = [
-      ...jumpLabels(pool.recorded, range.from, Math.min(now, range.to), false, 0.1, spacing),
-      ...jumpLabels(projection.points, Math.max(now, range.from), range.to, true, 0.1, spacing),
-    ];
     return {
       rows: remainingRows(pool.recorded, projection.points, range.from, range.to, now),
-      labels,
       yMax: Math.max(1, projection.capacity) * 100,
     };
   }, [view, pool.recorded, projection.points, projection.capacity, range, now, burnWindowMs]);
@@ -217,7 +210,6 @@ export function ProviderCard(props: ProviderCardProps) {
           </div>
           <PoolChart
             rows={chart.rows}
-            labels={chart.labels}
             view={view}
             from={range.from}
             to={range.to}
