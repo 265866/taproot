@@ -165,7 +165,9 @@ func renderText(c *capture) ([]byte, map[string]span) {
 	}
 
 	apiSection(t, secWebsocketTimeline, "=== WEBSOCKET TIMELINE ===\n", "=== WEBSOCKET TIMELINE", c.wsTimeline, time.Time{}, false)
-	apiSection(t, secAPIWSTimeline, "=== API WEBSOCKET TIMELINE ===\n", "=== API WEBSOCKET TIMELINE", c.apiWSTimeline, time.Time{}, false)
+	// Upstream's handshake and request events carry Headers: blocks with
+	// cookies and partly masked tokens.
+	apiSection(t, secAPIWSTimeline, "=== API WEBSOCKET TIMELINE ===\n", "=== API WEBSOCKET TIMELINE", c.apiWSTimeline, time.Time{}, true)
 	apiSection(t, secAPIRequest, "=== API REQUEST ===\n", "=== API REQUEST", c.apiRequest, time.Time{}, true)
 
 	start := t.pos()
