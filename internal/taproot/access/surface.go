@@ -72,8 +72,8 @@ var navigablePaths = map[string]bool{
 // upstream's TUI calls these routes over 127.0.0.1 without the header.
 const RequestHeader = "X-Taproot-Request"
 
-// sideEffectGETs are admin GET routes that change state: draining the usage
-// queue, and starting or adopting an OAuth login. Read-only GETs, including
+// sideEffectGETs are admin GET routes that change state or reach out: draining the usage
+// queue, starting or adopting an OAuth login, and outbound fetches. Read-only GETs, including
 // plugin pages and plugin management routes, do not need RequestHeader.
 // The OAuth callbacks stay out: providers reach them by navigation, and they
 // only act on a pending login whose random state the caller must know.
@@ -83,6 +83,12 @@ var sideEffectGETs = map[string]bool{
 	"/v8/management/oauth/auth-url":            true,
 	"/v0/management/get-auth-status":           true,
 	"/v8/management/oauth/status":              true,
+	// Outbound fetches: plugin registries, the latest release, and plugin
+	// quota probes that use stored credentials.
+	"/v0/management/plugin-store":          true,
+	"/v8/management/plugins/store":         true,
+	"/v0/management/latest-version":        true,
+	"/v8/management/server/latest-version": true,
 }
 
 // sideEffectGET also matches /v0/management/<provider>-auth-url, which covers
@@ -93,7 +99,8 @@ func sideEffectGET(r *http.Request) bool {
 	}
 	path := r.URL.Path
 	return sideEffectGETs[path] ||
-		(strings.HasPrefix(path, "/v0/management/") && strings.HasSuffix(path, "-auth-url"))
+		(strings.HasPrefix(path, "/v0/management/") && strings.HasSuffix(path, "-auth-url")) ||
+		(strings.Contains(path, "/management/plugins/") && strings.HasSuffix(path, "/quota"))
 }
 
 // isDashboardShell is the dashboard page itself. Every admitted caller may

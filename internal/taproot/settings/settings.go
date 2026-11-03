@@ -29,7 +29,7 @@ type AccessLists interface {
 	AdminNodes() []string
 	SetAdminNodes([]string) error
 	// AdminNodesInclude reports whether a candidate admin-nodes list admits node.
-	AdminNodesInclude(nodes []string, node string) bool
+	AdminNodesInclude(nodes []string, caller access.Identity) bool
 }
 
 // RetentionSetter is the request log module's runtime retention.
@@ -415,7 +415,7 @@ func (s *Settings) checkAdminNodes(nodes []string, caller access.Identity) error
 			message: "the access guard is disabled in taproot.yaml, so admin-nodes has no effect",
 		}
 	}
-	if caller.Via == access.ViaTailnet && !s.deps.Access.AdminNodesInclude(nodes, caller.Node) {
+	if caller.Via == access.ViaTailnet && !s.deps.Access.AdminNodesInclude(nodes, caller) {
 		return &apiError{
 			status: http.StatusConflict, code: "would_lock_out",
 			message: fmt.Sprintf("admin-nodes must keep this device %s", caller.Node),

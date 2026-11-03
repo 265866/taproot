@@ -98,10 +98,13 @@ type Config struct {
 	// AllowLogins lists admitted Tailscale login names. Absent means DefaultAllowLogins.
 	AllowLogins []string `yaml:"allow-logins"`
 	// AdminNodes lists the tailnet nodes that reach the admin surface. Empty
-	// means no tailnet node does; loopback still does. An entry is a MagicDNS
-	// name, either the full name (desktop.tailnet-0000.ts.net) or its
+	// means no tailnet node does; loopback still does. An entry is either a
+	// node's stable ID as "id:<StableID>" (GET /taproot/api/v1/me shows it), or
+	// a MagicDNS name: the full name (desktop.tailnet-0000.ts.net) or its
 	// first label for nodes in the server's own tailnet (desktop).
-	// Control assigns these names; the device-reported hostname is not used.
+	// Prefer IDs. MagicDNS names derive from the device hostname unless set in
+	// the admin console, so once a listed device is deleted or renamed another
+	// node of the same login can claim its name; a stable ID is never reused.
 	AdminNodes []string `yaml:"admin-nodes"`
 	// TrustedCIDRs reach the proxy surface without a whois lookup. Use single
 	// host-local addresses (/32), never a whole LAN.
@@ -127,7 +130,9 @@ type Identity struct {
 	Login       string
 	DisplayName string
 	Node        string
-	Via         Via
+	// NodeID is the node's stable ID from whois.
+	NodeID string
+	Via    Via
 	// Admin is true when the caller may reach the admin surface.
 	Admin bool
 	// notAdmin says why Admin is false.
@@ -294,9 +299,19 @@ func (g *Guard) SetAdminNodes(nodes []string) error {
 func normalizeAdminNodes(nodes []string) ([]string, error) {
 	normalized := make([]string, 0, len(nodes))
 	for _, raw := range nodes {
-		node := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
-		if node == "" || strings.ContainsAny(node, " /:@") {
-			return nil, fmt.Errorf("invalid node name %q", raw)
+		trimmed := strings.TrimSpace(raw)
+		var node string
+		if prefix, id, ok := strings.Cut(trimmed, ":"); ok && strings.EqualFold(prefix, "id") {
+			// Stable IDs are case-sensitive, so they keep their case.
+			if id == "" || strings.ContainsAny(id, " /:@") {
+				return nil, fmt.Errorf("invalid node id %q", raw)
+			}
+			node = adminNodeIDPrefix + id
+		} else {
+			node = strings.ToLower(strings.TrimSuffix(trimmed, "."))
+			if node == "" || strings.ContainsAny(node, " /:@") {
+				return nil, fmt.Errorf("invalid node name %q", raw)
+			}
 		}
 		if !slices.Contains(normalized, node) {
 			normalized = append(normalized, node)
@@ -316,12 +331,12 @@ func (g *Guard) AdminNodes() []string {
 // AdminNodesInclude reports whether a candidate admin-nodes list would admit
 // the node a whois named, using the same matching as the guard. Settings uses
 // it to refuse a change that removes the caller's own device.
-func (g *Guard) AdminNodesInclude(nodes []string, node string) bool {
+func (g *Guard) AdminNodesInclude(nodes []string, caller Identity) bool {
 	normalized, err := normalizeAdminNodes(nodes)
 	if err != nil {
 		return false
 	}
-	return matchAdminNode(normalized, node, g.self(context.Background()))
+	return matchAdminNode(normalized, caller.Node, caller.NodeID, g.self(context.Background()))
 }
 
 // IdentityFrom returns the identity the middleware admitted for this request.
@@ -368,6 +383,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 					"code":    "not_admin_node",
 					"message": "this device is not in access.admin-nodes in taproot.yaml",
 					"node":    id.Node,
+					"nodeId":  id.NodeID,
 				}
 			}
 		}
@@ -431,14 +447,14 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 	if !slices.Contains(*g.allow.Load(), strings.ToLower(p.Login)) {
 		return Identity{}, "login " + p.Login + " not in allow-logins"
 	}
-	id := Identity{Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, Via: ViaTailnet}
+	id := Identity{Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, NodeID: p.StableID, Via: ViaTailnet}
 	s := self()
 	switch {
 	case s == nil:
 		id.notAdmin = "this server's own tailnet node is unknown, so tailnet callers reach the proxy only"
 	case containsAddr(s.IPs, addr) || (p.StableID != "" && p.StableID == s.StableID):
 		id.notAdmin = "this server's own node reaches the proxy only"
-	case !matchAdminNode(*g.adminNodes.Load(), p.Node, s):
+	case !matchAdminNode(*g.adminNodes.Load(), p.Node, p.StableID, s):
 		id.notAdmin = "node " + quoteHeader(p.Node) + " not in admin-nodes"
 		id.unlistedNode = true
 	default:
@@ -447,10 +463,15 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 	return id, ""
 }
 
-// matchAdminNode matches a whois MagicDNS name against admin-nodes. A short
-// entry matches only nodes in the server's own tailnet. An empty list or an
-// empty name matches nothing.
-func matchAdminNode(adminNodes []string, node string, self *selfNode) bool {
+const adminNodeIDPrefix = "id:"
+
+// matchAdminNode matches a whois node against admin-nodes, by stable ID or by
+// MagicDNS name. A short name entry matches only nodes in the server's own
+// tailnet. An empty list, or an empty name and ID, matches nothing.
+func matchAdminNode(adminNodes []string, node, nodeID string, self *selfNode) bool {
+	if nodeID != "" && slices.Contains(adminNodes, adminNodeIDPrefix+nodeID) {
+		return true
+	}
 	node = strings.ToLower(node)
 	if node == "" {
 		return false
@@ -563,6 +584,7 @@ type meResponse struct {
 	Login       string `json:"login"`
 	DisplayName string `json:"displayName"`
 	Node        string `json:"node"`
+	NodeID      string `json:"nodeId"`
 	Via         string `json:"via"`
 	Admin       bool   `json:"admin"`
 }
@@ -577,5 +599,5 @@ func (g *Guard) handleMe(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"code": "forbidden", "message": "no admitted identity"}})
 		return
 	}
-	c.JSON(http.StatusOK, meResponse{Login: id.Login, DisplayName: id.DisplayName, Node: id.Node, Via: string(id.Via), Admin: id.Admin})
+	c.JSON(http.StatusOK, meResponse{Login: id.Login, DisplayName: id.DisplayName, Node: id.Node, NodeID: id.NodeID, Via: string(id.Via), Admin: id.Admin})
 }

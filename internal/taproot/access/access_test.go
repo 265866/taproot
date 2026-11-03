@@ -215,7 +215,7 @@ func TestAdmitsAllowlistedLogin(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	got := me(t, e, adminIP+":40000", nil)
-	want := meResponse{Login: "alice@github", DisplayName: "Alice", Node: "laptop.tailnet-0000.ts.net", Via: "tailnet", Admin: true}
+	want := meResponse{Login: "alice@github", DisplayName: "Alice", Node: "laptop.tailnet-0000.ts.net", NodeID: "nlaptopCNTRL", Via: "tailnet", Admin: true}
 	if got != want {
 		t.Fatalf("/me = %+v, want %+v", got, want)
 	}
@@ -388,8 +388,53 @@ func TestEmptyAdminNodesDenyEveryTailnetCaller(t *testing.T) {
 	if err := g.SetAdminNodes([]string{"bad name"}); err == nil {
 		t.Fatal("SetAdminNodes accepted a name with a space")
 	}
-	if !g.AdminNodesInclude([]string{"laptop"}, "laptop."+tailnetSuffix) || g.AdminNodesInclude([]string{"worker"}, "laptop."+tailnetSuffix) || g.AdminNodesInclude(nil, "laptop."+tailnetSuffix) {
+	laptop := Identity{Node: "laptop." + tailnetSuffix}
+	if !g.AdminNodesInclude([]string{"laptop"}, laptop) || g.AdminNodesInclude([]string{"worker"}, laptop) || g.AdminNodesInclude(nil, laptop) {
 		t.Fatal("AdminNodesInclude does not match the guard's rule")
+	}
+}
+
+// An "id:" entry pins a node by stable ID, so another node that later takes
+// the same MagicDNS name is not an admin.
+func TestAdminNodesByStableID(t *testing.T) {
+	peers := defaultPeers()
+	laptopID := "nlaptopCNTRL"
+	ts := newFakeTailscaled(t, peers)
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"id:" + laptopID}})
+	e, _ := testEngine(g)
+	if rec := do(e, adminIP+":1", "/v8/management/config", nil); rec.Code != http.StatusOK {
+		t.Fatalf("id-pinned node admin status = %d, want 200", rec.Code)
+	}
+	if got := me(t, e, adminIP+":1", nil); got.NodeID != laptopID {
+		t.Fatalf("/me nodeId = %q, want %q", got.NodeID, laptopID)
+	}
+	assertDenied(t, do(e, otherNodeIP+":1", "/v8/management/config", nil), "not_admin_node")
+
+	// The pinned device was renamed and another node took its old name: the
+	// pin follows the device, not the name.
+	peers[adminIP] = fakePeer{login: "alice@github", displayName: "Alice", node: "old-laptop"}
+	peers[otherNodeIP] = fakePeer{login: "alice@github", displayName: "Alice", node: "laptop"}
+	ts2 := newFakeTailscaled(t, peers)
+	e, _ = testEngine(newTestGuard(t, Config{TailscaleSocket: ts2.socket, AdminNodes: []string{"id:nold-laptopCNTRL"}}))
+	assertDenied(t, do(e, otherNodeIP+":1", "/v8/management/config", nil), "not_admin_node")
+	if rec := do(e, adminIP+":1", "/v8/management/config", nil); rec.Code != http.StatusOK {
+		t.Fatalf("renamed pinned node admin status = %d, want 200", rec.Code)
+	}
+	e, _ = testEngine(g)
+
+	// IDs are case-sensitive and kept as written.
+	if err := g.SetAdminNodes([]string{"ID:" + strings.ToUpper(laptopID)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.AdminNodes(); len(got) != 1 || got[0] != "id:"+strings.ToUpper(laptopID) {
+		t.Fatalf("AdminNodes = %v", got)
+	}
+	assertDenied(t, do(e, adminIP+":1", "/v8/management/config", nil), "not_admin_node")
+	if !g.AdminNodesInclude([]string{"id:" + laptopID}, Identity{Node: "renamed", NodeID: laptopID}) {
+		t.Fatal("AdminNodesInclude ignores the stable ID")
+	}
+	if err := g.SetAdminNodes([]string{"id:"}); err == nil {
+		t.Fatal("SetAdminNodes accepted an empty id")
 	}
 }
 
@@ -445,6 +490,12 @@ func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 		"/v8/management/oauth/auth-url",
 		"/v0/management/get-auth-status",
 		"/v8/management/oauth/status",
+		"/v0/management/plugin-store",
+		"/v8/management/plugins/store",
+		"/v0/management/latest-version",
+		"/v8/management/server/latest-version",
+		"/v0/management/plugins/demo/quota",
+		"/v8/management/plugins/demo/quota",
 	}
 	readOnly := []string{
 		"/v0/management/config",
