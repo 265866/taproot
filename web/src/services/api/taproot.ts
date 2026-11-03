@@ -33,8 +33,8 @@ export interface TaprootAccount {
   email: string;
   plan: string;
   disabled: boolean;
-  firstSeen: string;
-  lastSeen: string;
+  firstSeen: string | null;
+  lastSeen: string | null;
 }
 
 export interface QuotaWindowState {
