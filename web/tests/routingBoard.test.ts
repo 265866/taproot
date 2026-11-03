@@ -7,12 +7,12 @@ import {
   collectModelOptions,
   draftFromBoard,
   moveMember,
+  neededCredentialModels,
   resolveRoute,
   stepMember,
   tiersFromMembers,
 } from '../src/features/routing/logic';
 import {
-  RoutingConflictError,
   buildRoutingBoard,
   buildRoutingConfigPatch,
   credentialWrites,
@@ -27,39 +27,16 @@ const RAW = {
     'session-affinity': true,
     retry: { 'request-retry': 3, 'max-retry-credentials': 0 },
   },
+  // Config API-key providers are not part of the dashboard; the board must ignore them.
   'api-keys': {
-    codex: [
-      {
-        name: 'opencode',
-        'base-url': 'https://opencode.example/v1',
-        priority: 20,
-        auth_index: 'g-ignored',
-        keys: [
-          { 'api-key': 'sk-codex-aaaa', auth_index: 'a1' },
-          { 'api-key': 'sk-codex-bbbb', priority: 10, weight: 3, auth_index: 'a2' },
-        ],
-      },
-    ],
-    claude: [
-      {
-        name: 'claude-1',
-        'excluded-models': ['*'],
-        keys: [{ 'api-key': 'sk-claude-cccc' }],
-      },
-    ],
-    'openai-compatibility': [
-      {
-        name: 'openrouter',
-        'base-url': 'https://openrouter.example/api/v1',
-        priority: 10,
-        models: [{ name: 'deepseek/deepseek-v4', alias: 'deepseek-v4' }],
-        keys: [{ 'api-key': 'sk-or-1111' }, { 'api-key': 'sk-or-2222', weight: 2 }],
-      },
-    ],
+    codex: [{ name: 'opencode', priority: 50, keys: [{ 'api-key': 'sk-codex-aaaa' }] }],
   },
 };
 
 const FILES: AuthFileItem[] = [
+  { name: 'top.json', type: 'codex', email: 'top@example.com', priority: 20 },
+  { name: 'mid.json', type: 'claude', priority: 10, weight: 3 },
+  { name: 'mid2.json', type: 'codex', priority: 10 },
   { name: 'main.json', type: 'codex', email: 'main@example.com', priority: 0 },
   { name: 'runtime', type: 'gemini', runtimeOnly: true, priority: 0 },
   {
@@ -79,13 +56,21 @@ const FILES: AuthFileItem[] = [
       ],
     },
   },
+  { name: 'off.json', type: 'claude', priority: 0, disabled: true },
 ];
 
 const board = (): RoutingBoard => buildRoutingBoard(RAW, FILES);
 
 const catalog: RoutingModelCatalog = {
-  channels: { codex: ['gpt-5', 'gpt-5-mini'] },
-  credentials: { 'main.json': ['gpt-5'], 'cool.json': ['gpt-5'], runtime: ['gemini-3-pro'] },
+  credentials: {
+    'top.json': ['gpt-5-mini'],
+    'mid.json': ['claude-sonnet'],
+    'mid2.json': ['gpt-5'],
+    'main.json': ['gpt-5'],
+    'cool.json': ['gpt-5'],
+    'off.json': ['claude-opus'],
+    runtime: ['gemini-3-pro'],
+  },
 };
 
 describe('routing board reading', () => {
@@ -99,24 +84,22 @@ describe('routing board reading', () => {
     expect(readRoutingSettings({ routing: { strategy: 'bogus' } }).strategy).toBe('round-robin');
   });
 
-  test('expands groups with key overrides, compat providers and credentials', () => {
+  test('reads every credential as a member and ignores config API keys', () => {
     const members = board().members;
+    expect(members.map((member) => member.key)).toEqual(FILES.map((file) => `cred:${file.name}`));
     const byKey = new Map(members.map((member) => [member.key, member]));
-    expect(byKey.get('key:codex:0:0')?.priority).toBe(20);
-    expect(byKey.get('key:codex:0:1')?.priority).toBe(10);
-    expect(byKey.get('key:codex:0:1')?.weights[0].weight).toBe(3);
-    expect(byKey.get('key:codex:0:0')?.modelSource).toEqual({ type: 'channel', channel: 'codex' });
-    expect(byKey.get('key:claude:0:0')?.disabled).toBe(true);
-    const compat = byKey.get('compat:0');
-    expect(compat?.keyCount).toBe(2);
-    expect(compat?.weights.map((slot) => slot.weight)).toEqual([null, 2]);
-    expect(compat?.modelSource).toEqual({ type: 'list', models: ['deepseek-v4'] });
     expect(byKey.get('cred:main.json')?.name).toBe('main@example.com');
+    expect(byKey.get('cred:main.json')?.credentialName).toBe('main.json');
+    expect(byKey.get('cred:mid.json')?.weights[0].weight).toBe(3);
+    expect(byKey.get('cred:mid2.json')?.weights[0].weight).toBeNull();
     expect(byKey.get('cred:runtime')?.locked).toBe(true);
-    // Masked keys only: the raw key never reaches display fields.
-    expect(JSON.stringify(members.map((member) => [member.name, member.detail]))).not.toContain(
-      'sk-codex-aaaa'
-    );
+    expect(byKey.get('cred:off.json')?.disabled).toBe(true);
+    expect(JSON.stringify(members)).not.toContain('sk-codex-aaaa');
+  });
+
+  test('disabled credentials need no live model list', () => {
+    expect(neededCredentialModels(board())).not.toContain('off.json');
+    expect(neededCredentialModels(board())).toContain('main.json');
   });
 });
 
@@ -134,9 +117,9 @@ describe('arranging tiers', () => {
     expect(top[0].memberKeys).toEqual(['cred:main.json']);
     expect(top).toHaveLength(4);
     // The lone member of the top tier cannot move above itself.
-    expect(moveMember(tiers, 'key:codex:0:0', { kind: 'gap', index: 0 })).toEqual(tiers);
-    expect(canStepMember(tiers, 'key:codex:0:0', 'up')).toBe(false);
-    expect(stepMember(tiers, 'key:codex:0:0', 'down')[0].memberKeys).toContain('key:codex:0:0');
+    expect(moveMember(tiers, 'cred:top.json', { kind: 'gap', index: 0 })).toEqual(tiers);
+    expect(canStepMember(tiers, 'cred:top.json', 'up')).toBe(false);
+    expect(stepMember(tiers, 'cred:top.json', 'down')[0].memberKeys).toContain('cred:top.json');
   });
 
   test('keeps stored numbers that still fit and numbers the gaps', () => {
@@ -147,8 +130,8 @@ describe('arranging tiers', () => {
     });
     const priorities = assignPriorities(tiers, current.members);
     expect(priorities['cred:main.json']).toBe(30);
-    expect(priorities['key:codex:0:0']).toBe(20);
-    expect(priorities['compat:0']).toBe(10);
+    expect(priorities['cred:top.json']).toBe(20);
+    expect(priorities['cred:mid.json']).toBe(10);
     expect(priorities['cred:runtime']).toBe(0);
   });
 
@@ -160,17 +143,11 @@ describe('arranging tiers', () => {
     });
     expect(assignPriorities(between, current.members)['cred:main.json']).toBe(15);
 
-    const tight = buildRoutingBoard(
-      {
-        'api-keys': {
-          'openai-compatibility': [
-            { name: 'a', priority: 2, keys: [] },
-            { name: 'b', priority: 1, keys: [] },
-          ],
-        },
-      },
-      [{ name: 'c.json', type: 'codex', priority: 0 }]
-    );
+    const tight = buildRoutingBoard({}, [
+      { name: 'a.json', type: 'codex', priority: 2 },
+      { name: 'b.json', type: 'codex', priority: 1 },
+      { name: 'c.json', type: 'codex', priority: 0 },
+    ]);
     const squeezed = moveMember(tiersFromMembers(tight.members), 'cred:c.json', {
       kind: 'gap',
       index: 1,
@@ -217,162 +194,107 @@ describe('arranging tiers', () => {
     expect(buildRoutingPlan(current, draft).changes).toEqual([]);
 
     draft.tiers = moveMember(draft.tiers, 'cred:main.json', { kind: 'gap', index: 0 });
-    draft.weights['compat:0'] = [5, 2];
+    draft.weights['cred:mid.json'] = [5];
     draft.settings = { ...draft.settings, strategy: 'fill-first' };
     const plan = buildRoutingPlan(current, draft);
     expect(plan.priorities).toEqual({ 'cred:main.json': 30 });
-    expect(plan.weights).toEqual({ 'compat:0': [5, 2] });
+    expect(plan.weights).toEqual({ 'cred:mid.json': [5] });
     expect(plan.settings).toEqual({ strategy: 'fill-first' });
     expect(plan.priorities['cred:runtime']).toBeUndefined();
   });
 });
 
 describe('writing a plan', () => {
-  test('sends credentials individually and config changes as one patch', () => {
+  test('writes each changed credential once and settings as one patch', () => {
     const current = board();
     const draft = draftFromBoard(current);
-    draft.tiers = moveMember(draft.tiers, 'key:codex:0:1', { kind: 'gap', index: 0 });
     draft.tiers = moveMember(draft.tiers, 'cred:main.json', { kind: 'tier', tierId: 'p10' });
-    draft.weights['compat:0'] = [null, 4];
+    draft.weights['cred:mid.json'] = [4];
     draft.settings = { ...draft.settings, sessionAffinity: false };
     const plan = buildRoutingPlan(current, draft);
 
     expect(credentialWrites(current, plan)).toEqual([
+      { key: 'cred:mid.json', name: 'mid.json', fields: { weight: 4 } },
       { key: 'cred:main.json', name: 'main.json', fields: { priority: 10 } },
     ]);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- assertions walk the JSON body
-    const patch = buildRoutingConfigPatch(RAW, current, plan) as Record<string, any>;
-    expect(patch.routing).toEqual({ 'session-affinity': false });
-    const codexGroup = patch['api-keys'].codex[0];
-    expect(codexGroup.priority).toBe(20);
-    expect(codexGroup.keys[1].priority).toBe(30);
-    expect(codexGroup.keys[0].priority).toBeUndefined();
-    expect(JSON.stringify(patch)).not.toContain('auth_index');
-    const compatGroup = patch['api-keys']['openai-compatibility'][0];
-    expect(compatGroup.keys.map((key: Record<string, unknown>) => key.weight)).toEqual([
-      undefined,
-      4,
-    ]);
-    // Untouched families are not sent; the source document is not mutated.
-    expect(patch['api-keys'].claude).toBeUndefined();
-    expect(RAW['api-keys'].codex[0].keys[1].priority).toBe(10);
+    expect(buildRoutingConfigPatch(plan)).toEqual({ routing: { 'session-affinity': false } });
   });
 
-  test('refuses to write when a key moved since the board was read', () => {
-    const current = board();
-    const draft = draftFromBoard(current);
-    draft.tiers = moveMember(draft.tiers, 'key:codex:0:1', { kind: 'gap', index: 0 });
-    const plan = buildRoutingPlan(current, draft);
-    const changed = structuredClone(RAW);
-    changed['api-keys'].codex[0].keys.reverse();
-    expect(() => buildRoutingConfigPatch(changed, current, plan)).toThrow(RoutingConflictError);
-  });
-
-  test('a settings-only plan touches no provider list', () => {
+  test('a settings-only plan sends only the retry block', () => {
     const current = board();
     const draft = draftFromBoard(current);
     draft.settings = { ...draft.settings, requestRetry: 1, maxRetryCredentials: 2 };
-    const patch = buildRoutingConfigPatch(RAW, current, buildRoutingPlan(current, draft));
-    expect(patch).toEqual({
+    const plan = buildRoutingPlan(current, draft);
+    expect(credentialWrites(current, plan)).toEqual([]);
+    expect(buildRoutingConfigPatch(plan)).toEqual({
       routing: { retry: { 'request-retry': 1, 'max-retry-credentials': 2 } },
     });
+  });
+
+  test('a credential-only plan sends no configuration patch', () => {
+    const current = board();
+    const draft = draftFromBoard(current);
+    draft.tiers = moveMember(draft.tiers, 'cred:main.json', { kind: 'gap', index: 0 });
+    expect(buildRoutingConfigPatch(buildRoutingPlan(current, draft))).toBeNull();
   });
 });
 
 describe('route preview', () => {
-  for (const forceModelPrefix of [false, true]) {
-    test(`credential models are final callable ids (force prefix: ${forceModelPrefix})`, () => {
-      const current = board();
-      current.forceModelPrefix = forceModelPrefix;
-      const credential = current.members.find((member) => member.key === 'cred:main.json')!;
-      current.members = [{ ...credential, prefix: 'team' }];
-      const models = forceModelPrefix ? ['team/gpt-5'] : ['gpt-5', 'team/gpt-5'];
-      const liveCatalog: RoutingModelCatalog = {
-        channels: {},
-        credentials: { 'main.json': models },
-      };
-      expect(collectModelOptions(current, liveCatalog)).toEqual(models);
-      const draft = draftFromBoard(current);
-      for (const model of models) {
-        const preview = resolveRoute(current, draft, liveCatalog, model, 0);
-        expect(preview.tiers[0].members[0].state).toBe('serving');
-      }
-      const invalid = ['team/team/gpt-5', ...(forceModelPrefix ? ['gpt-5'] : [])];
-      for (const model of invalid) {
-        const preview = resolveRoute(current, draft, liveCatalog, model, 0);
-        expect(preview.tiers[0].members[0].state).toBe('ineligible');
-      }
-    });
-
-    for (const sourceType of ['list', 'channel'] as const) {
-      test(`${sourceType} models still apply prefix policy (force prefix: ${forceModelPrefix})`, () => {
-        const current = board();
-        current.forceModelPrefix = forceModelPrefix;
-        const catalog: RoutingModelCatalog = {
-          channels: { codex: ['gpt-5'] },
-          credentials: {},
-        };
-        current.members = [
-          {
-            ...current.members[0],
-            prefix: 'team',
-            modelSource:
-              sourceType === 'list'
-                ? { type: 'list', models: ['gpt-5'] }
-                : { type: 'channel', channel: 'codex' },
-          },
-        ];
-        const expected = forceModelPrefix ? ['team/gpt-5'] : ['gpt-5', 'team/gpt-5'];
-        expect(collectModelOptions(current, catalog)).toEqual(expected);
-        const draft = draftFromBoard(current);
-        for (const model of expected) {
-          expect(resolveRoute(current, draft, catalog, model, 0).hasActive).toBe(true);
-        }
-        expect(resolveRoute(current, draft, catalog, 'team/team/gpt-5', 0).hasActive).toBe(false);
-        if (forceModelPrefix) {
-          expect(resolveRoute(current, draft, catalog, 'gpt-5', 0).hasActive).toBe(false);
-        }
-      });
+  test('credential models are final callable ids, prefix included', () => {
+    const current = board();
+    const credential = current.members.find((member) => member.key === 'cred:main.json')!;
+    current.members = [{ ...credential, prefix: 'team' }];
+    const models = ['gpt-5', 'team/gpt-5'];
+    const liveCatalog: RoutingModelCatalog = { credentials: { 'main.json': models } };
+    expect(collectModelOptions(current, liveCatalog)).toEqual(models);
+    const draft = draftFromBoard(current);
+    for (const model of models) {
+      expect(resolveRoute(current, draft, liveCatalog, model, 0).tiers[0].members[0].state).toBe(
+        'serving'
+      );
     }
-  }
-
-  test('lists callable models with prefixes', () => {
-    const options = collectModelOptions(board(), catalog);
-    expect(options).toContain('gpt-5');
-    expect(options).toContain('deepseek-v4');
-    expect(options).not.toContain('claude-sonnet');
+    const invalid = resolveRoute(current, draft, liveCatalog, 'team/team/gpt-5', 0);
+    expect(invalid.tiers[0].members[0].state).toBe('ineligible');
   });
 
-  test('the first tier with a serving member takes the request, weighted by key', () => {
+  test('lists callable models of enabled credentials, sorted and deduplicated', () => {
+    expect(collectModelOptions(board(), catalog)).toEqual([
+      'claude-sonnet',
+      'gemini-3-pro',
+      'gpt-5',
+      'gpt-5-mini',
+    ]);
+  });
+
+  test('the first tier with a serving member takes the request; lower tiers stand by', () => {
     const current = board();
     const draft = draftFromBoard(current);
-    const preview = resolveRoute(current, draft, catalog, 'deepseek-v4', 2_000);
-    // p20 only has a codex key without that model: skipped.
+    const preview = resolveRoute(current, draft, catalog, 'gpt-5', 2_000);
+    // p20 only has gpt-5-mini: skipped.
     expect(preview.tiers[0].state).toBe('skipped');
     expect(preview.tiers[1].state).toBe('active');
-    const compat = preview.tiers[1].members.find((member) => member.key === 'compat:0');
-    const codexKey = preview.tiers[1].members.find((member) => member.key === 'key:codex:0:1');
-    expect(compat?.state).toBe('serving');
-    expect(compat?.share).toBe(100);
-    expect(codexKey?.state).toBe('ineligible');
-    expect(preview.tiers[2].state).toBe('skipped');
+    const byKey = new Map(preview.tiers[1].members.map((member) => [member.key, member]));
+    expect(byKey.get('cred:mid2.json')?.state).toBe('serving');
+    expect(byKey.get('cred:mid2.json')?.share).toBe(100);
+    expect(byKey.get('cred:mid.json')?.state).toBe('ineligible');
+    expect(preview.tiers[2].state).toBe('standby');
   });
 
-  test('weighted round-robin splits a tier by key weights (absent counts as 1)', () => {
+  test('weighted round-robin splits a tier by weight (absent counts as 1)', () => {
     const current = board();
     const draft = draftFromBoard(current);
-    draft.tiers = moveMember(draft.tiers, 'key:codex:0:0', { kind: 'tier', tierId: 'p0' });
     const preview = resolveRoute(current, draft, catalog, null, 0);
-    // p10: compat (1 + 2) and the codex key (3).
-    expect(preview.tiers[0].members.map((member) => member.share)).toEqual([50, 50]);
+    // p20 is a single credential; p10 holds mid (3) and mid2 (1) but stands by.
+    expect(preview.tiers[0].members.map((member) => member.share)).toEqual([100]);
+    draft.tiers = moveMember(draft.tiers, 'cred:top.json', { kind: 'tier', tierId: 'p10' });
+    const weighted = resolveRoute(current, draft, catalog, null, 0);
+    const shares = Object.fromEntries(
+      weighted.tiers[0].members.map((member) => [member.key, member.share])
+    );
+    expect(shares).toEqual({ 'cred:mid.json': 60, 'cred:mid2.json': 20, 'cred:top.json': 20 });
     draft.settings = { ...draft.settings, strategy: 'round-robin' };
     const even = resolveRoute(current, draft, catalog, null, 0);
-    // Round-robin counts keys: compat has two, the codex key one.
-    const shares = Object.fromEntries(
-      even.tiers[0].members.map((member) => [member.key, member.share])
-    );
-    expect(shares).toEqual({ 'compat:0': 66.7, 'key:codex:0:1': 33.3 });
+    expect(even.tiers[0].members.map((member) => member.share)).toEqual([33.3, 33.3, 33.3]);
   });
 
   test('model cooldowns and unknown model lists are not counted as serving', () => {
@@ -382,10 +304,20 @@ describe('route preview', () => {
     const preview = resolveRoute(current, draft, catalog, 'gpt-5', 2_000);
     expect(preview.tiers[0].state).toBe('cooling');
     expect(preview.tiers[0].members[0].state).toBe('cooling');
-    expect(preview.tiers[1].state).toBe('active');
+    expect(preview.tiers[1].state).toBe('skipped');
+    expect(preview.tiers[2].state).toBe('active');
 
-    const loading = resolveRoute(current, draft, { channels: {}, credentials: {} }, 'gpt-5', 0);
+    const loading = resolveRoute(current, draft, { credentials: {} }, 'gpt-5', 0);
     expect(loading.tiers[0].members[0].state).toBe('unknown');
+  });
+
+  test('disabled credentials never serve', () => {
+    const current = board();
+    const draft = draftFromBoard(current);
+    const preview = resolveRoute(current, draft, catalog, 'claude-opus', 0);
+    expect(preview.hasActive).toBe(false);
+    const off = preview.tiers[2].members.find((member) => member.key === 'cred:off.json');
+    expect(off?.state).toBe('disabled');
   });
 
   test('fill-first has no fixed split', () => {

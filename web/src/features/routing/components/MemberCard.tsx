@@ -1,31 +1,11 @@
 import { useEffect, useId, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconEllipsis, IconGripVertical, IconLock } from '@/components/ui/icons';
-import { PROVIDER_LOGOS } from '@/features/providers/brandLogos';
-import type { ProviderBrand } from '@/features/providers/types';
 import { getAuthFileIcon } from '@/features/authFiles/constants';
 import type { ResolvedTheme } from '@/types';
 import type { RouteMember, RoutingMember, RoutingStrategy } from '@/types/routing';
 import { formatRoutingDuration } from '../format';
 import styles from './MemberCard.module.scss';
-
-const FAMILY_BRANDS: Record<string, ProviderBrand> = {
-  gemini: 'gemini',
-  interactions: 'interactions',
-  codex: 'codex',
-  meta: 'meta',
-  xai: 'xai',
-  claude: 'claude',
-  vertex: 'vertex',
-  'openai-compatibility': 'openaiCompatibility',
-};
-
-function memberIcon(member: RoutingMember, theme: ResolvedTheme): string | null {
-  if (member.kind === 'credential') return getAuthFileIcon(member.family, theme);
-  const logo = PROVIDER_LOGOS[FAMILY_BRANDS[member.family]];
-  if (!logo) return null;
-  return theme === 'dark' && logo.darkSrc ? logo.darkSrc : logo.src;
-}
 
 export interface MemberCardProps {
   member: RoutingMember;
@@ -64,7 +44,7 @@ export function MemberCard({
   const rootRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const icon = memberIcon(member, theme);
+  const icon = getAuthFileIcon(member.family, theme);
   const state = route?.state;
 
   useEffect(() => {
@@ -123,17 +103,7 @@ export function MemberCard({
     onDragStart(member.key);
   };
 
-  const kindLabel =
-    member.kind === 'credential'
-      ? t('routing.kind_oauth')
-      : member.kind === 'compat'
-        ? t('routing.kind_compat_keys', { count: member.keyCount })
-        : t('routing.kind_api_key');
-
-  // Disabled is configuration, reliable for every member. Cooldown and availability are runtime
-  // state CPA exposes only for credentials, so an enabled config API key says it has none. That
-  // note lives in the tooltip (and the footnote): repeating it on every card is only noise.
-  const showNoRuntimeState = member.kind !== 'credential' && !member.disabled;
+  const kindLabel = t('routing.kind_oauth');
 
   let chip: string | null = null;
   if (state === 'disabled') chip = t('routing.state_disabled');
@@ -165,7 +135,6 @@ export function MemberCard({
     member.name,
     member.detail,
     state === 'ineligible' ? t('routing.state_ineligible') : '',
-    showNoRuntimeState ? t('routing.no_runtime_state') : '',
   ]
     .filter(Boolean)
     .join('\n');

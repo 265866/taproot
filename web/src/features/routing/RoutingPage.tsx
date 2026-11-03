@@ -16,7 +16,6 @@ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useRevealGroup } from '@/hooks/motion';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import {
-  RoutingConflictError,
   buildRoutingBoard,
   routingApi,
   type RoutingApplyResult,
@@ -40,7 +39,6 @@ import {
   collectModelOptions,
   draftFromBoard,
   moveMember,
-  neededChannels,
   neededCredentialModels,
   resolveRoute,
   stepMember,
@@ -56,7 +54,7 @@ import styles from './RoutingPage.module.scss';
 // Cooldown chips count down coarsely; one shared timer for the whole board.
 const cooldownClock = createSharedClock({ intervalMs: 5_000 });
 
-const EMPTY_CATALOG: RoutingModelCatalog = { channels: {}, credentials: {} };
+const EMPTY_CATALOG: RoutingModelCatalog = { credentials: {} };
 
 interface ModelProgress {
   done: number;
@@ -100,29 +98,23 @@ export function RoutingPage() {
   const loadModels = useCallback((next: RoutingBoard, requestId: number) => {
     const isCurrent = () => requestId === requestRef.current;
     const known = catalogRef.current;
-    const channels = neededChannels(next).filter((channel) => !(channel in known.channels));
     const credentials = neededCredentialModels(next).filter((name) => !(name in known.credentials));
-    const total = channels.length + credentials.length;
+    const total = credentials.length;
     if (total === 0) {
       setModelProgress(null);
       return;
     }
     let done = 0;
     setModelProgress({ done, total });
-    const record = (kind: 'channels' | 'credentials', id: string, models: string[] | null) => {
+    void routingApi.loadCredentialModels(credentials, (id, models) => {
       if (!isCurrent()) return;
       done += 1;
       catalogRef.current = {
-        ...catalogRef.current,
-        [kind]: { ...catalogRef.current[kind], [id]: models },
+        credentials: { ...catalogRef.current.credentials, [id]: models },
       };
       setCatalog(catalogRef.current);
       setModelProgress(done >= total ? null : { done, total });
-    };
-    void routingApi.loadChannelModels(channels, (id, models) => record('channels', id, models));
-    void routingApi.loadCredentialModels(credentials, (id, models) =>
-      record('credentials', id, models)
-    );
+    });
   }, []);
 
   const load = useCallback(async () => {
@@ -270,10 +262,6 @@ export function RoutingPage() {
   const reportResult = (result: RoutingApplyResult) => {
     if (!result.failed) {
       showNotification(t('routing.save_success', { count: plan?.changes.length ?? 0 }), 'success');
-      return;
-    }
-    if (result.failed.error instanceof RoutingConflictError) {
-      showNotification(t('routing.save_conflict'), 'error');
       return;
     }
     const failedKey = result.failed.key;
