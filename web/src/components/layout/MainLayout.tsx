@@ -246,8 +246,8 @@ const THEME_CARDS: Array<{
     key: 'auto',
     labelKey: 'theme.auto',
     colors: {
-      bg: 'linear-gradient(135deg, #ffffff 0 50%, #111111 50% 100%)',
-      card: 'linear-gradient(135deg, #ffffff 0 50%, #1a1a1a 50% 100%)',
+      bg: 'linear-gradient(135deg, #ffffff 0 50%, #000000 50% 100%)',
+      card: 'linear-gradient(135deg, #ffffff 0 50%, #0c0c0c 50% 100%)',
       border: '#bdbdbd',
       text: '#2d2a26',
       textMuted: 'linear-gradient(135deg, #c9c9c9 0 50%, #5a5a5a 50% 100%)',
@@ -279,11 +279,11 @@ const THEME_CARDS: Array<{
     key: 'dark',
     labelKey: 'theme.dark',
     colors: {
-      bg: '#0a0a0a',
-      card: '#111111',
+      bg: '#000000',
+      card: '#0c0c0c',
       border: '#2a2a2a',
       text: '#ededed',
-      textMuted: '#737373',
+      textMuted: '#808080',
     },
   },
 ];

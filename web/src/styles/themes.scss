@@ -6,7 +6,7 @@
 :root {
   // Provider accents for charts, tabs, and badges.
   --provider-claude: #c4643f;
-  --provider-codex: #3d63dd;
+  --provider-codex: #5b5bd6;
   --provider-claude-soft: color-mix(in srgb, var(--provider-claude) 14%, transparent);
   --provider-codex-soft: color-mix(in srgb, var(--provider-codex) 14%, transparent);
 
@@ -17,9 +17,18 @@
   --font-weight-numeral: 500;
   --letter-spacing-numeral: -0.03em;
 
-  --button-primary-bg: var(--primary-color);
-  --button-primary-hover: var(--primary-hover);
-  --button-primary-text: var(--primary-contrast, #fff);
+  // Interface accent. Blue marks selection, focus, links, and primary actions; provider hues stay
+  // reserved for provider data, so Codex sits on indigo to stay distinct from the accent.
+  --accent-subtle: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent) 30%, transparent);
+  --primary-color: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-contrast: #ffffff;
+
+  --button-primary-bg: var(--accent);
+  --button-primary-hover: var(--accent-hover);
+  --button-primary-text: #ffffff;
 
   --radius-lg: 12px;
   --space-page: 32px;
@@ -49,10 +58,16 @@
   --border-primary: #d5d2cb;
   --border-hover: #cecac4;
 
-  --primary-color: #8b8680; // 行动色（主色）
-  --primary-hover: #7f7a74;
-  --primary-active: #726d67;
-  --primary-contrast: #ffffff;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-text: #1d4ed8;
+  --primary-active: #1e40af;
+  --input-bg: var(--bg-secondary);
+  --toggle-off-bg: #d5d2cb;
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --tooltip-bg: #24211c;
+  --tooltip-text: #f6f4f1;
+  --tooltip-border: transparent;
 
   --success-color: #10b981;
   --quota-medium-color: #e0aa14;
@@ -74,7 +89,7 @@
   --failure-badge-border: rgba(198, 87, 70, 0.35);
 
   --count-badge-bg: rgba(139, 134, 128, 0.18);
-  --count-badge-text: var(--primary-active);
+  --count-badge-text: #4f4a44;
 
   --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   --shadow-lg: 0 10px 18px -3px rgb(0 0 0 / 0.1);
@@ -138,11 +153,6 @@
   --border-primary: #d9d9d9;
   --border-hover: #cccccc;
 
-  --primary-color: #8b8680;
-  --primary-hover: #7f7a74;
-  --primary-active: #726d67;
-  --primary-contrast: #ffffff;
-
   --success-color: #10b981;
   --quota-medium-color: #e0aa14;
   --warning-color: #c65746;
@@ -163,7 +173,7 @@
   --failure-badge-border: rgba(198, 87, 70, 0.35);
 
   --count-badge-bg: rgba(139, 134, 128, 0.18);
-  --count-badge-text: var(--primary-active);
+  --count-badge-text: #4f4a44;
 
   --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   --shadow-lg: 0 10px 18px -3px rgb(0 0 0 / 0.1);
@@ -186,40 +196,47 @@
   --accent-bg: var(--bg-tertiary);
 }
 
-// Dark theme (default): near-black surfaces, quiet 1px borders.
+// Dark theme (default): a pure black page, surfaces lifted a step, quiet 1px borders.
+// Text tokens hold WCAG AA (4.5:1) on every surface up to --bg-tertiary.
 [data-theme='dark'] {
-  --bg-secondary: #0a0a0a; // page
-  --bg-primary: #111111; // cards and panels
-  --bg-tertiary: #191919; // hover and secondary fills
-  --bg-hover: #202020;
-  --bg-quinary: #0e0e0e;
+  --bg-secondary: #000000; // page and sidebar
+  --bg-primary: #0c0c0c; // cards and panels
+  --bg-tertiary: #141414; // hover and secondary fills
+  --bg-hover: #1a1a1a;
+  --bg-quinary: #070707;
   --bg-error-light: rgba(198, 87, 70, 0.18);
-  --floating-surface: #161616;
-  --floating-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+  --floating-surface: #111111;
+  --floating-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+  --input-bg: #0f0f0f;
+  --toggle-off-bg: #333333;
+  --overlay-bg: rgba(0, 0, 0, 0.72);
+  --tooltip-bg: #141414;
+  --tooltip-text: #ededed;
+  --tooltip-border: #2a2a2a;
 
   --text-primary: #ededed;
-  --text-secondary: #a1a1a1;
-  --text-tertiary: #737373;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #808080;
   --text-quaternary: #525252;
   --text-muted: var(--text-tertiary);
 
   --border-color: #1f1f1f;
   --border-secondary: var(--border-color);
   --border-primary: #2a2a2a;
-  --border-hover: #363636;
+  --border-hover: #383838;
 
-  // Accent fills (toggles, checkboxes, focus) stay mid-gray so white glyphs on them remain
-  // legible; the primary button gets its own near-white fill.
-  --primary-color: #8f8f8f;
-  --primary-hover: #a3a3a3;
-  --primary-active: #b8b8b8;
-  --primary-contrast: #ffffff;
-  --button-primary-bg: #ededed;
-  --button-primary-hover: #ffffff;
-  --button-primary-text: #0a0a0a;
+  // --accent carries white glyphs at 3.3:1 (toggles, checkboxes) and reads at 6:1 as text on
+  // cards. Button labels need 4.5:1, so the primary button fill is a deeper step of the same blue.
+  --accent: #3d8bff;
+  --accent-hover: #63a1ff;
+  --accent-text: #6ea8ff;
+  --accent-subtle: color-mix(in srgb, var(--accent) 14%, transparent);
+  --primary-active: #8ab9ff;
+  --button-primary-bg: #1f6feb;
+  --button-primary-hover: #1a62d6;
 
   --provider-claude: #d97757;
-  --provider-codex: #7b9cff;
+  --provider-codex: #8e8cff;
 
   --success-color: #10b981;
   --quota-medium-color: #ffd862;
@@ -240,7 +257,7 @@
   --failure-badge-text: #f1b0a6;
   --failure-badge-border: rgba(198, 87, 70, 0.5);
 
-  --count-badge-bg: rgba(255, 255, 255, 0.08);
+  --count-badge-bg: rgba(255, 255, 255, 0.1);
   --count-badge-text: var(--text-secondary);
 
   --shadow: none;
