@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { taprootApi, type UsageSession } from '@/services/api/taproot';
-import { affinityStats, sessionDurationMs } from '../logic/sessions';
+import { affinityStats, sessionDurationMs, type AffinityStats } from '../logic/sessions';
 import {
   DASH,
   formatDateTime,
@@ -77,53 +77,11 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
 
   return (
     <>
-      <section className={styles.panel}>
-        <div className={styles.panelHead}>
-          <div>
-            <h2 className={styles.panelTitle}>{t('taproot_usage.sessions.affinity_title')}</h2>
-            <p className={styles.panelDesc}>{t('taproot_usage.sessions.desc')}</p>
-          </div>
-        </div>
-        <div className={styles.statRow}>
-          <div className={styles.stat}>
-            <span className={styles.kpiLabel}>{t('taproot_usage.sessions.switched_sessions')}</span>
-            <strong className={styles.kpiValueSm}>
-              {stats.switched.sessions.toLocaleString()}
-            </strong>
-            <span className={styles.kpiHint}>
-              {t('taproot_usage.sessions.switched_of', {
-                switched: stats.switched.sessions.toLocaleString(),
-                total: sessions.length.toLocaleString(),
-              })}
-            </span>
-          </div>
-          <div className={styles.stat}>
-            <span className={styles.kpiLabel}>
-              {t('taproot_usage.sessions.write_share_switched')}
-            </span>
-            <strong className={styles.kpiValueSm}>
-              {formatRatio(stats.switched.cacheWriteShare)}
-            </strong>
-          </div>
-          <div className={styles.stat}>
-            <span className={styles.kpiLabel}>
-              {t('taproot_usage.sessions.write_share_stable')}
-            </span>
-            <strong className={styles.kpiValueSm}>
-              {formatRatio(stats.stable.cacheWriteShare)}
-            </strong>
-          </div>
-          <div className={styles.stat}>
-            <span className={styles.kpiLabel}>{t('taproot_usage.sessions.excess_writes')}</span>
-            <strong className={styles.kpiValueSm}>
-              {stats.excessCacheWriteTokens === null
-                ? DASH
-                : formatTokens(stats.excessCacheWriteTokens)}
-            </strong>
-            <span className={styles.kpiHint}>{t('taproot_usage.sessions.excess_hint')}</span>
-          </div>
-        </div>
-      </section>
+      <AffinityPanel
+        stats={stats}
+        loadedCount={sessions.length}
+        hasMore={loaded?.key === rangeKey && loaded.nextCursor !== null}
+      />
 
       <section className={styles.panel}>
         <div className={styles.panelHead}>
@@ -246,5 +204,76 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
         ) : null}
       </section>
     </>
+  );
+}
+
+/**
+ * Session-affinity KPIs. They cover only the sessions loaded so far, so the panel says so and
+ * whether the range holds more.
+ */
+export function AffinityPanel({
+  stats,
+  loadedCount,
+  hasMore,
+}: {
+  stats: AffinityStats;
+  loadedCount: number;
+  hasMore: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section className={styles.panel}>
+      <div className={styles.panelHead}>
+        <div>
+          <h2 className={styles.panelTitle}>{t('taproot_usage.sessions.affinity_title')}</h2>
+          <p className={styles.panelDesc}>{t('taproot_usage.sessions.desc')}</p>
+          {loadedCount > 0 ? (
+            <p className={styles.panelDesc}>
+              {t(
+                hasMore
+                  ? 'taproot_usage.sessions.scope_partial'
+                  : 'taproot_usage.sessions.scope_all',
+                {
+                  count: loadedCount,
+                }
+              )}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <div className={styles.statRow}>
+        <div className={styles.stat}>
+          <span className={styles.kpiLabel}>{t('taproot_usage.sessions.switched_sessions')}</span>
+          <strong className={styles.kpiValueSm}>{stats.switched.sessions.toLocaleString()}</strong>
+          <span className={styles.kpiHint}>
+            {t('taproot_usage.sessions.switched_of', {
+              switched: stats.switched.sessions.toLocaleString(),
+              total: loadedCount.toLocaleString(),
+            })}
+          </span>
+        </div>
+        <div className={styles.stat}>
+          <span className={styles.kpiLabel}>
+            {t('taproot_usage.sessions.write_share_switched')}
+          </span>
+          <strong className={styles.kpiValueSm}>
+            {formatRatio(stats.switched.cacheWriteShare)}
+          </strong>
+        </div>
+        <div className={styles.stat}>
+          <span className={styles.kpiLabel}>{t('taproot_usage.sessions.write_share_stable')}</span>
+          <strong className={styles.kpiValueSm}>{formatRatio(stats.stable.cacheWriteShare)}</strong>
+        </div>
+        <div className={styles.stat}>
+          <span className={styles.kpiLabel}>{t('taproot_usage.sessions.excess_writes')}</span>
+          <strong className={styles.kpiValueSm}>
+            {stats.excessCacheWriteTokens === null
+              ? DASH
+              : formatTokens(stats.excessCacheWriteTokens)}
+          </strong>
+          <span className={styles.kpiHint}>{t('taproot_usage.sessions.excess_hint')}</span>
+        </div>
+      </div>
+    </section>
   );
 }
