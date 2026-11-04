@@ -7,7 +7,9 @@ Taproot is a fork of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
 > [!WARNING]
 > Read [Terms of service](#terms-of-service) and [Security](#security) before you add an account. Using subscription credentials through a proxy can break the provider's terms, and a misconfigured taproot gives your OAuth tokens to anyone who can reach its port.
 
-<!-- TODO(screenshot): the Accounts page with generic demo accounts, emails hidden. -->
+![The Accounts page: the pool chart and quota ledger for five demo accounts, with emails hidden](docs/screenshots/accounts.png)
+
+<sub>Screenshots use synthetic demo data. See [Gallery](#gallery).</sub>
 
 ## Who it is for
 
@@ -191,7 +193,20 @@ The dashboard is served at `/` on the proxy port. It has these sections:
 - **Settings:** the access lists, retention, backup schedule, poller interval, and Discord alerts.
 - **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins.
 
-<!-- TODO(screenshot): the Usage page with generic demo data. -->
+![The Usage overview: 30 days of cost, requests, tokens, cache hits, and latency](docs/screenshots/usage-overview.png)
+
+### Gallery
+
+All screenshots use synthetic demo data from `internal/taproot/demo` (see [CONTRIBUTING.md](CONTRIBUTING.md#demo-data-and-screenshots)). Click an image for the full size.
+
+| | |
+| --- | --- |
+| [<img src="docs/screenshots/accounts.png" width="420" alt="Accounts">](docs/screenshots/accounts.png)<br>**Accounts:** pool chart and quota ledger | [<img src="docs/screenshots/accounts-manage.png" width="420" alt="Manage sheet">](docs/screenshots/accounts-manage.png)<br>**Manage:** quota, resets, health, credential, and advanced settings for one account |
+| [<img src="docs/screenshots/usage-overview.png" width="420" alt="Usage overview">](docs/screenshots/usage-overview.png)<br>**Usage:** cost, tokens, cache hits, and latency | [<img src="docs/screenshots/usage-devices.png" width="420" alt="Usage by device">](docs/screenshots/usage-devices.png)<br>**Devices:** usage per tailnet device and the cache TTL check |
+| [<img src="docs/screenshots/usage-sessions.png" width="420" alt="Sessions">](docs/screenshots/usage-sessions.png)<br>**Sessions:** session affinity and account switches | [<img src="docs/screenshots/request-logs.png" width="420" alt="Request logs">](docs/screenshots/request-logs.png)<br>**Request Logs:** every proxied request, compressed and searchable |
+| [<img src="docs/screenshots/request-log-detail.png" width="420" alt="Request log detail">](docs/screenshots/request-log-detail.png)<br>**Request detail:** headers with credentials redacted, and the body | [<img src="docs/screenshots/routing.png" width="420" alt="Routing">](docs/screenshots/routing.png)<br>**Routing:** soonest-reset-first and session affinity |
+| [<img src="docs/screenshots/backups.png" width="420" alt="Backups">](docs/screenshots/backups.png)<br>**Backups:** scheduled and manual snapshots | [<img src="docs/screenshots/settings.png" width="420" alt="Settings">](docs/screenshots/settings.png)<br>**Settings:** access lists, retention, and backup schedule |
+| [<img src="docs/screenshots/accounts-light.png" width="420" alt="Accounts, light theme">](docs/screenshots/accounts-light.png)<br>**Light theme** | |
 
 ## Configuration reference
 
