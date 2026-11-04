@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
 import { Button } from '@/components/ui/Button';
@@ -61,6 +62,7 @@ interface ModelProgress {
 
 export function RoutingPage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const showNotification = useNotificationStore((state) => state.showNotification);
@@ -327,7 +329,7 @@ export function RoutingPage() {
     if (error !== null && !board) {
       return (
         <EmptyState
-          title={t('routing.load_failed', { message: error || t('common.unknown_error') })}
+          title={mask(t('routing.load_failed', { message: error || t('common.unknown_error') }))}
           action={
             <Button variant="secondary" onClick={() => void load()}>
               {t('routing.retry')}

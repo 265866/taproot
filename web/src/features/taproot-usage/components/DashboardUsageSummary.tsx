@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { Link } from 'react-router-dom';
 import { buildProviderGroups } from '@/features/taproot-quota/model/fromApi';
 import { poolNow } from '@/features/taproot-quota/model/poolView';
@@ -16,6 +17,7 @@ import styles from '../TaprootUsage.module.scss';
 /** Today's taproot usage and the pooled quota per provider, for the dashboard home page. */
 export function DashboardUsageSummary() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const [nowMs] = useState(() => Date.now());
   const window = useMemo(() => todayWindow(nowMs), [nowMs]);
   const today = useTaprootQuery(`today|${window.fromMs}`, () =>
@@ -63,7 +65,7 @@ export function DashboardUsageSummary() {
       </div>
       {error ? (
         <div className={styles.error} role="alert">
-          <span>{t('taproot_usage.dashboard.load_failed', { message: error.message })}</span>
+          <span>{mask(t('taproot_usage.dashboard.load_failed', { message: error.message }))}</span>
         </div>
       ) : null}
       <div className={styles.summaryGrid}>

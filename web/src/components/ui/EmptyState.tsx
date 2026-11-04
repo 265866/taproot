@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { IconInbox } from './icons';
 
 interface EmptyStateProps {
@@ -8,6 +9,8 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ title, description, action }: EmptyStateProps) {
+  // Titles and descriptions often carry server error text.
+  const { mask } = useEmailMask();
   return (
     <div className="empty-state">
       <div className="empty-content">
@@ -15,8 +18,8 @@ export function EmptyState({ title, description, action }: EmptyStateProps) {
           <IconInbox size={20} />
         </div>
         <div>
-          <div className="empty-title">{title}</div>
-          {description && <div className="empty-desc">{description}</div>}
+          <div className="empty-title">{mask(title)}</div>
+          {description && <div className="empty-desc">{mask(description)}</div>}
         </div>
       </div>
       {action && <div className="empty-action">{action}</div>}

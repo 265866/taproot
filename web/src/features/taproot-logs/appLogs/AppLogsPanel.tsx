@@ -427,7 +427,7 @@ export function AppLogsPanel() {
             )}
             {error && (
               <div className="error-box" role="alert">
-                {error}
+                {mask(error)}
               </div>
             )}
             <footer className={styles.statusBar}>
@@ -976,7 +976,7 @@ export function AppLogsPanel() {
                 </Link>
               </div>
 
-              {errorLogsError && <div className="error-box">{errorLogsError}</div>}
+              {errorLogsError && <div className="error-box">{mask(errorLogsError)}</div>}
 
               <div className={styles.errorPanel}>
                 {loadingErrors ? (

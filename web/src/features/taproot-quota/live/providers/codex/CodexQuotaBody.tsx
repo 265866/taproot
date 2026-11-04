@@ -4,6 +4,7 @@
 
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type { CodexQuotaState } from '@/types';
 import {
   normalizePlanType,
@@ -27,6 +28,7 @@ import type { QuotaBodyProps } from '../../types';
 
 export function CodexQuotaBody({ quota, classes }: QuotaBodyProps<CodexQuotaState>) {
   const { t, i18n } = useTranslation();
+  const { mask } = useEmailMask();
   const now = useNow();
   const locale = i18n.resolvedLanguage;
   // Windows and reset credits compete for the same emphasis, but only during
@@ -159,9 +161,9 @@ export function CodexQuotaBody({ quota, classes }: QuotaBodyProps<CodexQuotaStat
         </div>
       ) : rateLimitResetCreditsError ? (
         <div className={classes.codexResetCreditsError}>
-          {t('codex_quota.reset_credits_expiry_failed', {
-            message: rateLimitResetCreditsError,
-          })}
+          {mask(
+            t('codex_quota.reset_credits_expiry_failed', { message: rateLimitResetCreditsError })
+          )}
         </div>
       ) : null}
       {windows.length === 0 ? (

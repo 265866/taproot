@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { taprootApi, type RequestLogStats } from '@/services/api/taproot';
 import { getErrorMessage } from '@/utils/helpers';
 import { formatBytes, formatRatio, summarizeStorage } from '../model/format';
@@ -10,6 +11,7 @@ const formatTime = (value: string | null) => (value ? new Date(value).toLocaleSt
 /** On-disk versus raw size of stored request logs, their span, and the writer's drop counters. */
 export function StorageStats({ reloadKey }: { reloadKey: number }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const [stats, setStats] = useState<RequestLogStats | null>(null);
   const [error, setError] = useState('');
 
@@ -33,7 +35,7 @@ export function StorageStats({ reloadKey }: { reloadKey: number }) {
   if (error && !stats) {
     return (
       <div className="error-box" role="alert">
-        {t('taproot_logs.stats.load_failed', { message: error })}
+        {mask(t('taproot_logs.stats.load_failed', { message: error }))}
       </div>
     );
   }

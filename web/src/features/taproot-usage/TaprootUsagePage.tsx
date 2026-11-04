@@ -343,7 +343,9 @@ export function TaprootUsagePage() {
           <>
             {overview.error ? (
               <div className={styles.error} role="alert">
-                <span>{t('taproot_usage.load_failed', { message: overview.error.message })}</span>
+                <span>
+                  {maskEmails(t('taproot_usage.load_failed', { message: overview.error.message }))}
+                </span>
                 <button type="button" className={styles.ghostButton} onClick={overview.reload}>
                   {t('taproot_usage.retry')}
                 </button>

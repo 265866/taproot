@@ -1,5 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -52,6 +53,7 @@ const ENTRANCE_BUDGET_MS = 800;
 
 export function ConfigPage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const location = useLocation();
   const navigate = useNavigate();
   const requestedFieldEntry = useMemo(() => {
@@ -310,12 +312,14 @@ export function ConfigPage() {
 
       {doc.error && (
         <div className="error-box" role="alert">
-          {doc.error}
+          {mask(doc.error)}
         </div>
       )}
       {!doc.error && visualParseError && (
         <div className="error-box" role="alert">
-          {t('config_management.visual_mode_unavailable_detail', { message: visualParseError })}
+          {mask(
+            t('config_management.visual_mode_unavailable_detail', { message: visualParseError })
+          )}
         </div>
       )}
       {proxyApiKeys && (

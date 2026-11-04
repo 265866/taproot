@@ -99,7 +99,7 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
         </div>
         {error ? (
           <div className={styles.error} role="alert">
-            <span>{t('taproot_usage.load_failed', { message: error })}</span>
+            <span>{mask(t('taproot_usage.load_failed', { message: error }))}</span>
             <button
               type="button"
               className={styles.ghostButton}

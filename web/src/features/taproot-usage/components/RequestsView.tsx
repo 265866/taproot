@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MaskedValueChip } from '@/components/common/MaskedValueChip';
-import { useHidesValue } from '@/hooks/useEmailMask';
+import { useEmailMask, useHidesValue } from '@/hooks/useEmailMask';
 import { Select } from '@/components/ui/Select';
 import {
   taprootApi,
@@ -53,6 +53,7 @@ export function RequestsView({
   showEmails,
 }: Props) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filters.account}|${filters.model}|${filters.session}|${filters.device}|${filters.failed}`;
   // cursors[i] opens page i; page 0 has none.
   const [paging, setPaging] = useState<{
@@ -229,7 +230,7 @@ export function RequestsView({
 
       {query.error ? (
         <div className={styles.error} role="alert">
-          <span>{t('taproot_usage.load_failed', { message: query.error.message })}</span>
+          <span>{mask(t('taproot_usage.load_failed', { message: query.error.message }))}</span>
           <button type="button" className={styles.ghostButton} onClick={query.reload}>
             {t('taproot_usage.retry')}
           </button>

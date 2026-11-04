@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -29,6 +30,7 @@ import styles from './TaprootQuotaPage.module.scss';
 
 export function TaprootQuotaPage() {
   const { t, i18n } = useTranslation();
+  const { mask } = useEmailMask();
   const locale = i18n.resolvedLanguage;
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const clock = useNow();
@@ -182,7 +184,7 @@ export function TaprootQuotaPage() {
 
       {error && (
         <div className={styles.error} role="alert">
-          {t('taproot_quota.load_failed', { message: error })}
+          {mask(t('taproot_quota.load_failed', { message: error }))}
         </div>
       )}
 

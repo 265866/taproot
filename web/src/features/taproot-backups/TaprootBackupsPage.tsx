@@ -31,6 +31,7 @@ const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeS
 
 export function TaprootBackupsPage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const [backups, setBackups] = useState<Backup[] | null>(null);
   const [error, setError] = useState('');
@@ -152,7 +153,7 @@ export function TaprootBackupsPage() {
       )}
       {error && (
         <div className="error-box" role="alert">
-          {t('taproot_backups.load_failed', { message: error })}
+          {mask(t('taproot_backups.load_failed', { message: error }))}
         </div>
       )}
 
@@ -256,6 +257,7 @@ function RestoreDialog({
   onFailed: () => void;
 }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const inputId = useId();
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
@@ -334,7 +336,7 @@ function RestoreDialog({
         />
         {error && (
           <div className={`error-box ${styles.dialogError}`} role="alert">
-            {t('taproot_backups.restore_failed', { message: error })}
+            {mask(t('taproot_backups.restore_failed', { message: error }))}
           </div>
         )}
       </form>

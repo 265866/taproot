@@ -301,7 +301,9 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
                       disabled={disableControls || editor.saving || !editor.json}
                       onChange={(e) => onChange('headersText', e.target.value)}
                     />
-                    {editor.headersError && <div className="error-box">{editor.headersError}</div>}
+                    {editor.headersError && (
+                      <div className="error-box">{mask(editor.headersError)}</div>
+                    )}
                     <div className="hint">{t('auth_files.headers_hint')}</div>
                   </div>
                   <AuthFilePolicyFields
