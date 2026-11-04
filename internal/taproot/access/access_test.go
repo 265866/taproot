@@ -809,6 +809,50 @@ func TestDisabledGuardKeepsAdminSurfaceLoopbackOnly(t *testing.T) {
 	}
 }
 
+// Review finding 2: with the guard off, a browser on the same host connects
+// from loopback, so a page on another site, or one reached by DNS rebinding,
+// must not drive the admin surface.
+func TestDisabledGuardRefusesBrowserRequestsFromOtherSites(t *testing.T) {
+	off := false
+	g := newTestGuard(t, Config{Enabled: &off, ExtraHosts: []string{"proxy.home.arpa"}})
+	e, got := testEngine(g)
+	e.GET("/v0/management/usage-queue", func(c *gin.Context) { got.authorization = "drained"; c.String(http.StatusOK, "ok") })
+	for name, tc := range map[string]struct {
+		path    string
+		headers map[string]string
+		code    string
+	}{
+		"dns rebinding":           {"/taproot/api/v1/me", map[string]string{"Host": "rebind.evil.example:8317"}, "forbidden"},
+		"foreign origin":          {"/v8/management/config", map[string]string{"Origin": "http://evil.example"}, "forbidden"},
+		"cross-site fetch":        {"/v8/management/config", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}, "forbidden"},
+		"state-changing GET":      {"/v0/management/usage-queue", nil, "request_header_required"},
+		"cross-site plugin frame": {"/v0/resource/plugins/demo/page", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "iframe"}, "forbidden"},
+	} {
+		got.authorization = "unset"
+		assertDenied(t, do(e, "127.0.0.1:5000", tc.path, tc.headers), tc.code)
+		if got.authorization != "unset" {
+			t.Fatalf("%s reached the handler", name)
+		}
+	}
+	for _, tc := range []struct {
+		path    string
+		headers map[string]string
+	}{
+		{"/v8/management/config", map[string]string{"Origin": "http://localhost:8317", "Sec-Fetch-Site": "same-origin"}},
+		{"/v8/management/config", map[string]string{"Host": "proxy.home.arpa:8317"}},
+		{"/v0/management/usage-queue", map[string]string{RequestHeader: "1"}},
+		{"/taproot/api/v1/me", map[string]string{"Host": "127.0.0.1:8317"}},
+	} {
+		if rec := do(e, "127.0.0.1:5000", tc.path, tc.headers); rec.Code != http.StatusOK {
+			t.Fatalf("loopback %s %v = %d, want 200", tc.path, tc.headers, rec.Code)
+		}
+	}
+	// The proxy surface stays open, as the switch documents.
+	if rec := do(e, "203.0.113.9:5000", "/v1/models", map[string]string{"Host": "rebind.evil.example"}); rec.Code != http.StatusOK {
+		t.Fatalf("proxy = %d, want 200", rec.Code)
+	}
+}
+
 func TestConfigParsing(t *testing.T) {
 	var cfg struct {
 		Access Config `yaml:"access"`

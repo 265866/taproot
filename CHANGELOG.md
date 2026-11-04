@@ -22,7 +22,7 @@ The first release. Taproot is a fork of [CLIProxyAPI](https://github.com/router-
 
 - The Go module path is `github.com/265866/taproot`. `scripts/taproot/sync-upstream.sh` rewrites upstream's path before each merge.
 - `taproot.yaml` is decoded strictly, and taproot refuses to start without `access.allow-logins`.
-- With `access.enabled: false`, only the proxy is open; the dashboard and APIs answer loopback only.
+- With `access.enabled: false`, only the proxy is open; the dashboard and APIs answer loopback only and still refuse browser requests from other sites.
 - Taproot refuses to start in CLIProxyAPI's Home mode and with `--tui --standalone`, which would skip the guard.
 - The dashboard has no login page, Quick Start, AI Providers, API-key editing, sponsor content, update check, or non-English locales.
 - Upstream's release workflows, Dockerfile, and compose files are replaced by one CI workflow and `Containerfile.taproot`.

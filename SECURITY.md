@@ -26,7 +26,7 @@ Taproot refuses to start without `access.allow-logins`, refuses unknown keys in 
 
 ## Run taproot safely
 
-- **Never run with the guard off.** With `access.enabled: false`, anyone who reaches the port can use the proxy and spend your quota. The admin surface then answers loopback only, but nothing checks who calls the proxy.
+- **Never run with the guard off.** With `access.enabled: false`, anyone who reaches the port can use the proxy and spend your quota. The admin surface then answers loopback callers only, and still refuses browser requests from other sites. Outside a container, or with host networking, every process on the host is a loopback caller and so an admin, and nothing checks who calls the proxy.
 - **Never expose the port beyond your tailnet.** Publish it on the host's Tailscale address only, never on `0.0.0.0`, a LAN address, or the internet. Do not use `tailscale funnel`.
 - **Never put anything in front of taproot on the same host.** `tailscale serve`, a reverse proxy, or an SSH tunnel usually connects from loopback, and loopback callers are admins.
 - **Do not publish the port on `127.0.0.1`.** A container runtime that delivers host connections with a loopback source makes every process on the host an admin.

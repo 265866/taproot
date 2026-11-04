@@ -54,8 +54,10 @@
 // gin. RESPFilter limits it to loopback.
 //
 // With access.enabled false the guard checks nothing on the proxy surface,
-// but the admin surface still answers loopback only, so turning the guard off
-// never hands tokens, settings, or backups to the network.
+// but the admin surface still answers loopback only, with the browser checks
+// above, because a browser on the host also connects from loopback. Turning
+// the guard off never hands tokens, settings, or backups to the network or to
+// another site's page.
 package access
 
 import (
@@ -195,8 +197,16 @@ func New(cfg Config) (*Guard, error) {
 		cache:      make(map[netip.Addr]cacheEntry),
 		extraHosts: make(map[string]bool),
 	}
+	// The Host check needs extra-hosts with the guard off too.
+	for _, raw := range cfg.ExtraHosts {
+		host := hostOnly(raw)
+		if host == "" || strings.ContainsAny(host, " /") {
+			return nil, fmt.Errorf("extra-hosts: invalid host %q", raw)
+		}
+		g.extraHosts[host] = true
+	}
 	if !g.enabled {
-		log.Warn("taproot access: guard disabled (access.enabled: false). Every caller that reaches the port, from any address and without a login, can use the proxy routes (/v1/..., /v1beta/..., /backend-api/codex/...) and spend every account's quota, and no Host, Origin, or cross-site check runs. The dashboard, /taproot/**, /v0/management/**, /v8/management/**, plugin pages, the OAuth callbacks, and /v1/ws stay loopback-only.")
+		log.Warn("taproot access: guard disabled (access.enabled: false). Every caller that reaches the port, from any address and without a login, can use the proxy routes (/v1/..., /v1beta/..., /backend-api/codex/...) and spend every account's quota, and no Host, Origin, or cross-site check runs there. The dashboard, /taproot/**, /v0/management/**, /v8/management/**, plugin pages, the OAuth callbacks, and /v1/ws stay loopback-only and refuse browser requests from other sites.")
 		return g, nil
 	}
 	if g.ttl < 0 {
@@ -217,13 +227,6 @@ func New(cfg Config) (*Guard, error) {
 	}
 	if err := g.SetAdminNodes(cfg.AdminNodes); err != nil {
 		return nil, fmt.Errorf("admin-nodes: %w", err)
-	}
-	for _, raw := range cfg.ExtraHosts {
-		host := hostOnly(raw)
-		if host == "" || strings.ContainsAny(host, " /") {
-			return nil, fmt.Errorf("extra-hosts: invalid host %q", raw)
-		}
-		g.extraHosts[host] = true
 	}
 	logins := cfg.AllowLogins
 	if len(logins) == 0 {
@@ -382,11 +385,20 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		}
 		surf := classify(path)
 		if !g.enabled {
-			// The switch opens the proxy only; tokens, settings, and backups stay local.
-			if surf == surfaceAdmin && !isLoopback(r.RemoteAddr) {
-				log.Infof("taproot access: denied %s %s (%s) from %s: the guard is disabled, so only loopback reaches the admin surface", r.Method, path, surf, r.RemoteAddr)
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"code": "forbidden", "message": "the access guard is disabled, so only loopback reaches this route"}})
-				return
+			// The switch opens the proxy only; tokens, settings, and backups stay
+			// local. A browser on the same host still connects from loopback, so
+			// the admin surface keeps the browser checks.
+			if surf == surfaceAdmin {
+				reason := "the guard is disabled, so only loopback reaches the admin surface"
+				denial := gin.H{"code": "forbidden", "message": "the access guard is disabled, so only loopback reaches this route"}
+				if isLoopback(r.RemoteAddr) {
+					reason, denial = g.browserGuard(r, func() *selfNode { return nil })
+				}
+				if reason != "" {
+					log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, path, surf, r.RemoteAddr, reason)
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": denial})
+					return
+				}
 			}
 			c.Next()
 			return
@@ -413,7 +425,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		}
 		if reason == "" && id.Via != ViaLoopback && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
 			reason = "state-changing GET without " + RequestHeader
-			denial = gin.H{"code": "request_header_required", "message": "this request changes state; send " + RequestHeader + ": 1"}
+			denial = requestHeaderDenial()
 		}
 		if reason != "" {
 			// Upstream's log formatter drops fields it does not know, so the details go in the message.
@@ -435,6 +447,23 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// browserGuard runs browserCheck and requires RequestHeader on state-changing
+// GETs. It returns the denial reason and response body, or "" when the request
+// passes.
+func (g *Guard) browserGuard(r *http.Request, self func() *selfNode) (string, gin.H) {
+	if reason := g.browserCheck(r, self); reason != "" {
+		return reason, gin.H{"code": "forbidden", "message": "caller is not allowed"}
+	}
+	if sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
+		return "state-changing GET without " + RequestHeader, requestHeaderDenial()
+	}
+	return "", nil
+}
+
+func requestHeaderDenial() gin.H {
+	return gin.H{"code": "request_header_required", "message": "this request changes state; send " + RequestHeader + ": 1"}
 }
 
 // isManagementPath covers the routes upstream authenticates with the management

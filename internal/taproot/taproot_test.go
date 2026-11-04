@@ -465,6 +465,24 @@ func TestDisabledGuardKeepsTaprootAPILoopbackOnly(t *testing.T) {
 	if rec := local(req{path: "/taproot/api/v1/backups/" + backup.ID + "/download"}); rec.Code != http.StatusOK {
 		t.Fatalf("loopback backup download = %d", rec.Code)
 	}
+	// Review finding 2: a browser on the same host also connects from
+	// loopback, so another site's page, or a DNS-rebound name, gets nothing.
+	textPlain := map[string]string{"Content-Type": "text/plain", "Origin": "http://evil.example", "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}
+	for _, r := range []req{
+		{method: http.MethodPost, path: "/taproot/api/v1/backups", headers: textPlain},
+		{method: http.MethodPost, path: "/taproot/api/v1/backups/" + backup.ID + "/restore", headers: textPlain},
+		{path: "/taproot/api/v1/backups/" + backup.ID + "/download", headers: map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}},
+		{host: "rebind.evil.example:8317", path: "/taproot/api/v1/backups/" + backup.ID + "/download"},
+		{host: "rebind.evil.example:8317", method: http.MethodPost, path: "/taproot/api/v1/backups"},
+	} {
+		r.remote = "127.0.0.1"
+		if r.host == "" {
+			r.host = "localhost:8317"
+		}
+		if rec := f.do(r); guardCode(rec) != "forbidden" || strings.Contains(rec.Body.String(), refreshToken) {
+			t.Errorf("loopback browser %s %s (Host %s) = %d %.200s, want the guard's 403", r.method, r.path, r.host, rec.Code, rec.Body)
+		}
+	}
 
 	for _, remote := range []string{"203.0.113.9", adminIP, selfIP, lanIP} {
 		for _, r := range []req{
