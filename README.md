@@ -259,7 +259,7 @@ The script merges `upstream/main` into the current branch, then runs `gofmt`, `g
 
 ## License and credits
 
-Taproot is released under the [MIT License](LICENSE), the license of CLIProxyAPI. The dashboard in `web/` keeps the Management Center's [MIT License](web/LICENSE).
+Taproot is released under the [MIT License](LICENSE), the license of CLIProxyAPI. The dashboard in `web/` keeps the Management Center's [MIT License](web/LICENSE). The licenses of the Go modules and npm packages taproot ships are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI): Copyright (c) Luis Pater and Router-For.ME.
 - [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center): Copyright (c) Router-For.ME.
