@@ -23,7 +23,7 @@ The dashboard removed some upstream features on purpose: Quick Start, AI Provide
 
 Taproot stays cheap to merge with upstream. [`internal/taproot/PLAN.md`](internal/taproot/PLAN.md), section "Upstream boundary", is the source of truth. In short:
 
-- The Go module path stays `github.com/router-for-me/CLIProxyAPI/v8`, so upstream merges never rewrite imports.
+- Taproot's module path is `github.com/265866/taproot`. The sync script rewrites upstream's path (`github.com/router-for-me/CLIProxyAPI/v8`) in each upstream snapshot before merging it, with `scripts/taproot/rewrite-module-path.sh`, so import lines do not conflict. Do not rewrite imports by hand.
 - Fork code lives in `internal/taproot/**` and plugs into the server through server options.
 - PLAN lists each upstream file taproot edits, with the reason and the size of the edit. A new upstream edit needs the same: keep it as small as you can, and add its reason to PLAN in the same change.
 - Upstream files that taproot deleted stay deleted. `scripts/taproot/sync-upstream.sh` keeps them deleted when upstream changes them, and stops on every other conflict.

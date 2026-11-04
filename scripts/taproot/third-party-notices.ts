@@ -14,7 +14,7 @@ const GO_LICENSES = 'github.com/google/go-licenses/v2@v2.0.1';
 const LICENSE_CHECKER = 'license-checker@25.0.1';
 const TARGETS = ['linux/amd64', 'darwin/arm64', 'windows/amd64'];
 // Taproot itself, covered by LICENSE.
-const SELF_MODULE = 'github.com/router-for-me/CLIProxyAPI/v8';
+const SELF_MODULE = 'github.com/265866/taproot';
 // Modules whose license is stated only in their README. go-licenses cannot
 // read a license from them, so they are listed by hand.
 const README_ONLY_GO: Record<string, { license: string; url: string }> = {

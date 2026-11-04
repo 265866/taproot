@@ -250,7 +250,7 @@ To check a change, run `go test ./...` and, in `web/`, `bun run verify`.
 
 ## Upstream sync
 
-The Go module path is still `github.com/router-for-me/CLIProxyAPI/v8`, so upstream merges never rewrite imports. Because the path does not match this repository, `go install` cannot install taproot. Build it from a clone. Taproot changes only a few upstream files, each listed with its reason in [`internal/taproot/PLAN.md`](internal/taproot/PLAN.md).
+Taproot's Go module path is `github.com/265866/taproot`, and upstream's is `github.com/router-for-me/CLIProxyAPI/v8`. The sync script rewrites each upstream snapshot to taproot's path before it merges, so import lines do not conflict. Taproot changes only a few upstream files, each listed with its reason in [`internal/taproot/PLAN.md`](internal/taproot/PLAN.md).
 
 To merge CLIProxyAPI's `main` branch:
 
@@ -260,7 +260,7 @@ scripts/taproot/sync-upstream.sh --dry-run
 scripts/taproot/sync-upstream.sh
 ```
 
-The script merges `upstream/main` into the current branch, then runs `gofmt`, `go build`, `go vet`, and the taproot and SDK tests. It never pushes. The dashboard does not follow the Management Center's changes.
+The script commits `upstream/main` with the module path rewritten to the branch `taproot/upstream`, merges that branch into the current branch, then runs `gofmt`, `go build`, `go vet`, and the taproot and SDK tests. Files taproot deleted stay deleted. It never pushes. The dashboard does not follow the Management Center's changes.
 
 ## License and credits
 
