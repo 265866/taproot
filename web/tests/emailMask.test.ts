@@ -138,3 +138,61 @@ describe('addressDomain', () => {
     expect(addressDomain('19.3.1')).toBeNull();
   });
 });
+
+describe('review fixes', () => {
+  test('masks URL-encoded addresses, as access logs and query strings write them', () => {
+    expect(maskEmails('user%40gmail.com')).toBe('u•••r%40g•••.com');
+    expect(maskEmails('user%40Gmail.com and USER%40x.co')).toBe(
+      'u•••r%40G•••.com and U•••R%40x•••.co'
+    );
+    expect(
+      maskEmails(
+        'GET "/v8/management/auth-files/download?name=claude-ab12cd34-zebrafinch.alpha%40sl.example.run.json"'
+      )
+    ).toBe('GET "/v8/management/auth-files/download?name=claude-ab12cd34-ze•••a%40s•••.run.json"');
+    expect(maskEmails('?sessionId=quokkabeta%2Bclaude%40example.com&limit=5')).toBe(
+      '?sessionId=qu•••e%40e•••.com&limit=5'
+    );
+  });
+
+  test('masks JSON and HTML escaped at signs', () => {
+    expect(maskEmails('"user\\u0040gmail.com"')).toBe('"u•••r\\u0040g•••.com"');
+    expect(maskEmails('user&#64;gmail.com')).toBe('u•••r&#64;g•••.com');
+  });
+
+  test('does not break JSON escapes in front of an address', () => {
+    expect(maskEmails('"\\u003cuser@x.com\\u003e"')).toBe('"\\u003cu•••r@x•••.com\\u003e"');
+    expect(maskEmails('"line\\nuser@x.com"')).toBe('"line\\nu•••r@x•••.com"');
+  });
+
+  test('masks non-ASCII local parts and domains', () => {
+    expect(maskEmails('josé@exemple.fr')).toBe('j•••é@e•••.fr');
+    expect(maskEmails('user@bücher.de')).toBe('u•••r@b•••.de');
+  });
+
+  test('masks chained, doubled-dot, and apostrophe addresses', () => {
+    expect(maskEmails('x@y.com@z.com')).toBe('•••@y•••.com@z•••.com');
+    expect(maskEmails('user@gmail..com')).toBe('u•••r@g•••.com');
+    expect(maskEmails("o'brien@x.com")).toBe("o'•••n@x•••.com");
+    expect(maskEmails("say 'user@x.com'")).toBe("say 'u•••r@x•••.com'");
+  });
+
+  test('stays linear on a long run of meta- prefixes', () => {
+    const text = 'meta-'.repeat(32000);
+    const started = performance.now();
+    expect(maskEmails(text)).toBe(text);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
+  test('new forms are fixed points too', () => {
+    for (const text of [
+      'user%40gmail.com',
+      'user\\u0040gmail.com',
+      'josé@exemple.fr',
+      'x@y.com@z.com',
+    ]) {
+      const once = maskEmails(text);
+      expect(maskEmails(once)).toBe(once);
+    }
+  });
+});
