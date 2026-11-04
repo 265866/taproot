@@ -31,8 +31,8 @@ import (
 // APIPrefix is where taproot's own endpoints live.
 const APIPrefix = "/taproot/api/v1"
 
-// Config is taproot.yaml. It sits beside config.yaml because upstream parses
-// config.yaml strictly and rejects unknown sections.
+// Config is taproot.yaml. It sits beside config.yaml, which upstream owns and
+// loads leniently: a taproot key there would be ignored without a word.
 type Config struct {
 	// DataDir holds the database, request logs, and backups. Relative paths
 	// resolve against the config file's directory.

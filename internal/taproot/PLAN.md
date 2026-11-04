@@ -51,7 +51,7 @@ Taproot is a fork of CLIProxyAPI. It runs on one server and serves every Claude 
 
 ## Architecture
 
-`taproot.Setup` (in `internal/taproot/taproot.go`) reads `taproot.yaml` from beside `config.yaml`, or from the path in `TAPROOT_CONFIG`. Upstream's config parser rejects unknown keys, so taproot's settings can't live in `config.yaml`. Taproot decodes `taproot.yaml` strictly too: an unknown key stops startup with its name, so a misspelled access setting cannot fall back silently. Setup then opens the modules and returns `api.ServerOption`s:
+`taproot.Setup` (in `internal/taproot/taproot.go`) reads `taproot.yaml` from beside `config.yaml`, or from the path in `TAPROOT_CONFIG`. Taproot's settings stay out of `config.yaml`, which upstream owns: upstream's loader silently ignores keys it does not know (`bogus-key: 1` loads without error), so a taproot key there would do nothing, and upstream already has its own `access` section. Taproot decodes `taproot.yaml` strictly too: an unknown key stops startup with its name, so a misspelled access setting cannot fall back silently. Setup then opens the modules and returns `api.ServerOption`s:
 
 - `WithMiddleware(guard.Middleware())`
 - `WithRouterConfigurator(...)`, which mounts `/taproot/api/v1/*` and the dashboard at `/`

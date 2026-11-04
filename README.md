@@ -85,7 +85,7 @@ Releases are tagged `taproot-vX.Y.Z`, and [CHANGELOG.md](CHANGELOG.md) lists wha
 
 ### 2. Write the configuration
 
-Taproot reads two files from one directory. `config.yaml` is CLIProxyAPI's configuration. `taproot.yaml` holds taproot's settings, because CLIProxyAPI rejects unknown keys in `config.yaml`.
+Taproot reads two files from one directory. `config.yaml` is CLIProxyAPI's configuration. `taproot.yaml` holds taproot's settings, kept apart from CLIProxyAPI's schema. CLIProxyAPI silently ignores keys it does not know in `config.yaml`, so a taproot setting placed there has no effect.
 
 ```sh
 mkdir -p data
