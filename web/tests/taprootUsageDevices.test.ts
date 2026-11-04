@@ -189,7 +189,7 @@ describe('devices tab rendering', () => {
     }
   );
 
-  test('the table names unknown devices, flags the TTL, and hides logins on request', () => {
+  test('the table names requests without a caller, flags the TTL, and hides logins on request', () => {
     const html = render(
       createElement(DevicesTable, {
         devices: [flagged, device('')],
@@ -197,7 +197,7 @@ describe('devices tab rendering', () => {
         onViewRequests: () => {},
       })
     );
-    expect(html).toContain('Unknown device');
+    expect(html).toContain('No caller recorded');
     expect(html).toContain('desktop');
     expect(html).toContain('Mostly 5m');
     expect(html).toContain('•••@github');

@@ -146,11 +146,12 @@ export interface UsageEvent {
 
 /** One row of `GET /usage/devices`; internal/taproot/ingest/devices.go owns the shape. */
 export interface UsageDevice {
-  /** `node:<StableID>`, `local`, `cidr:<address>`, or empty for requests without a device. */
+  /** `node:<StableID>`, `local`, `cidr:<address>`, `plugin:<plugin ID>`, `plugins`, or empty for requests without a device. */
   deviceId: string;
   name: string;
   login: string;
-  via: TaprootVia | '';
+  /** `plugin` for a plugin's in-process requests, which no HTTP caller made. */
+  via: TaprootVia | 'plugin' | '';
   lastSeen: string;
   requests: number;
   failures: number;

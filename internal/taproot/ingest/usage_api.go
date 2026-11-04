@@ -361,8 +361,10 @@ func scanEvent(rows *sql.Rows, pb *priceBook) (UsageEvent, int64, error) {
 }
 
 func (e UsageEvent) tokens() tokenSums {
-	return tokenSums{Input: e.InputTokens, Output: e.OutputTokens, Reasoning: e.ReasoningTokens, CacheRead: e.CacheReadTokens,
-		CacheWrite: e.CacheWriteTokens, CacheWrite5m: e.CacheWrite5mTokens, CacheWrite1h: e.CacheWrite1hTokens}
+	return tokenSums{
+		Input: e.InputTokens, Output: e.OutputTokens, Reasoning: e.ReasoningTokens, CacheRead: e.CacheReadTokens,
+		CacheWrite: e.CacheWriteTokens, CacheWrite5m: e.CacheWrite5mTokens, CacheWrite1h: e.CacheWrite1hTokens,
+	}
 }
 
 func (i *Ingest) handleUsageEvents(c *gin.Context) {
@@ -433,6 +435,7 @@ func (i *Ingest) handleUsageEvents(c *gin.Context) {
 			internalError(c, err)
 			return
 		}
+		e.DeviceName = i.deviceName(e.DeviceID, e.DeviceName)
 		events = append(events, e)
 		stamps = append(stamps, ts)
 	}

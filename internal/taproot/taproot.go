@@ -107,6 +107,8 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		return nil, fmt.Errorf("taproot ingest: %w", err)
 	}
 	usage.AttachDevices(guard)
+	plugins := &pluginCallers{}
+	usage.AttachPlugins(plugins)
 	logs, err := reqlog.New(tp.RequestLogs, db, dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("taproot request logs: %w", err)
@@ -154,6 +156,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 			if h != nil {
 				usage.AttachAuthManager(h.AuthManager)
 				notify.AttachAuthManager(h.AuthManager)
+				plugins.attach(h)
 			}
 			group := engine.Group(APIPrefix)
 			guard.Routes(group)
