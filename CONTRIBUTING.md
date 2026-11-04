@@ -58,3 +58,18 @@ Keep personal data out of the repository. Tests, fixtures, screenshots, and exam
 Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(taproot): …` or `feat(web): …`. After a dependency change, run `bun scripts/taproot/third-party-notices.ts` to update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 By contributing, you agree that your contribution is released under the [MIT License](LICENSE).
+
+## Demo data and screenshots
+
+`internal/taproot/demo` seeds a data directory with synthetic accounts, 30 days of usage, quota history, request logs, and backups, all written through taproot's own ingest, request-log, and backup code. The README screenshots come from it.
+
+```sh
+bash scripts/taproot/build-web.sh                 # embed the dashboard
+bash internal/taproot/demo/run.sh                 # seed a temporary directory and serve it on http://127.0.0.1:8399
+bash internal/taproot/demo/run.sh --capture       # also rewrite docs/screenshots/*.png, then stop
+```
+
+- **Nothing leaves the machine.** The demo config sends every outbound request to a dead loopback proxy, the quota poller and alerts are off, and the credentials are fake.
+- **Same data every run.** The generator uses a fixed seed, and every timestamp is an offset from a start time computed from the current time, so each run produces the same history shifted to end now.
+- **Privacy check.** Before each screenshot, `capture.ts` refuses the page if it shows an address outside `example.com`, `example.org`, and `100.64.0.x`, or a home-directory path. Pass `--deny a,b` to refuse extra strings, such as your user name. Run it from a directory whose path does not contain your user name, or the Settings page shows that path. On Windows, `subst T: <temp dir>` then `--dir T:/taproot-demo` works.
+- **Read the images** before committing them. `build-web.sh` rewrites `internal/taproot/web/dist/index.html`; restore it with `git checkout` before you commit.
