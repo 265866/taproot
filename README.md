@@ -111,6 +111,7 @@ Mount the directory, not the single files. Restoring a backup replaces the files
 ```sh
 TS_IP="$(tailscale ip -4)"
 docker run -d --name taproot --restart unless-stopped \
+  --user "$(id -u):$(id -g)" \
   -e TZ=Etc/UTC \
   -v "$PWD/data:/taproot/config" \
   -v /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock \
@@ -118,7 +119,9 @@ docker run -d --name taproot --restart unless-stopped \
   taproot
 ```
 
-For rootless Podman, use the same command with `podman run` and the image name `localhost/taproot`. On an SELinux host, add `:Z` to the data volume. `TZ` sets the local time of the daily backup.
+For rootless Podman, use the same command with `podman run`, without the `--user` line, and the image name `localhost/taproot`. On an SELinux host, add `:Z` to the data volume. `TZ` sets the local time of the daily backup.
+
+The image has no user of its own; the process runs as whatever user the container starts with. Under rootless Podman that is the container's root, which Podman's default user namespace maps to your own user, so taproot reads and writes `data/` as you and has no more rights on the host than you do. Do not pass `--user` there: Podman would map that uid to a subordinate uid that cannot read the files in `data/`, which taproot keeps at mode 0600. Rootful Docker has no such mapping, and container root is the host's root, so the Docker command passes `--user` to run as the owner of `data/`.
 
 The data directory then holds:
 
