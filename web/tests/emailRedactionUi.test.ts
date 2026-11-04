@@ -35,7 +35,15 @@ const CODEX: AuthFileItem = {
   authIndex: 'a2',
   priority: 0,
 };
-const SECRETS = ['anthropic1', 'second.person', 'ops-person', 'example.org', 'example.com'];
+const SECRETS = [
+  'anthropic1',
+  'second.person',
+  'ops-person',
+  'example.org',
+  'example.com',
+  'zebrafinch',
+  'quokkabeta',
+];
 
 const leaks = (html: string) => SECRETS.filter((secret) => html.includes(secret));
 
@@ -181,5 +189,27 @@ describe('Request Logs body', () => {
     expect(hidden).toContain('claude-ab12cd34-an•••1@s•••.run.json');
     clickToggle();
     expect(renderToStaticMarkup(createElement(BodyViewer, { text }))).toContain(text);
+  });
+});
+
+describe('Request Logs formatted JSON', () => {
+  test('masks parsed keys and values, so escapes in the raw text never matter', async () => {
+    const { JsonTree } = await import('../src/features/taproot-logs/components/JsonTree');
+    const value = JSON.parse(
+      '{"to":"\u003czebrafinch.alpha@sl.example.run\u003e","quokkabeta@example.com":1}'
+    );
+    const hidden = renderToStaticMarkup(createElement(JsonTree, { value }));
+    expect(leaks(hidden)).toEqual([]);
+    expect(hidden).toContain('ze•••a@s•••.run');
+    clickToggle();
+    expect(renderToStaticMarkup(createElement(JsonTree, { value }))).toContain(
+      'zebrafinch.alpha@sl.example.run'
+    );
+  });
+
+  test('the formatted view parses the raw body rather than masked text', () => {
+    const source = readFileSync('src/features/taproot-logs/components/BodyViewer.tsx', 'utf8');
+    expect(source).toContain('<FormattedJson text={raw} />');
+    expect(source).not.toContain('<FormattedJson text={text}');
   });
 });

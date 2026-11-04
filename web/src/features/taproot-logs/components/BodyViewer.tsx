@@ -31,12 +31,10 @@ type Mode = 'formatted' | 'raw';
 export function BodyViewer({ text: raw, size }: { text: string; size?: number }) {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
-  const { mask } = useEmailMask();
-  // Everything shown is masked; copy keeps the real body.
-  const text = useMemo(() => mask(raw), [mask, raw]);
-  const kind = useMemo(() => sniffBody(text), [text]);
+  // Views mask what they draw: raw text as text, JSON after parsing. Copy keeps the real body.
+  const kind = useMemo(() => sniffBody(raw), [raw]);
   const bytes = size ?? raw.length;
-  const [open, setOpen] = useState(text.length <= COLLAPSE_BYTES);
+  const [open, setOpen] = useState(raw.length <= COLLAPSE_BYTES);
   const [mode, setMode] = useState<Mode>(kind === 'json' || kind === 'sse' ? 'formatted' : 'raw');
 
   if (kind === 'empty') return <div className={styles.empty}>{t('taproot_logs.body.empty')}</div>;
@@ -89,18 +87,20 @@ export function BodyViewer({ text: raw, size }: { text: string; size?: number })
         </Button>
       </div>
       {mode === 'raw' ? (
-        <RawText text={text} />
+        <RawText text={raw} />
       ) : kind === 'json' ? (
-        <FormattedJson text={text} />
+        <FormattedJson text={raw} />
       ) : (
-        <EventStream text={text} />
+        <EventStream text={raw} />
       )}
     </div>
   );
 }
 
-function RawText({ text }: { text: string }) {
+function RawText({ text: raw }: { text: string }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const text = useMemo(() => mask(raw), [mask, raw]);
   const [shown, setShown] = useState(TEXT_CHUNK);
   const { visible, remaining } = textWindow(text, shown);
   return (
@@ -167,11 +167,12 @@ function EventStream({ text }: { text: string }) {
   const { t } = useTranslation();
   const [shown, setShown] = useState(SSE_PAGE);
   const { events, total } = useMemo(() => parseSse(text, shown), [text, shown]);
+  const { mask } = useEmailMask();
   return (
     <ol className={styles.events}>
       {events.map((event, index) => (
         <li key={index} className={styles.event}>
-          <span className={styles.eventName}>{event.event}</span>
+          <span className={styles.eventName}>{mask(event.event)}</span>
           <EventData data={event.data} />
         </li>
       ))}
@@ -194,7 +195,8 @@ function EventData({ data }: { data: string }) {
     () => (formatted && sniffBody(data) === 'json' ? parseJsonBody(data) : null),
     [data, formatted]
   );
-  const { visible, remaining } = textWindow(data, 600);
+  const { mask } = useEmailMask();
+  const { visible, remaining } = textWindow(mask(data), 600);
   return (
     <div className={styles.eventBody}>
       {parsed?.ok ? (
