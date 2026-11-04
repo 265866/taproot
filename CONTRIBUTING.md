@@ -45,13 +45,13 @@ Run the checks that CI runs:
 
 ```sh
 go build ./...
-go vet ./...
+GOOS=linux go vet ./...
 go test ./internal/taproot/... ./internal/api/... ./sdk/cliproxy/... ./cmd/...
 cd web && bun install --frozen-lockfile && bun run verify && cd ..
 docker build -f Containerfile.taproot .
 ```
 
-Format Go code with `gofmt` (or `gofumpt`). Add or update tests for any change in behavior. For a dashboard change, also load the page in a browser against a running server.
+`go vet` runs for linux, as in CI: on Windows it also checks upstream's `internal/pluginhost/loader_windows*.go` and flags its `unsafe.Pointer` use. Format Go code with `gofmt` (or `gofumpt`). Add or update tests for any change in behavior. For a dashboard change, also load the page in a browser against a running server.
 
 Keep personal data out of the repository. Tests, fixtures, screenshots, and examples use example values such as `alice@github`, `example.com`, `100.64.0.x`, and `tailnet-0000.ts.net`, never a real login, email, node ID, address, or token.
 
