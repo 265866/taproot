@@ -476,7 +476,7 @@ func TestDashboardShellOpenToAdmittedCallers(t *testing.T) {
 	}
 }
 
-// GETs that change state need RequestHeader from every caller but loopback.
+// GETs that change state need RequestHeader from every caller, loopback too.
 func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
@@ -521,8 +521,11 @@ func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 		if rec := do(e, adminIP+":1", path, map[string]string{RequestHeader: "1"}); rec.Code != http.StatusOK {
 			t.Fatalf("%s with header = %d, want 200", path, rec.Code)
 		}
-		if rec := do(e, "127.0.0.1:1", path, nil); rec.Code != http.StatusOK {
-			t.Fatalf("loopback %s without header = %d, want 200", path, rec.Code)
+		// Review finding 9: loopback does not depend on the browser sending
+		// Sec-Fetch-* either.
+		assertDenied(t, do(e, "127.0.0.1:1", path, nil), "request_header_required")
+		if rec := do(e, "127.0.0.1:1", path, map[string]string{RequestHeader: "1"}); rec.Code != http.StatusOK {
+			t.Fatalf("loopback %s with header = %d, want 200", path, rec.Code)
 		}
 		// An unlisted node is told about admin-nodes first.
 		assertDenied(t, do(e, otherNodeIP+":1", path, nil), "not_admin_node")

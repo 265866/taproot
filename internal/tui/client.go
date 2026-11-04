@@ -63,6 +63,7 @@ func (c *Client) doRequest(method, path string, body io.Reader) ([]byte, int, er
 	if c.secretKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.secretKey)
 	}
+	req.Header.Set("X-Taproot-Request", "1")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

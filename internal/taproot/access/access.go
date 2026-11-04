@@ -42,10 +42,10 @@
 //     the dashboard and the OAuth callbacks. Browsers send Sec-Fetch-* only to
 //     https and loopback targets, so over plain http to a tailnet name this
 //     layer does nothing,
-//   - a GET that changes state without RequestHeader, from any caller but
-//     loopback. This closes the gap the previous point leaves: a cross-site
-//     no-cors GET carries no Origin and cannot read the response, but it
-//     would still run the handler.
+//   - a GET that changes state without RequestHeader, from any caller. This
+//     closes the gap the previous point leaves: a cross-site no-cors GET
+//     carries no Origin and cannot read the response, but it would still run
+//     the handler.
 //
 // Command-line clients send none of these headers. The dashboard response
 // also forbids framing (see package web).
@@ -423,7 +423,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 				}
 			}
 		}
-		if reason == "" && id.Via != ViaLoopback && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
+		if reason == "" && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
 			reason = "state-changing GET without " + RequestHeader
 			denial = requestHeaderDenial()
 		}
