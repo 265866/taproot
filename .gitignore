@@ -3,7 +3,7 @@ cli-proxy-api
 *.exe
 
 # Configuration
-config.yaml
+/config.yaml
 .env
 
 # Generated content
@@ -31,8 +31,6 @@ auths/*
 # Documentation
 docs/*
 !docs/management-api-v8.md
-AGENTS.md
-CLAUDE.md
 GEMINI.md
 AGENTS.override.md
 
