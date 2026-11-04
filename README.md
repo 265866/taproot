@@ -121,6 +121,8 @@ docker run -d --name taproot --restart unless-stopped \
 
 For rootless Podman, use the same command with `podman run`, without the `--user` line, and the image name `localhost/taproot`. On an SELinux host, add `:Z` to the data volume. `TZ` sets the local time of the daily backup.
 
+To run taproot as a systemd user service under rootless Podman instead, use the quadlet in [`examples/taproot/taproot.container`](examples/taproot/taproot.container). It runs the container with a read-only root filesystem and no capabilities, publishes only on the host's Tailscale address, and its header lists the install steps.
+
 The image has no user of its own; the process runs as whatever user the container starts with. Under rootless Podman that is the container's root, which Podman's default user namespace maps to your own user, so taproot reads and writes `data/` as you and has no more rights on the host than you do. Do not pass `--user` there: Podman would map that uid to a subordinate uid that cannot read the files in `data/`, which taproot keeps at mode 0600. Rootful Docker has no such mapping, and container root is the host's root, so the Docker command passes `--user` to run as the owner of `data/`.
 
 The data directory then holds:
