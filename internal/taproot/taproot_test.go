@@ -487,6 +487,32 @@ func TestDisabledGuardKeepsTaprootAPILoopbackOnly(t *testing.T) {
 	}
 }
 
+// Home mode and the TUI's embedded server skip Setup, so taproot refuses them;
+// the TUI client starts no server and stays allowed.
+func TestCheckServerMode(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		home, tui, standalone bool
+		wantErr               string
+	}{
+		{name: "server"},
+		{name: "--standalone alone is a TUI flag", standalone: true},
+		{name: "TUI client", tui: true},
+		{name: "TUI client with Home config", home: true, tui: true},
+		{name: "Home server", home: true, wantErr: "Home mode"},
+		{name: "TUI embedded server", tui: true, standalone: true, wantErr: "--tui --standalone"},
+		{name: "TUI embedded server with Home", home: true, tui: true, standalone: true, wantErr: "Home mode"},
+	} {
+		err := CheckServerMode(tc.home, tc.tui, tc.standalone)
+		if tc.wantErr == "" && err != nil {
+			t.Errorf("%s: %v, want nil", tc.name, err)
+		}
+		if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "access guard")) {
+			t.Errorf("%s: %v, want an error naming %s and the access guard", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
 // A misspelled key fails at startup with its name, instead of being ignored.
 func TestSetupRefusesUnknownKeys(t *testing.T) {
 	for key, tp := range map[string]string{

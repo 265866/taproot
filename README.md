@@ -59,7 +59,7 @@ Taproot stores OAuth refresh tokens for your accounts, and the request logs hold
 - **List every login in `allow-logins`.** Taproot has no built-in login and refuses to start while the list is empty. It also refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
 - **Pin admin devices by stable node ID.** A MagicDNS name can be claimed by another device of the same login after the original is renamed or deleted. An ID is never reused.
 - **Keep `trusted-cidrs` to single addresses** (`/32`). Every host in a wider range reaches the proxy without a login.
-- **Run the server with taproot.** CLIProxyAPI's Home mode (`-home-jwt`) and `--tui --standalone` start the server without taproot, so without the guard.
+- **Home mode and the TUI's embedded server are refused.** CLIProxyAPI's Home mode (`-home-jwt`) and `--tui --standalone` would start the server without taproot's guard, so taproot exits with an error instead. `--tui` alone, connected to a running server, still works.
 
 ## Quick start
 

@@ -749,6 +749,10 @@ func main() {
 			cmd.WaitForCloudDeploy()
 			return
 		}
+		if errMode := taproot.CheckServerMode(homeMode, tuiMode, standalone); errMode != nil {
+			log.Error(errMode)
+			os.Exit(1)
+		}
 		if localModel && (!tuiMode || standalone) {
 			log.Info("Local model mode: using embedded catalogs unless an explicit catalog source is configured")
 		}
@@ -832,14 +836,12 @@ func main() {
 			// Start the main proxy service
 			// Taproot opens its data dir only here, where the server actually starts:
 			// never for login, plugin command-line, or TUI client runs beside a live server.
-			if !homeMode {
-				taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
-				if errTaproot != nil {
-					log.Errorf("taproot setup failed: %v", errTaproot)
-					os.Exit(1)
-				}
-				serverOptions = append(serverOptions, taprootOptions...)
+			taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
+			if errTaproot != nil {
+				log.Errorf("taproot setup failed: %v", errTaproot)
+				os.Exit(1)
 			}
+			serverOptions = append(serverOptions, taprootOptions...)
 			managementasset.StartAutoUpdater(context.Background(), configFilePath)
 			misc.StartAntigravityVersionUpdater(context.Background())
 			registry.SetLocalModelCatalogs(localModel)

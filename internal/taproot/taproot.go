@@ -84,6 +84,23 @@ func DataDir(tp Config, upstreamConfigPath string) string {
 	return dataDir
 }
 
+// CheckServerMode refuses the upstream modes that would start the server
+// without Setup, and so without the access guard: Home mode (-home-jwt or
+// home.enabled) and the TUI's embedded server (--tui --standalone). The plain
+// TUI client starts no server and is allowed.
+func CheckServerMode(homeMode, tuiMode, standalone bool) error {
+	if tuiMode && !standalone {
+		return nil
+	}
+	if homeMode {
+		return errors.New("taproot does not support Home mode (-home-jwt, HOME_JWT, or home.enabled): it would start the server without taproot's access guard")
+	}
+	if tuiMode {
+		return errors.New("taproot does not support --tui --standalone: its embedded server would start without taproot's access guard; run the server, then connect with --tui")
+	}
+	return nil
+}
+
 // Setup opens taproot's modules and returns the server options that mount them.
 // It must run before the service is built, because the access guard prepares
 // the management secret that the management handler reads at construction.

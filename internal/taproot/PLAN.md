@@ -15,7 +15,8 @@ Taproot is the owner's fork of CLIProxyAPI. It runs on server and serves every C
 ## Upstream boundary
 
 - The Go module path stays `github.com/router-for-me/CLIProxyAPI/v8`, so upstream merges never rewrite imports.
-- Fork code lives in `internal/taproot/**`. The only upstream file it edits is `cmd/server/main.go`, with one `taproot.Setup` call. Any further upstream edit needs a written reason in this file.
+- Fork code lives in `internal/taproot/**`. The only upstream file it edits is `cmd/server/main.go`, with one `taproot.Setup` call and one `taproot.CheckServerMode` call. Any further upstream edit needs a written reason in this file.
+  - `CheckServerMode` (launch audit S4) makes the binary exit before Home mode (`-home-jwt`) or `--tui --standalone` starts a server. Both paths start the server without reaching `taproot.Setup`, so without the guard. The call sits beside the cloud-deploy check, about 4 lines, and the `if !homeMode` that used to wrap `Setup` is gone because Home mode no longer gets there.
 - The removed providers come out of the dashboard only. Their backend code stays, because deleting it would conflict with every upstream merge.
 - `web/` is a hard fork of Cli-Proxy-API-Management-Center at `f154fa9`, imported with `git subtree`. The fork stops following upstream UI changes. It follows the backend's management API instead.
 - `scripts/taproot/sync-upstream.sh` merges `upstream/main` and runs the checks.
