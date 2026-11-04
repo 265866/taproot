@@ -266,7 +266,7 @@ export function SystemPage() {
           <p className={styles.sectionDescription}>{t('system_info.quick_links_desc')}</p>
           <div className={styles.quickLinks}>
             <a
-              href="https://github.com/router-for-me/CLIProxyAPI"
+              href="https://github.com/265866/taproot"
               target="_blank"
               rel="noopener noreferrer"
               className={styles.linkCard}
@@ -284,7 +284,7 @@ export function SystemPage() {
             </a>
 
             <a
-              href="https://github.com/router-for-me/Cli-Proxy-API-Management-Center"
+              href="https://github.com/router-for-me/CLIProxyAPI"
               target="_blank"
               rel="noopener noreferrer"
               className={styles.linkCard}
