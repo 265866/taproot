@@ -439,6 +439,54 @@ func TestSetupLimitsRESPToLoopback(t *testing.T) {
 	}
 }
 
+// Launch audit B2: with access.enabled false, a remote caller read settings
+// and created and downloaded a backup holding the OAuth tokens. The switch now
+// opens the proxy only; the taproot API and management stay loopback-only.
+func TestDisabledGuardKeepsTaprootAPILoopbackOnly(t *testing.T) {
+	f, err := setupServer(t, "access:\n  enabled: false\nbackups:\n  daily-at: \"off\"\n")
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	local := func(r req) *httptest.ResponseRecorder {
+		r.remote, r.host = "127.0.0.1", "localhost:8317"
+		return f.do(r)
+	}
+	rec := local(req{method: http.MethodPost, path: "/taproot/api/v1/backups"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("loopback backup create = %d %s", rec.Code, rec.Body)
+	}
+	var backup struct{ ID string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &backup); err != nil || backup.ID == "" {
+		t.Fatalf("backup create body = %s", rec.Body)
+	}
+	if rec := local(req{path: "/taproot/api/v1/settings"}); rec.Code != http.StatusOK {
+		t.Fatalf("loopback settings = %d %s", rec.Code, rec.Body)
+	}
+	if rec := local(req{path: "/taproot/api/v1/backups/" + backup.ID + "/download"}); rec.Code != http.StatusOK {
+		t.Fatalf("loopback backup download = %d", rec.Code)
+	}
+
+	for _, remote := range []string{"203.0.113.9", adminIP, selfIP, lanIP} {
+		for _, r := range []req{
+			{path: "/taproot/api/v1/settings"},
+			{method: http.MethodPost, path: "/taproot/api/v1/backups"},
+			{path: "/taproot/api/v1/backups/" + backup.ID + "/download"},
+			{path: "/taproot/api/v1/me"},
+			{path: "/v8/management/config"},
+			{path: "/v0/management/auth-files/download?name=claude-x.json"},
+			{path: "/"},
+		} {
+			r.remote = remote
+			if rec := f.do(r); guardCode(rec) != "forbidden" || strings.Contains(rec.Body.String(), refreshToken) {
+				t.Errorf("%s %s from %s = %d %.200s, want the guard's 403", r.method, r.path, remote, rec.Code, rec.Body)
+			}
+		}
+		if rec := f.do(req{remote: remote, method: http.MethodPost, path: "/v1/messages", body: `{}`}); isGuardDenial(rec) {
+			t.Errorf("proxy from %s denied: %s", remote, rec.Body)
+		}
+	}
+}
+
 // A misspelled key fails at startup with its name, instead of being ignored.
 func TestSetupRefusesUnknownKeys(t *testing.T) {
 	for key, tp := range map[string]string{

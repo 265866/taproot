@@ -774,12 +774,38 @@ func TestDisabledGuardPassesThrough(t *testing.T) {
 		t.Fatalf("disabled guard set %s", managementEnv)
 	}
 	e, got := testEngine(g)
-	rec := do(e, "203.0.113.9:5000", "/v8/management/config", map[string]string{"Authorization": "Bearer mine"})
-	if rec.Code != http.StatusOK || got.authorization != "Bearer mine" {
-		t.Fatalf("disabled guard: status %d, Authorization %q", rec.Code, got.authorization)
+	// The proxy is open to any address, including one the guard would refuse.
+	for _, remote := range []string{"203.0.113.9:5000", outsiderIP + ":40000"} {
+		if rec := do(e, remote, "/v1/models", map[string]string{"Host": "rebind.evil.example"}); rec.Code != http.StatusOK {
+			t.Fatalf("disabled guard proxy from %s = %d, want 200", remote, rec.Code)
+		}
 	}
-	if got := me(t, e, "203.0.113.9:5000", nil); got.Via != "disabled" {
+	// Loopback reaches the admin surface; management auth is left to upstream.
+	rec := do(e, "127.0.0.1:5000", "/v8/management/config", map[string]string{"Authorization": "Bearer mine"})
+	if rec.Code != http.StatusOK || got.authorization != "Bearer mine" {
+		t.Fatalf("disabled guard loopback: status %d, Authorization %q", rec.Code, got.authorization)
+	}
+	if got := me(t, e, "[::1]:5000", nil); got.Via != "disabled" {
 		t.Fatalf("/me via = %q, want disabled", got.Via)
+	}
+}
+
+// Turning the guard off opens the proxy only: every other address, tailnet
+// or not, gets 403 on the admin surface and never reaches a handler.
+func TestDisabledGuardKeepsAdminSurfaceLoopbackOnly(t *testing.T) {
+	off := false
+	e, got := testEngine(newTestGuard(t, Config{Enabled: &off}))
+	for _, remote := range []string{"203.0.113.9:5000", adminIP + ":40000", selfIP + ":40000", "192.168.10.44:1"} {
+		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me"} {
+			got.authorization = "unset"
+			assertForbidden(t, do(e, remote, path, map[string]string{"Authorization": "Bearer mine"}))
+			if got.authorization != "unset" {
+				t.Fatalf("denied %s from %s reached the handler", path, remote)
+			}
+		}
+	}
+	if rec := do(e, "203.0.113.9:5000", "/healthz", nil); rec.Code != http.StatusOK {
+		t.Fatalf("/healthz = %d, want 200", rec.Code)
 	}
 }
 

@@ -233,12 +233,11 @@ func quoteHeader(v string) string {
 // only. Upstream serves its usage queue there outside gin, where the guard
 // never runs, and taproot does not use the queue.
 func RESPFilter(remote net.Addr) bool {
-	if remote == nil {
-		return false
-	}
-	addrPort, err := netip.ParseAddrPort(remote.String())
-	if err != nil {
-		return false
-	}
-	return addrPort.Addr().Unmap().IsLoopback()
+	return remote != nil && isLoopback(remote.String())
+}
+
+// isLoopback reports whether an ip:port remote address is a loopback address.
+func isLoopback(remoteAddr string) bool {
+	addrPort, err := netip.ParseAddrPort(remoteAddr)
+	return err == nil && addrPort.Addr().Unmap().IsLoopback()
 }

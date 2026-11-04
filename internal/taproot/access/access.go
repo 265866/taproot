@@ -52,6 +52,10 @@
 //
 // Upstream also serves a Redis-protocol usage queue on the proxy port, outside
 // gin. RESPFilter limits it to loopback.
+//
+// With access.enabled false the guard checks nothing on the proxy surface,
+// but the admin surface still answers loopback only, so turning the guard off
+// never hands tokens, settings, or backups to the network.
 package access
 
 import (
@@ -90,8 +94,9 @@ var tailnetPrefixes = []netip.Prefix{
 
 // Config is the access section of taproot.yaml.
 type Config struct {
-	// Enabled defaults to true. When false the guard admits everything and
-	// leaves management auth to upstream.
+	// Enabled defaults to true. When false the guard admits every caller to
+	// the proxy surface, keeps the admin surface loopback-only, and leaves
+	// management auth to upstream.
 	Enabled *bool `yaml:"enabled"`
 	// AllowLogins lists admitted Tailscale login names. An enabled guard
 	// refuses to start without one.
@@ -191,7 +196,7 @@ func New(cfg Config) (*Guard, error) {
 		extraHosts: make(map[string]bool),
 	}
 	if !g.enabled {
-		log.Warn("taproot access: guard disabled; every caller reaches the proxy")
+		log.Warn("taproot access: guard disabled (access.enabled: false). Every caller that reaches the port, from any address and without a login, can use the proxy routes (/v1/..., /v1beta/..., /backend-api/codex/...) and spend every account's quota, and no Host, Origin, or cross-site check runs. The dashboard, /taproot/**, /v0/management/**, /v8/management/**, plugin pages, the OAuth callbacks, and /v1/ws stay loopback-only.")
 		return g, nil
 	}
 	if g.ttl < 0 {
@@ -371,11 +376,21 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
-		if !g.enabled || path == "/healthz" {
+		if path == "/healthz" {
 			c.Next()
 			return
 		}
 		surf := classify(path)
+		if !g.enabled {
+			// The switch opens the proxy only; tokens, settings, and backups stay local.
+			if surf == surfaceAdmin && !isLoopback(r.RemoteAddr) {
+				log.Infof("taproot access: denied %s %s (%s) from %s: the guard is disabled, so only loopback reaches the admin surface", r.Method, path, surf, r.RemoteAddr)
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"code": "forbidden", "message": "the access guard is disabled, so only loopback reaches this route"}})
+				return
+			}
+			c.Next()
+			return
+		}
 		self := sync.OnceValue(func() *selfNode { return g.self(context.WithoutCancel(r.Context())) })
 		id, reason := g.admit(r.Context(), r.RemoteAddr, self)
 		if reason == "" {

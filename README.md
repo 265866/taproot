@@ -55,7 +55,7 @@ Taproot stores OAuth refresh tokens for your accounts, and the request logs hold
 - **Do not put anything in front of taproot.** Loopback callers are admins. `tailscale serve`, `tailscale funnel`, a reverse proxy, or an SSH tunnel on the same host usually connects from loopback, so every caller it forwards becomes an admin.
 - **Publish the port on the host's Tailscale address only.** Never publish on `0.0.0.0` or `127.0.0.1`. A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
 - **Check the result after every deployment change.** Run the checks in [Check the deployment](#4-check-the-deployment).
-- **Do not set `access.enabled: false`.** It turns off every check, including the admin API. Anyone who reaches the port can then download a backup with your tokens.
+- **Do not set `access.enabled: false`.** It turns off every check on the proxy, so anyone who reaches the port can spend your accounts' quota without a login. The dashboard and the management and taproot APIs then answer loopback only, which means only processes inside the container can use them.
 - **List every login in `allow-logins`.** Taproot has no built-in login and refuses to start while the list is empty. It also refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
 - **Pin admin devices by stable node ID.** A MagicDNS name can be claimed by another device of the same login after the original is renamed or deleted. An ID is never reused.
 - **Keep `trusted-cidrs` to single addresses** (`/32`). Every host in a wider range reaches the proxy without a login.
@@ -200,7 +200,7 @@ Set `access.allow-logins`. Every other key in `taproot.yaml` is optional. An unk
 | `access.extra-hosts` | empty | More `Host` names the server answers to. |
 | `access.tailscale-socket` | `/var/run/tailscale/tailscaled.sock` | The `tailscaled` LocalAPI socket. |
 | `access.cache-ttl` | `1m` | How long a whois answer is cached. |
-| `access.enabled` | `true` | Keep it `true`. See [Security](#security). |
+| `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. See [Security](#security). |
 | `ingest.poll-interval` | `15m` | Quota poll interval for idle accounts. `0` disables polling. |
 | `request-logs.max-days` | `14` | Retention by age. A negative value disables the limit. |
 | `request-logs.max-bytes` | `20GiB` | Retention by size of the request-log directory on disk. A negative value disables the limit. |
