@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Merges upstream/main into the current branch and runs taproot's checks.
-# It never pushes. A file taproot deleted that upstream changed stays deleted;
-# every other conflict stops the merge for a person to resolve.
+# It never pushes.
+#
+# Upstream's Go module path is github.com/router-for-me/CLIProxyAPI/v8 and
+# taproot's is github.com/265866/taproot. The script commits upstream's tip
+# with the path rewritten by rewrite-module-path.sh to the staging branch
+# taproot/upstream, then merges that branch. The staging commit's second
+# parent is the previous rewritten snapshot, which is already in taproot's
+# history, so the merge base has the new path too and import lines do not
+# conflict. A file taproot deleted that upstream changed stays deleted; every
+# other conflict stops the merge for a person to resolve.
 #
 #   scripts/taproot/sync-upstream.sh               fetch, merge, check
 #   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits and conflicts only
@@ -11,6 +19,9 @@ set -euo pipefail
 
 remote=upstream
 branch=main
+staging=taproot/upstream
+# Marks a rewritten upstream snapshot and names the upstream commit it holds.
+trailer=Taproot-Upstream
 dry_run=0
 fetch=1
 checks_only=0
@@ -20,7 +31,7 @@ for arg in "$@"; do
 	--no-fetch) fetch=0 ;;
 	--checks-only) checks_only=1 ;;
 	-h | --help)
-		sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+		awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"
 		exit 0
 		;;
 	*)
@@ -89,6 +100,38 @@ run_checks() {
 	printf '\n== Summary\n'
 }
 
+scratch=""
+cleanup() {
+	if [[ -n "$scratch" ]]; then
+		git worktree remove --force "$scratch/tree" >/dev/null 2>&1 || true
+		rm -rf "$scratch"
+	fi
+}
+trap cleanup EXIT
+
+# snapshot commits upstream's tip with the module path rewritten. Its parents
+# are that tip and the previous snapshot, so later merges find the previous
+# snapshot as their base. It prints the new commit.
+snapshot() {
+	local upstream="$1" previous="$2" tree
+	scratch="$(mktemp -d)"
+	# Command substitution runs this in a subshell, which drops the EXIT trap.
+	trap cleanup EXIT
+	# The rewrite comes from this branch; upstream's tree does not have it.
+	cp scripts/taproot/rewrite-module-path.sh "$scratch/rewrite-module-path.sh"
+	git worktree add --quiet --detach "$scratch/tree" "$upstream"
+	(cd "$scratch/tree" && bash "$scratch/rewrite-module-path.sh" && git add --update) >&2
+	tree="$(git -C "$scratch/tree" write-tree)"
+	cleanup
+	scratch=""
+	git commit-tree "$tree" -p "$upstream" -p "$previous" -m "chore(upstream): rewrite the module path of upstream ${upstream:0:9}
+
+Upstream $upstream with the module path rewritten by
+scripts/taproot/rewrite-module-path.sh.
+
+$trailer: $upstream"
+}
+
 if ((checks_only)); then
 	run_checks
 	printf 'Checked %s at %s.\n' "$(git rev-parse --abbrev-ref HEAD)" "$(git rev-parse --short HEAD)"
@@ -108,26 +151,37 @@ fi
 if ((fetch)); then
 	GIT_TERMINAL_PROMPT=0 git fetch --no-tags "$remote" "$branch"
 fi
-git rev-parse --verify --quiet "$target^{commit}" >/dev/null || {
+upstream="$(git rev-parse --verify --quiet "$target^{commit}")" || {
 	printf '%s does not exist; fetch it first\n' "$target" >&2
 	exit 1
 }
 
+previous="$(git log -1 --format=%H --grep="^$trailer: " HEAD)"
+if [[ -z "$previous" ]]; then
+	printf 'HEAD has no rewritten upstream snapshot (a commit with a %s: trailer); see "Upstream boundary" in internal/taproot/PLAN.md\n' "$trailer" >&2
+	exit 1
+fi
+merged="$(git log -1 --format="%(trailers:key=$trailer,valueonly)" "$previous" | tr -d '[:space:]')"
+
 current="$(git rev-parse --abbrev-ref HEAD)"
 before="$(git rev-parse HEAD)"
-incoming="$(git rev-list --count "HEAD..$target")"
-printf 'Branch %s at %s; %s commit(s) incoming from %s.\n' "$current" "$(git rev-parse --short HEAD)" "$incoming" "$target"
+incoming="$(git rev-list --count "$merged..$upstream")"
+printf 'Branch %s at %s, last synced with upstream %s; %s commit(s) incoming from %s.\n' \
+	"$current" "$(git rev-parse --short HEAD)" "$(git rev-parse --short "$merged")" "$incoming" "$target"
 if ((incoming == 0)); then
 	echo "Already up to date."
 	exit 0
 fi
 
+echo "Rewriting the module path of upstream $(git rev-parse --short "$upstream")..."
+next="$(snapshot "$upstream" "$previous")"
+
 if ((dry_run)); then
-	git log --oneline --no-decorate "HEAD..$target" | head -n 20
+	git log --oneline --no-decorate "$merged..$upstream" | head -n 20
 	tree="$(mktemp)"
-	trap 'rm -f "$tree"' EXIT
+	trap 'cleanup; rm -f "$tree"' EXIT
 	status=0
-	git merge-tree --write-tree -z --no-messages HEAD "$target" >"$tree" || status=$?
+	git merge-tree --write-tree -z --no-messages HEAD "$next" >"$tree" || status=$?
 	if ((status > 1)); then
 		echo "git merge-tree failed" >&2
 		exit "$status"
@@ -148,7 +202,8 @@ if ((dry_run)); then
 	exit 0
 fi
 
-if ! git merge --no-edit --no-ff "$target"; then
+git branch --force "$staging" "$next"
+if ! git merge --no-edit --no-ff -m "Merge upstream $(git rev-parse --short "$upstream") into $current" "$staging"; then
 	if ! git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
 		echo "git merge failed before merging; nothing changed." >&2
 		exit 1
