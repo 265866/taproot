@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
+	"github.com/265866/taproot/internal/logging"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
 )
 
 const homeResultExecutorType = "home-result"

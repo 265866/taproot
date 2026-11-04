@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"strings"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // DeriveClaudeUserID returns a stable value for the Claude request field

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 

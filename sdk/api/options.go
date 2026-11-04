@@ -7,11 +7,11 @@ package api
 import (
 	"time"
 
+	internalapi "github.com/265866/taproot/internal/api"
+	"github.com/265866/taproot/sdk/api/handlers"
+	"github.com/265866/taproot/sdk/config"
+	"github.com/265866/taproot/sdk/logging"
 	"github.com/gin-gonic/gin"
-	internalapi "github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/logging"
 )
 
 // ServerOption customises HTTP server construction.

@@ -3,10 +3,10 @@ package claude
 import (
 	"context"
 
-	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/translator/translator"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	. "github.com/265866/taproot/internal/constant"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/translator/translator"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 )
 
 func init() {

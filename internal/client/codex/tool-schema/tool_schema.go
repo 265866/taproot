@@ -14,7 +14,7 @@ import (
 	"github.com/MoeForge/moego/ojson"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
+	"github.com/265866/taproot/internal/util"
 )
 
 const (

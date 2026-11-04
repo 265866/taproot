@@ -5,22 +5,22 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
+	_ "github.com/265866/taproot/internal/translator"
 
 	// Import provider packages to trigger init() registration of ProviderAppliers
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/antigravity"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/claude"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/codex"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/gemini"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/interactions"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/kimi"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/openai"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/xai"
+	_ "github.com/265866/taproot/internal/thinking/provider/antigravity"
+	_ "github.com/265866/taproot/internal/thinking/provider/claude"
+	_ "github.com/265866/taproot/internal/thinking/provider/codex"
+	_ "github.com/265866/taproot/internal/thinking/provider/gemini"
+	_ "github.com/265866/taproot/internal/thinking/provider/interactions"
+	_ "github.com/265866/taproot/internal/thinking/provider/kimi"
+	_ "github.com/265866/taproot/internal/thinking/provider/openai"
+	_ "github.com/265866/taproot/internal/thinking/provider/xai"
 
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/thinking"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 // thinkingTestCase represents a common test case structure for both suffix and body tests.

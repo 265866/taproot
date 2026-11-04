@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
+	"github.com/265866/taproot/internal/api"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/sdk/cliproxy"
 	log "github.com/sirupsen/logrus"
 )
 

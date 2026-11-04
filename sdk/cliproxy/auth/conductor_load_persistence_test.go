@@ -8,7 +8,7 @@ import (
 	"testing"
 	"testing/synctest"
 
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 )
 
 // reloadAuthStore snapshots records independently of blocked storage I/O.

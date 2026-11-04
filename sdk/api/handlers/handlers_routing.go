@@ -8,12 +8,12 @@ import (
 
 	"github.com/MoeForge/moego/ojson"
 
-	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	. "github.com/265866/taproot/internal/constant"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/thinking"
+	"github.com/265866/taproot/internal/util"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/pluginapi"
 	"golang.org/x/net/context"
 )
 

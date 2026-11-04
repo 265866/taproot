@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	translatorapi "github.com/265866/taproot/internal/translator/translator"
 	"github.com/MoeForge/moego/ojson"
-	translatorapi "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/translator"
 )
 
 var benchmarkResponseTranslationOutput []byte

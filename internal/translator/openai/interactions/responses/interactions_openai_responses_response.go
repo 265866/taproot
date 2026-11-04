@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	applypatch "github.com/265866/taproot/internal/client/codex/apply-patch"
+	"github.com/265866/taproot/internal/signature"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/google/uuid"
-	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 type interactionsToResponsesStreamState struct {

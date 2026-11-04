@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/gorilla/websocket"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 // Failure events terminate responses too, in the shapes duplex attribution

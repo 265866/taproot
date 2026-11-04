@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	coresession "github.com/265866/taproot/sdk/cliproxy/session"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
+	"github.com/265866/taproot/sdk/config"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	coresession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 	"golang.org/x/net/context"
 )
 

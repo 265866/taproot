@@ -3,8 +3,8 @@ package common
 import (
 	"strings"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // SetResponsesToolCallIdentityDoc writes a resolved Responses tool name and namespace into doc.

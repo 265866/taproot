@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 func registerTestWebSearchModel(t *testing.T, clientID, provider, modelID string, supportsSearch bool) {

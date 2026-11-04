@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	antigravityclaude "github.com/265866/taproot/internal/translator/antigravity/claude"
+	geminiclaude "github.com/265866/taproot/internal/translator/gemini/claude"
+	interactionsclaude "github.com/265866/taproot/internal/translator/interactions/claude"
+	openaiclaude "github.com/265866/taproot/internal/translator/openai/claude"
 	"github.com/MoeForge/moego/ojson"
-	antigravityclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/antigravity/claude"
-	geminiclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/gemini/claude"
-	interactionsclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/interactions/claude"
-	openaiclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/openai/claude"
 )
 
 // A client may replay CPA-relayed commentary history to a non-Codex upstream.

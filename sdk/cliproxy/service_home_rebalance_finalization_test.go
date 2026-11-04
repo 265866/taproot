@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/homeplugins"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/homeplugins"
+	"github.com/265866/taproot/sdk/cliproxy/executionregistry"
+	"github.com/265866/taproot/sdk/config"
 )
 
 func TestServicePlannedRebalanceSettlesDispatchBeforeCancelingPluginFinalization(t *testing.T) {

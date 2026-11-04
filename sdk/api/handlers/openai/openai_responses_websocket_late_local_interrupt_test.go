@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/sdk/api/handlers"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 )
 
 // Once a terminal payload (completion or failure) has been written

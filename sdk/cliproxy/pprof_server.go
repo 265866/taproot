@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/265866/taproot/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -1,4 +1,4 @@
-module github.com/router-for-me/CLIProxyAPI/v8
+module github.com/265866/taproot
 
 go 1.26.10
 

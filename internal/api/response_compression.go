@@ -13,10 +13,10 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/httpwire"
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/httpwire"
 	log "github.com/sirupsen/logrus"
 )
 

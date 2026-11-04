@@ -3,8 +3,8 @@ package responses
 import (
 	"context"
 
+	. "github.com/265866/taproot/internal/translator/gemini/openai/responses"
 	"github.com/MoeForge/moego/ojson"
-	. "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/gemini/openai/responses"
 )
 
 func ConvertAntigravityResponseToOpenAIResponses(ctx context.Context, modelName string, originalRequestRawJSON, requestRawJSON, rawJSON []byte, param *any) [][]byte {

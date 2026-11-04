@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 // xaiVersionAtLeast compares dotted numeric version strings.
