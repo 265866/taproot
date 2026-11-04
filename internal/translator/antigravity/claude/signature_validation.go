@@ -5,10 +5,10 @@ import (
 	"github.com/MoeForge/moego/base64"
 	"strings"
 
+	"github.com/265866/taproot/internal/cache"
+	"github.com/265866/taproot/internal/signature"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 )
 
 const (

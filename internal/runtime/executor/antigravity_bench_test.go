@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	antigravitygemini "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/antigravity/gemini"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	antigravitygemini "github.com/265866/taproot/internal/translator/antigravity/gemini"
 )
 
 func buildSynthetic4KAntigravitySSE() ([]byte, []byte) {

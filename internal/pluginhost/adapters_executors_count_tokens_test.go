@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/pluginapi"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 )
 
 func TestExecutorAdapterCountTokensTranslatesAcrossFormats(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	metaauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/meta"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	metaauth "github.com/265866/taproot/internal/auth/meta"
+	"github.com/265866/taproot/internal/config"
 )
 
 func TestBuildMetaAuthRecord_PreservesSubscriptionMetadata_Issue6117(t *testing.T) {

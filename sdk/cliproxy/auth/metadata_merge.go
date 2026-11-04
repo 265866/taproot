@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
+	"github.com/265866/taproot/internal/auth/codex"
 )
 
 // IsAuthTokenPayloadKey returns true if key is a credential or token lifecycle field

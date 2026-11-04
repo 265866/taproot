@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
+	"github.com/265866/taproot/internal/auth/codex"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 

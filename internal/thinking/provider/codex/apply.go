@@ -2,9 +2,9 @@
 package codex
 
 import (
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/thinking"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 )
 
 // Applier implements thinking.ProviderApplier for Codex models.

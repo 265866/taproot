@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
+	"github.com/265866/taproot/sdk/pluginapi"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 )
 
 type testUsageCapturePlugin struct {

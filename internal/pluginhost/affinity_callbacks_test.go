@@ -7,10 +7,10 @@ import (
 	"sync"
 	"testing"
 
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/pluginabi"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 type mockPluginScheduler struct{}

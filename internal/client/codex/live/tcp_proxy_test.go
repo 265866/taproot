@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/stun/v3"
 	"github.com/pion/webrtc/v4"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 type recordedProxyDial struct {

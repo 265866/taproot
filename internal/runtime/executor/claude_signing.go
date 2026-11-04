@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/util"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
 	xxHash64 "github.com/pierrec/xxHash/xxHash64"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 const (

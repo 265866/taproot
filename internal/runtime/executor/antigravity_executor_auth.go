@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	sdkAuth "github.com/265866/taproot/sdk/auth"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 

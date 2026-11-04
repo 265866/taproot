@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/265866/taproot/internal/config"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 func TestAuthDeleteFileRemovalClassification(t *testing.T) {

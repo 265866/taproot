@@ -14,10 +14,10 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/265866/taproot/internal/config"
+	fileauth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	fileauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 func TestSyncAuthFilePriorityAttributeTracksFileSource(t *testing.T) {

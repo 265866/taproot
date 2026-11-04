@@ -6,9 +6,9 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/pluginhost"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/config"
 )
 
 func TestBuilderBuildInjectsPluginHostScheduler(t *testing.T) {

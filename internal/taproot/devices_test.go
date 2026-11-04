@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/api"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/runtime/executor"
+	sdkaccess "github.com/265866/taproot/sdk/access"
+	"github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 const (

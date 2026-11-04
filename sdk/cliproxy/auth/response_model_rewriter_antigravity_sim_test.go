@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	gemresponses "github.com/265866/taproot/internal/translator/gemini/openai/responses"
 	"github.com/MoeForge/moego/ojson"
-	gemresponses "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/gemini/openai/responses"
 )
 
 func antigravityLiveSSEChunks(t *testing.T) [][]byte {

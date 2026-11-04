@@ -3,9 +3,9 @@ package api
 import (
 	"testing"
 
-	proxyconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	proxyconfig "github.com/265866/taproot/internal/config"
+	responsesclaude "github.com/265866/taproot/internal/translator/claude/openai/responses"
+	sdkconfig "github.com/265866/taproot/sdk/config"
 )
 
 // setClaudeToolSearchForTest sets upstream.claude.tool-search for one test.

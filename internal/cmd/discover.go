@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/discovery"
+	"github.com/265866/taproot/internal/discovery"
 	"gopkg.in/yaml.v3"
 )
 

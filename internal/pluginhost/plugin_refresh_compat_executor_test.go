@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	runtimeexecutor "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/265866/taproot/internal/config"
+	runtimeexecutor "github.com/265866/taproot/internal/runtime/executor"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 type stubCompatExecutor struct {

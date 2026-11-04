@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	internalcache "github.com/265866/taproot/internal/cache"
+	"github.com/265866/taproot/internal/httpwire"
+	"github.com/265866/taproot/sdk/config"
+	"github.com/265866/taproot/sdk/proxyutil"
 	tls "github.com/refraction-networking/utls"
-	internalcache "github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/httpwire"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )

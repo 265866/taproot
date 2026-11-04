@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/api"
+	proxyconfig "github.com/265866/taproot/internal/config"
+	sdkaccess "github.com/265866/taproot/sdk/access"
+	"github.com/265866/taproot/sdk/api/handlers"
+	"github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-	proxyconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 // newRealServer builds upstream's server the way taproot.Setup wires it: the

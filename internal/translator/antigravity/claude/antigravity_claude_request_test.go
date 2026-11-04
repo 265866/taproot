@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/cache"
+	"github.com/265866/taproot/internal/registry"
+	internalsignature "github.com/265866/taproot/internal/signature"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	internalsignature "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	log "github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"google.golang.org/protobuf/encoding/protowire"

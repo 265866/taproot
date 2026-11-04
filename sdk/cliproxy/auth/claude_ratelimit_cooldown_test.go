@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/registry"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
 func TestAuthManager_ConcurrentSuccessDoesNotClearActiveCredentialCooldown(t *testing.T) {

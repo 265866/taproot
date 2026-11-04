@@ -3,9 +3,9 @@ package helps
 import (
 	"strings"
 
+	"github.com/265866/taproot/internal/thinking"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // NormalizeClaudeToolChoice downgrades forced tool use on Claude 5.5 to auto.

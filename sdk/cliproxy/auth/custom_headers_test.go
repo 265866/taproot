@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/util"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 )
 
 func TestExtractCustomHeadersFromMetadata(t *testing.T) {

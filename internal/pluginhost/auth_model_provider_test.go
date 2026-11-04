@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 func TestHasAuthModelProviderDoesNotRunDiscovery(t *testing.T) {

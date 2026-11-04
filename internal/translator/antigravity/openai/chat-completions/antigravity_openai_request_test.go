@@ -4,9 +4,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 func TestConvertOpenAIRequestToAntigravitySkipsEmptyTextPartsWithoutNulls(t *testing.T) {

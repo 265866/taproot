@@ -3,10 +3,10 @@ package thinking_test
 import (
 	"testing"
 
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/thinking"
+	_ "github.com/265866/taproot/internal/thinking/provider/claude"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/claude"
 )
 
 // claude-sonnet-5-5 rejects thinking.type="disabled" and requires "between_tools"

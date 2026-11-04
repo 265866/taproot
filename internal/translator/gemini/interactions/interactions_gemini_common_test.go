@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/signature"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 )
 
 func TestConvertInteractionsRequestToGeminiStringInput(t *testing.T) {

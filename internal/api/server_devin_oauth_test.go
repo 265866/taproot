@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	management "github.com/router-for-me/CLIProxyAPI/v8/internal/api/handlers/management"
+	management "github.com/265866/taproot/internal/api/handlers/management"
 )
 
 func TestDevinOAuthRoutes(t *testing.T) {

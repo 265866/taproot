@@ -9,13 +9,13 @@ import (
 	"context"
 	"strings"
 
+	"github.com/265866/taproot/internal/cache"
+	sigcompat "github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/thinking"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/translator/gemini/common"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/translator/gemini/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 

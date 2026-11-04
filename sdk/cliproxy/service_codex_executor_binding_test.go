@@ -7,16 +7,16 @@ import (
 	"sync/atomic"
 	"testing"
 
+	internalconfig "github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/internal/runtime/executor"
+	"github.com/265866/taproot/internal/watcher"
+	sdkAuth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/config"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/gorilla/websocket"
-	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 func TestEnsureExecutorsForAuth_CodexDoesNotReplaceInNormalMode(t *testing.T) {

@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/access"
+	"github.com/265866/taproot/internal/taproot/alerts"
+	"github.com/265866/taproot/internal/taproot/backup"
+	"github.com/265866/taproot/internal/taproot/ingest"
+	"github.com/265866/taproot/internal/taproot/reqlog"
+	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/alerts"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/backup"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/reqlog"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
 	"gopkg.in/yaml.v3"
 )
 

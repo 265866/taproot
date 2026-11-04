@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	internallogging "github.com/265866/taproot/internal/logging"
+	coresession "github.com/265866/taproot/sdk/cliproxy/session"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/gin-gonic/gin"
-	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	coresession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 func TestUsageQueuePluginPayloadIncludesStableFieldsAndSuccess(t *testing.T) {

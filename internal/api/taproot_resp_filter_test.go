@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
+	"github.com/265866/taproot/internal/redisqueue"
+	"github.com/265866/taproot/internal/taproot/access"
 )
 
 // remoteAddrListener reports a chosen remote address for every accepted

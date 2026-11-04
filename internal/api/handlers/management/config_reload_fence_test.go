@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 // newIssue6631Handler returns a handler backed by a legacy config file and a router

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	codexauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	codexauth "github.com/265866/taproot/internal/auth/codex"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
 )
 

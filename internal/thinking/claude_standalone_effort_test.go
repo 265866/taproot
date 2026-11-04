@@ -3,11 +3,11 @@ package thinking_test
 import (
 	"testing"
 
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/thinking"
+	_ "github.com/265866/taproot/internal/thinking/provider/codex"
+	codexclaude "github.com/265866/taproot/internal/translator/codex/claude"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/codex"
-	codexclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/codex/claude"
 )
 
 func TestApplyThinking_ClaudeStandaloneEffort(t *testing.T) {

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	cliproxysession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	internalconfig "github.com/265866/taproot/internal/config"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	cliproxysession "github.com/265866/taproot/sdk/cliproxy/session"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 )
 
 const (

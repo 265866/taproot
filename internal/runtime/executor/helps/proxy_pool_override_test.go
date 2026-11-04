@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 // These tests share the process-wide pool and must not run in parallel.

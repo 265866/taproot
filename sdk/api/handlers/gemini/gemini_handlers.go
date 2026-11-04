@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/clienterror"
+	. "github.com/265866/taproot/internal/constant"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/sdk/api/handlers"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 )
 
 // GeminiAPIHandler contains the handlers for Gemini API endpoints.

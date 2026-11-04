@@ -3,8 +3,8 @@ package helps
 import (
 	"net/http"
 
+	toolschema "github.com/265866/taproot/internal/client/codex/tool-schema"
 	"github.com/MoeForge/moego/ojson"
-	toolschema "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/tool-schema"
 )
 
 // IsCodexUserAgent reports whether headers contain a User-Agent indicating a Codex client.

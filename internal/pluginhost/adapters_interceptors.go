@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/pluginabi"
+	"github.com/265866/taproot/sdk/pluginapi"
 	log "github.com/sirupsen/logrus"
 )
 

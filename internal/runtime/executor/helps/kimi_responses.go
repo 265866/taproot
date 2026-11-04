@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	kimiauth "github.com/265866/taproot/internal/auth/kimi"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
-	kimiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/kimi"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 // ResolveKimiBaseURL resolves the upstream API base URL for Kimi API requests based on auth.

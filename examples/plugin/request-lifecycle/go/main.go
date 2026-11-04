@@ -41,8 +41,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/265866/taproot/sdk/pluginabi"
+	"github.com/265866/taproot/sdk/pluginapi"
 	"gopkg.in/yaml.v3"
 )
 

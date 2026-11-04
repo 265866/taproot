@@ -1,6 +1,6 @@
 package util
 
-import "github.com/router-for-me/CLIProxyAPI/v8/internal/githubauth"
+import "github.com/265866/taproot/internal/githubauth"
 
 // ResolveGitHubToken returns the GitHub API token in priority order:
 // 1. server.github-token

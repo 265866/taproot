@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	sdkauth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/fsnotify/fsnotify"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 // An external edit is read and queued; when the queue applies it, an in-place rewrite of the

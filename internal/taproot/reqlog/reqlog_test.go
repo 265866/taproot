@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/logging"
 )
 
 const secretToken = "sk-ant-oat01-SECRETSECRETSECRET"

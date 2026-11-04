@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/interfaces"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 )
 
 func TestPendingStreamErrorReturnsBufferedError(t *testing.T) {

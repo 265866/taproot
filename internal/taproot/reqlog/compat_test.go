@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/logging"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 )
 
 func upstreamLogText(t *testing.T, write func(l *logging.FileRequestLogger)) string {

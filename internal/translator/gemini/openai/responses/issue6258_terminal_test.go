@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 const issue6258Usage = `{"promptTokenCount":100,"candidatesTokenCount":10,"thoughtsTokenCount":50,"totalTokenCount":160,"cachedContentTokenCount":7}`

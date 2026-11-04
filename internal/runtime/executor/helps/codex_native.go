@@ -3,9 +3,9 @@ package helps
 import (
 	"strings"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	"github.com/265866/taproot/internal/util"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 )
 
 // IsNativeCodexRequest checks the client dialect for use inside Codex executors.

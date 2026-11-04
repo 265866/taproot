@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/interfaces"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	log "github.com/sirupsen/logrus"
 )
 

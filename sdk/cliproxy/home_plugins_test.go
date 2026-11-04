@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/homeplugins"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
-	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginstore"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/homeplugins"
+	"github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/sdk/cliproxy/executionregistry"
+	sdkpluginstore "github.com/265866/taproot/sdk/pluginstore"
 	"gopkg.in/yaml.v3"
 )
 

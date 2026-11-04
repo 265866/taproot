@@ -3,10 +3,10 @@ package cliproxy
 import (
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	runtimeexecutor "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/pluginhost"
+	runtimeexecutor "github.com/265866/taproot/internal/runtime/executor"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/config"
 )
 
 func TestRegisterExecutorForAuth_PluginAuthProviderWrapsOpenAICompatRefresh(t *testing.T) {
