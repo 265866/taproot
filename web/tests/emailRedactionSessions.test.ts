@@ -11,7 +11,7 @@ import {
 import { RequestsView } from '../src/features/taproot-usage/components/RequestsView';
 import { usePrivacyStore } from '../src/stores/usePrivacyStore';
 
-const SESSION = 'user:report to zebrafinch.alpha@sl.example.run';
+const SESSION = 'user:report to zebrafinch.alpha@mail.example.com';
 
 beforeAll(async () => {
   await i18n.changeLanguage('en');
@@ -74,7 +74,7 @@ describe('session filter fields', () => {
     test(`${name} shows a masked chip while hidden and the field once shown`, () => {
       const hidden = render();
       expect(hidden).not.toContain('zebrafinch');
-      expect(hidden).toContain('ze•••a@s•••.run');
+      expect(hidden).toContain('ze•••a@m•••.com');
       expect(hidden).toMatch(/Clear session/i);
       usePrivacyStore.getState().toggleShowEmails();
       expect(render()).toContain(`value="${SESSION}"`);
@@ -122,7 +122,7 @@ describe('Usage grouped by session', () => {
       );
     const hidden = render();
     expect(hidden).not.toContain('zebrafinch');
-    expect(hidden).toContain('title="user:report to ze•••a@s•••.run"');
+    expect(hidden).toContain('title="user:report to ze•••a@m•••.com"');
     usePrivacyStore.getState().toggleShowEmails();
     expect(render()).toContain(`title="${SESSION}"`);
   });

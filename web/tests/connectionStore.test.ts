@@ -134,7 +134,7 @@ describe('legacy management-center storage', () => {
       ['api-key-names:v1:http://server:8317', '{}'],
       ['cli-proxy-theme', '{"state":{"theme":"dark"}}'],
       // The removed Auth Files page persisted its search, which can hold an email.
-      ['authFilesPage.uiState', '{"search":"zebrafinch@sl.example.run"}'],
+      ['authFilesPage.uiState', '{"search":"zebrafinch@mail.example.com"}'],
       ['authFilesPage.compactMode', 'true'],
     ]);
     const storage = {

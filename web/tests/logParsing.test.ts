@@ -108,7 +108,7 @@ describe('log path filter options', () => {
 
 describe('path filters hold routes, not queries', () => {
   const download =
-    '/v8/management/auth-files/download?name=claude-ab12cd34-zebrafinch.alpha%40sl.example.run.json';
+    '/v8/management/auth-files/download?name=claude-ab12cd34-zebrafinch.alpha%40mail.example.com.json';
 
   test('stored filters drop their query', () => {
     expect(normalizeLogPathFilters([download, '/v1/messages'])).toEqual([

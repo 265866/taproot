@@ -28,15 +28,15 @@ const D = 24 * H;
 export const NOW = Date.now();
 
 export const CLAUDE: AuthFileItem = {
-  name: 'claude-ab12cd34-anthropic1@sl.example.org.json',
+  name: 'claude-ab12cd34-anthropic1@mail.example.org.json',
   type: 'claude',
   provider: 'claude',
-  email: 'anthropic1@sl.example.org',
+  email: 'anthropic1@mail.example.org',
   authIndex: 'a1',
   priority: 10,
   note: 'Shared with ops-person@example.org',
   status: 'error',
-  statusMessage: 'refresh failed for anthropic1@sl.example.org',
+  statusMessage: 'refresh failed for anthropic1@mail.example.org',
   unavailable: true,
 };
 export const CODEX: AuthFileItem = {
@@ -50,10 +50,10 @@ export const CODEX: AuthFileItem = {
 };
 /** A credential taproot has not listed yet. */
 export const NEW_FILE: AuthFileItem = {
-  name: 'claude-9f8e7d6c-zebrafinch.alpha@sl.example.run.json',
+  name: 'claude-9f8e7d6c-zebrafinch.alpha@mail.example.com.json',
   type: 'claude',
   provider: 'claude',
-  email: 'zebrafinch.alpha@sl.example.run',
+  email: 'zebrafinch.alpha@mail.example.com',
   authIndex: 'a3',
 };
 
@@ -65,8 +65,6 @@ export const SECRETS = [
   'zebrafinch',
   'example.org',
   'example.com',
-  'example.org',
-  'example.run',
 ];
 export const leaks = (html: string) => SECRETS.filter((secret) => html.includes(secret));
 
@@ -78,8 +76,8 @@ export const GROUPS: ProviderGroup[] = [
       {
         authIndex: 'a1',
         provider: 'claude',
-        label: 'anthropic1@sl.example.org',
-        email: 'anthropic1@sl.example.org',
+        label: 'anthropic1@mail.example.org',
+        email: 'anthropic1@mail.example.org',
         plan: 'max',
         disabled: false,
         lastSeen: NOW - 5 * M,

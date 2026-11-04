@@ -3,12 +3,12 @@ import { addressDomain, maskEmails } from '../src/utils/emailMask';
 
 describe('maskEmails', () => {
   test('masks a bare address in the account-name format', () => {
-    expect(maskEmails('anthropic1@sl.example.org')).toBe('an•••1@s•••.org');
+    expect(maskEmails('anthropic1@mail.example.org')).toBe('an•••1@m•••.org');
   });
 
   test('masks every address in one string and leaves the text between them', () => {
-    expect(maskEmails('from anthropic1@sl.example.org to someone@example.com, done.')).toBe(
-      'from an•••1@s•••.org to so•••e@e•••.com, done.'
+    expect(maskEmails('from anthropic1@mail.example.org to someone@example.com, done.')).toBe(
+      'from an•••1@m•••.org to so•••e@e•••.com, done.'
     );
   });
 
@@ -28,8 +28,8 @@ describe('maskEmails', () => {
 
   describe('auth file names', () => {
     test('keeps the provider and hash prefix and the extension', () => {
-      expect(maskEmails('claude-ab12cd34-anthropic1@sl.example.org.json')).toBe(
-        'claude-ab12cd34-an•••1@s•••.org.json'
+      expect(maskEmails('claude-ab12cd34-anthropic1@mail.example.org.json')).toBe(
+        'claude-ab12cd34-an•••1@m•••.org.json'
       );
       expect(maskEmails('antigravity-someone@gmail.com.json')).toBe(
         'antigravity-so•••e@g•••.com.json'
@@ -49,35 +49,35 @@ describe('maskEmails', () => {
     });
 
     test('masks xAI names, whose hash follows the domain', () => {
-      expect(maskEmails('xai-anthropic1@sl.example.org-0123456789abcdef.json')).toBe(
-        'xai-an•••1@s•••.org-0123456789abcdef.json'
+      expect(maskEmails('xai-anthropic1@mail.example.org-0123456789abcdef.json')).toBe(
+        'xai-an•••1@m•••.org-0123456789abcdef.json'
       );
     });
 
     test('masks Meta names, which write the @ as an underscore', () => {
-      expect(maskEmails('meta-anthropic1_sl.example.org-0123456789abcdef.json')).toBe(
-        'meta-an•••1_s•••.org-0123456789abcdef.json'
+      expect(maskEmails('meta-anthropic1_mail.example.org-0123456789abcdef.json')).toBe(
+        'meta-an•••1_m•••.org-0123456789abcdef.json'
       );
     });
 
     test('masks a name inside a path, a sentence, or JSON', () => {
-      expect(maskEmails('Deleted auths/claude-ab12cd34-anthropic1@sl.example.org.json.')).toBe(
-        'Deleted auths/claude-ab12cd34-an•••1@s•••.org.json.'
+      expect(maskEmails('Deleted auths/claude-ab12cd34-anthropic1@mail.example.org.json.')).toBe(
+        'Deleted auths/claude-ab12cd34-an•••1@m•••.org.json.'
       );
-      expect(maskEmails('{"email":"anthropic1@sl.example.org","type":"claude"}')).toBe(
-        '{"email":"an•••1@s•••.org","type":"claude"}'
+      expect(maskEmails('{"email":"anthropic1@mail.example.org","type":"claude"}')).toBe(
+        '{"email":"an•••1@m•••.org","type":"claude"}'
       );
     });
 
     test('keeps a hashed prefix when the name is shown without .json', () => {
-      expect(maskEmails('claude-ab12cd34-anthropic1@sl.example.org')).toBe(
-        'claude-ab12cd34-an•••1@s•••.org'
+      expect(maskEmails('claude-ab12cd34-anthropic1@mail.example.org')).toBe(
+        'claude-ab12cd34-an•••1@m•••.org'
       );
       expect(maskEmails('codex-1a2b3c4d-first-last@example.com-team')).toBe(
         'codex-1a2b3c4d-fi•••t@e•••.com-team'
       );
-      expect(maskEmails('meta-anthropic1_sl.example.org-0123456789abcdef')).toBe(
-        'meta-an•••1_s•••.org-0123456789abcdef'
+      expect(maskEmails('meta-anthropic1_mail.example.org-0123456789abcdef')).toBe(
+        'meta-an•••1_m•••.org-0123456789abcdef'
       );
     });
 
@@ -106,9 +106,9 @@ describe('maskEmails', () => {
 
   test('is a fixed point: masking masked text changes nothing', () => {
     for (const text of [
-      'anthropic1@sl.example.org',
-      'claude-ab12cd34-anthropic1@sl.example.org.json',
-      'meta-anthropic1_sl.example.org-0123456789abcdef.json',
+      'anthropic1@mail.example.org',
+      'claude-ab12cd34-anthropic1@mail.example.org.json',
+      'meta-anthropic1_mail.example.org-0123456789abcdef.json',
       'codex-1a2b3c4d-first-last@example.com-team.json',
     ]) {
       const once = maskEmails(text);
@@ -118,18 +118,18 @@ describe('maskEmails', () => {
 
   test('stays fast on a large body with long runs of address characters', () => {
     const base64 = 'QUJD+/'.repeat(500_000);
-    const body = `${base64}@${base64} anthropic1@sl.example.org ${'a'.repeat(1_000_000)}@x`;
+    const body = `${base64}@${base64} anthropic1@mail.example.org ${'a'.repeat(1_000_000)}@x`;
     const started = performance.now();
     const masked = maskEmails(body);
     expect(performance.now() - started).toBeLessThan(1000);
-    expect(masked).toContain(' an•••1@s•••.org ');
+    expect(masked).toContain(' an•••1@m•••.org ');
   });
 });
 
 describe('addressDomain', () => {
   test('cuts the domain where the TLD letters end', () => {
     expect(addressDomain('example.com-team.json')).toBe('example.com');
-    expect(addressDomain('sl.example.org.json')).toBe('sl.example.org');
+    expect(addressDomain('mail.example.org.json')).toBe('mail.example.org');
     expect(addressDomain('example.com.')).toBe('example.com');
   });
 
@@ -147,9 +147,9 @@ describe('review fixes', () => {
     );
     expect(
       maskEmails(
-        'GET "/v8/management/auth-files/download?name=claude-ab12cd34-zebrafinch.alpha%40sl.example.run.json"'
+        'GET "/v8/management/auth-files/download?name=claude-ab12cd34-zebrafinch.alpha%40mail.example.com.json"'
       )
-    ).toBe('GET "/v8/management/auth-files/download?name=claude-ab12cd34-ze•••a%40s•••.run.json"');
+    ).toBe('GET "/v8/management/auth-files/download?name=claude-ab12cd34-ze•••a%40m•••.com.json"');
     expect(maskEmails('?sessionId=quokkabeta%2Bclaude%40example.com&limit=5')).toBe(
       '?sessionId=qu•••e%40e•••.com&limit=5'
     );
