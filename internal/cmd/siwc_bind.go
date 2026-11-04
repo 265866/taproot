@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/auth/codex"
+	"github.com/265866/taproot/internal/browser"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/misc"
+	"github.com/265866/taproot/internal/util"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/browser"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 

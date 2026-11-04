@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	metaauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/meta"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/browser"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	metaauth "github.com/265866/taproot/internal/auth/meta"
+	"github.com/265866/taproot/internal/browser"
+	"github.com/265866/taproot/internal/config"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -17,17 +17,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/265866/taproot/internal/client/codex/optimize-multi-agent-v2"
+	"github.com/265866/taproot/internal/clienterror"
+	. "github.com/265866/taproot/internal/constant"
+	"github.com/265866/taproot/internal/httpwire"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/registry"
+	sdkaccess "github.com/265866/taproot/sdk/access"
+	"github.com/265866/taproot/sdk/api/handlers"
+	"github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/optimize-multi-agent-v2"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/httpwire"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 func writeResponsesSSEChunk(w io.Writer, chunk []byte) error {

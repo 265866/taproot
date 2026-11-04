@@ -14,14 +14,14 @@ import type { AuthFileItem } from '../src/types/authFile';
 const { renderAccountsPage } = await import('./helpers/accountsPage');
 
 const CLAUDE: AuthFileItem = {
-  name: 'claude-ab12cd34-anthropic1@sl.example.org.json',
+  name: 'claude-ab12cd34-anthropic1@mail.example.org.json',
   type: 'claude',
-  email: 'anthropic1@sl.example.org',
+  email: 'anthropic1@mail.example.org',
   authIndex: 'a1',
   priority: 10,
   note: 'Shared with ops-person@example.org',
   status: 'error',
-  statusMessage: 'refresh failed for anthropic1@sl.example.org',
+  statusMessage: 'refresh failed for anthropic1@mail.example.org',
   unavailable: true,
 };
 const CODEX: AuthFileItem = {
@@ -108,18 +108,18 @@ describe('Accounts page', () => {
   test('masks every account name, label, and status by default', () => {
     const html = renderAccountsPage();
     expect(leaks(html)).toEqual([]);
-    expect(html).toContain('>an•••1@s•••.run<');
+    expect(html).toContain('>an•••1@m•••.org<');
     expect(html).toContain('>se•••n@e•••.com<');
-    expect(html).toContain('title="refresh failed for an•••1@s•••.run"');
-    expect(html).toContain('aria-label="Manage an•••1@s•••.run"');
+    expect(html).toContain('title="refresh failed for an•••1@m•••.org"');
+    expect(html).toContain('aria-label="Manage an•••1@m•••.org"');
     expect(html).toContain('aria-label="Enable se•••n@e•••.com"');
   });
 
   test('shows everything after toggling', () => {
     clickToggle();
     const html = renderAccountsPage();
-    expect(html).toContain('>anthropic1@sl.example.org<');
-    expect(html).toContain('title="refresh failed for anthropic1@sl.example.org"');
+    expect(html).toContain('>anthropic1@mail.example.org<');
+    expect(html).toContain('title="refresh failed for anthropic1@mail.example.org"');
     expect(html).toContain('aria-label="Manage second.person@example.com"');
   });
 });
@@ -128,27 +128,27 @@ describe('Routing board', () => {
   test('masks member names, tooltips, labels, and DOM ids by default', () => {
     const html = renderBoard();
     expect(leaks(html)).toEqual([]);
-    expect(html).toContain('>an•••1@s•••.run<');
+    expect(html).toContain('>an•••1@m•••.org<');
     expect(html).toContain('>se•••n@e•••.com<');
-    expect(html).toContain('aria-label="Actions for an•••1@s•••.run"');
+    expect(html).toContain('aria-label="Actions for an•••1@m•••.org"');
   });
 
   test('shows the real names after toggling', () => {
     clickToggle();
     const html = renderBoard();
-    expect(html).toContain('>anthropic1@sl.example.org<');
+    expect(html).toContain('>anthropic1@mail.example.org<');
     expect(html).toContain('>second.person@example.com<');
-    expect(html).toContain('claude-ab12cd34-anthropic1@sl.example.org');
+    expect(html).toContain('claude-ab12cd34-anthropic1@mail.example.org');
   });
 });
 
 describe('Request Logs body', () => {
   test('masks bodies by default and shows them after toggling', async () => {
     const { BodyViewer } = await import('../src/features/taproot-logs/components/BodyViewer');
-    const text = 'auth claude-ab12cd34-anthropic1@sl.example.org.json refreshed';
+    const text = 'auth claude-ab12cd34-anthropic1@mail.example.org.json refreshed';
     const hidden = renderToStaticMarkup(createElement(BodyViewer, { text }));
     expect(leaks(hidden)).toEqual([]);
-    expect(hidden).toContain('claude-ab12cd34-an•••1@s•••.run.json');
+    expect(hidden).toContain('claude-ab12cd34-an•••1@m•••.org.json');
     clickToggle();
     expect(renderToStaticMarkup(createElement(BodyViewer, { text }))).toContain(text);
   });
@@ -158,14 +158,14 @@ describe('Request Logs formatted JSON', () => {
   test('masks parsed keys and values, so escapes in the raw text never matter', async () => {
     const { JsonTree } = await import('../src/features/taproot-logs/components/JsonTree');
     const value = JSON.parse(
-      '{"to":"\u003czebrafinch.alpha@sl.example.run\u003e","quokkabeta@example.com":1}'
+      '{"to":"\u003czebrafinch.alpha@mail.example.com\u003e","quokkabeta@example.com":1}'
     );
     const hidden = renderToStaticMarkup(createElement(JsonTree, { value }));
     expect(leaks(hidden)).toEqual([]);
-    expect(hidden).toContain('ze•••a@s•••.run');
+    expect(hidden).toContain('ze•••a@m•••.com');
     clickToggle();
     expect(renderToStaticMarkup(createElement(JsonTree, { value }))).toContain(
-      'zebrafinch.alpha@sl.example.run'
+      'zebrafinch.alpha@mail.example.com'
     );
   });
 

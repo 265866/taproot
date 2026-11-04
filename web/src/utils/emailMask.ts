@@ -1,7 +1,7 @@
 /**
  * Masks email addresses inside arbitrary text, so screenshots and shared screens do not leak
- * account identities: `anthropic1@sl.example.org` becomes `an•••1@s•••.run`, and the auth file
- * `claude-ab12cd34-anthropic1@sl.example.org.json` becomes `claude-ab12cd34-an•••1@s•••.run.json`.
+ * account identities: `anthropic1@mail.example.org` becomes `an•••1@m•••.org`, and the auth file
+ * `claude-ab12cd34-anthropic1@mail.example.org.json` becomes `claude-ab12cd34-an•••1@m•••.org.json`.
  *
  * What counts as an email: a local part, an at sign, and a domain of at least two labels whose last
  * label starts with a TLD (two or more letters). The at sign may be written `@`, `%40` (URLs and

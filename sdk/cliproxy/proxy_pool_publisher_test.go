@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 // TestServiceProxyPoolFenceIsPerService pins that building or reloading one service

@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/265866/taproot/sdk/config"
+	"github.com/265866/taproot/sdk/httptransport"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/httptransport"
 )
 
 type handlerTestTransport struct {

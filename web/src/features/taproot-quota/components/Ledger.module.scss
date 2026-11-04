@@ -1,6 +1,6 @@
 @use '../../../styles/mixins' as *;
 
-/* Account ledger, after the reference account list: one quiet row per account, remaining per window. */
+/* Account ledger: one quiet row per account, remaining per window. */
 
 .ledger {
   display: flex;

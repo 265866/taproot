@@ -8,13 +8,13 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
+	"github.com/265866/taproot/internal/clienterror"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/sdk/api/handlers"
+	"github.com/265866/taproot/sdk/pluginabi"
+	"github.com/265866/taproot/sdk/pluginapi"
+	"github.com/265866/taproot/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 

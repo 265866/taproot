@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 func TestDownloadAuthFile_ReturnsFile(t *testing.T) {

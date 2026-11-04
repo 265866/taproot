@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
+	"github.com/265866/taproot/internal/taproot/access"
+	"github.com/265866/taproot/internal/taproot/store"
+	"github.com/265866/taproot/sdk/cliproxy/usage"
 )
 
 type fakeDevices map[string]access.Device

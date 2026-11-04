@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/api"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/runtime/executor"
+	sdkaccess "github.com/265866/taproot/sdk/access"
+	"github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 const (
@@ -95,7 +95,7 @@ func newProxyServer(t *testing.T, upstream string, trusted ...string) http.Handl
 	for _, addr := range trusted {
 		cidrs += `, "` + addr + `/32"`
 	}
-	tp := "access:\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) +
+	tp := "access:\n  allow-logins: [\"" + login + "\"]\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) +
 		"\n  trusted-cidrs: [" + cidrs + "]\nbackups:\n  daily-at: \"off\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "taproot.yaml"), []byte(tp), 0o600); err != nil {
 		t.Fatal(err)
@@ -169,7 +169,7 @@ func waitForEvents(t *testing.T, h http.Handler, want int) []storedEvent {
 // event names the device the access guard admitted.
 func TestUsageEventsCarryTheCallersDevice(t *testing.T) {
 	upstream := fakeUpstream(t)
-	// One of this machine's own addresses stands in for server's LAN address,
+	// One of this machine's own addresses stands in for the server's LAN address,
 	// which a local client using the 127.0.1.1 publish arrives from.
 	own := machineAddrs(t)
 	ownIP := ""

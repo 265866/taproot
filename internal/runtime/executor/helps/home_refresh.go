@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/logging"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 type homeStatusErr struct {

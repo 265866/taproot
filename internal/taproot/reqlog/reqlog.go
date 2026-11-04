@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/taproot/store"
 )
 
 func init() {

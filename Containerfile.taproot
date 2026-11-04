@@ -1,7 +1,7 @@
 # Taproot image: the server binary with the dashboard build embedded.
 #
 #   docker build -f Containerfile.taproot \
-#     --build-arg VERSION="$(git describe --tags --always)" \
+#     --build-arg VERSION="$(git describe --tags --match 'taproot-v*' --always)" \
 #     --build-arg COMMIT="$(git rev-parse --short HEAD)" \
 #     --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t taproot .
 #
@@ -47,6 +47,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=build /out/ /taproot/
 COPY config.example.yaml /taproot/config.example.yaml
 RUN chmod 0644 /taproot/config.example.yaml
+# No USER, on purpose. Under rootless Podman the default user namespace maps
+# container root to the host user who owns the bind-mounted data directory,
+# so taproot reads and writes it as that user. A fixed non-root USER would map
+# to a subordinate uid that cannot read the 0600 config and credential files
+# there. Under rootful Docker, run with --user "$(id -u):$(id -g)" instead;
+# the image needs nothing writable outside the data directory.
 WORKDIR /taproot
 EXPOSE 8317
 ENTRYPOINT ["/taproot/taproot"]

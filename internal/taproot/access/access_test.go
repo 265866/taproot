@@ -20,12 +20,15 @@ import (
 )
 
 // newTestGuard builds a guard with New and leaves MANAGEMENT_PASSWORD as it
-// was when the test ends.
+// was when the test ends. A config without allow-logins admits testLogin.
 func newTestGuard(t *testing.T, cfg Config) *Guard {
 	t.Helper()
 	t.Setenv(managementEnv, "")
 	if err := os.Unsetenv(managementEnv); err != nil {
 		t.Fatalf("unsetenv: %v", err)
+	}
+	if cfg.AllowLogins == nil {
+		cfg.AllowLogins = []string{testLogin}
 	}
 	g, err := New(cfg)
 	if err != nil {
@@ -222,9 +225,9 @@ func TestAdmitsAllowlistedLogin(t *testing.T) {
 }
 
 func TestAdmitsIPv6TailnetAddress(t *testing.T) {
-	ts := newFakeTailscaled(t, map[string]fakePeer{"fd7a:115c:a1e0::1": {login: "alice@github", node: "laptop"}})
+	ts := newFakeTailscaled(t, map[string]fakePeer{"fd7a:115c:a1e0::2": {login: "alice@github", node: "laptop"}})
 	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
-	if rec := do(e, "[fd7a:115c:a1e0::1]:40000", "/v1/models", nil); rec.Code != http.StatusOK {
+	if rec := do(e, "[fd7a:115c:a1e0::2]:40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }
@@ -473,7 +476,7 @@ func TestDashboardShellOpenToAdmittedCallers(t *testing.T) {
 	}
 }
 
-// GETs that change state need RequestHeader from every caller but loopback.
+// GETs that change state need RequestHeader from every caller, loopback too.
 func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
@@ -518,8 +521,11 @@ func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 		if rec := do(e, adminIP+":1", path, map[string]string{RequestHeader: "1"}); rec.Code != http.StatusOK {
 			t.Fatalf("%s with header = %d, want 200", path, rec.Code)
 		}
-		if rec := do(e, "127.0.0.1:1", path, nil); rec.Code != http.StatusOK {
-			t.Fatalf("loopback %s without header = %d, want 200", path, rec.Code)
+		// Review finding 9: loopback does not depend on the browser sending
+		// Sec-Fetch-* either.
+		assertDenied(t, do(e, "127.0.0.1:1", path, nil), "request_header_required")
+		if rec := do(e, "127.0.0.1:1", path, map[string]string{RequestHeader: "1"}); rec.Code != http.StatusOK {
+			t.Fatalf("loopback %s with header = %d, want 200", path, rec.Code)
 		}
 		// An unlisted node is told about admin-nodes first.
 		assertDenied(t, do(e, otherNodeIP+":1", path, nil), "not_admin_node")
@@ -536,9 +542,9 @@ func TestRESPFilterAdmitsLoopbackOnly(t *testing.T) {
 		"127.0.0.1:5000":          true,
 		"[::1]:5000":              true,
 		"[::ffff:127.0.0.1]:5000": true,
-		adminIP + ":5000":        false,
+		adminIP + ":5000":         false,
 		selfIP + ":5000":          false,
-		"192.168.0.88:5000":      false,
+		"192.168.0.88:5000":       false,
 		"[" + selfIPv6 + "]:5000": false,
 	} {
 		ap := netip.MustParseAddrPort(addr)
@@ -755,7 +761,7 @@ func TestManagementSecretGeneration(t *testing.T) {
 	}
 
 	t.Setenv(managementEnv, "operator-chosen")
-	kept, err := New(Config{})
+	kept, err := New(Config{AllowLogins: []string{testLogin}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -771,12 +777,82 @@ func TestDisabledGuardPassesThrough(t *testing.T) {
 		t.Fatalf("disabled guard set %s", managementEnv)
 	}
 	e, got := testEngine(g)
-	rec := do(e, "203.0.113.9:5000", "/v8/management/config", map[string]string{"Authorization": "Bearer mine"})
-	if rec.Code != http.StatusOK || got.authorization != "Bearer mine" {
-		t.Fatalf("disabled guard: status %d, Authorization %q", rec.Code, got.authorization)
+	// The proxy is open to any address, including one the guard would refuse.
+	for _, remote := range []string{"203.0.113.9:5000", outsiderIP + ":40000"} {
+		if rec := do(e, remote, "/v1/models", map[string]string{"Host": "rebind.evil.example"}); rec.Code != http.StatusOK {
+			t.Fatalf("disabled guard proxy from %s = %d, want 200", remote, rec.Code)
+		}
 	}
-	if got := me(t, e, "203.0.113.9:5000", nil); got.Via != "disabled" {
+	// Loopback reaches the admin surface; management auth is left to upstream.
+	rec := do(e, "127.0.0.1:5000", "/v8/management/config", map[string]string{"Authorization": "Bearer mine"})
+	if rec.Code != http.StatusOK || got.authorization != "Bearer mine" {
+		t.Fatalf("disabled guard loopback: status %d, Authorization %q", rec.Code, got.authorization)
+	}
+	if got := me(t, e, "[::1]:5000", nil); got.Via != "disabled" {
 		t.Fatalf("/me via = %q, want disabled", got.Via)
+	}
+}
+
+// Turning the guard off opens the proxy only: every other address, tailnet
+// or not, gets 403 on the admin surface and never reaches a handler.
+func TestDisabledGuardKeepsAdminSurfaceLoopbackOnly(t *testing.T) {
+	off := false
+	e, got := testEngine(newTestGuard(t, Config{Enabled: &off}))
+	for _, remote := range []string{"203.0.113.9:5000", adminIP + ":40000", selfIP + ":40000", "192.168.10.44:1"} {
+		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me"} {
+			got.authorization = "unset"
+			assertForbidden(t, do(e, remote, path, map[string]string{"Authorization": "Bearer mine"}))
+			if got.authorization != "unset" {
+				t.Fatalf("denied %s from %s reached the handler", path, remote)
+			}
+		}
+	}
+	if rec := do(e, "203.0.113.9:5000", "/healthz", nil); rec.Code != http.StatusOK {
+		t.Fatalf("/healthz = %d, want 200", rec.Code)
+	}
+}
+
+// Review finding 2: with the guard off, a browser on the same host connects
+// from loopback, so a page on another site, or one reached by DNS rebinding,
+// must not drive the admin surface.
+func TestDisabledGuardRefusesBrowserRequestsFromOtherSites(t *testing.T) {
+	off := false
+	g := newTestGuard(t, Config{Enabled: &off, ExtraHosts: []string{"proxy.home.arpa"}})
+	e, got := testEngine(g)
+	e.GET("/v0/management/usage-queue", func(c *gin.Context) { got.authorization = "drained"; c.String(http.StatusOK, "ok") })
+	for name, tc := range map[string]struct {
+		path    string
+		headers map[string]string
+		code    string
+	}{
+		"dns rebinding":           {"/taproot/api/v1/me", map[string]string{"Host": "rebind.evil.example:8317"}, "forbidden"},
+		"foreign origin":          {"/v8/management/config", map[string]string{"Origin": "http://evil.example"}, "forbidden"},
+		"cross-site fetch":        {"/v8/management/config", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}, "forbidden"},
+		"state-changing GET":      {"/v0/management/usage-queue", nil, "request_header_required"},
+		"cross-site plugin frame": {"/v0/resource/plugins/demo/page", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "iframe"}, "forbidden"},
+	} {
+		got.authorization = "unset"
+		assertDenied(t, do(e, "127.0.0.1:5000", tc.path, tc.headers), tc.code)
+		if got.authorization != "unset" {
+			t.Fatalf("%s reached the handler", name)
+		}
+	}
+	for _, tc := range []struct {
+		path    string
+		headers map[string]string
+	}{
+		{"/v8/management/config", map[string]string{"Origin": "http://localhost:8317", "Sec-Fetch-Site": "same-origin"}},
+		{"/v8/management/config", map[string]string{"Host": "proxy.home.arpa:8317"}},
+		{"/v0/management/usage-queue", map[string]string{RequestHeader: "1"}},
+		{"/taproot/api/v1/me", map[string]string{"Host": "127.0.0.1:8317"}},
+	} {
+		if rec := do(e, "127.0.0.1:5000", tc.path, tc.headers); rec.Code != http.StatusOK {
+			t.Fatalf("loopback %s %v = %d, want 200", tc.path, tc.headers, rec.Code)
+		}
+	}
+	// The proxy surface stays open, as the switch documents.
+	if rec := do(e, "203.0.113.9:5000", "/v1/models", map[string]string{"Host": "rebind.evil.example"}); rec.Code != http.StatusOK {
+		t.Fatalf("proxy = %d, want 200", rec.Code)
 	}
 }
 
@@ -800,20 +876,43 @@ access:
 		t.Fatalf("parsed %+v", a)
 	}
 
-	g := newTestGuard(t, Config{})
-	if !g.enabled || g.ttl != time.Minute || strings.Join(g.AllowLogins(), ",") != "alice@github" {
+	g := newTestGuard(t, Config{AllowLogins: []string{" Someone@Example.com "}})
+	if !g.enabled || g.ttl != time.Minute || strings.Join(g.AllowLogins(), ",") != "someone@example.com" {
 		t.Fatalf("defaults: enabled=%v ttl=%s allow=%v", g.enabled, g.ttl, g.AllowLogins())
 	}
 
+	logins := []string{testLogin}
 	for name, bad := range map[string]Config{
-		"bad cidr":     {TrustedCIDRs: []string{"10.0.0.0/33"}},
-		"negative ttl": {CacheTTL: -time.Second},
-		"empty logins": {AllowLogins: []string{}},
+		"bad cidr":     {AllowLogins: logins, TrustedCIDRs: []string{"10.0.0.0/33"}},
+		"negative ttl": {AllowLogins: logins, CacheTTL: -time.Second},
+		"blank login":  {AllowLogins: []string{" "}},
 	} {
 		t.Setenv(managementEnv, "x")
 		if _, err := New(bad); err == nil {
 			t.Fatalf("%s: New = nil error", name)
 		}
+	}
+}
+
+// An enabled guard has no built-in login: without allow-logins it refuses to
+// start rather than admit someone the operator never named.
+func TestEnabledGuardRequiresAllowLogins(t *testing.T) {
+	on := true
+	for name, cfg := range map[string]Config{
+		"absent":          {},
+		"empty":           {AllowLogins: []string{}},
+		"absent, enabled": {Enabled: &on},
+	} {
+		t.Setenv(managementEnv, "x")
+		g, err := New(cfg)
+		if err == nil || !strings.Contains(err.Error(), "access.allow-logins is empty") {
+			t.Fatalf("%s: New = %v, %v; want the allow-logins error", name, g, err)
+		}
+	}
+	off := false
+	t.Setenv(managementEnv, "x")
+	if _, err := New(Config{Enabled: &off}); err != nil {
+		t.Fatalf("disabled guard without allow-logins: %v", err)
 	}
 }
 

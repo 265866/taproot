@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/watcher/diff"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/diff"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 func newExcludedModelsPatchTestHandler(t *testing.T, kind string) (*Handler, *coreauth.Manager, *coreauth.Auth) {

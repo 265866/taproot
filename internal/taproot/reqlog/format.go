@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/buildinfo"
+	"github.com/265866/taproot/internal/interfaces"
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/buildinfo"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 )
 
 // Section names index spans of a record's text, so the detail view can slice

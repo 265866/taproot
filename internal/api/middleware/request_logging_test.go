@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/clienterror"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 )
 
 func TestShouldSkipMethodForRequestLogging(t *testing.T) {

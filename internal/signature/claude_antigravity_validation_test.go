@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature/signaturetest"
+	"github.com/265866/taproot/internal/signature/signaturetest"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

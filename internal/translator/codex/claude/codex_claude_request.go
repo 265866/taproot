@@ -16,11 +16,11 @@ import (
 	"strconv"
 	"strings"
 
+	sigcompat "github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/thinking"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // ConvertClaudeRequestToCodex parses and transforms a Claude Code API request into the internal client format.

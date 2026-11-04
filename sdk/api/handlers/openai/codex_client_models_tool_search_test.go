@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/runtime/executor"
+	responsesclaude "github.com/265866/taproot/internal/translator/claude/openai/responses"
+	"github.com/265866/taproot/sdk/api/handlers"
+	"github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 // countingToolSearchExecutor records native tool search capability checks.

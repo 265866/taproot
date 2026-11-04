@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 var _ cliproxyauth.CooldownStateStoreProvider = (*PostgresStore)(nil)

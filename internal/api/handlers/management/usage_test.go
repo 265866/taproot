@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/265866/taproot/internal/redisqueue"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
 )
 
 func TestGetUsageQueuePopsRequestedRecords(t *testing.T) {

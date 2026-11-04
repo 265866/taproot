@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 func TestBuildExecutionPlansForExecuteRespectsRouteTavily(t *testing.T) {

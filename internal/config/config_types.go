@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginstore"
+	"github.com/265866/taproot/internal/registry"
+	sdkpluginstore "github.com/265866/taproot/sdk/pluginstore"
 	"gopkg.in/yaml.v3"
 )
 

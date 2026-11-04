@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 func TestRegisterExecutorsPreservesNativeCatalogPriority(t *testing.T) {

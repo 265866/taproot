@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/registry"
+	sigcompat "github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/util"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

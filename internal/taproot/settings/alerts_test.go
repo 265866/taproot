@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/alerts"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
+	"github.com/265866/taproot/internal/taproot/alerts"
+	"github.com/265866/taproot/internal/taproot/ingest"
+	"github.com/265866/taproot/internal/taproot/store"
 )
 
 type noQuota struct{}

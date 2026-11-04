@@ -14,7 +14,7 @@ test('EmptyState masks server text in its title and description', () => {
   const render = () =>
     renderToStaticMarkup(
       createElement(EmptyState, {
-        title: 'Could not load: auths/claude-ab12cd34-zebrafinch.alpha@sl.example.run.json',
+        title: 'Could not load: auths/claude-ab12cd34-zebrafinch.alpha@mail.example.com.json',
         description: 'quokkabeta@example.com is locked',
       })
     );
@@ -22,7 +22,7 @@ test('EmptyState masks server text in its title and description', () => {
   expect(hidden).not.toContain('zebrafinch');
   expect(hidden).not.toContain('quokkabeta');
   usePrivacyStore.getState().toggleShowEmails();
-  expect(render()).toContain('zebrafinch.alpha@sl.example.run');
+  expect(render()).toContain('zebrafinch.alpha@mail.example.com');
 });
 
 // Error text comes from the server and can name an auth file. Settings shows Tailscale logins on

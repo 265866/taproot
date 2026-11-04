@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	tls "github.com/refraction-networking/utls"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 type utlsClientRoundTripFunc func(*http.Request) (*http.Response, error)

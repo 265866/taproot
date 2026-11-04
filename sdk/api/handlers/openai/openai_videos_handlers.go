@@ -12,15 +12,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/265866/taproot/internal/clienterror"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	"github.com/265866/taproot/sdk/api/handlers"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 

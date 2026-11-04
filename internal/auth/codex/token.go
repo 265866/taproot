@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
+	"github.com/265866/taproot/internal/misc"
 	log "github.com/sirupsen/logrus"
 )
 

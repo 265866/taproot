@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/265866/taproot/internal/auth/codex"
+	"github.com/265866/taproot/sdk/cliproxy/executor"
 )
 
 type testRefreshEvaluator struct{}

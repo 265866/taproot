@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 func newAPI(t *testing.T) (*Ingest, *gin.Engine, *fakeClock) {

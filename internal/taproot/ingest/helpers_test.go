@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
+	"github.com/265866/taproot/internal/taproot/store"
 )
 
 func openTestDB(t *testing.T) *store.DB {

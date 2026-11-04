@@ -17,30 +17,30 @@ import (
 	"strings"
 	"time"
 
+	configaccess "github.com/265866/taproot/internal/access/config_access"
+	"github.com/265866/taproot/internal/api"
+	"github.com/265866/taproot/internal/buildinfo"
+	"github.com/265866/taproot/internal/cmd"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/githubauth"
+	"github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/homeplugins"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/managementasset"
+	"github.com/265866/taproot/internal/misc"
+	"github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/internal/redisqueue"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/safemode"
+	"github.com/265866/taproot/internal/store"
+	"github.com/265866/taproot/internal/taproot"
+	_ "github.com/265866/taproot/internal/translator"
+	"github.com/265866/taproot/internal/tui"
+	"github.com/265866/taproot/internal/util"
+	sdkAuth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	sdkpluginstore "github.com/265866/taproot/sdk/pluginstore"
 	"github.com/joho/godotenv"
-	configaccess "github.com/router-for-me/CLIProxyAPI/v8/internal/access/config_access"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/buildinfo"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cmd"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/githubauth"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/homeplugins"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/managementasset"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/safemode"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/store"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/tui"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginstore"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -276,6 +276,10 @@ func main() {
 		if v, ok := lookupEnv("HOME_JWT", "home_jwt"); ok {
 			homeJWT = v
 		}
+	}
+	if errMode := taproot.CheckServerMode(strings.TrimSpace(homeJWT) != "", tuiMode, standalone); errMode != nil {
+		log.Error(errMode)
+		os.Exit(1)
 	}
 
 	if value, ok := lookupEnv("PGSTORE_DSN", "pgstore_dsn"); ok {
@@ -832,14 +836,12 @@ func main() {
 			// Start the main proxy service
 			// Taproot opens its data dir only here, where the server actually starts:
 			// never for login, plugin command-line, or TUI client runs beside a live server.
-			if !homeMode {
-				taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
-				if errTaproot != nil {
-					log.Errorf("taproot setup failed: %v", errTaproot)
-					os.Exit(1)
-				}
-				serverOptions = append(serverOptions, taprootOptions...)
+			taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
+			if errTaproot != nil {
+				log.Errorf("taproot setup failed: %v", errTaproot)
+				os.Exit(1)
 			}
+			serverOptions = append(serverOptions, taprootOptions...)
 			managementasset.StartAutoUpdater(context.Background(), configFilePath)
 			misc.StartAntigravityVersionUpdater(context.Background())
 			registry.SetLocalModelCatalogs(localModel)

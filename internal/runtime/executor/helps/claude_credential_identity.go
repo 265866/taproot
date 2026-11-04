@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"strings"
 
+	claudeauth "github.com/265866/taproot/internal/auth/claude"
+	homekv "github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/util"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/google/uuid"
-	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
-	homekv "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 // ClaudeAgentSessionUUID maps the downstream agent conversation to one stable UUID,

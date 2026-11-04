@@ -54,7 +54,7 @@ describe('Accounts page', () => {
     expect(leaks(html)).toEqual([]);
     expect(html).toMatch(/<h1[^>]*>Accounts<\/h1>/);
     expect(html).toContain('3 accounts · 1 reporting quota');
-    for (const name of ['an•••1@s•••.run', 'se•••n@e•••.com', 'ze•••a@s•••.run']) {
+    for (const name of ['an•••1@m•••.org', 'se•••n@e•••.com', 'ze•••a@m•••.com']) {
       const row = rowOf(html, name);
       expect(row).toContain(`aria-label="Enable ${name}"`);
       expect(row).toContain(`aria-label="Manage ${name}"`);
@@ -66,23 +66,23 @@ describe('Accounts page', () => {
   test('shows the real names after the toggle', () => {
     usePrivacyStore.getState().toggleShowEmails();
     const html = renderAccountsPage();
-    expect(html).toContain('aria-label="Manage anthropic1@sl.example.org"');
-    expect(html).toContain('aria-label="Manage zebrafinch.alpha@sl.example.run"');
+    expect(html).toContain('aria-label="Manage anthropic1@mail.example.org"');
+    expect(html).toContain('aria-label="Manage zebrafinch.alpha@mail.example.com"');
     expect(html).not.toContain('quokkabeta');
   });
 
   test('each row carries quota, health, the switch, and recent requests', () => {
     const html = renderAccountsPage();
-    const claude = rowOf(html, 'an•••1@s•••.run');
+    const claude = rowOf(html, 'an•••1@m•••.org');
     expect(claude).toContain('aria-label="7-day limit: 61% remaining"');
     expect(claude).toContain('data-health="problem"');
-    expect(claude).toContain('title="refresh failed for an•••1@s•••.run"');
+    expect(claude).toContain('title="refresh failed for an•••1@m•••.org"');
     expect(claude).toContain('title="Recent requests"');
     // The file's switch wins over taproot's lagging copy.
     const codex = rowOf(html, 'se•••n@e•••.com');
     expect(codex).toContain('data-health="disabled"');
     expect(codex).not.toMatch(/aria-label="Enable se•••n@e•••.com" checked/);
-    expect(rowOf(html, 'ze•••a@s•••.run')).toContain('data-health="healthy"');
+    expect(rowOf(html, 'ze•••a@m•••.com')).toContain('data-health="healthy"');
   });
 
   test('the header has Add account, Show emails, Refresh all, and the overflow menu', () => {
@@ -267,17 +267,17 @@ describe('Manage sheet', () => {
     ]) {
       expect(html).toContain(text);
     }
-    expect(html).toContain('aria-label="Enable an•••1@s•••.run"');
+    expect(html).toContain('aria-label="Enable an•••1@m•••.org"');
     expect(html).toContain('aria-label="7-day limit: 61% remaining"');
   });
 
   test('masks the title, file name, note, status, and settings while emails are hidden', () => {
     const html = renderSheet(CLAUDE, true);
     expect(leaks(html)).toEqual([]);
-    expect(html).toContain('an•••1@s•••.run');
-    expect(html).toContain('claude-ab12cd34-an•••1@s•••.run.json');
+    expect(html).toContain('an•••1@m•••.org');
+    expect(html).toContain('claude-ab12cd34-an•••1@m•••.org.json');
     expect(html).toContain('Shared with op•••n@e•••.org');
-    expect(html).toContain('refresh failed for an•••1@s•••.run');
+    expect(html).toContain('refresh failed for an•••1@m•••.org');
     // The advanced settings form is open: its JSON views are masked too.
     expect(html).toContain('Proxy URL');
   });
@@ -285,14 +285,14 @@ describe('Manage sheet', () => {
   test('shows everything after the toggle', () => {
     usePrivacyStore.getState().toggleShowEmails();
     const html = renderSheet(CLAUDE, true);
-    expect(html).toContain('anthropic1@sl.example.org');
-    expect(html).toContain('claude-ab12cd34-anthropic1@sl.example.org.json');
+    expect(html).toContain('anthropic1@mail.example.org');
+    expect(html).toContain('claude-ab12cd34-anthropic1@mail.example.org.json');
     expect(html).toContain('Shared with ops-person@example.org');
   });
 
   test('an account taproot has not listed yet still opens, without recorded quota', () => {
     const html = renderSheet(NEW_FILE);
-    expect(html).toContain('ze•••a@s•••.run');
+    expect(html).toContain('ze•••a@m•••.com');
     expect(html).toContain('No quota reported yet.');
     expect(html).toContain('Delete');
     expect(leaks(html)).toEqual([]);
@@ -394,9 +394,9 @@ describe('account search', () => {
 
   test('* matches anything, anywhere in a field', async () => {
     const { matchesAccountSearch } = await import('@/features/accounts/model');
-    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'claude-*admin')).toBe(true);
+    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'claude-*example')).toBe(true);
     expect(matchesAccountSearch(row(CODEX), CODEX, 'codex*team')).toBe(true);
-    expect(matchesAccountSearch(row(CODEX), CODEX, 'claude-*admin')).toBe(false);
+    expect(matchesAccountSearch(row(CODEX), CODEX, 'claude-*example')).toBe(false);
   });
 
   test('an empty query matches everything', async () => {
@@ -501,18 +501,18 @@ describe('ledger search while emails are hidden', () => {
   };
 
   test('masks an email in the search field and in the no-match message', async () => {
-    const html = await renderLedger('zebrafinch.alpha@sl.example.run-nomatch');
+    const html = await renderLedger('zebrafinch.alpha@mail.example.com-nomatch');
     expect(leaks(html)).toEqual([]);
     // Not focused: the search shows as a masked chip, with no input carrying the value.
-    expect(html).toContain('title="ze•••a@s•••.run-nomatch"');
+    expect(html).toContain('title="ze•••a@m•••.com-nomatch"');
     expect(html).not.toContain('type="search"');
-    expect(html).toContain('No accounts match “ze•••a@s•••.run-nomatch”.');
+    expect(html).toContain('No accounts match “ze•••a@m•••.com-nomatch”.');
     expect(html).toContain('Clear filters');
   });
 
   test('shows the search as typed once emails are shown', async () => {
     usePrivacyStore.getState().toggleShowEmails();
-    const html = await renderLedger('zebrafinch.alpha@sl.example.run-nomatch');
-    expect(html).toContain('value="zebrafinch.alpha@sl.example.run-nomatch"');
+    const html = await renderLedger('zebrafinch.alpha@mail.example.com-nomatch');
+    expect(html).toContain('value="zebrafinch.alpha@mail.example.com-nomatch"');
   });
 });

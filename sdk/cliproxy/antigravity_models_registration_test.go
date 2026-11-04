@@ -14,11 +14,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/watcher"
+	sdkAuth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/config"
 )
 
 // waitForAntigravityClientModel polls until the registry publishes modelID

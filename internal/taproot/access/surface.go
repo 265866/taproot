@@ -63,13 +63,12 @@ var navigablePaths = map[string]bool{
 	"/devin/callback":       true,
 }
 
-// RequestHeader must be "1" on GETs that change state, for every caller but
-// loopback. A cross-site page cannot add a custom header without a CORS
-// preflight, and the guard rejects the preflight's Origin. Browsers send no
-// Sec-Fetch-* headers to plain-http tailnet names, so without this a
-// cross-site no-cors GET would reach these handlers. Loopback is exempt:
-// browsers do send Sec-Fetch-* to localhost and loopback addresses, and
-// upstream's TUI calls these routes over 127.0.0.1 without the header.
+// RequestHeader must be "1" on GETs that change state, from every caller. A
+// cross-site page cannot add a custom header without a CORS preflight, and the
+// guard rejects the preflight's Origin. Browsers send no Sec-Fetch-* headers to
+// plain-http tailnet names, so without this a cross-site no-cors GET would
+// reach these handlers. Loopback needs it too, so the check does not depend on
+// the browser sending Sec-Fetch-*; the dashboard and the TUI client send it.
 const RequestHeader = "X-Taproot-Request"
 
 // sideEffectGETs are admin GET routes that change state or reach out: draining the usage
@@ -233,12 +232,11 @@ func quoteHeader(v string) string {
 // only. Upstream serves its usage queue there outside gin, where the guard
 // never runs, and taproot does not use the queue.
 func RESPFilter(remote net.Addr) bool {
-	if remote == nil {
-		return false
-	}
-	addrPort, err := netip.ParseAddrPort(remote.String())
-	if err != nil {
-		return false
-	}
-	return addrPort.Addr().Unmap().IsLoopback()
+	return remote != nil && isLoopback(remote.String())
+}
+
+// isLoopback reports whether an ip:port remote address is a loopback address.
+func isLoopback(remoteAddr string) bool {
+	addrPort, err := netip.ParseAddrPort(remoteAddr)
+	return err == nil && addrPort.Addr().Unmap().IsLoopback()
 }

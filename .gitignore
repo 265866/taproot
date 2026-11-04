@@ -3,8 +3,14 @@ cli-proxy-api
 *.exe
 
 # Configuration
-config.yaml
+/config.yaml
+/taproot.yaml
 .env
+
+# Runtime data: the README's data/ directory and the default taproot/ data
+# directory beside a root config.yaml. examples/taproot/ stays tracked.
+/data/
+/taproot/
 
 # Generated content
 bin/*
@@ -31,8 +37,6 @@ auths/*
 # Documentation
 docs/*
 !docs/management-api-v8.md
-AGENTS.md
-CLAUDE.md
 GEMINI.md
 AGENTS.override.md
 

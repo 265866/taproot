@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 type refreshFixture struct {

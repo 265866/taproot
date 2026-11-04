@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,12 +16,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/access"
+	"github.com/265866/taproot/internal/taproot/alerts"
+	"github.com/265866/taproot/internal/taproot/backup"
+	"github.com/265866/taproot/internal/taproot/ingest"
+	"github.com/265866/taproot/internal/taproot/reqlog"
+	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/backup"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/reqlog"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,14 +41,29 @@ backups:
 `
 
 // fileConfig mirrors taproot.Config with the modules' own types, so the tests
-// read the written file the way Setup does.
+// read the written file the way Setup does: strictly, refusing unknown keys.
 type fileConfig struct {
 	DataDir     string        `yaml:"data-dir"`
 	Access      access.Config `yaml:"access"`
+	Store       store.Config  `yaml:"store"`
 	Ingest      ingest.Config `yaml:"ingest"`
 	RequestLogs reqlog.Config `yaml:"request-logs"`
 	Backups     backup.Config `yaml:"backups"`
+	Alerts      alerts.Config `yaml:"alerts"`
 }
+
+func decodeStrict(raw []byte, cfg *fileConfig) error {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
+// fixtureLogin admits a caller when the fixture's taproot.yaml names no
+// login, because an enabled guard refuses to start without one.
+const fixtureLogin = "fixture@example.com"
 
 type fixture struct {
 	path    string
@@ -75,10 +93,13 @@ func newFixture(t *testing.T, opt options) *fixture {
 		}
 	}
 	var cfg fileConfig
-	if err := yaml.Unmarshal([]byte(opt.yaml), &cfg); err != nil {
+	if err := decodeStrict([]byte(opt.yaml), &cfg); err != nil {
 		t.Fatal(err)
 	}
 	cfg.Access.Enabled = opt.accessEnabled
+	if cfg.Access.AllowLogins == nil {
+		cfg.Access.AllowLogins = []string{fixtureLogin}
+	}
 	dataDir := filepath.Join(dir, "data")
 	db, err := store.Open(context.Background(), store.Config{}, dataDir)
 	if err != nil {
@@ -135,7 +156,7 @@ func (f *fixture) file(t *testing.T) string {
 func (f *fixture) parsed(t *testing.T) fileConfig {
 	t.Helper()
 	var cfg fileConfig
-	if err := yaml.Unmarshal([]byte(f.file(t)), &cfg); err != nil {
+	if err := decodeStrict([]byte(f.file(t)), &cfg); err != nil {
 		t.Fatalf("written taproot.yaml does not parse: %v\n%s", err, f.file(t))
 	}
 	return cfg
@@ -466,7 +487,7 @@ func TestWriteYAMLHandlesNullSections(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(path)
 	var cfg fileConfig
-	if err := yaml.Unmarshal(raw, &cfg); err != nil || !slices.Equal(cfg.Access.AllowLogins, []string{"a@github"}) {
+	if err := decodeStrict(raw, &cfg); err != nil || !slices.Equal(cfg.Access.AllowLogins, []string{"a@github"}) {
 		t.Fatalf("got %+v %v:\n%s", cfg.Access, err, raw)
 	}
 	if !bytes.Contains(raw, []byte("# only a comment")) {
@@ -481,7 +502,7 @@ func TestWriteYAMLHandlesNullSections(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ = os.ReadFile(commentOnly)
-	if err := yaml.Unmarshal(raw, &cfg); err != nil || cfg.Backups.Keep != 2 {
+	if err := decodeStrict(raw, &cfg); err != nil || cfg.Backups.Keep != 2 {
 		t.Fatalf("comment-only file: %+v %v:\n%s", cfg.Backups, err, raw)
 	}
 }

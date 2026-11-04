@@ -6,11 +6,11 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	"github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/thinking"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 func openaiResponsesReasoningSummaryIsEmpty(summary ojson.Result) bool {

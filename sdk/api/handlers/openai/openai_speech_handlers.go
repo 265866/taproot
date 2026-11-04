@@ -9,10 +9,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/265866/taproot/internal/clienterror"
+	"github.com/265866/taproot/sdk/api/handlers"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 )
 
 const (

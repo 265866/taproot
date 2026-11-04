@@ -11,15 +11,14 @@ describe('Bun toolchain version', () => {
     expect(bunVersion).toBeDefined();
   });
 
-  test.each(['.github/workflows/ci.yml', '.github/workflows/release.yml'])(
-    '%s uses the pinned Bun release',
-    (path) => {
-      expect(readProjectFile(path)).toContain(`bun-version: '${bunVersion}'`);
-    }
-  );
+  test('the taproot image builds the dashboard with the pinned Bun release', () => {
+    expect(readProjectFile('../Containerfile.taproot')).toContain(`ARG BUN_VERSION=${bunVersion}`);
+  });
 
-  test.each(['README.md', 'README_CN.md'])('%s documents the pinned Bun release', (path) => {
-    expect(readProjectFile(path)).toContain(`**Bun ${bunVersion}**`);
+  test('CI reads the Bun release from package.json', () => {
+    expect(readProjectFile('../.github/workflows/ci.yml')).toContain(
+      'bun-version-file: web/package.json'
+    );
   });
 
   test('repository guidance documents the pinned Bun release', () => {

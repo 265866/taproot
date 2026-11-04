@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
+	"github.com/265866/taproot/internal/auth/codex"
 )
 
 // IsCodexAuthRecord reports whether auth represents a Codex credential record.

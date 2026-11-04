@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	sdkconfig "github.com/265866/taproot/sdk/config"
 	tls "github.com/refraction-networking/utls"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 )
 
 type claudeTestDialer struct {

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/access"
+	"github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -4,33 +4,35 @@
 package taproot
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/265866/taproot/internal/api"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/taproot/access"
+	"github.com/265866/taproot/internal/taproot/alerts"
+	"github.com/265866/taproot/internal/taproot/backup"
+	"github.com/265866/taproot/internal/taproot/ingest"
+	"github.com/265866/taproot/internal/taproot/reqlog"
+	"github.com/265866/taproot/internal/taproot/settings"
+	"github.com/265866/taproot/internal/taproot/store"
+	"github.com/265866/taproot/internal/taproot/web"
+	"github.com/265866/taproot/internal/util"
+	"github.com/265866/taproot/sdk/api/handlers"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/alerts"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/backup"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/reqlog"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/settings"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/web"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	"gopkg.in/yaml.v3"
 )
 
 // APIPrefix is where taproot's own endpoints live.
 const APIPrefix = "/taproot/api/v1"
 
-// Config is taproot.yaml. It sits beside config.yaml because upstream parses
-// config.yaml strictly and rejects unknown sections.
+// Config is taproot.yaml. It sits beside config.yaml, which upstream owns and
+// loads leniently: a taproot key there would be ignored without a word.
 type Config struct {
 	// DataDir holds the database, request logs, and backups. Relative paths
 	// resolve against the config file's directory.
@@ -43,7 +45,8 @@ type Config struct {
 	Alerts      alerts.Config `yaml:"alerts"`
 }
 
-// LoadConfig reads taproot.yaml. A missing file yields defaults.
+// LoadConfig reads taproot.yaml. A missing or empty file yields defaults. Unknown
+// keys are an error, so a misspelled access setting cannot fall back silently.
 func LoadConfig(path string) (Config, error) {
 	var cfg Config
 	raw, err := os.ReadFile(path)
@@ -53,7 +56,9 @@ func LoadConfig(path string) (Config, error) {
 	if err != nil {
 		return cfg, fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return cfg, nil
@@ -79,6 +84,22 @@ func DataDir(tp Config, upstreamConfigPath string) string {
 	return dataDir
 }
 
+// CheckServerMode refuses the upstream modes that would run without Setup, and
+// so without the access guard: Home mode (-home-jwt or HOME_JWT), in every
+// mode, because main.go contacts the Home control plane before anything else,
+// and the TUI's embedded server (--tui --standalone). main.go calls it as soon
+// as the flags and HOME_JWT are read. The plain TUI client starts no server
+// and is allowed.
+func CheckServerMode(homeMode, tuiMode, standalone bool) error {
+	if homeMode {
+		return errors.New("taproot does not support Home mode (-home-jwt or HOME_JWT): it fetches config and plugins from a Home control plane and starts the server without taproot's access guard")
+	}
+	if tuiMode && standalone {
+		return errors.New("taproot does not support --tui --standalone: its embedded server would start without taproot's access guard; run the server, then connect with --tui")
+	}
+	return nil
+}
+
 // Setup opens taproot's modules and returns the server options that mount them.
 // It must run before the service is built, because the access guard prepares
 // the management secret that the management handler reads at construction.
@@ -92,7 +113,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 
 	guard, err := access.New(tp.Access)
 	if err != nil {
-		return nil, fmt.Errorf("taproot access: %w", err)
+		return nil, fmt.Errorf("taproot access (%s): %w", tpPath, err)
 	}
 	api.SetRESPConnectionFilter(access.RESPFilter)
 	if err := backup.ApplyPendingRestore(dataDir); err != nil {

@@ -4,10 +4,10 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/diff"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/watcher/diff"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/config"
 )
 
 // ModelInfo re-exports the registry model info structure.

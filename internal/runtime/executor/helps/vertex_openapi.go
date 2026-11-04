@@ -7,12 +7,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/thinking"
+	"github.com/265866/taproot/internal/util"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 // IsVertexOpenAPIModel reports whether the given model identifier targets a

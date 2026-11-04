@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
+	xaiauth "github.com/265866/taproot/internal/auth/xai"
+	"github.com/265866/taproot/internal/clienterror"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/runtime/executor"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/proxyutil"
 	"github.com/gin-gonic/gin"
-	xaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/xai"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 

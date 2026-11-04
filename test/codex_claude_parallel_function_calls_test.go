@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	_ "github.com/265866/taproot/internal/translator"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 func TestCodexToClaudeParallelFunctionCallsHaveValidLifecycle(t *testing.T) {

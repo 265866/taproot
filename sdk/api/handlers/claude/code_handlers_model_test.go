@@ -5,11 +5,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/sdk/api/handlers"
+	sdkconfig "github.com/265866/taproot/sdk/config"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 )
 
 func TestClaudeModelsResponseUsesConfiguredDisplayName(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/config"
 )
 
 func TestAntigravityFailureBackoffWindowsAndCap(t *testing.T) {

@@ -1,0 +1,29 @@
+# Upstream CLIProxyAPI settings for a taproot container.
+# config.example.yaml at the repository root documents every key.
+config-version: 8
+server:
+    # Inside the container. Publish the port on the host's Tailscale address only.
+    host: "0.0.0.0"
+    port: 8317
+# taproot.yaml admits callers by Tailscale identity, so the proxy has no API keys.
+access: {}
+routing:
+    # Taproot's selector: new sessions go to the account whose weekly window resets soonest.
+    strategy: "soonest-reset-first"
+    # Keep each client session on one account, so prompt caches stay warm.
+    session-affinity: true
+    session-affinity-ttl: "1h"
+observability:
+    logs:
+        # Taproot stores request logs compressed in its data directory. Set false to keep none.
+        request-log: true
+        logging-to-file: false
+management:
+    # The access guard decides who reaches the management API and adds the key itself.
+    allow-remote: true
+    # Upstream's downloadable control panel is replaced by taproot's dashboard.
+    disable-control-panel: true
+    disable-auto-update-panel: true
+oauth:
+    # OAuth credential files. Back this directory up; it holds refresh tokens.
+    auth-dir: "/taproot/config/auths"

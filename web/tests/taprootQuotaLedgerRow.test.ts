@@ -25,8 +25,8 @@ const now = Date.now();
 const account = (extra: Partial<QuotaAccount>): QuotaAccount => ({
   authIndex: 'a1',
   provider: 'claude',
-  label: 'anthropic1@sl.example.org',
-  email: 'anthropic1@sl.example.org',
+  label: 'anthropic1@mail.example.org',
+  email: 'anthropic1@mail.example.org',
   plan: '',
   disabled: false,
   lastSeen: null,
@@ -69,7 +69,7 @@ describe('LedgerRow', () => {
 
   test('masks the label, warns with the cooldown, and shows remaining per window', () => {
     const html = render(blocked);
-    expect(html).toContain('an•••1@s•••.run');
+    expect(html).toContain('an•••1@m•••.org');
     expect(html).not.toContain('anthropic1@');
     expect(html).toContain('back in 8h 58m');
     expect(html).toContain('5-hour limit');
@@ -81,7 +81,7 @@ describe('LedgerRow', () => {
   });
 
   test('shows the label when emails are shown', () => {
-    expect(render(blocked, [blocked], true)).toContain('anthropic1@sl.example.org');
+    expect(render(blocked, [blocked], true)).toContain('anthropic1@mail.example.org');
   });
 
   test('a window the account lacks is a dash', () => {
@@ -130,7 +130,7 @@ const renderActions = (provider: string) =>
     createElement(QuotaActions, {
       provider,
       disabled: false,
-      target: { authIndex: 'a1', name: 'an•••1@s•••.run' },
+      target: { authIndex: 'a1', name: 'an•••1@m•••.org' },
       file: undefined,
       now,
       refreshing: false,

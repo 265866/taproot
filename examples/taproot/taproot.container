@@ -1,0 +1,53 @@
+# Rootless Podman quadlet for taproot.
+#
+# 1. Build the image as your user: podman build -f Containerfile.taproot -t taproot .
+# 2. Put config.yaml and taproot.yaml from examples/taproot in ~/taproot/data.
+# 3. Replace 100.64.0.1 below with this host's address from `tailscale ip -4`.
+# 4. Copy this file to ~/.config/containers/systemd/taproot.container, then run
+#    systemctl --user daemon-reload && systemctl --user start taproot
+#    and `loginctl enable-linger "$USER"` so it runs without a login session.
+#
+# Run it as your own user, not root, and without User= or UserNS=: Podman maps
+# the container's root to your user, which owns the 0600 files in the data
+# directory.
+
+[Unit]
+Description=taproot (tailnet-only AI proxy and dashboard)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=localhost/taproot:latest
+Pull=never
+ContainerName=taproot
+Environment=TZ=Etc/UTC
+# The root filesystem is read-only, so everything taproot writes goes to the
+# data directory.
+Environment=HOME=/taproot/config/home
+Environment=XDG_CACHE_HOME=/taproot/config/cache
+Environment=WRITABLE_PATH=/taproot/config
+# config.yaml, taproot.yaml, auths/, and taproot's database, request logs, and
+# backups. Mount the directory, not single files: restoring a backup replaces
+# files by rename. Add :Z on an SELinux host.
+Volume=%h/taproot/data:/taproot/config
+# The access guard identifies callers through the host's tailscaled.
+Volume=/var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+# pasta keeps each caller's source address, which the access guard depends on.
+Network=pasta
+# Publish on the host's Tailscale address only. Never 0.0.0.0, a LAN address,
+# or 127.0.0.1: loopback callers are admins.
+PublishPort=100.64.0.1:8317:8317/tcp
+ReadOnly=true
+DropCapability=all
+NoNewPrivileges=true
+LogDriver=journald
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=45
+UMask=0077
+
+[Install]
+WantedBy=default.target

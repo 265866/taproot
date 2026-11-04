@@ -14,7 +14,7 @@
 //   - Loopback reaches both surfaces. Only processes inside the container, or
 //     on the development machine, connect from loopback.
 //   - trusted-cidrs reach the proxy only. They hold host-local addresses, such
-//     as the LAN address that server's 127.0.1.1 publish arrives from.
+//     as the LAN address that a host-local publish arrives from.
 //   - A tailnet address reaches the proxy when tailscaled's whois login is in
 //     allow-logins. It reaches the admin surface only when, in addition, its
 //     node is listed in admin-nodes and is not the server's own node. With
@@ -42,16 +42,22 @@
 //     the dashboard and the OAuth callbacks. Browsers send Sec-Fetch-* only to
 //     https and loopback targets, so over plain http to a tailnet name this
 //     layer does nothing,
-//   - a GET that changes state without RequestHeader, from any caller but
-//     loopback. This closes the gap the previous point leaves: a cross-site
-//     no-cors GET carries no Origin and cannot read the response, but it
-//     would still run the handler.
+//   - a GET that changes state without RequestHeader, from any caller. This
+//     closes the gap the previous point leaves: a cross-site no-cors GET
+//     carries no Origin and cannot read the response, but it would still run
+//     the handler.
 //
 // Command-line clients send none of these headers. The dashboard response
 // also forbids framing (see package web).
 //
 // Upstream also serves a Redis-protocol usage queue on the proxy port, outside
 // gin. RESPFilter limits it to loopback.
+//
+// With access.enabled false the guard checks nothing on the proxy surface,
+// but the admin surface still answers loopback only, with the browser checks
+// above, because a browser on the host also connects from loopback. Turning
+// the guard off never hands tokens, settings, or backups to the network or to
+// another site's page.
 package access
 
 import (
@@ -69,8 +75,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/265866/taproot/internal/logging"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -83,9 +89,6 @@ const (
 	identityKey   = "taproot.access.identity"
 )
 
-// DefaultAllowLogins is used when allow-logins is absent from taproot.yaml.
-var DefaultAllowLogins = []string{"alice@github"}
-
 var tailnetPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("fd7a:115c:a1e0::/48"),
@@ -93,10 +96,12 @@ var tailnetPrefixes = []netip.Prefix{
 
 // Config is the access section of taproot.yaml.
 type Config struct {
-	// Enabled defaults to true. When false the guard admits everything and
-	// leaves management auth to upstream.
+	// Enabled defaults to true. When false the guard admits every caller to
+	// the proxy surface, keeps the admin surface loopback-only, and leaves
+	// management auth to upstream.
 	Enabled *bool `yaml:"enabled"`
-	// AllowLogins lists admitted Tailscale login names. Absent means DefaultAllowLogins.
+	// AllowLogins lists admitted Tailscale login names. An enabled guard
+	// refuses to start without one.
 	AllowLogins []string `yaml:"allow-logins"`
 	// AdminNodes lists the tailnet nodes that reach the admin surface. Empty
 	// means no tailnet node does; loopback still does. An entry is either a
@@ -192,8 +197,16 @@ func New(cfg Config) (*Guard, error) {
 		cache:      make(map[netip.Addr]cacheEntry),
 		extraHosts: make(map[string]bool),
 	}
+	// The Host check needs extra-hosts with the guard off too.
+	for _, raw := range cfg.ExtraHosts {
+		host := hostOnly(raw)
+		if host == "" || strings.ContainsAny(host, " /") {
+			return nil, fmt.Errorf("extra-hosts: invalid host %q", raw)
+		}
+		g.extraHosts[host] = true
+	}
 	if !g.enabled {
-		log.Warn("taproot access: guard disabled; every caller reaches the proxy")
+		log.Warn("taproot access: guard disabled (access.enabled: false). Every caller that reaches the port, from any address and without a login, can use the proxy routes (/v1/..., /v1beta/..., /backend-api/codex/...) and spend every account's quota, and no Host, Origin, or cross-site check runs there. The dashboard, /taproot/**, /v0/management/**, /v8/management/**, plugin pages, the OAuth callbacks, and /v1/ws stay loopback-only and refuse browser requests from other sites.")
 		return g, nil
 	}
 	if g.ttl < 0 {
@@ -215,16 +228,9 @@ func New(cfg Config) (*Guard, error) {
 	if err := g.SetAdminNodes(cfg.AdminNodes); err != nil {
 		return nil, fmt.Errorf("admin-nodes: %w", err)
 	}
-	for _, raw := range cfg.ExtraHosts {
-		host := hostOnly(raw)
-		if host == "" || strings.ContainsAny(host, " /") {
-			return nil, fmt.Errorf("extra-hosts: invalid host %q", raw)
-		}
-		g.extraHosts[host] = true
-	}
 	logins := cfg.AllowLogins
-	if logins == nil {
-		logins = DefaultAllowLogins
+	if len(logins) == 0 {
+		return nil, errors.New("access.allow-logins is empty; list the Tailscale logins that may use taproot (`tailscale whois <device-ip>` shows a login)")
 	}
 	if err := g.SetAllowLogins(logins); err != nil {
 		return nil, fmt.Errorf("allow-logins: %w", err)
@@ -373,11 +379,30 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
-		if !g.enabled || path == "/healthz" {
+		if path == "/healthz" {
 			c.Next()
 			return
 		}
 		surf := classify(path)
+		if !g.enabled {
+			// The switch opens the proxy only; tokens, settings, and backups stay
+			// local. A browser on the same host still connects from loopback, so
+			// the admin surface keeps the browser checks.
+			if surf == surfaceAdmin {
+				reason := "the guard is disabled, so only loopback reaches the admin surface"
+				denial := gin.H{"code": "forbidden", "message": "the access guard is disabled, so only loopback reaches this route"}
+				if isLoopback(r.RemoteAddr) {
+					reason, denial = g.browserGuard(r, func() *selfNode { return nil })
+				}
+				if reason != "" {
+					log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, path, surf, r.RemoteAddr, reason)
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": denial})
+					return
+				}
+			}
+			c.Next()
+			return
+		}
 		self := sync.OnceValue(func() *selfNode { return g.self(context.WithoutCancel(r.Context())) })
 		id, reason := g.admit(r.Context(), r.RemoteAddr, self)
 		if reason == "" {
@@ -398,9 +423,9 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 				}
 			}
 		}
-		if reason == "" && id.Via != ViaLoopback && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
+		if reason == "" && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
 			reason = "state-changing GET without " + RequestHeader
-			denial = gin.H{"code": "request_header_required", "message": "this request changes state; send " + RequestHeader + ": 1"}
+			denial = requestHeaderDenial()
 		}
 		if reason != "" {
 			// Upstream's log formatter drops fields it does not know, so the details go in the message.
@@ -422,6 +447,23 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// browserGuard runs browserCheck and requires RequestHeader on state-changing
+// GETs. It returns the denial reason and response body, or "" when the request
+// passes.
+func (g *Guard) browserGuard(r *http.Request, self func() *selfNode) (string, gin.H) {
+	if reason := g.browserCheck(r, self); reason != "" {
+		return reason, gin.H{"code": "forbidden", "message": "caller is not allowed"}
+	}
+	if sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
+		return "state-changing GET without " + RequestHeader, requestHeaderDenial()
+	}
+	return "", nil
+}
+
+func requestHeaderDenial() gin.H {
+	return gin.H{"code": "request_header_required", "message": "this request changes state; send " + RequestHeader + ": 1"}
 }
 
 // isManagementPath covers the routes upstream authenticates with the management

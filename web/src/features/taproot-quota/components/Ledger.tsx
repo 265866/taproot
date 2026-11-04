@@ -84,7 +84,7 @@ function ProviderIcon({ provider, theme }: { provider: string; theme: ResolvedTh
   );
 }
 
-/** The account ledger under the quota charts, after the reference account list. */
+/** The account ledger under the quota charts. */
 export function Ledger({
   groups,
   fileByIndex,

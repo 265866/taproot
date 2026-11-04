@@ -1,6 +1,6 @@
 package ingest
 
-import "github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
+import "github.com/265866/taproot/internal/taproot/store"
 
 // All timestamps are stored as Unix milliseconds (UTC) so range scans and
 // bucketing stay integer arithmetic.

@@ -52,7 +52,7 @@ export function formatMoment(t: number, now: number, locale?: string): string {
 
 /**
  * Masks an account label so screenshots do not leak it: emails inside it are masked with the
- * dashboard's shared format (`anthropic1@sl.example.org` becomes `an•••1@s•••.run`). Labels with no
+ * dashboard's shared format (`anthropic1@mail.example.org` becomes `an•••1@m•••.org`). Labels with no
  * email keep only their first two characters, since an account label is identifying either way.
  */
 export function maskLabel(label: string): string {

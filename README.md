@@ -1,353 +1,272 @@
-# CLI Proxy API
-
-English | [中文](README_CN.md) | [日本語](README_JA.md)
-
-If you want to use CLIProxyAPI on your desktop, we recommend our [EasyCLIProxyAPI](https://github.com/router-for-me/EasyCLIProxyAPI) desktop client. It provides a graphical configuration UI, automatic updates, system tray integration, and one-click start/stop for the CLIProxyAPI service.
-
-CLIProxyAPI is a proxy server that provides OpenAI/Gemini/Claude/Codex/Grok compatible API interfaces for CLI.
-
-You can access the following providers locally and with multiple CLI accounts through any OpenAI (including Responses), Gemini (including Interactions), or Claude-compatible client or SDK.
-
-<table>
-<tbody>
-    <tr>
-        <th align="center" width="100">Provider</th>
-        <th align="center">Description</th>
-    </tr>
-    <tr>
-        <td align="center"><a href="https://www.kimi.com/code/?aff=cliproxyapi"><img src="./assets/logo/kimi.svg" alt="Kimi" width="28" height="28" /></a></td>
-        <td>Kimi series models (Kimi K3.1 Pro, K3.1 Pro Highspeed, K3, K2.8 Preview, etc.). <a href="https://platform.kimi.ai/docs/guide/kimi-k3-quickstart">Kimi K3</a> is Moonshot AI’s previous-generation flagship and the world’s first open 3T-class model. With 2.8 trillion parameters, native vision, and a 1-million-token context window, K3 is built for long-horizon coding, knowledge work, and reasoning. CLIProxyAPI supports Kimi through OAuth or compatible API interfaces. Try a <strong>Kimi Code plan</strong> (<a href="https://www.kimi.com/code?aff=cliproxyapi">中文站</a> | <a href="https://www.kimi.ai/code?aff=cliproxyapi">Global</a>), or get an <strong>API key</strong> from the Kimi Open Platform (<a href="https://platform.kimi.com?track_id=track-f15622e7182046baa22ca35e006e13a7&aff=cliproxyapi">中文站</a> | <a href="https://platform.kimi.ai?track_id=track-8a28e4b291d84f62af2fccc3e7a21cb3&aff=cliproxyapi">Global</a>). Thanks to Kimi for supporting CLIProxyAPI and the open-source community!</td>
-    </tr>
-    <tr>
-        <td align="center"><a href="https://developers.openai.com/api/docs/models"><img src="./assets/logo/openai.svg" alt="OpenAI" width="28" height="28" /></a></td>
-        <td>OpenAI GPT-6 models (GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna), including access through Codex OAuth. Astra is the flagship for complex reasoning and coding, Sol balances capability and cost, Terra focuses on visual reasoning and computer use, and Luna handles focused, high-volume work.</td>
-    </tr>
-    <tr>
-        <td align="center"><a href="https://www.anthropic.com/claude/fable"><img src="./assets/logo/claude.svg" alt="Anthropic" width="28" height="28" /></a></td>
-        <td>Anthropic Claude models (Claude Fable 5.1, Claude Opus 5.5, Claude Sonnet 5.5, Claude Haiku 5.5). Fable 5.1 is built for ambitious, long-running coding and knowledge work; Opus 5.5 brings strong agentic coding at a lower cost.</td>
-    </tr>
-    <tr>
-        <td align="center"><a href="https://antigravity.google/"><img src="./assets/logo/antigravity.svg" alt="Antigravity" width="28" height="28" /></a></td>
-        <td>Google Gemini models include Gemini 4 Argon and Gemini 3.8 Flash. CLIProxyAPI supports Gemini API, AI Studio, Vertex AI, Gemini CLI, and Antigravity accounts; model availability varies by channel. Gemini 3.8 Flash is Google's latest Flash model for long-horizon software engineering and agentic workflows. Antigravity's <a href="https://antigravity.google/docs/models/">official model availability</a> lists Claude Sonnet 5.5 (thinking) and Claude Opus 5.5 (thinking) for Google AI Pro (non-trial), Google AI Ultra, and Enterprise.</td>
-    </tr>
-    <tr>
-        <td align="center"><a href="https://docs.x.ai/developers/grok-4-7"><img src="./assets/logo/xai.svg" alt="xAI" width="28" height="28" /></a></td>
-        <td>xAI Grok models (Grok 4.7, Grok 4.7 Build Fast, etc.). Grok 4.7 is SpaceXAI's latest model for coding, agentic tasks, and knowledge work.</td>
-    </tr>
-    <tr>
-        <td align="center"><a href="https://dev.meta.ai/docs/overview"><img src="./assets/logo/meta.svg" alt="Meta" width="28" height="28" /></a></td>
-        <td>Meta Muse models (Muse Wonder Full, Muse Wonder, Muse Spark 1.3, etc.). CLIProxyAPI supports Muse Code accounts through Meta login and Meta Model API keys, with Muse Spark 1.3 for coding and agentic workflows. Meta has announced Muse Wonder for Meta Model API and Muse Code, and Muse Wonder Full for Muse Code subscribers.</td>
-    </tr>
-    <tr>
-        <td align="center"><a href="https://devin.ai/cli">Devin</a></td>
-        <td>Devin models (SWE-2, GPT-6 Astra, Claude Fable 5.1, etc.). Connect a Devin account with <code>--devin-login</code> to route the models available to that account.</td>
-    </tr>
-</tbody>
-</table>
-
-
-## Sponsor
-
-[![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-en.png)](https://www.packyapi.com/register?aff=cliproxyapi)
-
-Thanks to PackyCode for sponsoring this project!
-
-PackyCode is a reliable and efficient API relay service provider, offering relay services for Claude Code, Codex, Gemini, and more.
-
-PackyCode provides special discounts for our software users: register using <a href="https://www.packyapi.com/register?aff=cliproxyapi">this link</a> and enter the "cliproxyapi" promo code during recharge to get 10% off.
-
----
-
-<table>
-<tbody>
-<tr>
-<td width="180"><a href="https://www.aicodemirror.ai/register?invitecode=TJNAIF"><img src="./assets/aicodemirror.png" alt="AICodeMirror" width="150"></a></td>
-<td>Thanks to AICodeMirror for sponsoring this project! AICodeMirror provides official high-stability relay services for Claude Code / Codex / Gemini, with enterprise-grade concurrency, fast invoicing, and 24/7 dedicated technical support. Claude Code / Codex / Gemini official channels at 38% / 2% / 9% of original price, with extra discounts on top-ups! AICodeMirror offers special benefits for CLIProxyAPI users: register via <a href="https://www.aicodemirror.ai/register?invitecode=TJNAIF">this link</a> to enjoy 20% off your first top-up, and enterprise customers can get up to 25% off!</td>
-</tr>
-<tr>
-<td width="180"><a href="https://apikey.fan/register?aff=CLIProxyAPI"><img src="./assets/apikey.png" alt="APIKEY.FUN" width="150"></a></td>
-<td>Thanks to APIKEY.FUN for sponsoring this project! APIKEY.FUN is a professional enterprise-grade AI relay platform dedicated to providing stable, efficient, and low-cost AI model API access for enterprises and individual developers. The platform supports popular mainstream models such as Claude, OpenAI, and Gemini, with prices as low as 7% of the official price. Register through this project's <a href="https://apikey.fan/register?aff=CLIProxyAPI">exclusive link</a> to enjoy a special <b>permanent 5% top-up discount</b>.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://api.fenno.ai/s/Cvf0"><img src="./assets/fennoai.png" alt="FennoAI" width="150"></a></td>
-<td>FennoAI is a stable and efficient API relay service provider, currently focused on Codex relay services. It is compatible with OpenAI and Anthropic protocols and can flexibly integrate with mainstream coding tools such as Codex, Claude Code, and OpenCode. It can reliably support enterprise-grade demand of hundreds of billions of tokens per day, with B2B settlement and invoicing available for both domestic and overseas entities. FennoAI offers an exclusive benefit for CLIProxyAPI users: purchase a subscription through the <a href="https://api.fenno.ai/s/Cvf0">exclusive link</a> and receive $50 worth of Coding Plan credits for just $1.99. Referral rewards are also available: earn up to 20% commission when invited friends make a purchase. The more friends you invite, the greater the rewards.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://s.qiniu.com/7zUJri"><img src="./assets/qiniucloud.png" alt="Qiniu Cloud AI" width="150"></a></td>
-<td>Thanks to <a href="https://s.qiniu.com/7zUJri">Qiniu Cloud AI</a> for sponsoring this project! Qiniu Cloud AI is an enterprise-grade large-model MaaS platform under Qiniu Cloud (02567.HK). It provides one-stop access to 150+ mainstream global models, is compatible with protocols from major global model providers, and covers full-modal processing capabilities for text, image, audio, video, and files. It serves more than 1.69 million enterprise and developer users. Exclusive benefits: enterprise users can claim 12 million free tokens, and invite friends to earn up to tens of billions of tokens.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://cubence.com/signup?code=CLIPROXYAPI&source=cpa"><img src="./assets/cubence.png" alt="Cubence" width="150"></a></td>
-<td>Thanks to Cubence for sponsoring this project! Cubence is a reliable and efficient API relay service provider, offering relay services for Claude Code, Codex, Gemini, and more. Cubence provides special discounts for our software users: register using <a href="https://cubence.com/signup?code=CLIPROXYAPI&source=cpa">this link</a> and enter the "CLIPROXYAPI" promo code during recharge to get 10% off.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://bestproxy.com/?keyword=ayh7otlb"><img src="./assets/bestproxy.png" alt="Bestproxy" width="150"></a></td>
-<td>Bestproxy provides high-purity residential IPs with dedicated one-IP-per-account support. 🟡Residential Proxy - &#36;0.5/GB；🟡Static Residential Proxy - Starting at &#36;3/IP；🟡Unlimited Residential Proxy - Starting at &#36;67/Day.  ✅<a href="https://bestproxy.com/?keyword=ayh7otlb">Get Free Trial.</a></td>
-</tr>
-<tr>
-<td width="180"><a href="https://www.swiftproxy.net/?code=PR67S9A95"><img src="./assets/swiftproxy.png" alt="Swiftproxy" width="150"></a></td>
-<td>Swiftproxy provides 90M+ clean residential IPs across 220+ locations, supporting HTTP(S)/SOCKS5, IP rotation, Sticky Sessions, and precise location targeting. It helps AI API tools and automation workflows access online services reliably from different locations, making it ideal for API requests, web access, data collection, and location-based testing. Residential proxies from &#36;0.7/GB. Free testing is available, with 10% off using code PROXY90. <a href="https://www.swiftproxy.net/?code=PR67S9A95">Try Swiftproxy Now</a></td>
-</tr>
-<tr>
-<td width="180"><a href="https://www.rapidproxy.io/?code=KHM9B6E6M"><img src="./assets/rapidproxy.png" alt="RapidProxy" width="150"></a></td>
-<td><a href="https://www.rapidproxy.io/?code=KHM9B6E6M">RapidProxy</a> is a high-performance proxy provider built for automation and multi-account operations, offering clean residential proxies and native static ISP IPs. With 90M+ residential IPs worldwide, smart rotation, stable sessions, and high-concurrency support, RapidProxy is ideal for web scraping, browser automation, social media account management, e-commerce operations, bulk account registration, and more. Residential proxies start at just &#36;0.55/GB, with traffic that never expires. Use code RAPID10 for 10% off, and <a href="https://www.rapidproxy.io/?code=KHM9B6E6M">start your free trial today.</a></td>
-</tr>
-<tr>
-<td width="180"><a href="https://pateway.ai/?ch=jjvdb"><img src="./assets/patewayai.png" alt="PatewayAI" width="150"></a></td>
-<td>PatewayAI is an API relay service provider for experienced AI developers, with full support for the Claude and Codex model families. All models come from high-quality official channels, with no dilution or counterfeiting, and transparent, verifiable billing details. Economy mode starts at just 5% of the official price. Register through <a href="https://pateway.ai/?ch=jjvdb">this link</a> to receive trial credits and participate in occasional promotions for free credits. The platform also supports enterprise-grade concurrency, a dedicated management dashboard, formal contracts and invoices, and two-way referral rewards of up to &#36;150.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://modelflare.dev/sign-up?utm_source=github&utm_campaign=cliproxyapi"><img src="./assets/modelflare.png" alt="Modelflare" width="150"></a></td>
-<td>Thanks to Modelflare for sponsoring this project! Modelflare: Full strength, stable, nothing watered down. Global SOTA models at a lower cost. Operated by US-based Havenbyte LLC, Modelflare supports GPT, Claude, Gemini, Grok, and other leading models through common compatible protocols, plus 40+ image and video models. Cache compensation is a highlight: selected OpenAI groups (price-first, stable, and premium) guarantee daily cache hit rates of 65%, 75%, or 85%, and if eligible requests fall short, Modelflare refunds the difference, visible on the usage dashboard after settlement. Special offers: a single top-up of US&#36;20 unlocks the GPT discount group at a 0.015x price multiplier, and a single top-up of US&#36;50 unlocks the Claude discount group at a 0.03x multiplier. Register via <a href="https://modelflare.dev/sign-up?utm_source=github&utm_campaign=cliproxyapi">this exclusive link</a> to get started.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://kedaya.ai/register?aff=824X8RAHCYXM"><img src="./assets/kedaya.jpg" alt="kedaya.ai" width="150"></a></td>
-<td>kedaya.ai is a stable and efficient AI model API relay service provider, covering leading models including Claude, GPT, Gemini, Grok, Antigravity, and DeepSeek. It supports native OpenAI (including Responses), Anthropic, and Gemini protocols, enabling seamless integration with clients such as CLIProxyAPI, Claude Code, Codex, Gemini CLI, and Grok CLI. OpenAI and Grok model prices can be as low as 0.1% of official rates! <a href="https://kedaya.ai/register?aff=824X8RAHCYXM">Exclusive registration link</a>.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://xcode.best/register?aff=OuDv"><img src="./assets/xcode.gif" alt="Xcode" width="150"></a></td>
-<td>
-    🥚 <b>[Freebie Alert!] Register & submit a ticket with code to grab $5 free credit + 15% OFF first top-up!</b><br>
-    🚀 <b>More than just API routing — an all-in-one Web workspace:</b> Enjoy Web chat, AI image generation, video creation, and automated workflows right out of the box without any frontend setup.<br>
-    ⚡ <b>All mainstream models supported:</b> High-speed routing for Claude, GPT, Gemini, DeepSeek, and more.<br>
-    🛡️ <b>Reliable guarantees:</b> Hassle-free refunds | Official invoicing | B2B & individual billing | High-availability customer support ready to help!<br><br>
-    👉 Xcode VIP Portal: <a href="https://xcode.best/register?aff=OuDv">https://xcode.best</a><br>
-    💬 Ticket Code: <code>CLIProxyAPI</code> (Submit a ticket to claim your credits instantly)
-  </td>
-</tr>
-<tr>
-<td width="180"><a href="https://x.com/chenju_ai"><img src="./assets/chenju.png" alt="Chenju" width="150"></a></td>
-<td>Thanks to <a href="https://x.com/chenju_ai">陈局 (Chenju)</a> for sponsoring this project! Probably the only slot here that won't ask you to sign up — no signup link, no promo code. Just raising a glass to the maintainers, because good open source deserves to be paid for. Come shoot the breeze on X: <a href="https://x.com/chenju_ai">@chenju_ai</a></td>
-</tr>
-</tbody>
-</table>
+# taproot
 
-## Overview
+Taproot pools your Claude and Codex subscription accounts behind one endpoint on your tailnet, with a dashboard for quota, usage, request logs, and backups. Callers are admitted by their Tailscale identity, so there are no API keys to hand out.
 
-- OpenAI/Gemini/Claude/Grok compatible API endpoints for CLI models
-- OpenAI Codex support (GPT models) via OAuth login
-- Claude Code support via OAuth login
-- Grok Build support via OAuth login
-- Streaming, non-streaming, and WebSocket responses where supported
-- Function calling/tools support
-- Multimodal input support (text and images)
-- Multiple accounts with round-robin load balancing (Gemini, OpenAI, Claude, Grok)
-- Simple CLI authentication flows (Gemini, OpenAI, Claude, Grok)
-- Generative Language API Key support
-- AI Studio Build multi-account load balancing
-- Claude Code multi-account load balancing
-- OpenAI Codex multi-account load balancing
-- Grok Build multi-account load balancing
-- OpenAI-compatible upstream providers via config (e.g., OpenRouter)
-- Reusable Go SDK for embedding the proxy (see `docs/sdk-usage.md`)
+Taproot is a fork of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) by Router-For.ME, and its dashboard is a fork of the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center). Both are MIT-licensed. Taproot is not affiliated with Router-For.ME, Anthropic, or OpenAI.
 
-## Getting Started
+> [!WARNING]
+> Read [Terms of service](#terms-of-service) and [Security](#security) before you add an account. Using subscription credentials through a proxy can break the provider's terms, and a misconfigured taproot gives your OAuth tokens to anyone who can reach its port.
 
-CLIProxyAPI Guides: [https://help.router-for.me/](https://help.router-for.me/)
+<!-- TODO(screenshot): the Accounts page with generic demo accounts, emails hidden. -->
 
-[Claude Code with a Codex backend](examples/claude-code-codex/README.md): optional visible progress, classifier routing, image-tool pass-through, and latency diagnostics.
+## Who it is for
 
-## Management API
+Taproot is for one person, or one household, who runs a Linux server on a Tailscale tailnet and uses Claude Code and Codex from several devices with more than one subscription account. It is not a multi-tenant service and has no user accounts of its own.
 
-see [MANAGEMENT_API.md](https://help.router-for.me/management/api)
+## How it differs from CLIProxyAPI
 
-## Usage Statistics
+Taproot keeps CLIProxyAPI's proxy, provider protocols, and configuration, and adds the following features. Most of their code lives in `internal/taproot`.
 
-Since v6.10.0, CLIProxyAPI and [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) no longer ship built-in usage statistics. If you need usage statistics, use:
+- **Tailscale access guard.** Callers are identified by source address through the host's `tailscaled`. Proxy API keys and the management key prompt are gone.
+- **Quota ledger.** Taproot records every account's 5-hour and weekly utilization from response headers and from a poller for idle accounts. The dashboard projects when each pool runs empty and when it resets.
+- **Soonest-reset-first routing.** New sessions go to the eligible account whose weekly window resets soonest, so quota that is about to reset is spent first. Session affinity keeps a running session on its account.
+- **Usage and cost.** Requests, tokens (including cache reads and writes), latency, time to first token, and failures, by account, model, session, and Tailscale device. Costs are API-equivalent prices from an editable price table.
+- **Request logs.** Full request and response records, stored per session as zstd streams, indexed in SQLite, searchable, and pruned by age and total size.
+- **Backups.** A daily archive of `config.yaml`, `taproot.yaml`, the credential files, and the database. You can download or restore one from the dashboard.
+- **Discord alerts.** A limit hit, an empty pool, a broken login, and an expiring Claude reset grant.
+- **One Accounts page.** Quota, credentials, and sign-in for every account in one place.
+- **Email redaction.** Account emails are hidden everywhere in the dashboard until you turn on **Show emails** for the session.
 
-### [CPA Usage Keeper](https://github.com/Willxup/cpa-usage-keeper)
+Taproot's quota tracking and routing cover Claude and Codex. CLIProxyAPI's other providers still work through the proxy, without those features.
 
-Standalone persistence and visualization service for CLIProxyAPI, with periodic data sync, SQLite storage, aggregate APIs, and a built-in dashboard for usage and statistics.
+## How access works
 
-### [CPA-Manager-Plus](https://github.com/seakee/CPA-Manager-Plus)
+The guard runs before every route and looks only at the connection's source address. Forwarding headers and `Tailscale-*` headers are ignored.
 
-A self-hosted CLIProxyAPI management console and observability dashboard, available as a lightweight drop-in panel or a full Manager Server with persistent analytics. Manage OAuth credentials, AI providers, client API keys, model aliases, plugins, and CPA settings in one interface. SQLite-backed request history enables live monitoring, failure diagnosis, and token, latency, and estimated-cost breakdowns by model, provider, account, key, and channel. Supports editable model prices and one-click price sync, alongside Codex and xAI quota checks, reset information, account-health inspection, and controlled recovery actions. Deploy via Docker or cross-platform native packages, with data stored locally.
+| Caller | Proxy (`/v1/...`) | Dashboard and management API |
+| --- | --- | --- |
+| Loopback inside the container | yes | yes |
+| A login in `access.allow-logins` on a device in `access.admin-nodes` | yes | yes |
+| A login in `access.allow-logins` on any other device | yes | no |
+| The server's own Tailscale node | yes | no |
+| An address in `access.trusted-cidrs` | yes | no |
+| Anyone else, including whois failures | no | no |
 
-### [Oh-My-CPA](https://github.com/WizisCool/oh-my-cpa)
+For a tailnet address, the guard asks `tailscaled` who the caller is through its LocalAPI socket, and caches the answer for one minute. For admitted callers, the guard adds the management key to management requests inside the process. The key never reaches a browser. `/healthz` is open to every caller.
 
-Modern Ant Design-based management console for CLIProxyAPI v8+, combining CPAMC-style administration with SQLite-backed request records and usage analytics. Covers OAuth accounts, API providers, client keys, quotas, pricing and CPA operations in one interface. Tracks request-level latency, TTFT, tokens and cost, with multi-dimensional filtering, live dashboards and token heatmaps. OpenRouter price sync, custom rates and per-request price snapshots keep historical costs stable; a built-in Agent and MCP tools support assisted investigation and management.
+The dashboard page itself loads for every admitted caller, because it holds no data. A device outside `admin-nodes` sees why the API refuses it, with the device name to add.
 
-## SDK Docs
+The guard also refuses browser requests from other sites: a `Host` that is not one of the server's names, a cross-origin `Origin`, and a state-changing `GET` without the `X-Taproot-Request: 1` header. Command-line clients send none of these headers and are not affected. To reach the server under another name, add it to `access.extra-hosts`.
 
-- Usage: [docs/sdk-usage.md](docs/sdk-usage.md)
-- Advanced (executors & translators): [docs/sdk-advanced.md](docs/sdk-advanced.md)
-- Access: [docs/sdk-access.md](docs/sdk-access.md)
-- Watcher: [docs/sdk-watcher.md](docs/sdk-watcher.md)
-- Custom Provider Example: `examples/custom-provider`
+### Security
 
-## Contributing
+Taproot stores OAuth refresh tokens for your accounts, and the request logs hold every prompt and response. Treat the data directory and every backup like a password. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+- **Do not put anything in front of taproot.** Loopback callers are admins. `tailscale serve`, `tailscale funnel`, a reverse proxy, or an SSH tunnel on the same host usually connects from loopback, so every caller it forwards becomes an admin.
+- **Publish the port on the host's Tailscale address only.** Never publish on `0.0.0.0` or `127.0.0.1`. A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
+- **Check the result after every deployment change.** Run the checks in [Check the deployment](#4-check-the-deployment).
+- **Do not set `access.enabled: false`.** It turns off every check on the proxy, so anyone who reaches the port can spend your accounts' quota without a login. The dashboard and the management and taproot APIs then answer loopback callers only: processes inside the container, or, when taproot runs outside a container or with host networking, every process on the host, including its browsers. They still refuse browser requests from other sites, but nothing checks who calls the proxy.
+- **List every login in `allow-logins`.** Taproot has no built-in login and refuses to start while the list is empty. It also refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
+- **Pin admin devices by stable node ID.** A MagicDNS name can be claimed by another device of the same login after the original is renamed or deleted. An ID is never reused.
+- **Keep `trusted-cidrs` to single addresses** (`/32`). Every host in a wider range reaches the proxy without a login.
+- **Home mode and the TUI's embedded server are refused.** CLIProxyAPI's Home mode (`-home-jwt`) and `--tui --standalone` would start the server without taproot's guard, so taproot exits with an error instead. `--tui` alone, connected to a running server, still works.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## Quick start
 
-## Who is with us?
+You need:
 
-Those projects are based on CLIProxyAPI:
+- A Linux host on your tailnet, with `tailscaled` running. Docker Desktop on macOS and Windows does not keep caller addresses and has no `tailscaled` socket, so it cannot run taproot.
+- Rootful Docker, or rootless Podman 5 or later (which uses `pasta` and keeps caller addresses).
+- Git.
 
-### [vibeproxy](https://github.com/automazeio/vibeproxy)
+### 1. Build the image
 
-Native macOS menu bar app to use your Claude Code & ChatGPT subscriptions with AI coding tools - no API keys needed
+```sh
+git clone https://github.com/265866/taproot.git
+cd taproot
+git checkout taproot-v0.1.0
+docker build -f Containerfile.taproot \
+  --build-arg VERSION="$(git describe --tags --match 'taproot-v*' --always)" \
+  --build-arg COMMIT="$(git rev-parse --short HEAD)" \
+  -t taproot .
+```
 
-### [Subtitle Translator](https://github.com/VjayC/SRT-Subtitle-Translator-Validator)
+Releases are tagged `taproot-vX.Y.Z`, and [CHANGELOG.md](CHANGELOG.md) lists what each one changed. Built from a release tag, the image reports that tag, such as `taproot-v0.1.0`, as its version; built from another commit, it reports the nearest release tag plus the commit. With Podman, run `podman build` with the same arguments.
 
-A cross-platform desktop and web app to translate and validate SRT subtitles using your existing LLM subscriptions (Gemini, ChatGPT, Claude, etc.) via CLIProxyAPI - no API keys needed.
+### 2. Write the configuration
 
-### [CCS (Claude Code Switch)](https://github.com/kaitranntt/ccs)
+Taproot reads two files from one directory. `config.yaml` is CLIProxyAPI's configuration. `taproot.yaml` holds taproot's settings, kept apart from CLIProxyAPI's schema. CLIProxyAPI silently ignores keys it does not know in `config.yaml`, so a taproot setting placed there has no effect.
 
-CLI wrapper for instant switching between multiple Claude accounts and alternative models (Gemini, Codex, Antigravity) via CLIProxyAPI OAuth - no API keys needed
+```sh
+mkdir -p data
+cp examples/taproot/config.yaml examples/taproot/taproot.yaml data/
+```
 
-### [Quotio](https://github.com/nguyenphutrong/quotio)
+Edit `data/taproot.yaml`:
 
-Native macOS menu bar app that unifies Claude, Gemini, OpenAI, and Antigravity subscriptions with real-time quota tracking and smart auto-failover for AI coding tools like Claude Code, OpenCode, and Droid - no API keys needed.
+1. Put your Tailscale login in `access.allow-logins`. `tailscale whois <your-device-ip>` shows it.
+2. Put the stable ID of each device that may use the dashboard in `access.admin-nodes`, as `id:<ID>`. The `ID` field of `Self` in `tailscale status --json`, run on that device, is its stable ID.
 
-### [ProxyPilot](https://github.com/Finesssee/ProxyPilot)
+```yaml
+access:
+  allow-logins:
+    - alice@example.com
+  admin-nodes:
+    - id:nEXAMPLE1CNTRL
+```
 
-Windows-native CLIProxyAPI fork with TUI, system tray, and multi-provider OAuth for AI coding tools - no API keys needed.
+Mount the directory, not the single files. Restoring a backup replaces the files by rename, which fails on a single-file mount.
 
-### [CPA-XXX Panel](https://github.com/ferretgeek/CPA-X)
+### 3. Start the container
 
-A lightweight web admin panel for CLIProxyAPI with health checks, resource monitoring, real-time logs, auto-update, request statistics and pricing display. Supports one-click installation and systemd service.
+```sh
+TS_IP="$(tailscale ip -4)"
+docker run -d --name taproot --restart unless-stopped \
+  --user "$(id -u):$(id -g)" \
+  -e TZ=Etc/UTC \
+  -v "$PWD/data:/taproot/config" \
+  -v /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock \
+  -p "$TS_IP:8317:8317" \
+  taproot
+```
 
-### [CLIProxyAPI Tray](https://github.com/kitephp/CLIProxyAPI_Tray)
+For rootless Podman, use the same command with `podman run`, without the `--user` line, and the image name `localhost/taproot`. On an SELinux host, add `:Z` to the data volume. `TZ` sets the local time of the daily backup.
 
-A Windows tray application implemented using PowerShell scripts, without relying on any third-party libraries. The main features include: automatic creation of shortcuts, silent running, password management, channel switching (Main / Plus), and automatic downloading and updating.
+To run taproot as a systemd user service under rootless Podman instead, use the quadlet in [`examples/taproot/taproot.container`](examples/taproot/taproot.container). It runs the container with a read-only root filesystem and no capabilities, publishes only on the host's Tailscale address, and its header lists the install steps.
 
-### [霖君](https://github.com/wangdabaoqq/LinJun)
+The image has no user of its own; the process runs as whatever user the container starts with. Under rootless Podman that is the container's root, which Podman's default user namespace maps to your own user, so taproot reads and writes `data/` as you and has no more rights on the host than you do. Do not pass `--user` there: Podman would map that uid to a subordinate uid that cannot read the files in `data/`, which taproot keeps at mode 0600. Rootful Docker has no such mapping, and container root is the host's root, so the Docker command passes `--user` to run as the owner of `data/`.
 
-霖君 is a cross-platform desktop application for managing AI programming assistants, supporting macOS, Windows, and Linux systems. Unified management of Claude Code, Gemini, OpenAI Codex, and other AI coding tools, with local proxy for multi-account quota tracking and one-click configuration.
+The data directory then holds:
 
-### [CLIProxyAPI Dashboard](https://github.com/itsmylife44/cliproxyapi-dashboard)
+| Path | Contents |
+| --- | --- |
+| `data/config.yaml`, `data/taproot.yaml` | Configuration |
+| `data/auths/` | OAuth credential files |
+| `data/taproot/taproot.db` | Usage, quota, and request-log index (SQLite) |
+| `data/taproot/request-logs/` | Compressed request logs |
+| `data/taproot/backups/` | Backup archives, mode 0600 |
 
-A modern web-based management dashboard for CLIProxyAPI built with Next.js, React, and PostgreSQL. Features real-time log streaming, structured configuration editing, API key management, OAuth provider integration for Claude/Gemini/Codex, usage analytics, container management, and config sync with OpenCode via companion plugin - no manual YAML editing needed.
+### 4. Check the deployment
 
-### [All API Hub](https://github.com/qixing-jk/all-api-hub)
+Run each check, and stop if any result differs.
 
-Browser extension for one-stop management of New API-compatible relay site accounts, featuring balance and usage dashboards, auto check-in, one-click key export to common apps, in-page API availability testing, and channel/model sync and redirection. It integrates with CLIProxyAPI through the Management API for one-click provider import and config sync.
+1. From a device in `admin-nodes`, open `http://<server>:8317/taproot/api/v1/me`. It must show `"via":"tailnet"` and `"admin":true`. If it shows `"via":"loopback"`, something rewrites caller addresses and every caller is an admin.
+2. If you have a device of the same login that is not in `admin-nodes`, the same URL must return 403 there, with the code `not_admin_node`.
+3. On the server host, `curl http://$TS_IP:8317/taproot/api/v1/me` must return 403.
 
-### [Shadow AI](https://github.com/HEUDavid/shadow-ai)
+`<server>` is the host's MagicDNS name or Tailscale address.
 
-Shadow AI is an AI assistant tool designed specifically for restricted environments. It provides a stealthy operation
-mode without windows or traces, and enables cross-device AI Q&A interaction and control via the local area network (
-LAN). Essentially, it is an automated collaboration layer of "screen/audio capture + AI inference + low-friction delivery",
-helping users to immersively use AI assistants across applications on controlled devices or in restricted environments.
+## Add accounts
 
-### [ProxyPal](https://github.com/buddingnewinsights/proxypal)
+Open `http://<server>:8317/` from an admin device, go to **Accounts**, and select **Add account**.
 
-Cross-platform desktop app (macOS, Windows, Linux) wrapping CLIProxyAPI with a native GUI. Connects Claude, ChatGPT, Gemini, GitHub Copilot, and custom OpenAI-compatible endpoints with usage analytics, request monitoring, and auto-configuration for popular coding tools - no API keys needed.
+1. Select a provider under **Sign in with a provider**. The provider's sign-in page opens.
+2. Sign in. The provider then redirects to a `http://localhost:...` address, which does not load on your device.
+3. Copy the full address from the browser's address bar, paste it into **Callback URL**, and select **Submit Callback URL**.
 
-### [CLIProxyAPI Quota Inspector](https://github.com/AllenReder/CLIProxyAPI-Quota-Inspector)
+To move an existing credential instead, select **Upload auth file** and choose its JSON file. Taproot stores credentials in `data/auths/`.
 
-Ready-to-use cross-platform quota inspector for CLIProxyAPI, supporting per-account codex 5h/7d quota windows, plan-based sorting, status coloring, and multi-account summary analytics.
+Only one proxy may use a credential at a time. Claude rotates refresh tokens, so two proxies that refresh the same account log each other out.
 
-### [CLIProxy Pool Watch](https://github.com/murasame612/CLIProxyPoolWidget)
+## Connect clients
 
-Native macOS SwiftUI app for monitoring ChatGPT/Codex account quotas in CLIProxyAPI pools. Displays account availability, Plus-base capacity, 5-hour and weekly quota bars, plan weights, and restore forecasts through the Management API.
+Clients send any placeholder key. Taproot ignores it.
 
-### [Panopticon](https://github.com/eltmon/panopticon-cli)
+Claude Code:
 
-Multi-agent orchestration for AI coding assistants. Runs CLIProxyAPI as a local sidecar so its agents can drive GPT models through a ChatGPT subscription, pointing Claude Code at an Anthropic-compatible endpoint with no OpenAI API key required.
+```sh
+export ANTHROPIC_BASE_URL="http://<server>:8317"
+export ANTHROPIC_AUTH_TOKEN="taproot"
+```
 
-### [Tunnel Agent](https://github.com/Villoh/tunnel-agent)
+Codex, in `~/.codex/config.toml` (see [Codex advanced configuration](https://learn.chatgpt.com/docs/config-file/config-advanced)):
 
-Windows desktop UI that manages CLIProxyAPI and Perplexity WebUI Scraper from a single interface, inspired by Quotio and VibeProxy. Connect OAuth providers (Claude, Gemini, Codex, Kimi, Antigravity), custom API keys, and Perplexity session accounts, then point any coding agent at the local endpoint.
+```toml
+model_provider = "taproot"
 
-### [Quotio Desktop](https://github.com/xiaocoss/quotio-desktop)
+[model_providers.taproot]
+name = "taproot"
+base_url = "http://<server>:8317/v1"
+wire_api = "responses"
+```
 
-Cross-platform (Tauri) port of Quotio for Windows, macOS and Linux. Manages a pool of AI accounts (Codex, Claude Code, GitHub Copilot, Gemini, Antigravity, Kiro, Cursor, Trae, GLM) through CLIProxyAPI, with per-account 5-hour/weekly quota bars, Codex rate-limit reset credits with one-click reset, smart scheduling, usage statistics, and multi-instance Codex — no API keys needed.
+## The dashboard
 
-### [Universal Chat Provider](https://github.com/maxdewald/vscode-universal-chat-provider)
+The dashboard is served at `/` on the proxy port. It has these sections:
 
-VS Code extension that brings your Claude, ChatGPT/Codex, Antigravity, Grok, and Kimi subscriptions into GitHub Copilot Chat as native language models — and can power your Git commit messages, chat titles, and summaries too. Runs CLIProxyAPI in a fully managed background lifecycle (download, verify, supervise) shared across all windows, so it's zero-setup. No API keys needed, just OAuth.
+- **Accounts:** pool charts, the quota ledger, credentials, and sign-in.
+- **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
+- **Request Logs:** search and view stored requests. The application log is a tab here.
+- **Backups:** create, download, and restore backups.
+- **Settings:** the access lists, retention, backup schedule, poller interval, and Discord alerts.
+- **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins.
 
-### [CPA-Tray-Powershell](https://github.com/ztzpro/CPA-Tray-Powershell.git)
+<!-- TODO(screenshot): the Usage page with generic demo data. -->
 
-A PowerShell-based Windows system tray launcher for CLIProxyAPI. It supports running in the background without a console window, opening the management page, keeping the backend running after the management window closes, and reopening the page from the tray. It also supports checking for CLIProxyAPI updates on startup, SHA-256 verification with rollback, one-click CLIProxyAPI restart and update, PID-validated process management, and safe service shutdown.
+## Configuration reference
 
-### [Grok Search MCP](https://github.com/MapleMapleCat/Grok_Search_Mcp)
+Set `access.allow-logins`. Every other key in `taproot.yaml` is optional. An unknown key stops the server at startup. A relative `data-dir` resolves against the directory of `config.yaml`.
 
-An HTTP-only Model Context Protocol server that uses a CLIProxyAPI deployment to provide Grok-powered real-time web search, X/Twitter search, and model discovery to MCP clients. It adds MCP transport, client API-key management, quotas, usage tracking, and a web administration panel.
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `data-dir` | `taproot` | Database, request logs, and backups. |
+| `access.allow-logins` | required | Tailscale logins that reach the proxy. Taproot refuses to start without one. |
+| `access.admin-nodes` | empty | Devices that reach the dashboard and management API: `id:<StableID>` or a MagicDNS name. Empty means no tailnet device. |
+| `access.trusted-cidrs` | empty | Addresses that reach the proxy without a login. |
+| `access.extra-hosts` | empty | More `Host` names the server answers to. |
+| `access.tailscale-socket` | `/var/run/tailscale/tailscaled.sock` | The `tailscaled` LocalAPI socket. |
+| `access.cache-ttl` | `1m` | How long a whois answer is cached. |
+| `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. See [Security](#security). |
+| `ingest.poll-interval` | `15m` | Quota poll interval for idle accounts. `0` disables polling. |
+| `request-logs.max-days` | `14` | Retention by age. A negative value disables the limit. |
+| `request-logs.max-bytes` | `20GiB` | Retention by size of the request-log directory on disk. A negative value disables the limit. |
+| `request-logs.exclude-paths` | empty | Paths never stored, such as `HEAD /api/*`. |
+| `backups.daily-at` | `03:13` | Local time of the daily backup, or `off`. |
+| `backups.keep` | `14` | Backups kept of each kind. |
+| `alerts.discord-webhook` | empty | Discord webhook URL. It is a secret. |
+| `alerts.enabled` | `true` | Turns alerts off without removing the webhook. |
 
-### [AIUsage](https://github.com/sylearn/AIUsage)
+The environment variable `TAPROOT_CONFIG` overrides the location of `taproot.yaml`. `config.example.yaml` documents every key of `config.yaml`. Request logs are stored only while `observability.logs.request-log` is `true` in `config.yaml`.
 
-Native macOS SwiftUI dashboard for AI subscriptions and coding proxies. It manages official CLIProxyAPI releases end to end (download, verify, supervise, update, and roll back), unifies OAuth accounts and live models, and connects one gateway to Codex, Claude Code/Science, OpenCode, or OpenAI/Anthropic/Gemini clients, with optional LAN access.
+## Terms of service
 
-### [Claude Dialects](https://github.com/stefandevo/claude-dialects)
+This section is a warning. It is not legal advice.
 
-Run multiple native-feeling Claude Code commands, each powered by a different model (Codex, GLM, Kimi, Gemini, Grok, MiniMax, DeepSeek, Cursor, Copilot, Claude). Every dialect launches the real Claude Code interface with its own isolated config, history, ports, and an embedded CLIProxyAPI instance linked through the Go SDK — no separate proxy install. macOS only. Learn more at [claude-dialects.cc](https://claude-dialects.cc/).
+Taproot is for personal use of your own subscription accounts, at your own risk. It signs in to those accounts with OAuth, stores the tokens, and sends requests from every client on your tailnet through them. The providers' terms address this directly:
 
-### [WebBrain](https://github.com/webbrain-one/webbrain)
+- Anthropic's [Consumer Terms](https://www.anthropic.com/legal/consumer-terms) say: "You may not share your Account login information, Anthropic API key, or Account credentials with anyone else." They also forbid access "through automated or non-human means" except with an API key or where Anthropic expressly permits it.
+- Anthropic's [Claude Code legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance) says: "Anthropic does not permit third-party developers to offer Claude.ai login into their own applications, or to route requests through Free, Pro, Max, or Ultra plan credentials on behalf of their users." It also says that advertised plan limits "assume ordinary, individual usage".
+- Anthropic's [Usage Policy](https://www.anthropic.com/legal/aup) lists "services that route requests through consumer subscriptions or misrepresent the product or client being used" under unauthorized access.
+- OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use/), effective January 1, 2026, say under "Registration and access": "You may not share your account credentials or make your account available to anyone else and are responsible for all activities that occur under your account." Under "Using our Services", one of the things you may not do is: "Automatically or programmatically extract data or Output". The terms do not mention Codex.
 
-Browser agent that can connect to CLIProxyAPI's local OpenAI-compatible endpoint as a model provider. See WebBrain's independent [setup, security, and account-risk guide](https://webbrain.one/docs/easy-cli-proxy/) for using CLIProxyAPI through EasyCLIProxyAPI.
+CLIProxyAPI, by default, presents clients other than Claude Code as the Claude Code CLI on Claude accounts. `upstream.claude.disable-claude-cloak-mode` in `config.yaml` turns that off.
 
-### [Infinitus](https://github.com/deathemperor/infinitus)
+A provider can suspend or close an account that breaks its terms. Use taproot only with accounts you own, for your own use. Read each provider's current terms before you add an account, and decide for yourself whether your use is allowed.
 
-Native macOS menu bar app that runs a fleet of Claude accounts through CLIProxyAPI's Management API (claude-swap and 9Router too): 5h / 7d / per-model quota gauges, switch / hold / star from the popup, a run-rate forecast of when each window runs out, and an iPhone companion that mirrors it all - no API keys needed.
+## Build from source
 
-### [PiCloud](https://github.com/cookerpapa/pi-cloud)
+Taproot needs Go 1.26 or later, and Bun for the dashboard.
 
-Self-hosted coding-agent platform built on the Pi SDK, with a web UI, concurrent subagents, and CubeSandbox KVM workspaces. Uses CLIProxyAPI as its provider gateway, keeping provider credentials outside the guest workspaces.
+```sh
+bash scripts/taproot/build-web.sh
+go build -o taproot ./cmd/server
+./taproot --config ./config.yaml
+```
 
-### [cc-status-line](https://github.com/kinka/cc-status-line)
+`build-web.sh` builds `web/` into one HTML file and copies it to `internal/taproot/web/dist/index.html`, which the binary embeds. Without that step, the binary serves a placeholder page.
 
-Claude Code status line for CLIProxyAPI: per-account Codex / Grok / Antigravity / Claude quotas (5h / 7d / weekly) and reset countdown for the current instance. Picks the CPA instance from `ANTHROPIC_BASE_URL` and reads quotas through the Management API.
+If you start from `examples/taproot/config.yaml`, change `oauth.auth-dir` to a path on your machine. Outside a container, every process on the machine can connect from loopback, so every process is an admin. Use this for development only.
 
-### [CLIProxy Quota Tray](https://github.com/ZYHUO/CLIProxy-Quota-Tray)
+To check a change, run `go test ./...` and, in `web/`, `bun run verify`.
 
-Cross-platform Electron tray dashboard for CLIProxyAPI. Shows the real OAuth quota windows per account across ChatGPT/Codex, Claude, Gemini/Antigravity, Grok, Kimi and Cursor, estimates usage-queue cost, and tracks OpenAI/Claude service status. Dark terminal-style UI; runs on Windows and Linux.
+## Upstream sync
 
-### [panel4cliproxyapi](https://github.com/yaanlaan/panel4cliproxyapi)
+Taproot's Go module path is `github.com/265866/taproot`, and upstream's is `github.com/router-for-me/CLIProxyAPI/v8`. The sync script rewrites each upstream snapshot to taproot's path before it merges, so import lines do not conflict. Taproot changes only a few upstream files, each listed with its reason in [`internal/taproot/PLAN.md`](internal/taproot/PLAN.md).
 
-A modern, responsive web dashboard and management console for CLIProxyAPI built with React and Tailwind CSS. Features multi-provider OAuth login with LAN redirect assistance, visual zero-YAML configuration, real-time traffic analytics charts, client API key management, core version checking & hot-reloading, and a live SSE streaming playground.
+To merge CLIProxyAPI's `main` branch:
 
-### [sub2api](https://github.com/PlaygrndLabs/sub2api)
+```sh
+git remote add upstream https://github.com/router-for-me/CLIProxyAPI.git
+scripts/taproot/sync-upstream.sh --dry-run
+scripts/taproot/sync-upstream.sh
+```
 
-A Cloudflare-based LLM gateway and proxy server: CLIProxyAPI deployed to Cloudflare Workers + Containers in one click. Logins and config persist in R2, the dashboard sits behind a password, and API calls are refused until a client API key exists.
+The script commits `upstream/main` with the module path rewritten to the branch `taproot/upstream`, merges that branch into the current branch, then runs `gofmt`, `go build`, `go vet`, and the taproot and SDK tests. Files taproot deleted stay deleted. It never pushes. The dashboard does not follow the Management Center's changes.
 
-### [Hermes CLIProxyAPI Provider](https://github.com/duu261/hermes-cliproxyapi-provider)
+## License and credits
 
-Model-provider plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent) that registers one Hermes provider per CLIProxyAPI provider, each on the wire its executor accepts (Anthropic Messages, Responses or Chat Completions), with context windows and reasoning levels read from CLIProxyAPI. Optional read-only Management API pass for exact provider grouping. Listed in the [Hermes plugin catalog](https://hermes-agent.nousresearch.com/docs/plugins/cliproxyapi-provider): `hermes plugins install cliproxyapi-provider`.
+Taproot is released under the [MIT License](LICENSE), the license of CLIProxyAPI. The dashboard in `web/` keeps the Management Center's [MIT License](web/LICENSE). The licenses of the Go modules and npm packages taproot ships are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-### [Ebb](https://github.com/lucasnsaraujo/ebb)
-
-Native macOS menu bar app for CLIProxyAPI pools. It shows how much of the pool's Claude, Codex and other providers' 5-hour and weekly limits is left and when it comes back, and sets each login's routing weight through the Management API so the accounts drain evenly.
-
-### [Nia Live Demo](https://github.com/nia-teams/nia-live-demo)
-
-Real-time full-duplex voice companion with a live, interactive SVG/HTML canvas. It combines two CLIProxyAPI capabilities: the Codex GPT-Live 1.1 media relay (`gpt-live-1-codex`, WebRTC + Sideband) for voice with instant barge-in, and `ultrafast` Responses (`gpt-6.1-sol` / `gpt-6-astra`) for drawing and editing the canvas while you talk.
-
-> [!NOTE]  
-> If you developed a project based on CLIProxyAPI, please open a PR to add it to this list.
-
-## More choices
-
-Those projects are ports of CLIProxyAPI or inspired by it:
-
-### [9Router](https://github.com/decolua/9router)
-
-A Next.js implementation inspired by CLIProxyAPI, easy to install and use, built from scratch with format translation (OpenAI/Claude/Gemini/Ollama), combo system with auto-fallback, multi-account management with exponential backoff, a Next.js web dashboard, and support for CLI tools (Cursor, Claude Code, Cline, RooCode) - no API keys needed.
-
-### [OmniRoute](https://github.com/diegosouzapw/OmniRoute)
-
-Never stop coding. Smart routing to FREE & low-cost AI models with automatic fallback.
-
-OmniRoute is an AI gateway for multi-provider LLMs: an OpenAI-compatible endpoint with smart routing, load balancing, retries, and fallbacks. Add policies, rate limits, caching, and observability for reliable, cost-aware inference.
-
-### [Codex Switch](https://github.com/9ycrooked/CodexSwitch)
-
-This is a tool built with Tauri 2 + Vue 3 for managing multiple OpenAI Codex desktop accounts. Switch between saved ChatGPT/Codex certification profiles, check 5-hour and weekly quota usage in real time, verify token health, view active account details, and import or save auth.json files without manual copying.
-
-### [cliproxy-rs](https://github.com/vayungodara/cliproxy-rs)
-
-A Rust port of CLIProxyAPI that reads the same `config.yaml` and auth files and serves the same routes and v8 Management API, so you can switch between the two in either direction. Ships as a single binary with the management dashboard built in (per-account 5-hour and weekly quota view, account sign-in, client setup guides), and adds an opt-in `soonest-reset` routing strategy that spends the account whose weekly window resets first.
-
-> [!NOTE]  
-> If you have developed a port of CLIProxyAPI or a project inspired by it, please open a PR to add it to this list.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI): Copyright (c) Luis Pater and Router-For.ME.
+- [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center): Copyright (c) Router-For.ME.
+- Most provider icons come from [Lobe Icons](https://github.com/lobehub/lobe-icons). Claude, Codex, OpenAI, and the other provider names and logos are trademarks of their owners.

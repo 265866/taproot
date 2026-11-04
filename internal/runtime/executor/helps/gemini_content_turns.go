@@ -1,8 +1,8 @@
 package helps
 
 import (
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
 	"github.com/MoeForge/moego/ojson"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 )
 
 var emptyGeminiUserTurnJSON = []byte(`{"role":"user","parts":[{"text":""}]}`)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
+	"github.com/265866/taproot/sdk/cliproxy/usage"
 )
 
 func claudeRecord(id string, at time.Time, headers http.Header) usage.Record {

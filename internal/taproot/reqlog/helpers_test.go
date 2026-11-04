@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/store"
+	"github.com/265866/taproot/internal/taproot/store"
 )
 
 // clock is a settable time source shared by the logger and engine.

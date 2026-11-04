@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginstore"
+	sdkpluginstore "github.com/265866/taproot/sdk/pluginstore"
 	log "github.com/sirupsen/logrus"
 )
 

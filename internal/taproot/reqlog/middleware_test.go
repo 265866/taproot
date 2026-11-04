@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/api/middleware"
+	"github.com/265866/taproot/internal/logging"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/api/middleware"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 )
 
 // TestThroughUpstreamMiddleware runs real HTTP requests through upstream's

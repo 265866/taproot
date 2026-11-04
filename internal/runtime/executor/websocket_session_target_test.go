@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	internalhome "github.com/265866/taproot/internal/home"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/cliproxy/executionregistry"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/gorilla/websocket"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	internalhome "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 type rejectSecondBindLifecycle struct {

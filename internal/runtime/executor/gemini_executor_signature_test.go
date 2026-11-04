@@ -9,14 +9,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	internalsignature "github.com/265866/taproot/internal/signature"
+	_ "github.com/265866/taproot/internal/translator"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	internalsignature "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

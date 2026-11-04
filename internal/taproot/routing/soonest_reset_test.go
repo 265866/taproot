@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 )
 
 var testNow = time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)

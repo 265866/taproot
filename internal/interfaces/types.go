@@ -3,7 +3,7 @@
 // transformation operations, maintaining compatibility with the SDK translator package.
 package interfaces
 
-import sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+import sdktranslator "github.com/265866/taproot/sdk/translator"
 
 // Backwards compatible aliases for translator function types.
 type TranslateRequestFunc = sdktranslator.RequestTransform

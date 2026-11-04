@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/kimi"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/browser"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/auth/kimi"
+	"github.com/265866/taproot/internal/browser"
+	"github.com/265866/taproot/internal/config"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 

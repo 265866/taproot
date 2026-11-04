@@ -3,8 +3,8 @@ package pluginhost
 import (
 	"context"
 
-	internalpluginhost "github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	internalpluginhost "github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 // RegisteredQuotaProviderInfo describes quota capabilities exposed to embedders.

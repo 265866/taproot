@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/sdk/config"
 )
 
 func TestServiceCatalogStartupAndConfigReload(t *testing.T) {

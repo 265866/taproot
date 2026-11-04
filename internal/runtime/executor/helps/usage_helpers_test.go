@@ -14,18 +14,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/clienterror"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/thinking"
+	_ "github.com/265866/taproot/internal/thinking/provider/codex"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/codex"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 func TestParseOpenAIUsageChatCompletions(t *testing.T) {

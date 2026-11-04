@@ -6,13 +6,13 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/thinking"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/pluginapi"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 type recordingThinkingApplier struct {

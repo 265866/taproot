@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
+	"github.com/265866/taproot/internal/taproot/ingest"
 )
 
 var t0 = time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)

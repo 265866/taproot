@@ -3,23 +3,43 @@
 .github
 
 # Docker and CI/CD related files
-docker-compose.yml
 .dockerignore
 .gitignore
-.goreleaser.yml
-Dockerfile
 
 # Documentation and license
 docs
 README.md
-README_CN.md
 LICENSE
 
-# Runtime data folders (should be mounted as volumes)
+# Runtime data: configuration, credentials, the database, request logs, and
+# backups are mounted at run time and must never be baked into an image.
+# Patterns without a slash match at the context root only, so examples/ and
+# internal/taproot/ stay in.
+data
+taproot
 auths
 logs
 conv
 config.yaml
+taproot.yaml
+.env
+.env.*
+plugins
+static
+pgstore
+gitstore
+objectstore
+temp
+refs
+**/*.log
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.tar.zst
+
+# Host build output; the image builds its own.
+web/node_modules
+web/dist
 
 # Development/editor
 bin

@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
+	internalcache "github.com/265866/taproot/internal/cache"
+	"github.com/265866/taproot/internal/config"
+	auth "github.com/265866/taproot/sdk/cliproxy/auth"
+	core "github.com/265866/taproot/sdk/cliproxy/executor"
+	translator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
-	internalcache "github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	auth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	core "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	translator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 // The server waits for all explicit creates before rejecting one. This makes

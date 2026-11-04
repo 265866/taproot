@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	homekv "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	internalconfig "github.com/265866/taproot/internal/config"
+	homekv "github.com/265866/taproot/internal/home"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 )
 
 func TestFindAllAntigravityCreditsCandidateAuths_PrefersKnownCreditsThenUnknown(t *testing.T) {

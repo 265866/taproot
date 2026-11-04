@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/auth/claude"
+	"github.com/265866/taproot/internal/auth/codex"
+	"github.com/265866/taproot/internal/auth/xai"
+	"github.com/265866/taproot/internal/config"
+	sdkAuth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/xai"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 func TestSaveTokenRecord_PostPersistHookReceivesCanonicalClaudeOAuth(t *testing.T) {

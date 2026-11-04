@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
+	applypatch "github.com/265866/taproot/internal/client/codex/apply-patch"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 func TestApplyPatchCallStateInterleavedCalls(t *testing.T) {

@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	taprootrouting "github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/routing"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	taprootrouting "github.com/265866/taproot/internal/taproot/routing"
+	"github.com/265866/taproot/internal/watcher/synthesizer"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/config"
 	log "github.com/sirupsen/logrus"
 )
 

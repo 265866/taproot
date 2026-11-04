@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/taproot/ingest"
+	"github.com/265866/taproot/internal/taproot/ingest"
 )
 
 // Severity picks the embed color.

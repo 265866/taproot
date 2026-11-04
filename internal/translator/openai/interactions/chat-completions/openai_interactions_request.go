@@ -3,9 +3,9 @@ package chat_completions
 import (
 	"strings"
 
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 func ConvertOpenAIRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {

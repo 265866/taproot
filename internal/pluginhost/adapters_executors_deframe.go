@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 // This file normalizes plugin executor SSE streams before stream translation.

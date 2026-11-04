@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
+	"github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/sdk/api/handlers"
 )
 
 // pluginCallers tells ingest which plugin made a usage record in-process.

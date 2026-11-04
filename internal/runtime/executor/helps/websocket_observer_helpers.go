@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/MoeForge/moego/ojson"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 // EmitWebSocketResponseEvent delivers an upstream WebSocket response frame to any configured observer.
