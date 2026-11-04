@@ -4,7 +4,13 @@ cli-proxy-api
 
 # Configuration
 /config.yaml
+/taproot.yaml
 .env
+
+# Runtime data: the README's data/ directory and the default taproot/ data
+# directory beside a root config.yaml. examples/taproot/ stays tracked.
+/data/
+/taproot/
 
 # Generated content
 bin/*
