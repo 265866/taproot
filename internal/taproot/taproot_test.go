@@ -516,7 +516,7 @@ func TestCheckServerMode(t *testing.T) {
 		{name: "server"},
 		{name: "--standalone alone is a TUI flag", standalone: true},
 		{name: "TUI client", tui: true},
-		{name: "TUI client with Home config", home: true, tui: true},
+		{name: "TUI client with a Home JWT", home: true, tui: true, wantErr: "Home mode"},
 		{name: "Home server", home: true, wantErr: "Home mode"},
 		{name: "TUI embedded server", tui: true, standalone: true, wantErr: "--tui --standalone"},
 		{name: "TUI embedded server with Home", home: true, tui: true, standalone: true, wantErr: "Home mode"},

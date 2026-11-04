@@ -84,18 +84,17 @@ func DataDir(tp Config, upstreamConfigPath string) string {
 	return dataDir
 }
 
-// CheckServerMode refuses the upstream modes that would start the server
-// without Setup, and so without the access guard: Home mode (-home-jwt or
-// home.enabled) and the TUI's embedded server (--tui --standalone). The plain
-// TUI client starts no server and is allowed.
+// CheckServerMode refuses the upstream modes that would run without Setup, and
+// so without the access guard: Home mode (-home-jwt or HOME_JWT), in every
+// mode, because main.go contacts the Home control plane before anything else,
+// and the TUI's embedded server (--tui --standalone). main.go calls it as soon
+// as the flags and HOME_JWT are read. The plain TUI client starts no server
+// and is allowed.
 func CheckServerMode(homeMode, tuiMode, standalone bool) error {
-	if tuiMode && !standalone {
-		return nil
-	}
 	if homeMode {
-		return errors.New("taproot does not support Home mode (-home-jwt, HOME_JWT, or home.enabled): it would start the server without taproot's access guard")
+		return errors.New("taproot does not support Home mode (-home-jwt or HOME_JWT): it fetches config and plugins from a Home control plane and starts the server without taproot's access guard")
 	}
-	if tuiMode {
+	if tuiMode && standalone {
 		return errors.New("taproot does not support --tui --standalone: its embedded server would start without taproot's access guard; run the server, then connect with --tui")
 	}
 	return nil

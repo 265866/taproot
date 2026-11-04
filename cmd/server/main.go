@@ -277,6 +277,10 @@ func main() {
 			homeJWT = v
 		}
 	}
+	if errMode := taproot.CheckServerMode(strings.TrimSpace(homeJWT) != "", tuiMode, standalone); errMode != nil {
+		log.Error(errMode)
+		os.Exit(1)
+	}
 
 	if value, ok := lookupEnv("PGSTORE_DSN", "pgstore_dsn"); ok {
 		usePostgresStore = true
@@ -748,10 +752,6 @@ func main() {
 			// No config file available, just wait for shutdown
 			cmd.WaitForCloudDeploy()
 			return
-		}
-		if errMode := taproot.CheckServerMode(homeMode, tuiMode, standalone); errMode != nil {
-			log.Error(errMode)
-			os.Exit(1)
 		}
 		if localModel && (!tuiMode || standalone) {
 			log.Info("Local model mode: using embedded catalogs unless an explicit catalog source is configured")
