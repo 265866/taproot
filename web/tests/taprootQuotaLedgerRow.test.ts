@@ -14,6 +14,7 @@ mock.module('@/features/taproot-quota/components/Ledger.module.scss', () => ({
   default: new Proxy({}, { get: (_, key) => String(key) }),
 }));
 const { LedgerRow } = await import('@/features/taproot-quota/components/LedgerRow');
+const { QuotaActions } = await import('@/features/taproot-quota/components/QuotaActions');
 
 const M = 60_000;
 const H = 60 * M;
@@ -40,14 +41,9 @@ const render = (acct: QuotaAccount, columnsFrom: QuotaAccount[] = [acct], showEm
     createElement(LedgerRow, {
       row,
       columns: ledgerColumns(columnsFrom, now),
-      file: undefined,
       now,
       showEmails,
       icon: null,
-      refreshing: false,
-      refreshLocked: false,
-      grantToken: 0,
-      onRefresh: () => {},
     })
   );
 };
@@ -88,7 +84,7 @@ describe('LedgerRow', () => {
     expect(render(blocked, [blocked], true)).toContain('anthropic1@sl.example.org');
   });
 
-  test('a window the account lacks is a dash, and grants are unknown without a file', () => {
+  test('a window the account lacks is a dash', () => {
     const weeklyOnly = account({
       authIndex: 'a2',
       windows: [
@@ -105,15 +101,57 @@ describe('LedgerRow', () => {
     expect(html).toContain('This account does not report this limit');
     expect(html).toContain('—');
     expect(html).toContain('90%');
+    expect(html).toContain('in 2 days');
+  });
+
+  test('places the trailing controls in their own column', () => {
+    const row = buildLedgerRow(blocked, undefined, 0, now);
+    const html = renderToStaticMarkup(
+      createElement(LedgerRow, {
+        row,
+        columns: ledgerColumns([blocked], now),
+        now,
+        showEmails: false,
+        icon: null,
+        trailing: createElement('button', null, 'Manage'),
+      })
+    );
+    expect(html).toContain('class="side"><button>Manage</button></div>');
+  });
+
+  test('providers without recorded quota say so', () => {
+    expect(render(account({ provider: 'gemini' }))).toContain('No quota reported yet');
+    expect(render(account({ provider: 'claude' }))).toContain('Refresh it under Manage');
+  });
+});
+
+const renderActions = (provider: string) =>
+  renderToStaticMarkup(
+    createElement(QuotaActions, {
+      provider,
+      disabled: false,
+      target: { authIndex: 'a1', name: 'an•••1@s•••.run' },
+      file: undefined,
+      now,
+      refreshing: false,
+      refreshLocked: false,
+      grantToken: 0,
+      onRefresh: () => {},
+    })
+  );
+
+describe('QuotaActions', () => {
+  test('grants are unknown without a credential file, and Claude can refresh quota', () => {
+    const html = renderActions('claude');
     expect(html).toContain('Resets remaining:');
     expect(html).toContain('--');
+    expect(html).toContain('Reset grants are not known for this account yet.');
     expect(html).toContain('Refresh quota');
   });
 
   test('providers without grants or refresh say so', () => {
-    const html = render(account({ provider: 'gemini' }));
+    const html = renderActions('gemini');
     expect(html).toContain('This provider has no reset grants.');
     expect(html).not.toContain('Refresh quota');
-    expect(html).toContain('No quota reported yet');
   });
 });

@@ -4,6 +4,7 @@ import { apiClient, authFilesApi } from '@/services/api';
 import type { AuthFileRefreshResult } from '@/services/api/authFiles';
 import { getAuthFileRefreshKey } from '@/features/authFiles/manualRefresh';
 import { notifyAuthFilesChanged } from '@/features/authFiles/authFilesEvents';
+import { providerBreakdown } from '@/features/authFiles/batchSummary';
 import { useNotificationStore } from '@/stores';
 import type { AuthFileItem } from '@/types';
 import { formatFileSize } from '@/utils/format';
@@ -18,14 +19,12 @@ import {
 } from '@/features/authFiles/constants';
 
 type DeleteAllOptions = {
+  /** A provider key, or 'all'. */
   filter: string;
   problemOnly: boolean;
   disabledOnly: boolean;
-  enabledOnly: boolean;
-  onResetFilterToAll: () => void;
-  onResetProblemOnly: () => void;
-  onResetDisabledOnly: () => void;
-  onResetEnabledOnly: () => void;
+  /** Called after a provider-scoped delete, so the caller can leave the emptied scope. */
+  onResetFilterToAll?: () => void;
 };
 
 export type LoadFilesOptions = {
@@ -70,6 +69,7 @@ export type UseAuthFilesDataResult = {
   selectAllVisible: (visibleFiles: AuthFileItem[]) => void;
   invertVisibleSelection: (visibleFiles: AuthFileItem[]) => void;
   deselectAll: () => void;
+  retainSelection: (names: Iterable<string>) => void;
   batchDownload: (names: string[]) => Promise<void>;
   batchSetStatus: (names: string[], enabled: boolean) => Promise<void>;
   batchDelete: (names: string[]) => void;
@@ -160,6 +160,15 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
 
   const deselectAll = useCallback(() => {
     setSelectedFiles(new Set());
+  }, []);
+
+  /** Drops selected names outside `names`, such as rows a filter or a collapsed group hides. */
+  const retainSelection = useCallback((names: Iterable<string>) => {
+    const keep = new Set(names);
+    setSelectedFiles((prev) => {
+      const next = new Set([...prev].filter((name) => keep.has(name)));
+      return next.size === prev.size ? prev : next;
+    });
   }, []);
 
   const applyDeletedFiles = useCallback(
@@ -347,24 +356,16 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
 
   const handleDeleteAll = useCallback(
     (deleteAllOptions: DeleteAllOptions) => {
-      const {
-        filter,
-        problemOnly,
-        disabledOnly,
-        enabledOnly,
-        onResetFilterToAll,
-        onResetProblemOnly,
-        onResetDisabledOnly,
-        onResetEnabledOnly,
-      } = deleteAllOptions;
+      const { filter, problemOnly, disabledOnly, onResetFilterToAll } = deleteAllOptions;
       const isFiltered = filter !== 'all';
       const isProblemOnly = problemOnly === true;
       const isDisabledOnly = disabledOnly === true;
-      const isEnabledOnly = enabledOnly === true;
       const typeLabel = isFiltered ? getTypeLabel(t, filter) : t('auth_files.filter_all');
       let confirmMessage = t('auth_files.delete_all_confirm');
-      if (isDisabledOnly || isEnabledOnly) {
-        confirmMessage = t('auth_files.delete_filtered_result_confirm');
+      if (isDisabledOnly) {
+        confirmMessage = isFiltered
+          ? t('auth_files.delete_disabled_filtered_confirm', { type: typeLabel })
+          : t('auth_files.delete_disabled_confirm');
       } else if (isProblemOnly) {
         confirmMessage = isFiltered
           ? t('auth_files.delete_problem_filtered_confirm', { type: typeLabel })
@@ -381,7 +382,7 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
         onConfirm: async () => {
           setDeletingAll(true);
           try {
-            if (!isFiltered && !isProblemOnly && !isDisabledOnly && !isEnabledOnly) {
+            if (!isFiltered && !isProblemOnly && !isDisabledOnly) {
               await authFilesApi.deleteAll();
               showNotification(t('auth_files.delete_all_success'), 'success');
               invalidateInFlightLoads();
@@ -400,14 +401,15 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
                 }
                 if (isProblemOnly && !isProblemAuthFile(file)) return false;
                 if (isDisabledOnly && file.disabled !== true) return false;
-                if (isEnabledOnly && file.disabled === true) return false;
                 return true;
               });
 
               if (filesToDelete.length === 0) {
                 let emptyMessage = t('auth_files.delete_filtered_none', { type: typeLabel });
-                if (isDisabledOnly || isEnabledOnly) {
-                  emptyMessage = t('auth_files.delete_filtered_result_none');
+                if (isDisabledOnly) {
+                  emptyMessage = isFiltered
+                    ? t('auth_files.delete_disabled_filtered_none', { type: typeLabel })
+                    : t('auth_files.delete_disabled_none');
                 } else if (isProblemOnly) {
                   emptyMessage = isFiltered
                     ? t('auth_files.delete_problem_filtered_none', { type: typeLabel })
@@ -425,9 +427,14 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
               applyDeletedFiles(result.files);
               if (result.deleted > 0) notifyAuthFilesChanged();
 
-              if (failed === 0 && (isDisabledOnly || isEnabledOnly)) {
+              if (failed === 0 && isDisabledOnly) {
                 showNotification(
-                  t('auth_files.delete_filtered_result_success', { count: success }),
+                  isFiltered
+                    ? t('auth_files.delete_disabled_filtered_success', {
+                        count: success,
+                        type: typeLabel,
+                      })
+                    : t('auth_files.delete_disabled_success', { count: success }),
                   'success'
                 );
               } else if (failed === 0 && isProblemOnly) {
@@ -445,9 +452,9 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
                   t('auth_files.delete_filtered_success', { count: success, type: typeLabel }),
                   'success'
                 );
-              } else if (isDisabledOnly || isEnabledOnly) {
+              } else if (isDisabledOnly) {
                 showNotification(
-                  t('auth_files.delete_filtered_result_partial', { success, failed }),
+                  t('auth_files.delete_disabled_partial', { success, failed }),
                   'warning'
                 );
               } else if (isProblemOnly) {
@@ -468,18 +475,7 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
                 );
               }
 
-              if (isFiltered) {
-                onResetFilterToAll();
-              }
-              if (isProblemOnly) {
-                onResetProblemOnly();
-              }
-              if (isDisabledOnly) {
-                onResetDisabledOnly();
-              }
-              if (isEnabledOnly) {
-                onResetEnabledOnly();
-              }
+              if (isFiltered) onResetFilterToAll?.();
             }
           } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : '';
@@ -908,7 +904,10 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
 
       showConfirmation({
         title: t('auth_files.batch_delete_title'),
-        message: t('auth_files.batch_delete_confirm', { count: uniqueNames.length }),
+        message: t('auth_files.batch_delete_confirm', {
+          count: uniqueNames.length,
+          providers: providerBreakdown(files, uniqueNames, (provider) => getTypeLabel(t, provider)),
+        }),
         variant: 'danger',
         confirmText: t('common.confirm'),
         onConfirm: async () => {
@@ -939,7 +938,7 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
         },
       });
     },
-    [applyDeletedFiles, showConfirmation, showNotification, t]
+    [applyDeletedFiles, files, showConfirmation, showNotification, t]
   );
 
   return {
@@ -974,6 +973,7 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
     selectAllVisible,
     invertVisibleSelection,
     deselectAll,
+    retainSelection,
     batchDownload,
     batchSetStatus,
     batchDelete,

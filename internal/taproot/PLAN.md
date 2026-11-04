@@ -7,7 +7,7 @@ Taproot is the owner's fork of CLIProxyAPI. It runs on server and serves every C
 - Taproot is a new service on server with its own data. Nothing is migrated: usage and quota history start with taproot. At cutover, the two Claude auth files are copied in and the old `cliproxyapi` is stopped first, so the two proxies never refresh the same OAuth tokens.
 - Only allowlisted Tailscale logins reach the proxy, the management API, or the dashboard. Nobody types a key or password.
 - The dashboard has no Quick Start, AI Providers, sponsor or affiliate content, Kimi China, Devin, Vertex, SIWC, or config API-key editing.
-- Quota page in the style of the reference screenshot (`internal/taproot/docs/quota-reference.png`): pooled remaining percentage per provider, recorded and projected lines, pool empty, first empty, next reset, and burn rate over 1h, 3h, or 6h.
+- Quota, on the Accounts page, in the style of the reference screenshot (`internal/taproot/docs/quota-reference.png`): pooled remaining percentage per provider, recorded and projected lines, pool empty, first empty, next reset, and burn rate over 1h, 3h, or 6h.
 - Usage section: cost, requests, tokens including cache reads and writes, latency, time to first token, and failures, broken down by account, model, and session.
 - Request logs are compressed, indexed, searchable, and pruned to a budget. Backups run on a schedule, and you can download or restore them from the dashboard.
 - Upstream merges stay cheap. See "Upstream boundary".
@@ -251,13 +251,11 @@ Taproot posts to one Discord channel through a webhook. The webhook URL is the o
 
 - **Kept and trimmed:**
   - Dashboard
-  - Auth Files (no SIWC toggle)
-  - OAuth Login (Claude, Codex, Antigravity, Kimi International, xAI, Muse; no Devin, Vertex, Kimi China, or sponsor cards)
-  - Routing (OAuth credentials only)
+  - Routing (OAuth credentials only; it also holds the provider model rules, OAuth excluded models and model aliases)
   - Config (no API keys, no BestProxy hint)
   - Plugins and Plugin Store
   - System
-- **New:** Quota (replaces the old quota page), Usage, Request Logs (replaces the logs viewer, keeping app logs as a tab), Backups, Settings (access allowlist, retention, schedule).
+- **New:** Accounts (one page for quota, credentials, and sign-in; it replaced the Quota, Auth Files, and OAuth Login pages, so it has no SIWC toggle and signs in with Claude, Codex, Antigravity, Kimi International, xAI, and Muse only, with no Devin, Vertex, Kimi China, or sponsor cards), Usage, Request Logs (replaces the logs viewer, keeping app logs as a tab), Backups, Settings (access allowlist, retention, schedule).
 - **Removed:** Quick Start, AI Providers, every sponsor, the login page, and the non-English locales (English only; the i18n layer stays, and each feature owns `src/i18n/locales/en/<feature>.json`).
 - **Style:** the reference screenshot.
   - Near-black background, quiet borders, and large numerals for the headline figures.

@@ -22,7 +22,7 @@ import { buildPoolView, type FutureUsage } from '../model/poolView';
 import { lastDay, type DateRange } from '../model/range';
 import { LiveQuotaGrid } from './LiveQuota';
 import { PoolChart } from './PoolChart';
-import styles from '../TaprootQuotaPage.module.scss';
+import styles from '../quota.module.scss';
 
 const ACCENTS: Record<string, string> = {
   claude: 'var(--provider-claude)',

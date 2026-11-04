@@ -40,7 +40,7 @@ export interface OAuthFlowDialogProps {
   onStart: () => void;
   onCallbackChange: (value: string) => void;
   onCallbackSubmit: () => void;
-  onViewAuthFiles: () => void;
+  onDone: () => void;
   onClose: () => void;
 }
 
@@ -294,7 +294,7 @@ function FlowStatusBar({ state, text, onStart }: OAuthFlowDialogProps) {
   );
 }
 
-function SuccessView({ text, onStart, onViewAuthFiles }: OAuthFlowDialogProps) {
+function SuccessView({ text, onStart, onDone }: OAuthFlowDialogProps) {
   const { t } = useTranslation();
   return (
     <div className={styles.result} role="status">
@@ -305,8 +305,8 @@ function SuccessView({ text, onStart, onViewAuthFiles }: OAuthFlowDialogProps) {
       <div className={styles.resultTitle}>{text('oauth_status_success')}</div>
       <p className={styles.resultHint}>{t('auth_login.success_saved_hint')}</p>
       <div className={styles.resultActions}>
-        <button type="button" className={styles.secondary} onClick={onViewAuthFiles}>
-          {t('auth_login.view_auth_files')}
+        <button type="button" className={styles.secondary} onClick={onDone}>
+          {t('auth_login.done')}
         </button>
         <button type="button" className={styles.primary} onClick={onStart}>
           {t('auth_login.login_another_account')}

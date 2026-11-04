@@ -6,7 +6,7 @@ import { useQuotaActions } from '../live/hooks/useQuotaActions';
 import type { QuotaFileEntry } from '../live/logic';
 import { QUOTA_ADAPTERS, type QuotaCardState } from '../live/providers';
 import type { QuotaStore } from '../live/providers/types';
-import styles from '../TaprootQuotaPage.module.scss';
+import styles from '../quota.module.scss';
 
 /**
  * Live quota read straight from the provider through the management API: the previous quota

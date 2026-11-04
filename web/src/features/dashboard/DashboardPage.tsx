@@ -2,13 +2,13 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  IconFileText,
+  IconSidebarAccounts,
   IconSidebarConfig,
   IconSidebarLogs,
-  IconSidebarQuota,
   IconSidebarSystem,
 } from '@/components/ui/icons';
 import { useAuthStore } from '@/stores';
+import { ROUTES } from '@/router/routes';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { formatCompactNumber, formatDateValue, formatPercent } from '@/utils/format';
 import { DashboardUsageSummary } from '@/features/taproot-usage/components/DashboardUsageSummary';
@@ -172,22 +172,16 @@ export function DashboardPage() {
 
   const ctaCards = [
     {
-      to: '/auth-files',
-      icon: <IconFileText size={20} />,
-      title: t('nav.auth_files'),
-      description: t('dashboard.cta_auth_files_desc'),
+      to: ROUTES.accounts,
+      icon: <IconSidebarAccounts size={20} />,
+      title: t('nav.accounts'),
+      description: t('dashboard.cta_accounts_desc'),
     },
     {
       to: '/config',
       icon: <IconSidebarConfig size={20} />,
       title: t('nav.config_management'),
       description: t('dashboard.cta_config_desc'),
-    },
-    {
-      to: '/quota',
-      icon: <IconSidebarQuota size={20} />,
-      title: t('nav.quota'),
-      description: t('dashboard.cta_quota_desc'),
     },
     {
       to: '/logs',
@@ -226,7 +220,7 @@ export function DashboardPage() {
             {heroMetaLine}
           </p>
           <div className={styles.heroActions} data-reveal>
-            <Link to="/auth-files" className={styles.primaryAction}>
+            <Link to={ROUTES.accounts} className={styles.primaryAction}>
               {t('dashboard.cta_manage_credentials')}
             </Link>
             <Link to="/logs" className={styles.ghostAction}>
@@ -454,7 +448,7 @@ export function DashboardPage() {
                   ))}
                 </ul>
               </div>
-              <Link to="/auth-files" className={styles.panelLink}>
+              <Link to={ROUTES.accounts} className={styles.panelLink}>
                 {t('dashboard.health_link')}{' '}
                 <span className={styles.linkArrow} aria-hidden="true">
                   →

@@ -1,8 +1,8 @@
 /**
  * Guard for the QuotaClassMap ↔ SCSS contract.
  *
- * `bindQuotaClasses` throws at *module initialization*, and both hosts bind at
- * import time — so a contract key missing from either stylesheet does not
+ * `bindQuotaClasses` throws at *module initialization*, and the host binds at
+ * import time — so a contract key missing from the stylesheet does not
  * degrade one row, it white-screens the whole application. This converts that
  * into a failing test.
  *
@@ -17,7 +17,6 @@ import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/liv
 
 const HOSTS = {
   'QuotaBody.module.scss': 'src/features/taproot-quota/live/components/QuotaBody.module.scss',
-  'AuthFileQuota.module.scss': 'src/features/authFiles/components/AuthFileQuota.module.scss',
 } as const;
 
 const readHost = (path: string) => Bun.file(new URL(`../${path}`, import.meta.url)).text();

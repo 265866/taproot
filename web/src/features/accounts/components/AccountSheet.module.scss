@@ -1,0 +1,175 @@
+@use '../../../styles/mixins' as *;
+
+/* The Manage sheet: hairline-separated sections in the quota page's quiet style. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.masked {
+  letter-spacing: 0.02em;
+}
+
+.muted {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.blocked {
+  margin: 0;
+  font-size: 13px;
+  color: var(--error-color);
+}
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 20px;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+  font-size: 13px;
+
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  dt {
+    color: var(--text-tertiary);
+  }
+
+  dd {
+    margin: 0;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+
+  svg {
+    flex: none;
+    margin-top: 2px;
+    color: var(--error-color);
+  }
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.windows {
+  display: grid;
+  grid-template-columns: repeat(var(--window-count, 1), minmax(0, 1fr));
+  gap: 12px 24px;
+}
+
+.requests {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.requestsHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.counts {
+  display: inline-flex;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+
+  [data-live][data-kind='ok'] {
+    color: var(--viz-success);
+  }
+
+  [data-live][data-kind='fail'] {
+    color: var(--viz-failure);
+  }
+}
+
+.credentialActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  :global(.btn) > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+.body .collapsible {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+
+  > summary {
+    padding: 18px 0;
+    font-size: 14px;
+    font-weight: 600;
+
+    &:hover {
+      background: transparent;
+    }
+  }
+
+  > div {
+    padding: 0 0 20px;
+    border-top: 0;
+  }
+}
+
+@include mobile {
+  .windows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

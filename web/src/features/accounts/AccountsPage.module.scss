@@ -1,0 +1,25 @@
+/* Accounts reuses the quota page's layout (quota.module.scss); these are its additions. */
+
+.page {
+  padding-bottom: var(--auth-files-action-bar-height, 0px);
+}
+
+.headerActions {
+  align-items: center;
+}
+
+.metaProblem {
+  color: var(--error-color);
+}
+
+/* Focus lands on the title when a managed account disappears; it is not a control. */
+.title:focus {
+  outline: none;
+}
+
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}

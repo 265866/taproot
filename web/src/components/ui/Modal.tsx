@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { IconX } from './icons';
 import { FOCUSABLE_SELECTOR, lockScroll, unlockScroll } from './scrollLock';
+import { useTopLayer } from './layerStack';
 
 interface ModalProps {
   open: boolean;
@@ -44,6 +45,7 @@ export function Modal({
   const modalRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const isTop = useTopLayer(open);
 
   const getFocusableElements = useCallback(() => {
     if (!modalRef.current) return [] as HTMLElement[];
@@ -52,21 +54,25 @@ export function Modal({
     );
   }, []);
 
-  const startClose = useCallback(
-    (notifyParent: boolean) => {
-      if (closeTimerRef.current !== null) return;
-      setIsClosing(true);
-      closeTimerRef.current = window.setTimeout(() => {
-        setIsVisible(false);
-        setIsClosing(false);
-        closeTimerRef.current = null;
-        if (notifyParent) {
-          onClose();
-        }
-      }, CLOSE_ANIMATION_DURATION);
-    },
-    [onClose]
-  );
+  // Read through a ref: callers often pass a new onClose each render, and a changed startClose
+  // re-runs the open effect below, which would cancel a close already under way.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const startClose = useCallback((notifyParent: boolean) => {
+    if (closeTimerRef.current !== null) return;
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      setIsVisible(false);
+      setIsClosing(false);
+      closeTimerRef.current = null;
+      if (notifyParent) {
+        onCloseRef.current();
+      }
+    }, CLOSE_ANIMATION_DURATION);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,6 +145,7 @@ export function Modal({
     if (!open) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isTop()) return;
       if (event.key === 'Escape') {
         if (closeDisabled) return;
         event.preventDefault();
@@ -175,7 +182,7 @@ export function Modal({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [closeDisabled, getFocusableElements, handleClose, open]);
+  }, [closeDisabled, getFocusableElements, handleClose, isTop, open]);
 
   if (!open && !isVisible) return null;
 

@@ -10,6 +10,7 @@ import { OAuthAliasMappingRow } from '@/features/authFiles/components/OAuthAlias
 import { SecondaryScreenShell } from '@/components/common/SecondaryScreenShell';
 import { useEdgeSwipeBack } from '@/hooks/useEdgeSwipeBack';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
+import { ROUTES } from '@/router/routes';
 import { useAuthStore, useNotificationStore } from '@/stores';
 import { authFilesApi } from '@/services/api';
 import { buildOAuthProviderOptions, normalizeProviderKey } from '@/features/authFiles/constants';
@@ -23,7 +24,7 @@ import styles from '@/features/authFiles/components/OAuthEditor.module.scss';
 
 type AuthFileModelItem = { id: string; display_name?: string; type?: string; owned_by?: string };
 
-type LocationState = { fromAuthFiles?: boolean } | null;
+type LocationState = { fromRouting?: boolean } | null;
 
 type OAuthModelMappingFormEntry = OAuthModelAliasEntry & { id: string };
 
@@ -147,11 +148,11 @@ export function AuthFilesOAuthModelAliasEditPage() {
 
   const handleBack = useCallback(() => {
     const state = location.state as LocationState;
-    if (state?.fromAuthFiles) {
+    if (state?.fromRouting) {
       navigate(-1);
       return;
     }
-    navigate('/auth-files', { replace: true });
+    navigate(ROUTES.routing, { replace: true });
   }, [location.state, navigate]);
 
   const swipeRef = useEdgeSwipeBack({ onBack: handleBack });

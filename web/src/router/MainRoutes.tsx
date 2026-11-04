@@ -1,34 +1,40 @@
-import { Navigate, useRoutes, type Location } from 'react-router-dom';
+import { Navigate, useLocation, useRoutes, type Location } from 'react-router-dom';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
-import { AuthFilesPage } from '@/features/authFiles/AuthFilesPage';
+import { AccountsPage } from '@/features/accounts/AccountsPage';
 import { AuthFilesOAuthExcludedEditPage } from '@/pages/AuthFilesOAuthExcludedEditPage';
 import { AuthFilesOAuthModelAliasEditPage } from '@/pages/AuthFilesOAuthModelAliasEditPage';
-import { OAuthPage } from '@/features/oauth/OAuthPage';
 import { RoutingPage } from '@/features/routing/RoutingPage';
 import { PluginResourcePage } from '@/features/plugins/PluginResourcePage';
 import { PluginsPage } from '@/features/plugins/PluginsPage';
 import { PluginStorePage } from '@/features/plugins/PluginStorePage';
 import { ConfigPage } from '@/features/config/ConfigPage';
 import { SystemPage } from '@/pages/SystemPage';
-import { TaprootQuotaPage } from '@/features/taproot-quota/TaprootQuotaPage';
 import { TaprootUsagePage } from '@/features/taproot-usage/TaprootUsagePage';
 import { TaprootLogsPage } from '@/features/taproot-logs/TaprootLogsPage';
 import { TaprootBackupsPage } from '@/features/taproot-backups/TaprootBackupsPage';
 import { TaprootSettingsPage } from '@/features/taproot-settings/TaprootSettingsPage';
 import { useAuthStore } from '@/stores';
-import { ROUTES } from './routes';
+import { LEGACY_REDIRECTS, ROUTES, legacyRedirectTarget } from './routes';
+
+/** Sends an old address to its new page. */
+function LegacyRedirect({ to }: { to: string }) {
+  const location = useLocation();
+  return <Navigate to={legacyRedirectTarget(to, location)} replace />;
+}
 
 const createMainRoutes = (supportsPlugin: boolean) => [
   { path: ROUTES.dashboard, element: <DashboardPage /> },
   { path: '/dashboard', element: <Navigate to={ROUTES.dashboard} replace /> },
-  { path: ROUTES.quota, element: <TaprootQuotaPage /> },
+  { path: ROUTES.accounts, element: <AccountsPage /> },
   { path: ROUTES.usage, element: <TaprootUsagePage /> },
   { path: ROUTES.requestLogs, element: <TaprootLogsPage /> },
-  { path: ROUTES.authFiles, element: <AuthFilesPage /> },
-  { path: '/auth-files/oauth-excluded', element: <AuthFilesOAuthExcludedEditPage /> },
-  { path: '/auth-files/oauth-model-alias', element: <AuthFilesOAuthModelAliasEditPage /> },
-  { path: ROUTES.oauth, element: <OAuthPage /> },
   { path: ROUTES.routing, element: <RoutingPage /> },
+  { path: ROUTES.oauthExcluded, element: <AuthFilesOAuthExcludedEditPage /> },
+  { path: ROUTES.oauthModelAlias, element: <AuthFilesOAuthModelAliasEditPage /> },
+  ...Object.entries(LEGACY_REDIRECTS).map(([path, to]) => ({
+    path,
+    element: <LegacyRedirect to={to} />,
+  })),
   { path: ROUTES.config, element: <ConfigPage /> },
   ...(supportsPlugin
     ? [

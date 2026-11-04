@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -10,12 +10,8 @@ import { ShowEmailsToggle } from '../src/components/common/ShowEmailsToggle';
 import { usePrivacyStore } from '../src/stores/usePrivacyStore';
 import type { AuthFileItem } from '../src/types/authFile';
 
-// The auth file card's quota host binds CSS-module class names at import, which bun:test does not
-// compile; any class name will do for markup assertions.
-mock.module('@/features/authFiles/components/AuthFileQuota.module.scss', () => ({
-  default: new Proxy({}, { get: (_, key) => String(key) }),
-}));
-const { AuthFileCard } = await import('../src/features/authFiles/components/AuthFileCard');
+// The Accounts page renders with fixed data; see the helper for what it replaces.
+const { renderAccountsPage } = await import('./helpers/accountsPage');
 
 const CLAUDE: AuthFileItem = {
   name: 'claude-ab12cd34-anthropic1@sl.example.org.json',
@@ -46,31 +42,6 @@ const SECRETS = [
 ];
 
 const leaks = (html: string) => SECRETS.filter((secret) => html.includes(secret));
-
-const renderCard = (file: AuthFileItem) =>
-  renderToStaticMarkup(
-    createElement(AuthFileCard, {
-      file,
-      compact: false,
-      selected: false,
-      resolvedTheme: 'dark',
-      disableControls: false,
-      deleting: null,
-      statusUpdating: {},
-      manualRefreshing: {},
-      cooldownResetting: {},
-      quotaFilterType: null,
-      statusBarCache: new Map(),
-      onShowModels: () => {},
-      onDownload: () => {},
-      onManualRefresh: () => {},
-      onCooldownReset: () => {},
-      onOpenPrefixProxyEditor: () => {},
-      onDelete: () => {},
-      onToggleStatus: () => {},
-      onToggleSelect: () => {},
-    })
-  );
 
 const renderBoard = () => {
   const board = buildRoutingBoard({ routing: { strategy: 'weighted-round-robin' } }, [
@@ -123,8 +94,8 @@ describe('email preference', () => {
     expect(shown).toContain('Hide emails');
   });
 
-  test('Auth Files and Routing put the toggle in their headers', () => {
-    expect(readFileSync('src/features/authFiles/components/VaultHeader.tsx', 'utf8')).toContain(
+  test('Accounts and Routing put the toggle in their headers', () => {
+    expect(readFileSync('src/features/accounts/AccountsPage.tsx', 'utf8')).toContain(
       '<ShowEmailsToggle />'
     );
     expect(readFileSync('src/features/routing/RoutingPage.tsx', 'utf8')).toContain(
@@ -133,32 +104,23 @@ describe('email preference', () => {
   });
 });
 
-describe('Auth Files card', () => {
-  test('masks the account, file name, note, status, and labels by default', () => {
-    const html = renderCard(CLAUDE);
+describe('Accounts page', () => {
+  test('masks every account name, label, and status by default', () => {
+    const html = renderAccountsPage();
     expect(leaks(html)).toEqual([]);
     expect(html).toContain('>an•••1@s•••.run<');
-    expect(html).toContain('claude-ab12cd34-an•••1@s•••.run');
-    expect(html).toContain('Shared with op•••n@e•••.org');
-    expect(html).toContain('refresh failed for an•••1@s•••.run');
-    expect(html).toContain('aria-label="Select credential claude-ab12cd34-an•••1@s•••.run.json"');
+    expect(html).toContain('>se•••n@e•••.com<');
+    expect(html).toContain('title="refresh failed for an•••1@s•••.run"');
+    expect(html).toContain('aria-label="Manage an•••1@s•••.run"');
+    expect(html).toContain('aria-label="Enable se•••n@e•••.com"');
   });
 
   test('shows everything after toggling', () => {
     clickToggle();
-    const html = renderCard(CLAUDE);
+    const html = renderAccountsPage();
     expect(html).toContain('>anthropic1@sl.example.org<');
-    expect(html).toContain('title="claude-ab12cd34-anthropic1@sl.example.org.json"');
-    expect(html).toContain('Shared with ops-person@example.org');
-    expect(html).toContain(
-      'aria-label="Select credential claude-ab12cd34-anthropic1@sl.example.org.json"'
-    );
-  });
-
-  test('keeps a Codex plan suffix readable while masking its email', () => {
-    const html = renderCard(CODEX);
-    expect(leaks(html)).toEqual([]);
-    expect(html).toContain('codex-1a2b3c4d-se•••n@e•••.com-team');
+    expect(html).toContain('title="refresh failed for anthropic1@sl.example.org"');
+    expect(html).toContain('aria-label="Manage second.person@example.com"');
   });
 });
 

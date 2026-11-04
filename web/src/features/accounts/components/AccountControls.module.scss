@@ -1,0 +1,106 @@
+@use '../../../styles/mixins' as *;
+
+/* A ledger row's controls: health and recent requests above, the switch and Manage below. */
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+
+  &[data-health='healthy'] .dot {
+    background: var(--success-color);
+  }
+
+  &[data-health='cooling'] .dot {
+    background: var(--quota-medium-color);
+  }
+
+  &[data-health='blocked'],
+  &[data-health='problem'] {
+    color: var(--text-primary);
+  }
+
+  &[data-health='blocked'] .dot,
+  &[data-health='problem'] .dot {
+    background: var(--error-color);
+  }
+
+  &[data-health='disabled'] .dot {
+    background: var(--text-quaternary);
+  }
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.requests {
+  max-width: 200px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.manage {
+  @include button-reset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  margin-left: auto;
+  padding: 0 2px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+
+  &:hover .chevron {
+    transform: rotate(180deg) translateX(-2px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.chevron {
+  transform: rotate(180deg);
+  color: var(--text-tertiary);
+  transition: transform var(--dur-hover, 120ms) var(--ease-out-strong, ease);
+}
+
+@include mobile {
+  .manage {
+    min-height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

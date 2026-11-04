@@ -8,14 +8,14 @@ import type { AuthFileModelItem } from '@/features/authFiles/constants';
 type ModelsError = 'unsupported' | null;
 
 export type UseAuthFilesModelsResult = {
-  modelsModalOpen: boolean;
+  modelsOpen: boolean;
   modelsLoading: boolean;
   modelsList: AuthFileModelItem[];
   modelsFileName: string;
   modelsFileType: string;
   modelsError: ModelsError;
   showModels: (item: AuthFileItem) => Promise<void>;
-  closeModelsModal: () => void;
+  closeModels: () => void;
   /** 文件集变更后失效缓存；不传 names 则全部清空。 */
   invalidateModels: (names?: string[]) => void;
 };
@@ -24,7 +24,7 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
 
-  const [modelsModalOpen, setModelsModalOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsList, setModelsList] = useState<AuthFileModelItem[]>([]);
   const [modelsFileName, setModelsFileName] = useState('');
@@ -35,9 +35,9 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
   const modelsFileVersionRef = useRef<Map<string, number>>(new Map());
   const activeModelsRequestIdRef = useRef(0);
 
-  const closeModelsModal = useCallback(() => {
+  const closeModels = useCallback(() => {
     activeModelsRequestIdRef.current += 1;
-    setModelsModalOpen(false);
+    setModelsOpen(false);
     setModelsLoading(false);
   }, []);
 
@@ -63,7 +63,7 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
       setModelsFileType(item.type || '');
       setModelsList([]);
       setModelsError(null);
-      setModelsModalOpen(true);
+      setModelsOpen(true);
 
       const cached = modelsCacheRef.current.get(cacheKey);
       if (cached) {
@@ -106,14 +106,14 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
   );
 
   return {
-    modelsModalOpen,
+    modelsOpen,
     modelsLoading,
     modelsList,
     modelsFileName,
     modelsFileType,
     modelsError,
     showModels,
-    closeModelsModal,
+    closeModels,
     invalidateModels,
   };
 }
