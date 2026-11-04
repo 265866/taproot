@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type { UsageGroupBy } from '@/services/api/taproot';
 import {
   NONE_GROUP,
@@ -37,6 +38,7 @@ interface Props {
 
 export function BreakdownTable({ rows, groupBy, labelFor, colorFor, onViewRequests }: Props) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const [sort, setSort] = useState<{ column: BreakdownColumn; direction: SortDirection }>({
     column: 'costUSD',
     direction: 'desc',
@@ -105,7 +107,7 @@ export function BreakdownTable({ rows, groupBy, labelFor, colorFor, onViewReques
               return (
                 <tr key={row.key}>
                   <td>
-                    <span className={styles.groupCell} title={row.key}>
+                    <span className={styles.groupCell} title={mask(row.key)}>
                       {color ? (
                         <i
                           className={styles.swatch}

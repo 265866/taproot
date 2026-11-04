@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { taprootApi, type UsageDevice } from '@/services/api/taproot';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
 import { toIso, type TimeWindow } from '../logic/range';
@@ -26,6 +27,7 @@ interface Props {
 
 export function DevicesView({ window, refreshKey, showEmails, onViewRequests }: Props) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const query = useTaprootQuery(`devices|${window.fromMs}|${window.toMs}|${refreshKey}`, () =>
     taprootApi.usageDevices({ from: toIso(window.fromMs), to: toIso(window.toMs) })
   );
@@ -36,7 +38,7 @@ export function DevicesView({ window, refreshKey, showEmails, onViewRequests }: 
     <>
       {query.error ? (
         <div className={styles.error} role="alert">
-          <span>{t('taproot_usage.load_failed', { message: query.error.message })}</span>
+          <span>{mask(t('taproot_usage.load_failed', { message: query.error.message }))}</span>
           <button type="button" className={styles.ghostButton} onClick={query.reload}>
             {t('taproot_usage.retry')}
           </button>

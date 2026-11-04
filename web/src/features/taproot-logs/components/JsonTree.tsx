@@ -12,6 +12,7 @@ import {
   jsonKind,
   openByDefault,
 } from '../model/jsonTree';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { textWindow } from '../model/body';
 import styles from './JsonTree.module.scss';
 
@@ -37,7 +38,8 @@ const JsonNode = memo(function JsonNode({
   const size = childCount(value);
   const [open, setOpen] = useState(() => openByDefault(depth, size));
   const [shown, setShown] = useState(CHILD_PAGE);
-  const label = name === null ? null : <span className={styles.key}>{name}</span>;
+  const { mask } = useEmailMask();
+  const label = name === null ? null : <span className={styles.key}>{mask(name)}</span>;
 
   if (!isContainer(value)) {
     return (
@@ -107,12 +109,13 @@ const JsonNode = memo(function JsonNode({
 
 function JsonScalar({ value }: { value: unknown }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const [shown, setShown] = useState(STRING_PREVIEW);
   const kind = jsonKind(value);
   if (kind !== 'string') {
     return <span className={styles[kind]}>{String(value)}</span>;
   }
-  const text = value as string;
+  const text = mask(value as string);
   const { visible, remaining } = textWindow(text, shown);
   return (
     <span className={styles.string}>
@@ -133,9 +136,10 @@ function JsonScalar({ value }: { value: unknown }) {
 
 function SummaryText({ value }: { value: unknown }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const summary = containerSummary(value);
   if (summary.kind === 'array')
     return <>{t('taproot_logs.json.items', { count: summary.count })}</>;
   const keys = summary.keys.join(', ') + (summary.more > 0 ? ', …' : '');
-  return <>{summary.hint ? `${summary.hint} · ${keys}` : keys}</>;
+  return <>{mask(summary.hint ? `${summary.hint} · ${keys}` : keys)}</>;
 }

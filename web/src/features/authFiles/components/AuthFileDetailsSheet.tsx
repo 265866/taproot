@@ -7,6 +7,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Input } from '@/components/ui/Input';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useNotificationStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type {
   PrefixProxyEditorField,
   PrefixProxyEditorFieldValue,
@@ -22,7 +23,7 @@ import { AuthFilePolicyFields } from './AuthFilePolicyFields';
 import { credentialPolicyError, readCredentialPolicy } from '../credentialPolicy';
 import styles from './AuthFileDetailsSheet.module.scss';
 
-/** API 边界归一化补写的派生字段——INFO 视图里只展示后端原始形状，避免重复噪音。 */
+/** Fields the API boundary derives on read. The info view shows the backend's own shape only. */
 const DERIVED_INFO_KEYS = [
   'successCount',
   'failureCount',
@@ -31,7 +32,7 @@ const DERIVED_INFO_KEYS = [
   'authIndex',
   'statusMessage',
   'modified',
-  // 'email' 不在此列：后端原始键名与 camelCase 同形，删掉会藏起真实数据。
+  // 'email' is not listed: the backend key is already camelCase, so removing it would hide data.
   'projectId',
 ];
 
@@ -47,11 +48,12 @@ export type AuthFileDetailsSheetProps = {
 };
 
 /**
- * 凭证详情/编辑抽屉：替代旧的居中 Modal，与提供商工作台的 Sheet 模式一致。
- * 脏状态下关闭（Escape/遮罩/×/取消）先走确认对话框。
+ * Credential details and edit sheet, replacing the old centered modal like the provider workbench.
+ * Closing with unsaved changes (Escape, the backdrop, the close button, Cancel) asks first.
  */
 export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const navigate = useNavigate();
   const { disableControls, editor, updatedText, dirty, onClose, onCopyText, onSave, onChange } =
     props;
@@ -113,7 +115,7 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
         return JSON.stringify(record, null, 2);
       }
     } catch {
-      /* 非 JSON 原样展示 */
+      /* Show non-JSON text as it is. */
     }
     return fileInfoText;
   }, [fileInfoText]);
@@ -173,10 +175,15 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
             </div>
           ) : (
             <>
-              {editor.error && <div className={styles.error}>{editor.error}</div>}
+              {editor.error && <div className={styles.error}>{mask(editor.error)}</div>}
               <div className={styles.jsonWrapper}>
                 <label className={styles.label}>{t('auth_files.prefix_proxy_info_label')}</label>
-                <textarea className={styles.textarea} rows={8} readOnly value={displayInfoText} />
+                <textarea
+                  className={styles.textarea}
+                  rows={8}
+                  readOnly
+                  value={mask(displayInfoText)}
+                />
               </div>
               <div className={styles.jsonWrapper}>
                 <label className={styles.label}>
@@ -185,9 +192,14 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
                     : t('auth_files.prefix_proxy_invalid_content_label')}
                 </label>
                 {editor.json ? (
-                  <textarea className={styles.textarea} rows={10} readOnly value={previewText} />
+                  <textarea
+                    className={styles.textarea}
+                    rows={10}
+                    readOnly
+                    value={mask(previewText)}
+                  />
                 ) : (
-                  <pre className={styles.invalidPreview}>{invalidContentPreview}</pre>
+                  <pre className={styles.invalidPreview}>{mask(invalidContentPreview)}</pre>
                 )}
               </div>
               {editor.json && (
@@ -289,7 +301,9 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
                       disabled={disableControls || editor.saving || !editor.json}
                       onChange={(e) => onChange('headersText', e.target.value)}
                     />
-                    {editor.headersError && <div className="error-box">{editor.headersError}</div>}
+                    {editor.headersError && (
+                      <div className="error-box">{mask(editor.headersError)}</div>
+                    )}
                     <div className="hint">{t('auth_files.headers_hint')}</div>
                   </div>
                   <AuthFilePolicyFields

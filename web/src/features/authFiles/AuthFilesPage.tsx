@@ -55,12 +55,13 @@ import {
   type AuthFilesSortMode,
 } from '@/features/authFiles/uiState';
 import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import styles from './AuthFilesPage.module.scss';
 
 const DEFAULT_REGULAR_PAGE_SIZE = 9;
 const DEFAULT_COMPACT_PAGE_SIZE = 12;
 const SKELETON_CARD_COUNT = 6;
-/** 首屏卡片级联入场总预算，与 useRevealGroup 同一 360ms 语汇。 */
+/** Total budget for the first screen's card cascade, the same 360ms as useRevealGroup. */
 const CARD_ENTRANCE_BUDGET_MS = 360;
 
 const resolveStatusFilterMode = (
@@ -79,6 +80,7 @@ const normalizePersistedStatusFilterMode = (value: unknown): AuthFilesStatusFilt
 
 export function AuthFilesPage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -201,7 +203,7 @@ export function AuthFilesPage() {
   const disabledOnly = statusFilterMode === 'disabled';
   const enabledOnly = statusFilterMode === 'enabled';
 
-  /* ---------- uiState 水合与持久化（localStorage key/形状与旧版完全一致） ---------- */
+  /* ---------- uiState hydration and persistence (same localStorage key and shape) ---------- */
 
   useEffect(() => {
     const persistedCompactMode = readPersistedAuthFilesCompactMode();
@@ -338,7 +340,7 @@ export function AuthFilesPage() {
       if (!Number.isFinite(parsed)) return;
 
       const rounded = Math.round(parsed);
-      // 超出 [MIN, MAX] 时不提交（clamp 后不等于原值即越界）
+      // Values outside [MIN, MAX] are not committed (clamping would change them).
       if (clampCardPageSize(rounded) !== rounded) return;
 
       setCurrentModePageSize(rounded);
@@ -361,7 +363,7 @@ export function AuthFilesPage() {
     setPage(1);
   }, []);
 
-  /* ---------- 数据加载：首载前台（骨架屏），此后一律后台（不清空网格） ---------- */
+  /* ---------- Loading: the first load shows skeletons, later loads keep the grid ---------- */
 
   const initialLoadDoneRef = useRef(false);
 
@@ -386,7 +388,7 @@ export function AuthFilesPage() {
     isCurrentLayer ? 240_000 : null
   );
 
-  /* ---------- 过滤 / 排序 / 分页 memos ---------- */
+  /* ---------- Filter, sort, and pagination memos ---------- */
 
   const existingTypes = useMemo(() => {
     const types = new Set<string>(['all']);
@@ -480,15 +482,15 @@ export function AuthFilesPage() {
     batchStatusUpdating ||
     selectedHasStatusUpdating;
 
-  /* ---------- 头部遥测计数 ---------- */
+  /* ---------- Header telemetry counts ---------- */
 
   const activeCount = useMemo(() => files.filter((file) => file.disabled !== true).length, [files]);
   const problemCount = useMemo(() => files.filter(isProblemAuthFile).length, [files]);
 
-  /* ---------- 首屏卡片一次性级联入场 ----------
-   * 首批数据渲染后立即翻转 cardsAnimated；已挂载的卡片在挂载时捕获过
-   * 自己的延迟（AuthFileCard 内 useState 初始化），不受后续 null 影响，
-   * 而过滤/翻页/轮询新挂载的卡片拿到 null——不重播。 */
+  /* ---------- One-time cascade for the first screen of cards ----------
+   * cardsAnimated flips right after the first data renders. Mounted cards captured their own delay
+   * at mount (the useState initializer in AuthFileCard), so the later null does not affect them,
+   * and cards mounted later by filtering, paging, or polling get null and do not replay. */
 
   const [cardsAnimated, setCardsAnimated] = useState(false);
   const enableCardEntrance = !cardsAnimated && isCurrentLayer && !loading && pageItems.length > 0;
@@ -503,7 +505,7 @@ export function AuthFilesPage() {
     return Math.round((index / (pageItems.length - 1)) * CARD_ENTRANCE_BUDGET_MS);
   };
 
-  /* ---------- 杂项 ---------- */
+  /* ---------- Miscellaneous ---------- */
 
   const copyTextWithNotification = useCallback(
     async (text: string) => {
@@ -660,7 +662,7 @@ export function AuthFilesPage() {
 
         {error && (
           <div className={styles.errorBanner} role="alert">
-            {error}
+            {mask(error)}
           </div>
         )}
 

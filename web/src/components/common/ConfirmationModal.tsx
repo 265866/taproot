@@ -2,9 +2,11 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { useNotificationStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 
 export function ConfirmationModal() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const confirmation = useNotificationStore((state) => state.confirmation);
   const hideConfirmation = useNotificationStore((state) => state.hideConfirmation);
   const setConfirmationLoading = useNotificationStore((state) => state.setConfirmationLoading);
@@ -52,7 +54,7 @@ export function ConfirmationModal() {
   return (
     <Modal open={isOpen} onClose={handleCancel} title={title} closeDisabled={isLoading}>
       {typeof message === 'string' ? (
-        <p style={{ margin: '1rem 0' }}>{message}</p>
+        <p style={{ margin: '1rem 0' }}>{mask(message)}</p>
       ) : (
         <div style={{ margin: '1rem 0' }}>{message}</div>
       )}

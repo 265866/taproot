@@ -2,7 +2,6 @@
   "taproot_usage": {
     "title": "Usage",
     "subtitle": "Cost, requests, tokens, and latency across the pool",
-    "show_emails": "Show emails",
     "load_failed": "Could not load usage: {{message}}",
     "retry": "Retry",
     "none_group": "(none)",

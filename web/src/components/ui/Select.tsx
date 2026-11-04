@@ -10,6 +10,7 @@ import {
   type AriaAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { IconChevronDown } from './icons';
 import styles from './Select.module.scss';
 import { resolveDropdownStyle } from './selectPosition';
@@ -25,7 +26,7 @@ interface SelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
-  /** 作用于挂到 body 的下拉层。 */
+  /** Applies to the dropdown layer portaled to body. */
   dropdownClassName?: string;
   dropdownMinWidth?: number;
   disabled?: boolean;
@@ -55,6 +56,7 @@ export function Select({
   size = 'md',
   id,
 }: SelectProps) {
+  const { mask } = useEmailMask();
   const generatedId = useId();
   const selectId = id ?? generatedId;
   const listboxId = `${selectId}-listbox`;
@@ -154,7 +156,7 @@ export function Select({
           ? 0
           : -1;
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
-  const displayText = selected?.label ?? placeholder ?? '';
+  const displayText = mask(selected?.label ?? placeholder ?? '');
   const isPlaceholder = !selected && placeholder;
 
   const commitSelection = useCallback(
@@ -271,7 +273,7 @@ export function Select({
               onKeyDown={handleKeyDown}
               onClick={() => commitSelection(index)}
             >
-              {opt.label}
+              {mask(opt.label)}
             </button>
           );
         })}

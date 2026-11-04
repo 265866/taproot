@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { IconX } from './icons';
 import { FOCUSABLE_SELECTOR, lockScroll, unlockScroll } from './scrollLock';
 
@@ -35,6 +36,7 @@ export function Modal({
   children,
 }: PropsWithChildren<ModalProps>) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const titleId = useId();
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -203,7 +205,7 @@ export function Modal({
         </button>
         <div className="modal-header">
           <div className="modal-title" id={title ? titleId : undefined}>
-            {title}
+            {typeof title === 'string' ? mask(title) : title}
           </div>
         </div>
         <div className="modal-body">{children}</div>

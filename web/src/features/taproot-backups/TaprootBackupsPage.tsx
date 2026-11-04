@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { IconDownload, IconPlus } from '@/components/ui/icons';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { formatBytes } from '@/features/taproot-logs/model/format';
 import { ROUTES } from '@/router/routes';
@@ -30,6 +31,7 @@ const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeS
 
 export function TaprootBackupsPage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const [backups, setBackups] = useState<Backup[] | null>(null);
   const [error, setError] = useState('');
@@ -151,7 +153,7 @@ export function TaprootBackupsPage() {
       )}
       {error && (
         <div className="error-box" role="alert">
-          {t('taproot_backups.load_failed', { message: error })}
+          {mask(t('taproot_backups.load_failed', { message: error }))}
         </div>
       )}
 
@@ -255,6 +257,7 @@ function RestoreDialog({
   onFailed: () => void;
 }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const inputId = useId();
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
@@ -333,7 +336,7 @@ function RestoreDialog({
         />
         {error && (
           <div className={`error-box ${styles.dialogError}`} role="alert">
-            {t('taproot_backups.restore_failed', { message: error })}
+            {mask(t('taproot_backups.restore_failed', { message: error }))}
           </div>
         )}
       </form>
@@ -351,6 +354,7 @@ function RestoreBanner({
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const restartText =
     result.restart === 'manual'
       ? t('taproot_backups.restart_manual')
@@ -363,7 +367,7 @@ function RestoreBanner({
     <div className={styles.banner} role="status">
       <div>
         <strong>{t('taproot_backups.restored')}</strong>
-        <p>{result.message}</p>
+        <p>{mask(result.message)}</p>
         <p>
           {t('taproot_backups.pre_restore_saved')} <code>{result.preRestoreBackupId}</code>
         </p>

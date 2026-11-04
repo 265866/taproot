@@ -3,8 +3,6 @@
     "title": "Quota",
     "meta_one": "{{count}} credential · {{reporting}} reporting",
     "meta_other": "{{count}} credentials · {{reporting}} reporting",
-    "show_emails": "Show emails",
-    "hide_emails": "Hide emails",
     "load_failed": "Could not load quota: {{message}}",
     "empty": "No accounts yet. Add a Claude or Codex credential under OAuth Login, and its quota appears here after its first request.",
     "controls": {

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { IconCopy } from '@/components/ui/icons';
 import { useNotificationStore } from '@/stores';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { copyToClipboard } from '@/utils/clipboard';
 import {
   COLLAPSE_BYTES,
@@ -27,18 +28,19 @@ type Mode = 'formatted' | 'raw';
  * A request or response body. Large bodies start collapsed, JSON is parsed only after the body is
  * opened (after a paint, so the click responds first), and raw text renders in chunks.
  */
-export function BodyViewer({ text, size }: { text: string; size?: number }) {
+export function BodyViewer({ text: raw, size }: { text: string; size?: number }) {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
-  const kind = useMemo(() => sniffBody(text), [text]);
-  const bytes = size ?? text.length;
-  const [open, setOpen] = useState(text.length <= COLLAPSE_BYTES);
+  // Views mask what they draw: raw text as text, JSON after parsing. Copy keeps the real body.
+  const kind = useMemo(() => sniffBody(raw), [raw]);
+  const bytes = size ?? raw.length;
+  const [open, setOpen] = useState(raw.length <= COLLAPSE_BYTES);
   const [mode, setMode] = useState<Mode>(kind === 'json' || kind === 'sse' ? 'formatted' : 'raw');
 
   if (kind === 'empty') return <div className={styles.empty}>{t('taproot_logs.body.empty')}</div>;
 
   const copy = async () => {
-    const ok = await copyToClipboard(text);
+    const ok = await copyToClipboard(raw);
     showNotification(
       t(ok ? 'taproot_logs.body.copied' : 'taproot_logs.body.copy_failed'),
       ok ? 'success' : 'error'
@@ -85,18 +87,20 @@ export function BodyViewer({ text, size }: { text: string; size?: number }) {
         </Button>
       </div>
       {mode === 'raw' ? (
-        <RawText text={text} />
+        <RawText text={raw} />
       ) : kind === 'json' ? (
-        <FormattedJson text={text} />
+        <FormattedJson text={raw} />
       ) : (
-        <EventStream text={text} />
+        <EventStream text={raw} />
       )}
     </div>
   );
 }
 
-function RawText({ text }: { text: string }) {
+function RawText({ text: raw }: { text: string }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const text = useMemo(() => mask(raw), [mask, raw]);
   const [shown, setShown] = useState(TEXT_CHUNK);
   const { visible, remaining } = textWindow(text, shown);
   return (
@@ -163,11 +167,12 @@ function EventStream({ text }: { text: string }) {
   const { t } = useTranslation();
   const [shown, setShown] = useState(SSE_PAGE);
   const { events, total } = useMemo(() => parseSse(text, shown), [text, shown]);
+  const { mask } = useEmailMask();
   return (
     <ol className={styles.events}>
       {events.map((event, index) => (
         <li key={index} className={styles.event}>
-          <span className={styles.eventName}>{event.event}</span>
+          <span className={styles.eventName}>{mask(event.event)}</span>
           <EventData data={event.data} />
         </li>
       ))}
@@ -190,7 +195,8 @@ function EventData({ data }: { data: string }) {
     () => (formatted && sniffBody(data) === 'json' ? parseJsonBody(data) : null),
     [data, formatted]
   );
-  const { visible, remaining } = textWindow(data, 600);
+  const { mask } = useEmailMask();
+  const { visible, remaining } = textWindow(mask(data), 600);
   return (
     <div className={styles.eventBody}>
       {parsed?.ok ? (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -461,6 +462,7 @@ function PluginInstallOptionsModal({
 
 export function PluginStorePage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const navigate = useNavigate();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
@@ -1003,7 +1005,7 @@ export function PluginStorePage() {
       {/* ── Alerts ── */}
       {error ? (
         <div className={styles.errorBox}>
-          <span>{error.message}</span>
+          <span>{mask(error.message)}</span>
           {error.kind !== 'unsupported' ? (
             <Button variant="secondary" size="sm" onClick={loadStore} disabled={loading}>
               {t('plugin_store.retry')}
@@ -1022,7 +1024,7 @@ export function PluginStorePage() {
               return (
                 <li key={`${sourceError.sourceId}-${sourceError.sourceUrl}-${index}`}>
                   <span>{sourceLabel}</span>
-                  {sourceError.message ? <small>{sourceError.message}</small> : null}
+                  {sourceError.message ? <small>{mask(sourceError.message)}</small> : null}
                 </li>
               );
             })}

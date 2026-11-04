@@ -1,4 +1,5 @@
 import type { RequestLogFilter } from '@/services/api/taproot';
+import { decodeUrlValue, encodeUrlValue } from '@/utils/urlValue';
 
 /** Request log filters as they live in the hash URL, so links can preselect them. */
 export const RANGE_PRESETS = ['1h', '24h', '7d', '30d', 'all'] as const;
@@ -44,6 +45,7 @@ export function parseQuery(params: URLSearchParams): RequestLogQuery {
   const range = params.get('range');
   if (isRange(range)) query.range = range;
   for (const key of TEXT_KEYS) query[key] = params.get(key)?.trim() ?? '';
+  query.sessionId = decodeUrlValue(query.sessionId);
   // A hand-edited link with a bad status would otherwise make every page a 400.
   if (query.status && !isStatus(query.status)) query.status = '';
   query.status = query.status.toLowerCase();
@@ -57,7 +59,7 @@ export function writeQuery(params: URLSearchParams, query: RequestLogQuery): URL
   else next.set('range', query.range);
   for (const key of TEXT_KEYS) {
     const value = query[key].trim();
-    if (value) next.set(key, value);
+    if (value) next.set(key, key === 'sessionId' ? encodeUrlValue(value) : value);
     else next.delete(key);
   }
   return next;

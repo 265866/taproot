@@ -10,6 +10,8 @@ export const LEGACY_STORAGE_KEYS = [
   'managementKey',
   'apiBase',
   'apiUrl',
+  // The Usage page once persisted its email toggle; the preference is now session-only.
+  'taproot.usage.showEmails',
 ] as const;
 
 const LEGACY_STORAGE_PREFIXES = ['api-key-names:v1:'] as const;

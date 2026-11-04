@@ -8,6 +8,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -39,6 +41,7 @@ import {
   resolveRoute,
   stepMember,
 } from './logic';
+import { memberDomId } from './format';
 import { ChangeReviewDialog } from './components/ChangeReviewDialog';
 import { PolicyPanel } from './components/PolicyPanel';
 import { RoutingSaveBar } from './components/RoutingSaveBar';
@@ -59,6 +62,7 @@ interface ModelProgress {
 
 export function RoutingPage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const showNotification = useNotificationStore((state) => state.showNotification);
@@ -228,7 +232,7 @@ export function RoutingPage() {
       // Keep keyboard focus on the moved card after it re-renders in its new tier.
       requestAnimationFrame(() => {
         const card = document.querySelector<HTMLElement>(
-          `[data-member-key="${CSS.escape(key)}"] button`
+          `[data-member-key="${memberDomId(key)}"] button`
         );
         card?.focus();
       });
@@ -325,7 +329,7 @@ export function RoutingPage() {
     if (error !== null && !board) {
       return (
         <EmptyState
-          title={t('routing.load_failed', { message: error || t('common.unknown_error') })}
+          title={mask(t('routing.load_failed', { message: error || t('common.unknown_error') }))}
           action={
             <Button variant="secondary" onClick={() => void load()}>
               {t('routing.retry')}
@@ -369,6 +373,9 @@ export function RoutingPage() {
         <h1 className={styles.title} data-reveal>
           {t('routing.title')}
         </h1>
+        <div data-reveal>
+          <ShowEmailsToggle />
+        </div>
       </header>
 
       {renderBody()}

@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { Modal } from '@/components/ui/Modal';
 import { IconExternalLink, IconLoader2 } from '@/components/ui/icons';
 import type { ProviderFlowState } from '../hooks/useOAuthFlows';
@@ -69,6 +70,7 @@ function ProviderHint({ text }: Pick<OAuthFlowDialogProps, 'text'>) {
 
 function FlowBody(props: OAuthFlowDialogProps & { view: Exclude<FlowView, 'success'> }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const { view, state, text, onStart } = props;
 
   if (view !== 'flow') {
@@ -77,7 +79,7 @@ function FlowBody(props: OAuthFlowDialogProps & { view: Exclude<FlowView, 'succe
         <ProviderHint text={text} />
         {view === 'failed' && (
           <div className={styles.alert} role="alert">
-            {text('oauth_status_error')} {state.error || ''}
+            {text('oauth_status_error')} {mask(state.error || '')}
           </div>
         )}
         <div>
@@ -188,6 +190,7 @@ function CallbackStep({
   const inputId = useId();
   const hintId = useId();
   const feedbackId = useId();
+  const { mask } = useEmailMask();
   const isXai = providerId === 'xai';
   const disabled = !state.url;
   const hintKey = isXai ? 'auth_login.xai_callback_hint' : 'auth_login.oauth_callback_hint';
@@ -200,7 +203,7 @@ function CallbackStep({
     : state.callbackStatus === 'error'
       ? {
           tone: 'error' as const,
-          message: `${t('auth_login.oauth_callback_status_error')} ${state.callbackError || ''}`,
+          message: `${t('auth_login.oauth_callback_status_error')} ${mask(state.callbackError || '')}`,
         }
       : state.callbackStatus === 'success' && state.status === 'waiting'
         ? { tone: 'success' as const, message: t('auth_login.oauth_callback_status_success') }
@@ -260,6 +263,7 @@ function CallbackStep({
 
 function FlowStatusBar({ state, text, onStart }: OAuthFlowDialogProps) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const failed = state.status === 'error';
   const generating = !failed && !state.url;
 
@@ -275,7 +279,7 @@ function FlowStatusBar({ state, text, onStart }: OAuthFlowDialogProps) {
           {generating
             ? t('auth_login.generating_link')
             : failed
-              ? `${text('oauth_status_error')} ${state.error || ''}`
+              ? `${text('oauth_status_error')} ${mask(state.error || '')}`
               : text('oauth_status_waiting')}
         </span>
       </p>

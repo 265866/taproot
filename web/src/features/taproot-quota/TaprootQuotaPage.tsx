@@ -1,13 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { IconChevronLeft, IconEye, IconEyeOff, IconRefreshCw } from '@/components/ui/icons';
+import { IconChevronLeft, IconRefreshCw } from '@/components/ui/icons';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { ProviderTabs } from '@/features/authFiles/components/ProviderTabs';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNow } from '@/hooks/useNow';
-import { useThemeStore } from '@/stores';
+import { useShowEmails, useThemeStore } from '@/stores';
 import { Ledger } from './components/Ledger';
 import { ProviderCard } from './components/ProviderCard';
 import { Segmented } from './components/Segmented';
@@ -28,6 +30,7 @@ import styles from './TaprootQuotaPage.module.scss';
 
 export function TaprootQuotaPage() {
   const { t, i18n } = useTranslation();
+  const { mask } = useEmailMask();
   const locale = i18n.resolvedLanguage;
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const clock = useNow();
@@ -36,7 +39,7 @@ export function TaprootQuotaPage() {
   const [view, setView] = useState<ChartView>('remaining');
   const [burnHours, setBurnHours] = useState<BurnWindowHours>(3);
   const [future, setFuture] = useState<FutureUsage>('same');
-  const [showEmails, setShowEmails] = useState(false);
+  const showEmails = useShowEmails();
   const { data, loading, error, refresh } = useQuotaData(range);
   const quotaRefresh = useQuotaRefresh(refresh);
 
@@ -90,15 +93,7 @@ export function TaprootQuotaPage() {
           )}
         </div>
         <div className={styles.headerActions}>
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-pressed={showEmails}
-            onClick={() => setShowEmails((v) => !v)}
-          >
-            {showEmails ? <IconEyeOff size={15} /> : <IconEye size={15} />}
-            {t(showEmails ? 'taproot_quota.hide_emails' : 'taproot_quota.show_emails')}
-          </Button>
+          <ShowEmailsToggle />
           <Button size="sm" onClick={refreshAll} loading={refreshBusy}>
             {!refreshBusy && <IconRefreshCw size={15} />}
             {t('taproot_quota.ledger.refresh_all')}
@@ -189,7 +184,7 @@ export function TaprootQuotaPage() {
 
       {error && (
         <div className={styles.error} role="alert">
-          {t('taproot_quota.load_failed', { message: error })}
+          {mask(t('taproot_quota.load_failed', { message: error }))}
         </div>
       )}
 

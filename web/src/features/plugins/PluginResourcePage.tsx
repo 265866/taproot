@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { pluginsApi } from '@/services/api';
@@ -31,6 +32,7 @@ const parseMenuIndex = (value = '') => {
 
 export function PluginResourcePage() {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const params = useParams<{ pluginId: string; menuIndex: string }>();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
@@ -95,7 +97,7 @@ export function PluginResourcePage() {
         </div>
       ) : error ? (
         <div className={styles.stateShell}>
-          <EmptyState title={t('plugin_resource.unavailable')} description={error} />
+          <EmptyState title={t('plugin_resource.unavailable')} description={mask(error)} />
         </div>
       ) : !resource ? (
         <div className={styles.stateShell}>

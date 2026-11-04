@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { IconRefreshCw, IconUpload } from '@/components/ui/icons';
 import { useRevealGroup } from '@/hooks/motion';
@@ -20,8 +21,8 @@ export type VaultHeaderProps = {
 };
 
 /**
- * 凭证库头部：eyebrow（▍游标前缀）+ 标题 + mono 遥测 meta 行 + 动作区。
- * meta 行同时承载 VaultPulse 的文字等价信息（谱条本身 aria-hidden）。
+ * Credential vault header: title, a mono telemetry meta line, and the actions. The meta line is
+ * also VaultPulse's text equivalent, since the bars themselves are aria-hidden.
  */
 export function VaultHeader(props: VaultHeaderProps) {
   const {
@@ -70,6 +71,7 @@ export function VaultHeader(props: VaultHeaderProps) {
         </p>
       </div>
       <div className={styles.actions} data-reveal>
+        <ShowEmailsToggle />
         {onRefreshCredentials && (
           <button
             type="button"

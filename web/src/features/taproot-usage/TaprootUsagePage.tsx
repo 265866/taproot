@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconEye, IconEyeOff } from '@/components/ui/icons';
+import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useShowEmails } from '@/stores';
 import { taprootApi, type UsageGroupBy } from '@/services/api/taproot';
 import { useTaprootQuery } from './hooks/useTaprootQuery';
 import { GROUP_BYS, USAGE_TABS, useUsageParams, type UsageTab } from './hooks/useUsageParams';
@@ -30,8 +31,6 @@ import { deviceFilterKey } from './logic/devices';
 import { PricingEditor } from './components/PricingEditor';
 import styles from './TaprootUsage.module.scss';
 
-const SHOW_EMAILS_KEY = 'taproot.usage.showEmails';
-
 function resolveWindow(
   range: RangePreset,
   from: string,
@@ -49,7 +48,8 @@ export function TaprootUsagePage() {
   const [params, setParams] = useUsageParams();
   const [anchorMs, setAnchorMs] = useState(() => Date.now());
   const [refreshKey, setRefreshKey] = useState(0);
-  const [showEmails, setShowEmails] = useLocalStorage(SHOW_EMAILS_KEY, false);
+  const showEmails = useShowEmails();
+  const { mask: maskEmails } = useEmailMask();
   const [customDraft, setCustomDraft] = useState(() => ({
     from: params.from || toLocalDateInput(Date.now() - 6 * 86_400_000),
     to: params.to || toLocalDateInput(Date.now()),
@@ -138,10 +138,10 @@ export function TaprootUsagePage() {
       if (key === NONE_GROUP) return t('taproot_usage.none_group');
       if (shownGroup === 'account') return accountLabel(key);
       if (shownGroup === 'provider') return providerName(key);
-      if (shownGroup === 'session') return key.slice(0, 8);
+      if (shownGroup === 'session') return maskEmails(key).slice(0, 8);
       return key;
     },
-    [shownGroup, accountLabel, deviceLabel, t]
+    [shownGroup, accountLabel, deviceLabel, maskEmails, t]
   );
 
   const viewRequests = useMemo(() => {
@@ -307,15 +307,7 @@ export function TaprootUsagePage() {
               : `taproot_usage.range.bucket_${bucket}`
           )}
         </span>
-        <button
-          type="button"
-          className={styles.ghostButton}
-          aria-pressed={showEmails}
-          onClick={() => setShowEmails(!showEmails)}
-        >
-          {showEmails ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-          {t('taproot_usage.show_emails')}
-        </button>
+        <ShowEmailsToggle />
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label={t('taproot_usage.tabs.label')}>
@@ -351,7 +343,9 @@ export function TaprootUsagePage() {
           <>
             {overview.error ? (
               <div className={styles.error} role="alert">
-                <span>{t('taproot_usage.load_failed', { message: overview.error.message })}</span>
+                <span>
+                  {maskEmails(t('taproot_usage.load_failed', { message: overview.error.message }))}
+                </span>
                 <button type="button" className={styles.ghostButton} onClick={overview.reload}>
                   {t('taproot_usage.retry')}
                 </button>

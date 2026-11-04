@@ -33,3 +33,6 @@ export const resolveStatusGroup = (statusCode?: number): StatusGroup | undefined
   if (statusCode >= 500 && statusCode < 600) return '5xx';
   return undefined;
 };
+
+/** A request path without its query, which can name a credential. */
+export const logPathRoute = (path: string): string => path.split('?')[0];

@@ -9,6 +9,7 @@ import {
 import type { AuthFileItem, ClaudeQuotaState } from '@/types';
 import { getStatusFromError, resolveQuotaErrorMessage } from '@/utils/quota';
 import { getQuotaCacheKey } from '@/utils/quota/identity';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { isRuntimeOnlyAuthFile, type QuotaProviderType } from '@/features/authFiles/constants';
 import { Button } from '@/components/ui/Button';
 import { IconRefreshCw } from '@/components/ui/icons';
@@ -37,6 +38,7 @@ export type AuthFileQuotaSectionProps = {
 export function AuthFileQuotaSection(props: AuthFileQuotaSectionProps) {
   const { file, quotaType, disableControls } = props;
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const [resettingQuota, setResettingQuota] = useState(false);
@@ -204,9 +206,7 @@ export function AuthFileQuotaSection(props: AuthFileQuotaSectionProps) {
         </button>
       ) : quotaStatus === 'error' ? (
         <div className={styles.quotaError}>
-          {t(`${adapter.i18nPrefix}.load_failed`, {
-            message: quotaErrorMessage,
-          })}
+          {mask(t(`${adapter.i18nPrefix}.load_failed`, { message: quotaErrorMessage }))}
         </div>
       ) : quota && !retainedClaudeUsage ? (
         <adapter.Body quota={quota} classes={compactQuotaClasses} />

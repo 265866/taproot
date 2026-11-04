@@ -90,6 +90,8 @@ For code changes, add or update regression tests, run focused tests while iterat
 
 Never commit management keys, provider credentials, auth files, request logs, backups, or other secrets; redact them from logs, screenshots, and fixtures. The browser must never receive or store the management key. Do not weaken the access model, plugin trust checks, or session isolation for convenience.
 
+Account emails are hidden by default everywhere. Auth file names carry the email (`claude-<hash>-<email>.json`), and so can error text, logs, bodies, and session ids. Render any such text through `mask` from `src/hooks/useEmailMask.ts`, including `title`, `aria-label`, and DOM ids; toasts, confirmations, modal and sheet titles, and `Select` labels already mask strings. Search, filters, API calls, copy, and download keep the real values. Error banners and `EmptyState` text come from the server, so they are masked too (`tests/emailRedactionErrors.test.ts` scans for unmasked ones). A filter field whose value holds an email shows `MaskedValueChip` while hidden, and a value that can hold one goes into the URL through `encodeUrlValue` (`src/utils/urlValue.ts`). The preference lives in `src/stores/usePrivacyStore.ts`, is session-only, and pages that show masked values carry `ShowEmailsToggle`. Settings shows Tailscale logins as they are.
+
 ## Commits & Guidance Maintenance
 
 Use Conventional Commits, such as `feat(web): add the usage page` or `fix(web): keep disabled credentials dimmed`. Keep changes focused and include UI screenshots or notes and verification results in pull requests.

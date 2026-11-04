@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import type { BlockerFunction } from 'react-router';
 import { IconPlus, IconTrash2 } from '@/components/ui/icons';
 import { Button } from '@/components/ui/Button';
@@ -43,6 +44,7 @@ interface Props {
 
 export function PricingEditor({ models, onSaved }: Props) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const showNotification = useNotificationStore((s) => s.showNotification);
   const query = useTaprootQuery('prices', () => taprootApi.prices());
   const [saved, setSaved] = useState<Price[] | null>(null);
@@ -131,7 +133,7 @@ export function PricingEditor({ models, onSaved }: Props) {
   if (query.error && !saved) {
     return (
       <div className={styles.error} role="alert">
-        <span>{t('taproot_usage.load_failed', { message: query.error.message })}</span>
+        <span>{mask(t('taproot_usage.load_failed', { message: query.error.message }))}</span>
         <button type="button" className={styles.ghostButton} onClick={query.reload}>
           {t('taproot_usage.retry')}
         </button>

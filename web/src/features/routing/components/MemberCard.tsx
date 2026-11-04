@@ -4,7 +4,8 @@ import { IconEllipsis, IconGripVertical, IconLock } from '@/components/ui/icons'
 import { getAuthFileIcon } from '@/features/authFiles/constants';
 import type { ResolvedTheme } from '@/types';
 import type { RouteMember, RoutingMember, RoutingStrategy } from '@/types/routing';
-import { formatRoutingDuration } from '../format';
+import { useEmailMask } from '@/hooks/useEmailMask';
+import { formatRoutingDuration, memberDomId } from '../format';
 import styles from './MemberCard.module.scss';
 
 export interface MemberCardProps {
@@ -39,6 +40,8 @@ export function MemberCard({
   onEditWeights,
 }: MemberCardProps) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const name = mask(member.name);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -99,7 +102,7 @@ export function MemberCard({
       return;
     }
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', member.key);
+    event.dataTransfer.setData('text/plain', memberDomId(member.key));
     onDragStart(member.key);
   };
 
@@ -132,8 +135,8 @@ export function MemberCard({
     .join(' ');
 
   const tooltip = [
-    member.name,
-    member.detail,
+    name,
+    mask(member.detail),
     state === 'ineligible' ? t('routing.state_ineligible') : '',
   ]
     .filter(Boolean)
@@ -147,7 +150,7 @@ export function MemberCard({
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       title={tooltip}
-      data-member-key={member.key}
+      data-member-key={memberDomId(member.key)}
       data-state={state}
     >
       {member.locked ? (
@@ -163,7 +166,7 @@ export function MemberCard({
         <button
           type="button"
           className={styles.handle}
-          aria-label={t('routing.drag_handle', { name: member.name })}
+          aria-label={t('routing.drag_handle', { name })}
           onKeyDown={handleHandleKeyDown}
         >
           <IconGripVertical size={14} />
@@ -171,11 +174,11 @@ export function MemberCard({
       )}
 
       <span className={styles.icon} aria-hidden="true">
-        {icon ? <img src={icon} alt="" /> : <span>{member.name.charAt(0).toUpperCase()}</span>}
+        {icon ? <img src={icon} alt="" /> : <span>{name.charAt(0).toUpperCase()}</span>}
       </span>
 
       <span className={styles.body}>
-        <span className={styles.name}>{member.name}</span>
+        <span className={styles.name}>{name}</span>
         <span className={styles.kind}>
           {kindLabel}
           {showWeight ? (
@@ -197,7 +200,7 @@ export function MemberCard({
           ref={menuButtonRef}
           type="button"
           className={styles.menuButton}
-          aria-label={t('routing.member_actions', { name: member.name })}
+          aria-label={t('routing.member_actions', { name })}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-controls={menuOpen ? menuId : undefined}

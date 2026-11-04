@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MaskedValueChip } from '@/components/common/MaskedValueChip';
+import { useEmailMask, useHidesValue } from '@/hooks/useEmailMask';
 import { Select } from '@/components/ui/Select';
 import {
   taprootApi,
@@ -51,6 +53,7 @@ export function RequestsView({
   showEmails,
 }: Props) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filters.account}|${filters.model}|${filters.session}|${filters.device}|${filters.failed}`;
   // cursors[i] opens page i; page 0 has none.
   const [paging, setPaging] = useState<{
@@ -62,6 +65,7 @@ export function RequestsView({
     paging.key === filterKey ? paging : { key: filterKey, cursors: [undefined], page: 0 };
   const cursor = current.cursors[current.page];
   const [sessionDraft, setSessionDraft] = useState(filters.session);
+  const hideSession = useHidesValue(filters.session);
   const [selected, setSelected] = useState<UsageEvent | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -167,18 +171,29 @@ export function RequestsView({
         </label>
         <label>
           {t('taproot_usage.requests.session')}
-          <input
-            className={`${styles.textInput} ${styles.mono}`}
-            value={sessionDraft}
-            placeholder={t('taproot_usage.requests.session_placeholder')}
-            onChange={(e) => setSessionDraft(e.target.value)}
-            onBlur={() => {
-              if (sessionDraft.trim() !== filters.session) {
-                onFiltersChange({ session: sessionDraft.trim() });
-              }
-            }}
-            spellCheck={false}
-          />
+          {hideSession ? (
+            <MaskedValueChip
+              value={filters.session}
+              label={t('taproot_usage.requests.session')}
+              onClear={() => {
+                setSessionDraft('');
+                onFiltersChange({ session: '' });
+              }}
+            />
+          ) : (
+            <input
+              className={`${styles.textInput} ${styles.mono}`}
+              value={sessionDraft}
+              placeholder={t('taproot_usage.requests.session_placeholder')}
+              onChange={(e) => setSessionDraft(e.target.value)}
+              onBlur={() => {
+                if (sessionDraft.trim() !== filters.session) {
+                  onFiltersChange({ session: sessionDraft.trim() });
+                }
+              }}
+              spellCheck={false}
+            />
+          )}
         </label>
         <label>
           {t('taproot_usage.requests.device')}
@@ -215,7 +230,7 @@ export function RequestsView({
 
       {query.error ? (
         <div className={styles.error} role="alert">
-          <span>{t('taproot_usage.load_failed', { message: query.error.message })}</span>
+          <span>{mask(t('taproot_usage.load_failed', { message: query.error.message }))}</span>
           <button type="button" className={styles.ghostButton} onClick={query.reload}>
             {t('taproot_usage.retry')}
           </button>

@@ -2,10 +2,12 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import type { AuthFileRefreshResult } from '@/services/api/authFiles';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import styles from './AuthFileRefreshResults.module.scss';
 
 export function AuthFileRefreshResultsContent({ results }: { results: AuthFileRefreshResult[] }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const success = results.filter((result) => result.success).length;
   return (
     <div>
@@ -17,7 +19,7 @@ export function AuthFileRefreshResultsContent({ results }: { results: AuthFileRe
       <ul className={styles.results}>
         {results.map((result, index) => (
           <li key={`${result.id}:${index}`} className={styles.result}>
-            <strong className={styles.identity}>{result.id}</strong>
+            <strong className={styles.identity}>{mask(result.id)}</strong>
             <span className={result.success ? styles.success : styles.failure}>
               {t(
                 result.success
@@ -25,7 +27,9 @@ export function AuthFileRefreshResultsContent({ results }: { results: AuthFileRe
                   : 'auth_files.refresh_result_failed'
               )}
             </span>
-            {!result.success && result.error && <p className={styles.error}>{result.error}</p>}
+            {!result.success && result.error && (
+              <p className={styles.error}>{mask(result.error)}</p>
+            )}
           </li>
         ))}
       </ul>
