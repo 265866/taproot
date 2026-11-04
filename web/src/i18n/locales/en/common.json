@@ -20,6 +20,7 @@
     "warning": "Warning",
     "show_emails": "Show emails",
     "hide_emails": "Hide emails",
+    "clear_value": "Clear {{label}}",
     "loading": "Loading...",
     "connecting": "Connecting...",
     "connected": "Connected",

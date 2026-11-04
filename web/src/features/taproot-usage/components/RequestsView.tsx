@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MaskedValueChip } from '@/components/common/MaskedValueChip';
+import { useHidesValue } from '@/hooks/useEmailMask';
 import { Select } from '@/components/ui/Select';
 import {
   taprootApi,
@@ -62,6 +64,7 @@ export function RequestsView({
     paging.key === filterKey ? paging : { key: filterKey, cursors: [undefined], page: 0 };
   const cursor = current.cursors[current.page];
   const [sessionDraft, setSessionDraft] = useState(filters.session);
+  const hideSession = useHidesValue(filters.session);
   const [selected, setSelected] = useState<UsageEvent | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -167,18 +170,29 @@ export function RequestsView({
         </label>
         <label>
           {t('taproot_usage.requests.session')}
-          <input
-            className={`${styles.textInput} ${styles.mono}`}
-            value={sessionDraft}
-            placeholder={t('taproot_usage.requests.session_placeholder')}
-            onChange={(e) => setSessionDraft(e.target.value)}
-            onBlur={() => {
-              if (sessionDraft.trim() !== filters.session) {
-                onFiltersChange({ session: sessionDraft.trim() });
-              }
-            }}
-            spellCheck={false}
-          />
+          {hideSession ? (
+            <MaskedValueChip
+              value={filters.session}
+              label={t('taproot_usage.requests.session')}
+              onClear={() => {
+                setSessionDraft('');
+                onFiltersChange({ session: '' });
+              }}
+            />
+          ) : (
+            <input
+              className={`${styles.textInput} ${styles.mono}`}
+              value={sessionDraft}
+              placeholder={t('taproot_usage.requests.session_placeholder')}
+              onChange={(e) => setSessionDraft(e.target.value)}
+              onBlur={() => {
+                if (sessionDraft.trim() !== filters.session) {
+                  onFiltersChange({ session: sessionDraft.trim() });
+                }
+              }}
+              spellCheck={false}
+            />
+          )}
         </label>
         <label>
           {t('taproot_usage.requests.device')}

@@ -11,3 +11,12 @@ export function useEmailMask(): { showEmails: boolean; mask: (text: string) => s
   const showEmails = useShowEmails();
   return { showEmails, mask: showEmails ? reveal : maskEmails };
 }
+
+/**
+ * Whether a filter field should give way to MaskedValueChip: emails are hidden and its value holds
+ * one. An input would put the real value in the page.
+ */
+export function useHidesValue(value: string): boolean {
+  const { showEmails, mask } = useEmailMask();
+  return !showEmails && mask(value) !== value;
+}

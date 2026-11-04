@@ -1,5 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MaskedValueChip } from '@/components/common/MaskedValueChip';
+import { useHidesValue } from '@/hooks/useEmailMask';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { IconSearch, IconX } from '@/components/ui/icons';
@@ -89,6 +91,7 @@ export function RequestLogFilters({
 }) {
   const { t } = useTranslation();
   const modelListId = useId();
+  const hideSession = useHidesValue(query.sessionId);
   const set = <K extends keyof RequestLogQuery>(key: K, value: RequestLogQuery[K]) =>
     onChange({ ...query, [key]: value });
   const active = activeFilterCount(query);
@@ -164,12 +167,20 @@ export function RequestLogFilters({
         </datalist>
       </div>
       <div className={styles.small}>
-        <DebouncedInput
-          value={query.sessionId}
-          onCommit={(value) => set('sessionId', value)}
-          label={t('taproot_logs.filters.session')}
-          placeholder={t('taproot_logs.filters.session')}
-        />
+        {hideSession ? (
+          <MaskedValueChip
+            value={query.sessionId}
+            label={t('taproot_logs.filters.session')}
+            onClear={() => set('sessionId', '')}
+          />
+        ) : (
+          <DebouncedInput
+            value={query.sessionId}
+            onCommit={(value) => set('sessionId', value)}
+            label={t('taproot_logs.filters.session')}
+            placeholder={t('taproot_logs.filters.session')}
+          />
+        )}
       </div>
       {active > 0 && (
         <Button variant="ghost" size="sm" onClick={() => onChange(DEFAULT_QUERY)}>
