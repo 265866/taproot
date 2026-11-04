@@ -74,13 +74,14 @@ You need:
 ```sh
 git clone https://github.com/265866/taproot.git
 cd taproot
+git checkout taproot-v0.1.0
 docker build -f Containerfile.taproot \
-  --build-arg VERSION="$(git describe --tags --always)" \
+  --build-arg VERSION="$(git describe --tags --match 'taproot-v*' --always)" \
   --build-arg COMMIT="$(git rev-parse --short HEAD)" \
   -t taproot .
 ```
 
-With Podman, run `podman build` with the same arguments.
+Releases are tagged `taproot-vX.Y.Z`, and [CHANGELOG.md](CHANGELOG.md) lists what each one changed. Built from a release tag, the image reports that tag, such as `taproot-v0.1.0`, as its version; built from another commit, it reports the nearest release tag plus the commit. With Podman, run `podman build` with the same arguments.
 
 ### 2. Write the configuration
 
