@@ -18,22 +18,22 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
-// server's tailnet as measured with tailscale status and whois on 2026-11-02.
+// An example tailnet, in the shape tailscale status and whois report it.
 const (
-	tailnet  = "tailnet-0000.ts.net"
-	selfIP   = "100.64.0.1"
+	tailnet = "tailnet-0000.ts.net"
+	selfIP  = "100.64.0.1"
 	adminIP = "100.64.0.2"
-	// worker is the owner's server node, signed in as him but not in admin-nodes.
+	// worker is another node of the same login that is not in admin-nodes.
 	workerIP = "100.101.1.2"
-	lanIP     = "192.168.0.88"
-	login     = "alice@github"
-	host      = "server:8317"
+	lanIP    = "192.168.0.88"
+	login    = "alice@github"
+	host     = "server:8317"
 	// Fake token values; the test checks they never leave the server cross-origin.
 	refreshToken = "sk-ant-ort-TESTONLY"
 )
 
 // fakeLocalAPI serves tailscaled's whois and status endpoints on a real unix
-// socket, with server as the server's own node.
+// socket, with the node "server" as the server's own node.
 func fakeLocalAPI(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "ts")
@@ -194,7 +194,7 @@ func assertDenied(t *testing.T, rec *httptest.ResponseRecorder, what string) {
 var crossSite = map[string]string{"Origin": "http://evil.example", "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"}
 
 // TestCrossOriginBrowserRequestsAreRefused replays the security review's
-// repro (finding 8): a page on another site, in the owner's browser on an
+// repro (finding 8): a page on another site, in the admin's browser on an
 // allowlisted node, reads tokens, edits the allowlist, and creates and
 // restores backups through upstream's wildcard CORS.
 func TestCrossOriginBrowserRequestsAreRefused(t *testing.T) {
@@ -300,9 +300,9 @@ func TestSurfaces(t *testing.T) {
 		name, remote, host string
 		admin              bool
 	}{
-		// Every process and container on server connects from server's own node.
+		// Every process and container on the server host connects from its own node.
 		{"server's own node", selfIP, selfIP + ":8317", false},
-		// server-local callers using the 127.0.1.1 publish arrive from the LAN address.
+		// Host-local callers using a 127.0.1.1 publish arrive from the LAN address.
 		{"trusted cidr", lanIP, "127.0.1.1:8317", false},
 		{"node in admin-nodes", adminIP, host, true},
 		// Security recheck F1: another node of the allowed login is not an admin.

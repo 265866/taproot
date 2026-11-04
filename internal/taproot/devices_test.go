@@ -169,7 +169,7 @@ func waitForEvents(t *testing.T, h http.Handler, want int) []storedEvent {
 // event names the device the access guard admitted.
 func TestUsageEventsCarryTheCallersDevice(t *testing.T) {
 	upstream := fakeUpstream(t)
-	// One of this machine's own addresses stands in for server's LAN address,
+	// One of this machine's own addresses stands in for the server's LAN address,
 	// which a local client using the 127.0.1.1 publish arrives from.
 	own := machineAddrs(t)
 	ownIP := ""

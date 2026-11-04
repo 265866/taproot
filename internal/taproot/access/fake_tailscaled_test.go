@@ -13,8 +13,8 @@ import (
 )
 
 // fakeTailscaled serves the LocalAPI whois endpoint on a real unix socket.
-// tailscaled itself cannot run inside a unit test; the live check against
-// server's tailscaled is TestLiveWhois.
+// tailscaled itself cannot run inside a unit test; the live check against a
+// real tailscaled is TestLiveTailscaled.
 type fakeTailscaled struct {
 	socket string
 
@@ -123,7 +123,7 @@ func (f *fakeTailscaled) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveStatus mirrors /localapi/v0/status?peers=false with the fields of
-// ipnstate.Status and ipnstate.PeerStatus that server's tailscaled reports.
+// ipnstate.Status and ipnstate.PeerStatus that tailscaled reports.
 func (f *fakeTailscaled) serveStatus(w http.ResponseWriter) {
 	f.mu.Lock()
 	f.statusCalls++
@@ -185,15 +185,15 @@ func (f *fakeTailscaled) setPeer(addr string, p fakePeer) {
 	f.peers[addr] = p
 }
 
-// The addresses and names are server's tailnet as measured with tailscale status
-// and whois on 2026-11-02.
+// Example addresses and names, in the shape tailscale status and whois report
+// them.
 const (
 	tailnetSuffix = "tailnet-0000.ts.net"
 	selfIP        = "100.64.0.1"
 	selfIPv6      = "fd7a:115c:a1e0::1"
-	adminIP      = "100.64.0.2"
+	adminIP       = "100.64.0.2"
 	otherNodeIP   = "100.101.1.2"
-	outsiderIP     = "100.64.0.9"
+	outsiderIP    = "100.64.0.9"
 	strayIP       = "100.100.1.1"
 	testLogin     = "alice@github"
 )
@@ -202,9 +202,9 @@ func defaultPeers() map[string]fakePeer {
 	return map[string]fakePeer{
 		selfIP:      {login: "alice@github", displayName: "Alice", node: "server"},
 		selfIPv6:    {login: "alice@github", displayName: "Alice", node: "server"},
-		adminIP:    {login: "alice@github", displayName: "Alice", node: "laptop"},
+		adminIP:     {login: "alice@github", displayName: "Alice", node: "laptop"},
 		otherNodeIP: {login: "alice@github", displayName: "Alice", node: "worker"},
-		outsiderIP:   {login: "bob@example.org", displayName: "Bob", node: "bob-pc"},
+		outsiderIP:  {login: "bob@example.org", displayName: "Bob", node: "bob-pc"},
 	}
 }
 

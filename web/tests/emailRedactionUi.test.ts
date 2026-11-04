@@ -108,10 +108,10 @@ describe('Accounts page', () => {
   test('masks every account name, label, and status by default', () => {
     const html = renderAccountsPage();
     expect(leaks(html)).toEqual([]);
-    expect(html).toContain('>an•••1@s•••.run<');
+    expect(html).toContain('>an•••1@s•••.org<');
     expect(html).toContain('>se•••n@e•••.com<');
-    expect(html).toContain('title="refresh failed for an•••1@s•••.run"');
-    expect(html).toContain('aria-label="Manage an•••1@s•••.run"');
+    expect(html).toContain('title="refresh failed for an•••1@s•••.org"');
+    expect(html).toContain('aria-label="Manage an•••1@s•••.org"');
     expect(html).toContain('aria-label="Enable se•••n@e•••.com"');
   });
 
@@ -128,9 +128,9 @@ describe('Routing board', () => {
   test('masks member names, tooltips, labels, and DOM ids by default', () => {
     const html = renderBoard();
     expect(leaks(html)).toEqual([]);
-    expect(html).toContain('>an•••1@s•••.run<');
+    expect(html).toContain('>an•••1@s•••.org<');
     expect(html).toContain('>se•••n@e•••.com<');
-    expect(html).toContain('aria-label="Actions for an•••1@s•••.run"');
+    expect(html).toContain('aria-label="Actions for an•••1@s•••.org"');
   });
 
   test('shows the real names after toggling', () => {
@@ -148,7 +148,7 @@ describe('Request Logs body', () => {
     const text = 'auth claude-ab12cd34-anthropic1@sl.example.org.json refreshed';
     const hidden = renderToStaticMarkup(createElement(BodyViewer, { text }));
     expect(leaks(hidden)).toEqual([]);
-    expect(hidden).toContain('claude-ab12cd34-an•••1@s•••.run.json');
+    expect(hidden).toContain('claude-ab12cd34-an•••1@s•••.org.json');
     clickToggle();
     expect(renderToStaticMarkup(createElement(BodyViewer, { text }))).toContain(text);
   });

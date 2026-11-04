@@ -69,7 +69,7 @@ describe('LedgerRow', () => {
 
   test('masks the label, warns with the cooldown, and shows remaining per window', () => {
     const html = render(blocked);
-    expect(html).toContain('an•••1@s•••.run');
+    expect(html).toContain('an•••1@s•••.org');
     expect(html).not.toContain('anthropic1@');
     expect(html).toContain('back in 8h 58m');
     expect(html).toContain('5-hour limit');
@@ -130,7 +130,7 @@ const renderActions = (provider: string) =>
     createElement(QuotaActions, {
       provider,
       disabled: false,
-      target: { authIndex: 'a1', name: 'an•••1@s•••.run' },
+      target: { authIndex: 'a1', name: 'an•••1@s•••.org' },
       file: undefined,
       now,
       refreshing: false,

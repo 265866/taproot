@@ -14,7 +14,7 @@
 //   - Loopback reaches both surfaces. Only processes inside the container, or
 //     on the development machine, connect from loopback.
 //   - trusted-cidrs reach the proxy only. They hold host-local addresses, such
-//     as the LAN address that server's 127.0.1.1 publish arrives from.
+//     as the LAN address that a host-local publish arrives from.
 //   - A tailnet address reaches the proxy when tailscaled's whois login is in
 //     allow-logins. It reaches the admin surface only when, in addition, its
 //     node is listed in admin-nodes and is not the server's own node. With

@@ -3,17 +3,17 @@ import { addressDomain, maskEmails } from '../src/utils/emailMask';
 
 describe('maskEmails', () => {
   test('masks a bare address in the account-name format', () => {
-    expect(maskEmails('anthropic1@sl.example.org')).toBe('an•••1@s•••.run');
+    expect(maskEmails('anthropic1@sl.example.org')).toBe('an•••1@s•••.org');
   });
 
   test('masks every address in one string and leaves the text between them', () => {
     expect(maskEmails('from anthropic1@sl.example.org to someone@example.com, done.')).toBe(
-      'from an•••1@s•••.run to so•••e@e•••.com, done.'
+      'from an•••1@s•••.org to so•••e@e•••.com, done.'
     );
   });
 
   test('masks plus-addressing as part of the local part', () => {
-    expect(maskEmails('alice+claude@example.com')).toBe('co•••e@g•••.com');
+    expect(maskEmails('alice+claude@example.com')).toBe('al•••e@e•••.com');
   });
 
   test('hides subdomains and keeps only the top-level domain', () => {
@@ -29,7 +29,7 @@ describe('maskEmails', () => {
   describe('auth file names', () => {
     test('keeps the provider and hash prefix and the extension', () => {
       expect(maskEmails('claude-ab12cd34-anthropic1@sl.example.org.json')).toBe(
-        'claude-ab12cd34-an•••1@s•••.run.json'
+        'claude-ab12cd34-an•••1@s•••.org.json'
       );
       expect(maskEmails('antigravity-someone@gmail.com.json')).toBe(
         'antigravity-so•••e@g•••.com.json'
@@ -50,34 +50,34 @@ describe('maskEmails', () => {
 
     test('masks xAI names, whose hash follows the domain', () => {
       expect(maskEmails('xai-anthropic1@sl.example.org-0123456789abcdef.json')).toBe(
-        'xai-an•••1@s•••.run-0123456789abcdef.json'
+        'xai-an•••1@s•••.org-0123456789abcdef.json'
       );
     });
 
     test('masks Meta names, which write the @ as an underscore', () => {
       expect(maskEmails('meta-anthropic1_sl.example.org-0123456789abcdef.json')).toBe(
-        'meta-an•••1_s•••.run-0123456789abcdef.json'
+        'meta-an•••1_s•••.org-0123456789abcdef.json'
       );
     });
 
     test('masks a name inside a path, a sentence, or JSON', () => {
       expect(maskEmails('Deleted auths/claude-ab12cd34-anthropic1@sl.example.org.json.')).toBe(
-        'Deleted auths/claude-ab12cd34-an•••1@s•••.run.json.'
+        'Deleted auths/claude-ab12cd34-an•••1@s•••.org.json.'
       );
       expect(maskEmails('{"email":"anthropic1@sl.example.org","type":"claude"}')).toBe(
-        '{"email":"an•••1@s•••.run","type":"claude"}'
+        '{"email":"an•••1@s•••.org","type":"claude"}'
       );
     });
 
     test('keeps a hashed prefix when the name is shown without .json', () => {
       expect(maskEmails('claude-ab12cd34-anthropic1@sl.example.org')).toBe(
-        'claude-ab12cd34-an•••1@s•••.run'
+        'claude-ab12cd34-an•••1@s•••.org'
       );
       expect(maskEmails('codex-1a2b3c4d-first-last@example.com-team')).toBe(
         'codex-1a2b3c4d-fi•••t@e•••.com-team'
       );
       expect(maskEmails('meta-anthropic1_sl.example.org-0123456789abcdef')).toBe(
-        'meta-an•••1_s•••.run-0123456789abcdef'
+        'meta-an•••1_s•••.org-0123456789abcdef'
       );
     });
 
@@ -122,7 +122,7 @@ describe('maskEmails', () => {
     const started = performance.now();
     const masked = maskEmails(body);
     expect(performance.now() - started).toBeLessThan(1000);
-    expect(masked).toContain(' an•••1@s•••.run ');
+    expect(masked).toContain(' an•••1@s•••.org ');
   });
 });
 

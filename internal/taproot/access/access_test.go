@@ -225,9 +225,9 @@ func TestAdmitsAllowlistedLogin(t *testing.T) {
 }
 
 func TestAdmitsIPv6TailnetAddress(t *testing.T) {
-	ts := newFakeTailscaled(t, map[string]fakePeer{"fd7a:115c:a1e0::1": {login: "alice@github", node: "laptop"}})
+	ts := newFakeTailscaled(t, map[string]fakePeer{"fd7a:115c:a1e0::2": {login: "alice@github", node: "laptop"}})
 	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
-	if rec := do(e, "[fd7a:115c:a1e0::1]:40000", "/v1/models", nil); rec.Code != http.StatusOK {
+	if rec := do(e, "[fd7a:115c:a1e0::2]:40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }
@@ -539,9 +539,9 @@ func TestRESPFilterAdmitsLoopbackOnly(t *testing.T) {
 		"127.0.0.1:5000":          true,
 		"[::1]:5000":              true,
 		"[::ffff:127.0.0.1]:5000": true,
-		adminIP + ":5000":        false,
+		adminIP + ":5000":         false,
 		selfIP + ":5000":          false,
-		"192.168.0.88:5000":      false,
+		"192.168.0.88:5000":       false,
 		"[" + selfIPv6 + "]:5000": false,
 	} {
 		ap := netip.MustParseAddrPort(addr)

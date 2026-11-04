@@ -54,7 +54,7 @@ describe('Accounts page', () => {
     expect(leaks(html)).toEqual([]);
     expect(html).toMatch(/<h1[^>]*>Accounts<\/h1>/);
     expect(html).toContain('3 accounts · 1 reporting quota');
-    for (const name of ['an•••1@s•••.run', 'se•••n@e•••.com', 'ze•••a@s•••.run']) {
+    for (const name of ['an•••1@s•••.org', 'se•••n@e•••.com', 'ze•••a@s•••.run']) {
       const row = rowOf(html, name);
       expect(row).toContain(`aria-label="Enable ${name}"`);
       expect(row).toContain(`aria-label="Manage ${name}"`);
@@ -73,10 +73,10 @@ describe('Accounts page', () => {
 
   test('each row carries quota, health, the switch, and recent requests', () => {
     const html = renderAccountsPage();
-    const claude = rowOf(html, 'an•••1@s•••.run');
+    const claude = rowOf(html, 'an•••1@s•••.org');
     expect(claude).toContain('aria-label="7-day limit: 61% remaining"');
     expect(claude).toContain('data-health="problem"');
-    expect(claude).toContain('title="refresh failed for an•••1@s•••.run"');
+    expect(claude).toContain('title="refresh failed for an•••1@s•••.org"');
     expect(claude).toContain('title="Recent requests"');
     // The file's switch wins over taproot's lagging copy.
     const codex = rowOf(html, 'se•••n@e•••.com');
@@ -267,17 +267,17 @@ describe('Manage sheet', () => {
     ]) {
       expect(html).toContain(text);
     }
-    expect(html).toContain('aria-label="Enable an•••1@s•••.run"');
+    expect(html).toContain('aria-label="Enable an•••1@s•••.org"');
     expect(html).toContain('aria-label="7-day limit: 61% remaining"');
   });
 
   test('masks the title, file name, note, status, and settings while emails are hidden', () => {
     const html = renderSheet(CLAUDE, true);
     expect(leaks(html)).toEqual([]);
-    expect(html).toContain('an•••1@s•••.run');
-    expect(html).toContain('claude-ab12cd34-an•••1@s•••.run.json');
+    expect(html).toContain('an•••1@s•••.org');
+    expect(html).toContain('claude-ab12cd34-an•••1@s•••.org.json');
     expect(html).toContain('Shared with op•••n@e•••.org');
-    expect(html).toContain('refresh failed for an•••1@s•••.run');
+    expect(html).toContain('refresh failed for an•••1@s•••.org');
     // The advanced settings form is open: its JSON views are masked too.
     expect(html).toContain('Proxy URL');
   });
@@ -394,9 +394,9 @@ describe('account search', () => {
 
   test('* matches anything, anywhere in a field', async () => {
     const { matchesAccountSearch } = await import('@/features/accounts/model');
-    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'claude-*admin')).toBe(true);
+    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'claude-*example')).toBe(true);
     expect(matchesAccountSearch(row(CODEX), CODEX, 'codex*team')).toBe(true);
-    expect(matchesAccountSearch(row(CODEX), CODEX, 'claude-*admin')).toBe(false);
+    expect(matchesAccountSearch(row(CODEX), CODEX, 'claude-*example')).toBe(false);
   });
 
   test('an empty query matches everything', async () => {

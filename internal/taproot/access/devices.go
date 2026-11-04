@@ -152,7 +152,7 @@ func (g *Guard) DeviceName(id, stored string) string {
 // cidrDeviceName names a trusted-cidrs caller by its address, or, when the
 // address is one of the server's own, after the server with the address it
 // came from. Only a process on the server host connects from an own address:
-// on server, the 127.0.1.1 publish arrives through pasta as the LAN address.
+// under rootless Podman, a 127.0.1.1 publish arrives through pasta as the LAN address.
 // The address stays in the name because it is what separates this route from
 // "<server> (local)" and what trusted-cidrs lists.
 func (g *Guard) cidrDeviceName(addr string, self *selfNode) string {

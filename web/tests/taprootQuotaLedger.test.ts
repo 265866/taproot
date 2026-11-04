@@ -290,7 +290,7 @@ describe('search and sort', () => {
     });
     expect(matchesSearch(r, '')).toBe(true);
     expect(matchesSearch(r, '  work ')).toBe(true);
-    expect(matchesSearch(r, 'admin@')).toBe(true);
+    expect(matchesSearch(r, 'alice@')).toBe(true);
     expect(matchesSearch(r, 'CLAUDE-7')).toBe(true);
     expect(matchesSearch(r, 'codex')).toBe(false);
   });

@@ -56,7 +56,7 @@ func interfaces(calls *int, cidrs ...string) func() ([]net.Addr, error) {
 	}
 }
 
-// serverInterfaces is what the taproot container on server lists: loopback and
+// serverInterfaces is what a taproot container under rootless Podman lists: loopback and
 // the LAN address pasta copies from the host (measured in /proc/net/fib_trie).
 var serverInterfaces = []string{"127.0.0.1/8", "::1/128", "192.168.0.88/24", "fe80::5054:ff:fe12:3456/64"}
 
