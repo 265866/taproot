@@ -12,8 +12,12 @@ function getVersion(): string {
     return process.env.VERSION;
   }
 
-  // 2. Try git tag. No shell fallback: under Windows cmd, `echo ""` printed literal quotes.
-  for (const command of ['git describe --tags --exact-match', 'git describe --tags']) {
+  // 2. Try a taproot release tag (taproot-vX.Y.Z); upstream's own tags are in the history too.
+  // No shell fallback: under Windows cmd, `echo ""` printed literal quotes.
+  for (const command of [
+    'git describe --tags --match "taproot-v*" --exact-match',
+    'git describe --tags --match "taproot-v*"',
+  ]) {
     try {
       const gitTag = execSync(command, {
         encoding: 'utf8',
