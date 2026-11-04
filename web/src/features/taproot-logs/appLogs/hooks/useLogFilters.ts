@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import type { HttpMethod, ParsedLogLine, StatusGroup } from '../model/logTypes';
-import { resolveStatusGroup } from '../model/logTypes';
+import { logPathRoute, resolveStatusGroup } from '../model/logTypes';
 
 const PATH_FILTER_LIMIT = 12;
 
@@ -42,6 +42,13 @@ export function useLogFilters(options: UseLogFiltersOptions): UseLogFiltersRetur
     () => normalizeLogPathFilters(storedPathFilters),
     [storedPathFilters]
   );
+  // Rewrite filters stored by earlier versions, which could hold a query with an email.
+  useEffect(() => {
+    const changed =
+      storedPathFilters.length !== pathFilters.length ||
+      storedPathFilters.some((path, index) => path !== pathFilters[index]);
+    if (changed) setPathFilters(pathFilters);
+  }, [storedPathFilters, pathFilters, setPathFilters]);
 
   const methodFilterSet = useMemo(() => new Set(methodFilters), [methodFilters]);
   const statusFilterSet = useMemo(() => new Set(statusFilters), [statusFilters]);
@@ -116,11 +123,16 @@ export function useLogFilters(options: UseLogFiltersOptions): UseLogFiltersRetur
   };
 }
 
-// Earlier UI versions persisted the formatter's surrounding path quotes.
+/**
+ * Path filters are routes. A query can name a credential (`?name=<file with email>`), so filters
+ * never keep one; earlier versions stored full paths and the formatter's quotes.
+ */
 export function normalizeLogPathFilters(paths: string[]): string[] {
   return [
     ...new Set(
-      paths.map((path) => (path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path))
+      paths.map((path) =>
+        logPathRoute(path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path)
+      )
     ),
   ];
 }
@@ -129,7 +141,9 @@ export function normalizeLogPathFilters(paths: string[]): string[] {
 export function buildLogPathOptions(parsedLines: ParsedLogLine[], selectedPaths: string[]) {
   const counts = new Map<string, number>();
   parsedLines.forEach((line) => {
-    if (line.path) counts.set(line.path, (counts.get(line.path) ?? 0) + 1);
+    if (!line.path) return;
+    const route = logPathRoute(line.path);
+    counts.set(route, (counts.get(route) ?? 0) + 1);
   });
   const popularPaths = Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))

@@ -1,5 +1,6 @@
 import { parseLogLine } from './logParsing';
 import {
+  logPathRoute,
   resolveStatusGroup,
   type ParsedLogLine,
   type HttpMethod,
@@ -59,6 +60,8 @@ export function filterLogEntries(
     if (filters.methods.size && (!entry.method || !filters.methods.has(entry.method))) return false;
     const group = resolveStatusGroup(entry.statusCode);
     if (filters.statuses.size && (!group || !filters.statuses.has(group))) return false;
-    return !filters.paths.size || Boolean(entry.path && filters.paths.has(entry.path));
+    return (
+      !filters.paths.size || Boolean(entry.path && filters.paths.has(logPathRoute(entry.path)))
+    );
   });
 }

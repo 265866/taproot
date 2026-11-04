@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { parseLogLine } from '../src/features/taproot-logs/appLogs/model/logParsing';
 import {
   buildLogPathOptions,
@@ -102,5 +103,29 @@ describe('log path filter options', () => {
 
   test('retains selected options when no logs remain', () => {
     expect(buildLogPathOptions([], ['/v1/models'])).toEqual([{ path: '/v1/models', count: 0 }]);
+  });
+});
+
+describe('path filters hold routes, not queries', () => {
+  const download =
+    '/v8/management/auth-files/download?name=claude-ab12cd34-zebrafinch.alpha%40sl.example.run.json';
+
+  test('stored filters drop their query', () => {
+    expect(normalizeLogPathFilters([download, '/v1/messages'])).toEqual([
+      '/v8/management/auth-files/download',
+      '/v1/messages',
+    ]);
+  });
+
+  test('options count lines by route', () => {
+    const line = (path: string) => parseLogLine(`${prefix} 200 | 1ms | ::1 | GET "${path}"`);
+    const options = buildLogPathOptions([line(download), line(`${download}x`)], []);
+    expect(options).toEqual([{ path: '/v8/management/auth-files/download', count: 2 }]);
+  });
+
+  test('the panel masks chip text and tooltips', () => {
+    const source = readFileSync('src/features/taproot-logs/appLogs/AppLogsPanel.tsx', 'utf8');
+    expect(source).toContain('title={mask(path)}');
+    expect(source).toContain('{mask(path)} ({count})');
   });
 });

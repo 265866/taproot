@@ -66,3 +66,13 @@ describe('log selectors use the whole retained buffer', () => {
     expect(entries).toHaveLength(2);
   });
 });
+
+test('a path filter matches its route whatever the query', () => {
+  const parse = createLogParserCache();
+  const entries = parse(
+    applyLogPage(emptyLogBuffer(), {
+      lines: [access('/v8/x?name=a%40b.com'), access('/v8/x?name=c%40d.com'), access('/v8/y')],
+    })
+  );
+  expect(filterLogEntries(entries, { ...noFilters(), paths: new Set(['/v8/x']) })).toHaveLength(2);
+});

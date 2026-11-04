@@ -630,9 +630,9 @@ export function AppLogsPanel() {
                               className={`${styles.filterChip} ${active ? styles.filterChipActive : ''}`}
                               onClick={() => filters.togglePathFilter(path)}
                               aria-pressed={active}
-                              title={path}
+                              title={mask(path)}
                             >
-                              {path} ({count})
+                              {mask(path)} ({count})
                             </button>
                           );
                         })
