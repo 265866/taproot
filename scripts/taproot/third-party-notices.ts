@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
 // Regenerates THIRD_PARTY_NOTICES.md: the Go modules linked into cmd/server
 // (linux, darwin, and windows builds, reported by go-licenses) and the
-// dashboard's production npm dependencies (reported by license-checker).
+// dashboard's production npm dependencies (reported by license-checker),
+// with each package's license text and, where it ships one, its NOTICE file.
 // Run it from anywhere in the repository after go.mod or web/package.json
 // changes:
 //
 //   bun scripts/taproot/third-party-notices.ts
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 const GO_LICENSES = 'github.com/google/go-licenses/v2@v2.0.1';
 const LICENSE_CHECKER = 'license-checker@25.0.1';
@@ -24,10 +25,25 @@ const README_ONLY_GO: Record<string, { license: string; url: string }> = {
   },
 };
 
-type Entry = { name: string; version: string; license: string; url: string; text: string };
+type Entry = {
+  name: string;
+  version: string;
+  license: string;
+  url: string;
+  text: string;
+  // The package's NOTICE file, which Apache-2.0 section 4(d) requires to be passed on.
+  notice: string;
+};
 
 // Some packages ship CRLF license files; git stores this file with LF.
 const normalize = (text: string) => text.replace(/\r\n?/g, '\n').trim();
+
+// noticeIn returns the NOTICE file in a package directory, or ''.
+function noticeIn(dir: string): string {
+  if (!dir || !existsSync(dir)) return '';
+  const file = readdirSync(dir).find((f) => /^notice(\.(txt|md))?$/i.test(f));
+  return file ? normalize(readFileSync(join(dir, file), 'utf8')) : '';
+}
 
 function run(cmd: string[], cwd: string, env: Record<string, string> = {}): string {
   const result = Bun.spawnSync(cmd, { cwd, env: { ...process.env, ...env }, stderr: 'pipe' });
@@ -46,7 +62,7 @@ function goModules(): Entry[] {
   const template = join(tmp, 'notices.tpl');
   writeFileSync(
     template,
-    '{{range .}}@@@LIB {{.Name}} {{.Version}} {{.LicenseName}} {{.LicenseURL}}\n{{.LicenseText}}\n@@@END\n{{end}}'
+    '{{range .}}@@@LIB {{.Name}} {{.Version}} {{.LicenseName}} {{.LicenseURL}}\n{{.LicensePath}}\n{{.LicenseText}}\n@@@END\n{{end}}'
   );
   const ignore = [SELF_MODULE, ...Object.keys(README_ONLY_GO)].flatMap((m) => ['--ignore', m]);
   const byName = new Map<string, Entry>();
@@ -58,14 +74,17 @@ function goModules(): Entry[] {
       CGO_ENABLED: '0',
     });
     for (const block of out.split('@@@END\n')) {
-      const match = block.match(/^@@@LIB (\S+) (\S+) (\S+) (\S*)\n([\s\S]*)$/);
+      const match = block.match(/^@@@LIB (\S+) (\S+) (\S+) (\S*)\n(.*)\n([\s\S]*)$/);
       if (!match) continue;
-      const [, name, version, license, url, text] = match;
+      const [, name, version, license, url, licensePath, text] = match;
       const prev = byName.get(name);
       if (prev && prev.license !== license && !prev.license.includes(license)) {
         prev.license = `${prev.license} AND ${license}`;
       }
-      if (!prev) byName.set(name, { name, version, license, url, text: normalize(text) });
+      if (!prev) {
+        const notice = noticeIn(dirname(licensePath.trim()));
+        byName.set(name, { name, version, license, url, text: normalize(text), notice });
+      }
     }
   }
   return [...byName.values()];
@@ -79,7 +98,10 @@ function webPackages(): Entry[] {
   };
   const report = JSON.parse(
     run(['bunx', LICENSE_CHECKER, '--production', '--json', '--start', '.'], web)
-  ) as Record<string, { licenses: string; repository?: string; licenseFile?: string }>;
+  ) as Record<
+    string,
+    { licenses: string; repository?: string; licenseFile?: string; path?: string }
+  >;
   const entries: Entry[] = [];
   for (const [id, info] of Object.entries(report)) {
     const at = id.lastIndexOf('@');
@@ -94,6 +116,7 @@ function webPackages(): Entry[] {
       license: info.licenses,
       url: info.repository ?? '',
       text: readmeOnly ? '' : normalize(readFileSync(file, 'utf8')),
+      notice: noticeIn(info.path ?? ''),
     });
   }
   return entries;
@@ -114,7 +137,10 @@ function section(title: string, intro: string, entries: Entry[]): string {
     const body = key.startsWith('(no license file)')
       ? 'This package ships no license file. Its README states the license above.'
       : `~~~~text\n${key}\n~~~~`;
-    parts.push(`${list}\n\n${body}\n`);
+    const notices = group
+      .filter((e) => e.notice)
+      .map((e) => `NOTICE file of ${e.name} ${e.version}:\n\n~~~~text\n${e.notice}\n~~~~\n`);
+    parts.push([`${list}\n\n${body}\n`, ...notices].join('\n'));
   }
   return parts.join('\n');
 }
@@ -129,6 +155,7 @@ try {
       license: 'BSD-3-Clause',
       url: 'https://go.dev/LICENSE',
       text: normalize(readFileSync(join(goroot, 'LICENSE'), 'utf8')),
+      notice: '',
     },
     ...goModules(),
     ...Object.entries(README_ONLY_GO).map(([name, info]) => ({
@@ -137,13 +164,14 @@ try {
       license: info.license,
       url: info.url,
       text: '',
+      notice: '',
     })),
   ];
   const web = webPackages();
   const out = [
     '# Third-party notices',
     '',
-    "Taproot's server binary links the Go modules below, and its dashboard bundles the npm packages below. Taproot's own license is in [LICENSE](LICENSE), and the dashboard's in [web/LICENSE](web/LICENSE).",
+    "Taproot's server binary links the Go modules below, and its dashboard bundles the npm packages below. Each entry gives its license text and, where the package ships one, its NOTICE file. Taproot's own license is in [LICENSE](LICENSE), and the dashboard's in [web/LICENSE](web/LICENSE).",
     '',
     `This file is generated by \`bun scripts/taproot/third-party-notices.ts\` with ${GO_LICENSES} and ${LICENSE_CHECKER}. Do not edit it by hand.`,
     '',
