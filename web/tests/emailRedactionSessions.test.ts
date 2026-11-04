@@ -93,3 +93,37 @@ describe('session filter fields', () => {
     expect(html).toContain('value="sess-1"');
   });
 });
+
+describe('Usage grouped by session', () => {
+  test('the group cell tooltip is masked', async () => {
+    const { BreakdownTable } =
+      await import('../src/features/taproot-usage/components/BreakdownTable');
+    const totals = {
+      requests: 1,
+      failures: 0,
+      inputTokens: 1,
+      outputTokens: 1,
+      reasoningTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cacheWrite5mTokens: 0,
+      cacheWrite1hTokens: 0,
+      costUSD: 0,
+    };
+    const render = () =>
+      renderToStaticMarkup(
+        createElement(BreakdownTable, {
+          rows: [{ key: SESSION, totals, costShare: null, failureRate: 0, cacheHitRatio: null }],
+          groupBy: 'session',
+          labelFor: () => 'user:rep',
+          colorFor: () => null,
+          onViewRequests: () => {},
+        } as never)
+      );
+    const hidden = render();
+    expect(hidden).not.toContain('zebrafinch');
+    expect(hidden).toContain('title="user:report to ze•••a@s•••.run"');
+    usePrivacyStore.getState().toggleShowEmails();
+    expect(render()).toContain(`title="${SESSION}"`);
+  });
+});
