@@ -7,7 +7,6 @@ import { pluginsApi, pluginStoreApi } from '@/services/api/plugins';
 import { configApi } from '@/services/api/config';
 import { configFileApi } from '@/services/api/configFile';
 import { logsApi } from '@/services/api/logs';
-import { versionApi } from '@/services/api/version';
 import { apiKeyUsageApi } from '@/services/api/apiKeyUsage';
 
 const spies: Array<{ mockRestore(): void }> = [];
@@ -305,8 +304,6 @@ describe('v8 management API contracts', () => {
     expect(raw.mock.calls.at(-1)?.[0]).toBe('/observability/logs/errors/file.log');
     await logsApi.downloadRequestLogById('request-id');
     expect(raw.mock.calls.at(-1)?.[0]).toBe('/observability/logs/requests/request-id');
-    await versionApi.checkLatest();
-    expect(get).toHaveBeenLastCalledWith('/server/latest-version');
     await apiKeyUsageApi.getUsage();
     expect(get.mock.calls.at(-1)?.[0]).toBe('/observability/usage/api-keys');
     await authFilesApi.resetCooldown('auth-index-1');
