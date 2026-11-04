@@ -195,6 +195,7 @@ const (
 	otherNodeIP   = "100.101.1.2"
 	outsiderIP     = "100.64.0.9"
 	strayIP       = "100.100.1.1"
+	testLogin     = "alice@github"
 )
 
 func defaultPeers() map[string]fakePeer {

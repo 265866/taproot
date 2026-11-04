@@ -26,6 +26,7 @@ const (
 	// worker is the owner's server node, signed in as him but not in admin-nodes.
 	workerIP = "100.101.1.2"
 	lanIP     = "192.168.0.88"
+	login     = "alice@github"
 	host      = "server:8317"
 	// Fake token values; the test checks they never leave the server cross-origin.
 	refreshToken = "sk-ant-ort-TESTONLY"
@@ -78,6 +79,18 @@ type fixture struct {
 // first, then api.NewServer with its options.
 func newServer(t *testing.T) fixture {
 	t.Helper()
+	tp := "access:\n  allow-logins: [\"" + login + "\"]\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) + "\n  trusted-cidrs: [\"" + lanIP + "/32\"]\nbackups:\n  daily-at: \"off\"\n"
+	f, err := setupServer(t, tp)
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	return f
+}
+
+// setupServer writes config.yaml, an auth file, and taproot.yaml (unless tp is
+// empty) to a fresh directory, then runs Setup and builds the server.
+func setupServer(t *testing.T, tp string) (fixture, error) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	t.Setenv("MANAGEMENT_PASSWORD", "")
 	if err := os.Unsetenv("MANAGEMENT_PASSWORD"); err != nil {
@@ -104,19 +117,20 @@ func newServer(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	taprootYAML := filepath.Join(dir, "taproot.yaml")
-	tp := "access:\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) + "\n  trusted-cidrs: [\"" + lanIP + "/32\"]\nbackups:\n  daily-at: \"off\"\n"
-	if err := os.WriteFile(taprootYAML, []byte(tp), 0o600); err != nil {
-		t.Fatal(err)
+	if tp != "" {
+		if err := os.WriteFile(taprootYAML, []byte(tp), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	cfg := &config.Config{}
 	cfg.Port = 8317
 	cfg.AuthDir = authDir
 	opts, err := Setup(ctx, cfg, configPath)
 	if err != nil {
-		t.Fatalf("Setup: %v", err)
+		return fixture{}, err
 	}
 	srv := api.NewServer(cfg, auth.NewManager(nil, nil, nil), sdkaccess.NewManager(), configPath, opts...)
-	return fixture{h: srv.Handler(), taprootYAML: taprootYAML}
+	return fixture{h: srv.Handler(), taprootYAML: taprootYAML}, nil
 }
 
 type req struct {
@@ -422,5 +436,104 @@ func TestSetupLimitsRESPToLoopback(t *testing.T) {
 		if api.RESPConnectionAllowed(&net.TCPAddr{IP: net.ParseIP(ip), Port: 1}) {
 			t.Errorf("RESP from %s admitted", ip)
 		}
+	}
+}
+
+// A misspelled key fails at startup with its name, instead of being ignored.
+func TestSetupRefusesUnknownKeys(t *testing.T) {
+	for key, tp := range map[string]string{
+		"allow-login": "access:\n  allow-login: [" + login + "]\n",
+		"backup":      "access:\n  allow-logins: [" + login + "]\nbackup:\n  keep: 3\n",
+	} {
+		_, err := setupServer(t, tp)
+		if err == nil || !strings.Contains(err.Error(), "field "+key+" not found") || !strings.Contains(err.Error(), "taproot.yaml") {
+			t.Errorf("Setup with %q = %v, want an unknown-key error naming %s", tp, err, key)
+		}
+	}
+}
+
+// The guard has no built-in login, so without allow-logins it refuses to start.
+func TestSetupRefusesEmptyAllowLogins(t *testing.T) {
+	for name, tp := range map[string]string{
+		"missing file":      "",
+		"no access section": "backups:\n  daily-at: \"off\"\n",
+		"empty list":        "access:\n  allow-logins: []\n",
+	} {
+		_, err := setupServer(t, tp)
+		if err == nil || !strings.Contains(err.Error(), "access.allow-logins is empty") || !strings.Contains(err.Error(), "taproot.yaml") {
+			t.Errorf("%s: Setup = %v, want the allow-logins error naming taproot.yaml", name, err)
+		}
+	}
+}
+
+// Everything the settings API writes loads again under strict decoding, so a
+// dashboard edit never leaves a taproot.yaml that the next start refuses.
+func TestSettingsOutputLoadsStrictly(t *testing.T) {
+	f := newServer(t)
+	body := `{
+		"access": {"allowLogins": ["` + login + `", "someone@example.com"], "adminNodes": ["id:nExample1CNTRL", "laptop"]},
+		"requestLogs": {"maxDays": -1, "maxBytes": -1, "excludePaths": ["HEAD /api/*"], "keepUnrouted404": true},
+		"backups": {"dailyAt": "04:30", "keep": 3},
+		"ingest": {"pollInterval": "5m"},
+		"alerts": {"discordWebhook": "https://discord.com/api/webhooks/1/token", "enabled": false}
+	}`
+	rec := f.do(req{remote: "127.0.0.1", host: "localhost:8317", method: http.MethodPut, path: "/taproot/api/v1/settings", headers: map[string]string{"Content-Type": "application/json"}, body: body})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /settings = %d %s", rec.Code, rec.Body)
+	}
+	written, err := os.ReadFile(f.taprootYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tp, err := LoadConfig(f.taprootYAML)
+	if err != nil {
+		t.Fatalf("LoadConfig of the settings output: %v\n%s", err, written)
+	}
+	if strings.Join(tp.Access.AllowLogins, ",") != login+",someone@example.com" || strings.Join(tp.Access.AdminNodes, ",") != "id:nExample1CNTRL,laptop" ||
+		tp.RequestLogs.MaxDays != -1 || tp.RequestLogs.MaxBytes != -1 || !tp.RequestLogs.KeepUnrouted404 || len(tp.RequestLogs.ExcludePaths) != 1 ||
+		tp.Backups.DailyAt != "04:30" || tp.Backups.Keep != 3 || tp.Ingest.PollInterval != "5m" ||
+		tp.Alerts.DiscordWebhook == "" || tp.Alerts.Enabled == nil || *tp.Alerts.Enabled {
+		t.Fatalf("reloaded config = %+v\n%s", tp, written)
+	}
+}
+
+// A deployed taproot.yaml of the documented shape, plus the request-logs
+// section the settings API writes for unlimited retention, still loads.
+func TestDeployedConfigShapesLoad(t *testing.T) {
+	dir := t.TempDir()
+	deployed := filepath.Join(dir, "taproot.yaml")
+	raw := `access:
+  allow-logins:
+    - alice@github
+  admin-nodes:
+    - id:nExample1CNTRL
+    - id:nExample2CNTRL
+  trusted-cidrs:
+    - 192.0.2.10/32
+  tailscale-socket: /var/run/tailscale/tailscaled.sock
+backups:
+  daily-at: "03:13"
+  keep: 14
+request-logs:
+  max-days: -1
+  max-bytes: "-1"
+`
+	if err := os.WriteFile(deployed, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tp, err := LoadConfig(deployed)
+	if err != nil || len(tp.Access.AdminNodes) != 2 || tp.RequestLogs.MaxDays != -1 || tp.RequestLogs.MaxBytes != -1 {
+		t.Fatalf("LoadConfig = %+v, %v", tp, err)
+	}
+	example, err := LoadConfig(filepath.Join("..", "..", "examples", "taproot", "taproot.yaml"))
+	if err != nil || len(example.Access.AllowLogins) == 0 {
+		t.Fatalf("examples/taproot/taproot.yaml = %+v, %v", example, err)
+	}
+	empty := filepath.Join(dir, "empty.yaml")
+	if err := os.WriteFile(empty, []byte("# nothing set\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(empty); err != nil {
+		t.Fatalf("comment-only taproot.yaml: %v", err)
 	}
 }

@@ -4,9 +4,11 @@
 package taproot
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -43,7 +45,8 @@ type Config struct {
 	Alerts      alerts.Config `yaml:"alerts"`
 }
 
-// LoadConfig reads taproot.yaml. A missing file yields defaults.
+// LoadConfig reads taproot.yaml. A missing or empty file yields defaults. Unknown
+// keys are an error, so a misspelled access setting cannot fall back silently.
 func LoadConfig(path string) (Config, error) {
 	var cfg Config
 	raw, err := os.ReadFile(path)
@@ -53,7 +56,9 @@ func LoadConfig(path string) (Config, error) {
 	if err != nil {
 		return cfg, fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return cfg, nil
@@ -92,7 +97,7 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 
 	guard, err := access.New(tp.Access)
 	if err != nil {
-		return nil, fmt.Errorf("taproot access: %w", err)
+		return nil, fmt.Errorf("taproot access (%s): %w", tpPath, err)
 	}
 	api.SetRESPConnectionFilter(access.RESPFilter)
 	if err := backup.ApplyPendingRestore(dataDir); err != nil {

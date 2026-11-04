@@ -56,7 +56,7 @@ Taproot stores OAuth refresh tokens for your accounts, and the request logs hold
 - **Publish the port on the host's Tailscale address only.** Never publish on `0.0.0.0` or `127.0.0.1`. A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
 - **Check the result after every deployment change.** Run the checks in [Check the deployment](#4-check-the-deployment).
 - **Do not set `access.enabled: false`.** It turns off every check, including the admin API. Anyone who reaches the port can then download a backup with your tokens.
-- **Set `allow-logins` explicitly, and check its spelling.** Taproot ignores unknown keys in `taproot.yaml`. A missing or misspelled `allow-logins` falls back to a built-in login that is not yours.
+- **List every login in `allow-logins`.** Taproot has no built-in login and refuses to start while the list is empty. It also refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
 - **Pin admin devices by stable node ID.** A MagicDNS name can be claimed by another device of the same login after the original is renamed or deleted. An ID is never reused.
 - **Keep `trusted-cidrs` to single addresses** (`/32`). Every host in a wider range reaches the proxy without a login.
 - **Run the server with taproot.** CLIProxyAPI's Home mode (`-home-jwt`) and `--tui --standalone` start the server without taproot, so without the guard.
@@ -189,12 +189,12 @@ The dashboard is served at `/` on the proxy port. It has these sections:
 
 ## Configuration reference
 
-Set `access.allow-logins`. Every other key in `taproot.yaml` is optional. A relative `data-dir` resolves against the directory of `config.yaml`.
+Set `access.allow-logins`. Every other key in `taproot.yaml` is optional. An unknown key stops the server at startup. A relative `data-dir` resolves against the directory of `config.yaml`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `data-dir` | `taproot` | Database, request logs, and backups. |
-| `access.allow-logins` | see [Security](#security) | Tailscale logins that reach the proxy. |
+| `access.allow-logins` | required | Tailscale logins that reach the proxy. Taproot refuses to start without one. |
 | `access.admin-nodes` | empty | Devices that reach the dashboard and management API: `id:<StableID>` or a MagicDNS name. Empty means no tailnet device. |
 | `access.trusted-cidrs` | empty | Addresses that reach the proxy without a login. |
 | `access.extra-hosts` | empty | More `Host` names the server answers to. |

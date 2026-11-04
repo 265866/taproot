@@ -20,12 +20,15 @@ import (
 )
 
 // newTestGuard builds a guard with New and leaves MANAGEMENT_PASSWORD as it
-// was when the test ends.
+// was when the test ends. A config without allow-logins admits testLogin.
 func newTestGuard(t *testing.T, cfg Config) *Guard {
 	t.Helper()
 	t.Setenv(managementEnv, "")
 	if err := os.Unsetenv(managementEnv); err != nil {
 		t.Fatalf("unsetenv: %v", err)
+	}
+	if cfg.AllowLogins == nil {
+		cfg.AllowLogins = []string{testLogin}
 	}
 	g, err := New(cfg)
 	if err != nil {
@@ -755,7 +758,7 @@ func TestManagementSecretGeneration(t *testing.T) {
 	}
 
 	t.Setenv(managementEnv, "operator-chosen")
-	kept, err := New(Config{})
+	kept, err := New(Config{AllowLogins: []string{testLogin}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -800,20 +803,43 @@ access:
 		t.Fatalf("parsed %+v", a)
 	}
 
-	g := newTestGuard(t, Config{})
-	if !g.enabled || g.ttl != time.Minute || strings.Join(g.AllowLogins(), ",") != "alice@github" {
+	g := newTestGuard(t, Config{AllowLogins: []string{" Someone@Example.com "}})
+	if !g.enabled || g.ttl != time.Minute || strings.Join(g.AllowLogins(), ",") != "someone@example.com" {
 		t.Fatalf("defaults: enabled=%v ttl=%s allow=%v", g.enabled, g.ttl, g.AllowLogins())
 	}
 
+	logins := []string{testLogin}
 	for name, bad := range map[string]Config{
-		"bad cidr":     {TrustedCIDRs: []string{"10.0.0.0/33"}},
-		"negative ttl": {CacheTTL: -time.Second},
-		"empty logins": {AllowLogins: []string{}},
+		"bad cidr":     {AllowLogins: logins, TrustedCIDRs: []string{"10.0.0.0/33"}},
+		"negative ttl": {AllowLogins: logins, CacheTTL: -time.Second},
+		"blank login":  {AllowLogins: []string{" "}},
 	} {
 		t.Setenv(managementEnv, "x")
 		if _, err := New(bad); err == nil {
 			t.Fatalf("%s: New = nil error", name)
 		}
+	}
+}
+
+// An enabled guard has no built-in login: without allow-logins it refuses to
+// start rather than admit someone the operator never named.
+func TestEnabledGuardRequiresAllowLogins(t *testing.T) {
+	on := true
+	for name, cfg := range map[string]Config{
+		"absent":          {},
+		"empty":           {AllowLogins: []string{}},
+		"absent, enabled": {Enabled: &on},
+	} {
+		t.Setenv(managementEnv, "x")
+		g, err := New(cfg)
+		if err == nil || !strings.Contains(err.Error(), "access.allow-logins is empty") {
+			t.Fatalf("%s: New = %v, %v; want the allow-logins error", name, g, err)
+		}
+	}
+	off := false
+	t.Setenv(managementEnv, "x")
+	if _, err := New(Config{Enabled: &off}); err != nil {
+		t.Fatalf("disabled guard without allow-logins: %v", err)
 	}
 }
 

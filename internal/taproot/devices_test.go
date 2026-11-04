@@ -95,7 +95,7 @@ func newProxyServer(t *testing.T, upstream string, trusted ...string) http.Handl
 	for _, addr := range trusted {
 		cidrs += `, "` + addr + `/32"`
 	}
-	tp := "access:\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) +
+	tp := "access:\n  allow-logins: [\"" + login + "\"]\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) +
 		"\n  trusted-cidrs: [" + cidrs + "]\nbackups:\n  daily-at: \"off\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "taproot.yaml"), []byte(tp), 0o600); err != nil {
 		t.Fatal(err)

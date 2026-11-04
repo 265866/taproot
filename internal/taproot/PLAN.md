@@ -43,7 +43,7 @@ Taproot is the owner's fork of CLIProxyAPI. It runs on server and serves every C
 
 ## Architecture
 
-`taproot.Setup` (in `internal/taproot/taproot.go`) reads `taproot.yaml` from beside `config.yaml`, or from the path in `TAPROOT_CONFIG`. Upstream's config parser rejects unknown keys, so taproot's settings can't live in `config.yaml`. Setup then opens the modules and returns `api.ServerOption`s:
+`taproot.Setup` (in `internal/taproot/taproot.go`) reads `taproot.yaml` from beside `config.yaml`, or from the path in `TAPROOT_CONFIG`. Upstream's config parser rejects unknown keys, so taproot's settings can't live in `config.yaml`. Taproot decodes `taproot.yaml` strictly too: an unknown key stops startup with its name, so a misspelled access setting cannot fall back silently. Setup then opens the modules and returns `api.ServerOption`s:
 
 - `WithMiddleware(guard.Middleware())`
 - `WithRouterConfigurator(...)`, which mounts `/taproot/api/v1/*` and the dashboard at `/`
@@ -72,7 +72,7 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 - **Identifying callers.** For every request, the guard resolves the caller from its source IP:
   - Loopback addresses and `trusted-cidrs` are trusted, with the limits in "Security model".
   - Tailnet addresses (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) are resolved with tailscaled's LocalAPI `whois` over its unix socket (default `/var/run/tailscale/tailscaled.sock`, mounted into the container). The result is cached for one minute.
-  - The caller is admitted when the login is in `allow-logins`. The default list holds only `alice@github`.
+  - The caller is admitted when the login is in `allow-logins`. There is no default list: an enabled guard refuses to start while `allow-logins` is empty.
   - An admitted tailnet caller is an admin only when its node is in `admin-nodes` (see "Security model").
   - Everything else gets a 403, including whois failures. `/healthz` is exempt.
 - **Why source IPs and not `tailscale serve` headers.** Source IPs work for the proxy port, so client configs stay as they are, and tailnet source addresses can't be forged.

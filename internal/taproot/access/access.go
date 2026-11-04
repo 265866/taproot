@@ -83,9 +83,6 @@ const (
 	identityKey   = "taproot.access.identity"
 )
 
-// DefaultAllowLogins is used when allow-logins is absent from taproot.yaml.
-var DefaultAllowLogins = []string{"alice@github"}
-
 var tailnetPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("fd7a:115c:a1e0::/48"),
@@ -96,7 +93,8 @@ type Config struct {
 	// Enabled defaults to true. When false the guard admits everything and
 	// leaves management auth to upstream.
 	Enabled *bool `yaml:"enabled"`
-	// AllowLogins lists admitted Tailscale login names. Absent means DefaultAllowLogins.
+	// AllowLogins lists admitted Tailscale login names. An enabled guard
+	// refuses to start without one.
 	AllowLogins []string `yaml:"allow-logins"`
 	// AdminNodes lists the tailnet nodes that reach the admin surface. Empty
 	// means no tailnet node does; loopback still does. An entry is either a
@@ -223,8 +221,8 @@ func New(cfg Config) (*Guard, error) {
 		g.extraHosts[host] = true
 	}
 	logins := cfg.AllowLogins
-	if logins == nil {
-		logins = DefaultAllowLogins
+	if len(logins) == 0 {
+		return nil, errors.New("access.allow-logins is empty; list the Tailscale logins that may use taproot (`tailscale whois <device-ip>` shows a login)")
 	}
 	if err := g.SetAllowLogins(logins); err != nil {
 		return nil, fmt.Errorf("allow-logins: %w", err)
