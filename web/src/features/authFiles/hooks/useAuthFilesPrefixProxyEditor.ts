@@ -762,3 +762,19 @@ export function useAuthFilesPrefixProxyEditor(
     handlePrefixProxySave,
   };
 }
+
+/** Whether the editor's draft can be saved: loaded, changed, and free of field errors. */
+export function canSaveAuthFileDetails(
+  editor: PrefixProxyEditorState | null,
+  dirty: boolean
+): boolean {
+  return Boolean(
+    editor &&
+    !editor.saving &&
+    dirty &&
+    editor.json &&
+    !(editor.headersTouched && editor.headersError) &&
+    !editor.weightError &&
+    !credentialPolicyError(editor.policy)
+  );
+}

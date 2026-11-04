@@ -4,15 +4,13 @@
   },
   "nav": {
     "dashboard": "Dashboard",
-    "auth_files": "Auth Files",
-    "oauth": "OAuth Login",
+    "accounts": "Accounts",
     "routing": "Routing",
     "plugins": "Plugins",
     "plugin_store": "Plugin Store",
     "config_management": "Config",
     "logs": "Logs (previous)",
     "system_info": "System",
-    "quota": "Quota",
     "usage": "Usage",
     "request_logs": "Request Logs",
     "backups": "Backups",
@@ -21,7 +19,6 @@
   "nav_groups": {
     "observe": "Observe",
     "plugin_pages": "Plugins",
-    "accounts": "Accounts",
     "server": "Server"
   },
   "sidebar": {
@@ -30,7 +27,7 @@
     "expand": "Expand",
     "collapse": "Collapse",
     "subtitle": "Claude and Codex pool",
-    "auth_files_count": "Authentication files: {{count}}"
+    "accounts_count": "Accounts: {{count}}"
   },
   "header": {
     "refresh_all": "Refresh All"

@@ -18,14 +18,12 @@ import { PageTransition } from '@/components/common/PageTransition';
 import { MainRoutes } from '@/router/MainRoutes';
 import { authFilesApi, pluginsApi } from '@/services/api';
 import {
-  IconSidebarAuthFiles,
+  IconSidebarAccounts,
   IconSidebarBackups,
   IconSidebarConfig,
   IconSidebarDashboard,
   IconSidebarLogs,
-  IconSidebarOauth,
   IconSidebarPlugins,
-  IconSidebarQuota,
   IconSidebarRouting,
   IconSidebarSettings,
   IconSidebarStore,
@@ -49,11 +47,9 @@ import type { Theme } from '@/types';
 
 const sidebarIcons = {
   dashboard: <IconSidebarDashboard size={18} />,
-  quota: <IconSidebarQuota size={18} />,
+  accounts: <IconSidebarAccounts size={18} />,
   usage: <IconSidebarUsage size={18} />,
   requestLogs: <IconSidebarLogs size={18} />,
-  authFiles: <IconSidebarAuthFiles size={18} />,
-  oauth: <IconSidebarOauth size={18} />,
   routing: <IconSidebarRouting size={18} />,
   config: <IconSidebarConfig size={18} />,
   plugins: <IconSidebarPlugins size={18} />,
@@ -548,31 +544,23 @@ export function MainLayout() {
       labelKey: 'nav_groups.observe',
       items: [
         link('dashboard', 'nav.dashboard'),
-        link('quota', 'nav.quota'),
-        link('usage', 'nav.usage'),
-        link('requestLogs', 'nav.request_logs'),
-      ],
-    },
-    {
-      id: 'accounts',
-      labelKey: 'nav_groups.accounts',
-      items: [
         {
-          ...link('authFiles', 'nav.auth_files'),
+          ...link('accounts', 'nav.accounts'),
           badge: authFilesCount ?? undefined,
           badgeLabel:
             typeof authFilesCount === 'number'
-              ? t('sidebar.auth_files_count', { count: authFilesCount })
+              ? t('sidebar.accounts_count', { count: authFilesCount })
               : undefined,
         },
-        link('oauth', 'nav.oauth'),
-        link('routing', 'nav.routing'),
+        link('usage', 'nav.usage'),
+        link('requestLogs', 'nav.request_logs'),
       ],
     },
     {
       id: 'server',
       labelKey: 'nav_groups.server',
       items: [
+        link('routing', 'nav.routing'),
         link('config', 'nav.config_management'),
         ...(supportsPlugin
           ? [link('plugins', 'nav.plugins'), link('pluginStore', 'nav.plugin_store')]
@@ -599,14 +587,10 @@ export function MainLayout() {
       pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
     const normalizedPath = trimmedPath === '/dashboard' ? '/' : trimmedPath;
 
-    const authFilesIndex = navOrder.indexOf(ROUTES.authFiles);
-    if (authFilesIndex !== -1) {
-      if (normalizedPath === '/auth-files') return authFilesIndex;
-      if (normalizedPath.startsWith('/auth-files/')) {
-        if (normalizedPath.startsWith('/auth-files/oauth-excluded')) return authFilesIndex + 0.1;
-        if (normalizedPath.startsWith('/auth-files/oauth-model-alias')) return authFilesIndex + 0.2;
-        return authFilesIndex + 0.05;
-      }
+    const routingIndex = navOrder.indexOf(ROUTES.routing);
+    if (routingIndex !== -1) {
+      if (normalizedPath === ROUTES.oauthExcluded) return routingIndex + 0.1;
+      if (normalizedPath === ROUTES.oauthModelAlias) return routingIndex + 0.2;
     }
 
     const exactIndex = navOrder.indexOf(normalizedPath);
@@ -626,9 +610,9 @@ export function MainLayout() {
 
     const from = normalize(fromPathname);
     const to = normalize(toPathname);
-    const isAuthFiles = (pathname: string) =>
-      pathname === '/auth-files' || pathname.startsWith('/auth-files/');
-    if (isAuthFiles(from) && isAuthFiles(to)) return 'ios';
+    const isRouting = (pathname: string) =>
+      pathname === ROUTES.routing || pathname.startsWith(`${ROUTES.routing}/`);
+    if (isRouting(from) && isRouting(to)) return 'ios';
     return 'vertical';
   }, []);
 

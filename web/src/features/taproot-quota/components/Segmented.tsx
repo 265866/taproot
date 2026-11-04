@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react';
-import styles from '../TaprootQuotaPage.module.scss';
+import styles from '../quota.module.scss';
 
 export interface SegmentedOption<T extends string> {
   value: T;

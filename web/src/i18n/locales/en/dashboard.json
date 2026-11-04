@@ -43,7 +43,7 @@
     "health_disabled": "Disabled",
     "health_by_type": "By provider",
     "health_empty": "No credential files found.",
-    "health_link": "Open auth files",
+    "health_link": "Open accounts",
     "runtime_eyebrow": "Runtime",
     "runtime_title": "Configuration at a glance",
     "runtime_routing": "Routing strategy",
@@ -59,14 +59,13 @@
     "runtime_link": "Edit configuration",
     "cta_eyebrow": "Next",
     "cta_title": "Where to go from here",
-    "cta_auth_files_desc": "Upload, refresh, and disable OAuth credentials.",
+    "cta_accounts_desc": "Add, refresh, and disable accounts, and check their remaining quota.",
     "cta_config_desc": "Tune routing, retries, logging, and access.",
-    "cta_quota_desc": "Check remaining quota per credential.",
     "cta_logs_desc": "Tail requests and download error reports.",
     "cta_system_desc": "Version details and management center info.",
     "window_m": "{{minutes}}m",
     "window_h": "{{hours}}h",
     "window_hm": "{{hours}}h {{minutes}}m",
-    "cta_manage_credentials": "Manage credentials"
+    "cta_manage_credentials": "Manage accounts"
   }
 }

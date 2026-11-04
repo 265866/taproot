@@ -1,10 +1,7 @@
 /**
- * 额度渲染层的类型化样式契约。
- *
- * 额度 body 在两个宿主穿不同外衣：额度页（QuotaBody.module.scss）与
- * 认证文件卡片（AuthFileQuota.module.scss）。宿主通过 bindQuotaClasses
- * 把自己的 CSS Module 绑定成 QuotaClassMap —— 缺任何一个类名会在模块
- * 初始化时抛错并列出缺失清单，替代旧字符串 styleMap 的静默 class="undefined"。
+ * The typed style contract of the quota bodies. The live quota card binds its CSS module
+ * (QuotaBody.module.scss) to a QuotaClassMap through bindQuotaClasses, which throws at module
+ * initialization with every missing class name, instead of rendering class="undefined".
  */
 
 import type { ReactNode } from 'react';

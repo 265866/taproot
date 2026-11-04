@@ -10,7 +10,6 @@ import { parseMetaQuotaPayload } from '@/services/api/metaQuota';
 import { metaQuotaResponse } from './fixtures/metaQuota';
 import { QUOTA_CLASS_KEYS, bindQuotaClasses } from '@/features/taproot-quota/live/types';
 import { classifyQuotaFiles } from '@/features/taproot-quota/live/logic';
-import { QUOTA_PROVIDER_TYPES } from '@/features/authFiles/constants';
 import {
   captureQuotaCacheGeneration,
   commitIfQuotaCacheCurrent,
@@ -68,7 +67,6 @@ describe('Muse quota UI integration', () => {
     }
   });
   test('registers quota and filters disabled credentials', () => {
-    expect(QUOTA_PROVIDER_TYPES.has('meta')).toBe(true);
     expect(META_CONFIG.filterFn(file)).toBe(true);
     expect(META_CONFIG.filterFn({ ...file, disabled: true })).toBe(false);
     const entries = classifyQuotaFiles([file, { ...file, name: 'disabled.json', disabled: true }]);

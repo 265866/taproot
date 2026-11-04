@@ -16,7 +16,7 @@ describe('per-feature English catalogs', () => {
 
   test('the app instance resolves keys from different files with English fallback', () => {
     expect(i18n.language).toBe('en');
-    expect(i18n.t('nav.quota')).toBe('Quota');
+    expect(i18n.t('nav.accounts')).toBe('Accounts');
     expect(i18n.t('taproot_usage.title')).toBe('Usage');
     expect(i18n.t('auth_files.alias_editor.add_model')).toBe('Add model');
   });

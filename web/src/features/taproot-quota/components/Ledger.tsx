@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select } from '@/components/ui/Select';
 import { IconSearch } from '@/components/ui/icons';
@@ -10,7 +10,6 @@ import {
 } from '@/features/authFiles/constants';
 import { useNow } from '@/hooks/useNow';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
-import { normalizeAuthIndex } from '@/utils/authIndex';
 import type { QuotaFileEntry } from '../live/logic';
 import type { ProviderGroup } from '../model/fromApi';
 import {
@@ -24,7 +23,6 @@ import {
   type LedgerRow as LedgerRowModel,
   type LedgerSort,
 } from '../model/ledger';
-import type { QuotaRefresh } from '../useQuotaRefresh';
 import { LiveQuotaGrid } from './LiveQuota';
 import { LedgerRow } from './LedgerRow';
 import { windowTitle } from './ledgerText';
@@ -35,11 +33,20 @@ type Grouping = 'provider' | 'none';
 
 interface LedgerProps {
   groups: ProviderGroup[];
-  files: AuthFileItem[];
+  /** Credential files by the account key the rows use. */
+  fileByIndex: ReadonlyMap<string, AuthFileItem>;
   showEmails: boolean;
   resolvedTheme: ResolvedTheme;
   liveByAuthIndex: Map<string, QuotaFileEntry>;
-  refresh: QuotaRefresh;
+  /** The search text; the owner keeps it so it can act on the rows shown. */
+  query: string;
+  onQueryChange: (query: string) => void;
+  /** Hides rows besides the search, such as a status filter. */
+  rowFilter?: (row: LedgerRowModel, file: AuthFileItem | undefined) => boolean;
+  /** Controls placed after the view, grouping, and sort selects. */
+  toolbarExtra?: ReactNode;
+  renderLeading?: (row: LedgerRowModel, file: AuthFileItem | undefined) => ReactNode;
+  renderTrailing?: (row: LedgerRowModel, file: AuthFileItem | undefined) => ReactNode;
 }
 
 function ProviderIcon({ provider, theme }: { provider: string; theme: ResolvedTheme }) {
@@ -63,33 +70,33 @@ function ProviderIcon({ provider, theme }: { provider: string; theme: ResolvedTh
 /** The account ledger under the quota charts, after the reference account list. */
 export function Ledger({
   groups,
-  files,
+  fileByIndex,
   showEmails,
   resolvedTheme,
   liveByAuthIndex,
-  refresh,
+  query,
+  onQueryChange,
+  rowFilter,
+  toolbarExtra,
+  renderLeading,
+  renderTrailing,
 }: LedgerProps) {
   const { t } = useTranslation();
   const now = useNow();
   const searchId = useId();
-  const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LedgerSort>('default');
   const [grouping, setGrouping] = useState<Grouping>('provider');
   const [view, setView] = useState<LedgerView>('ledger');
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
 
-  const fileByIndex = useMemo(() => {
-    const out = new Map<string, AuthFileItem>();
-    for (const file of files) {
-      const index = normalizeAuthIndex(file.auth_index ?? file.authIndex);
-      if (index) out.set(index, file);
-    }
-    return out;
-  }, [files]);
   const facts = useMemo(() => {
     const out = new Map<string, CredentialFacts>();
     for (const [index, file] of fileByIndex) {
-      out.set(index, { fileName: file.name, nextRetryAfter: credentialRetryAt(file) });
+      out.set(index, {
+        fileName: file.name,
+        nextRetryAfter: credentialRetryAt(file),
+        ...(Number.isSafeInteger(file.priority) ? { priority: file.priority } : {}),
+      });
     }
     return out;
   }, [fileByIndex]);
@@ -98,7 +105,11 @@ export function Ledger({
   const filtered = ledger.map((group) => ({
     ...group,
     shown: sortLedgerRows(
-      group.rows.filter((row) => matchesSearch(row, query)),
+      group.rows.filter(
+        (row) =>
+          matchesSearch(row, query) &&
+          (!rowFilter || rowFilter(row, fileByIndex.get(row.authIndex)))
+      ),
       sort
     ),
   }));
@@ -112,21 +123,21 @@ export function Ledger({
       return next;
     });
 
-  const renderRow = (row: LedgerRowModel, columns: LedgerColumn[]) => (
-    <LedgerRow
-      key={row.authIndex}
-      row={row}
-      columns={columns}
-      file={fileByIndex.get(row.authIndex)}
-      now={now}
-      showEmails={showEmails}
-      icon={<ProviderIcon provider={row.provider} theme={resolvedTheme} />}
-      refreshing={refresh.busy.has(row.authIndex)}
-      refreshLocked={refresh.allRunning}
-      grantToken={refresh.tokens[row.authIndex] ?? 0}
-      onRefresh={(target, options) => void refresh.refreshOne(target, options)}
-    />
-  );
+  const renderRow = (row: LedgerRowModel, columns: LedgerColumn[]) => {
+    const file = fileByIndex.get(row.authIndex);
+    return (
+      <LedgerRow
+        key={row.authIndex}
+        row={row}
+        columns={columns}
+        now={now}
+        showEmails={showEmails}
+        icon={<ProviderIcon provider={row.provider} theme={resolvedTheme} />}
+        leading={renderLeading?.(row, file)}
+        trailing={renderTrailing?.(row, file)}
+      />
+    );
+  };
 
   const flatRows = () => {
     const columnsByProvider = new Map(filtered.map((g) => [g.provider, g.columns]));
@@ -155,7 +166,7 @@ export function Ledger({
             type="search"
             value={query}
             placeholder={t('taproot_quota.ledger.search')}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onQueryChange(event.target.value)}
           />
         </label>
         <div className={styles.selects}>
@@ -192,6 +203,7 @@ export function Ledger({
             size="sm"
             fullWidth={false}
           />
+          {toolbarExtra}
         </div>
       </div>
 

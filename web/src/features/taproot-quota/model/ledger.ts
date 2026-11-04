@@ -26,6 +26,8 @@ export const LEDGER_SORTS = [
   'soonest_reset',
   'most_remaining',
   'least_remaining',
+  'name',
+  'priority',
 ] as const;
 export type LedgerSort = (typeof LEDGER_SORTS)[number];
 
@@ -61,6 +63,8 @@ export interface LedgerRow {
   remaining: number | null;
   cells: Map<string, LedgerCell>;
   cooldown: Cooldown;
+  /** The credential's routing priority; higher serves first. Null without a credential file. */
+  priority: number | null;
   /** Position in the provider's default order. */
   order: number;
 }
@@ -87,6 +91,8 @@ export interface CredentialFacts {
   fileName: string;
   /** The router's cooldown end for the whole credential, epoch ms. */
   nextRetryAfter: number | null;
+  /** Routing priority from the credential file; absent means the default, 0. */
+  priority?: number;
 }
 
 /** Whole percent left for a used fraction, clamped to 0..100. */
@@ -193,6 +199,7 @@ export function buildLedgerRow(
     remaining: maxUsed === null ? null : Math.max(0, 1 - Math.min(1, maxUsed)),
     cells,
     cooldown,
+    priority: facts ? (facts.priority ?? 0) : null,
     order,
   };
 }
@@ -280,6 +287,12 @@ export function sortLedgerRows(rows: LedgerRow[], sort: LedgerSort): LedgerRow[]
       return sorted.sort((a, b) => nullsLast(a.remaining, b.remaining, -1) || byOrder(a, b));
     case 'least_remaining':
       return sorted.sort((a, b) => nullsLast(a.remaining, b.remaining, 1) || byOrder(a, b));
+    case 'name':
+      return sorted.sort(
+        (a, b) => (a.label || a.fileName).localeCompare(b.label || b.fileName) || byOrder(a, b)
+      );
+    case 'priority':
+      return sorted.sort((a, b) => nullsLast(a.priority, b.priority, -1) || byOrder(a, b));
   }
 }
 

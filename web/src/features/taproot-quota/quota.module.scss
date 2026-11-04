@@ -1,7 +1,7 @@
 @use '../../styles/mixins' as *;
 
-/* Quota page, after internal/taproot/docs/quota-reference.png: quiet surfaces, large numerals,
- * provider accent only on chart marks. */
+/* Pool charts and page controls, used by Accounts. After internal/taproot/docs/quota-reference.png:
+ * quiet surfaces, large numerals, provider accent only on chart marks. */
 
 .page {
   display: flex;

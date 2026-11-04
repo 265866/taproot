@@ -1,0 +1,13 @@
+/* Accounts reuses the quota page's layout (quota.module.scss); these are its additions. */
+
+.page {
+  padding-bottom: var(--auth-files-action-bar-height, 0px);
+}
+
+.headerActions {
+  align-items: center;
+}
+
+.metaProblem {
+  color: var(--error-color);
+}

@@ -15,7 +15,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type { ChartRow, ChartView } from '../model/chart';
 import { formatMoment, formatWeekdayDay } from '../model/format';
 import { dayTicks } from '../model/range';
-import styles from '../TaprootQuotaPage.module.scss';
+import styles from '../quota.module.scss';
 
 interface PoolChartProps {
   rows: ChartRow[];

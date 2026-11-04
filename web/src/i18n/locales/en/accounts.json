@@ -1,0 +1,67 @@
+{
+  "accounts": {
+    "title": "Accounts",
+    "meta_one": "{{count}} account · {{reporting}} reporting quota",
+    "meta_other": "{{count}} accounts · {{reporting}} reporting quota",
+    "meta_problem_one": "{{count}} problem",
+    "meta_problem_other": "{{count}} problems",
+    "load_failed": "Could not load accounts: {{message}}",
+    "empty_title": "No accounts yet",
+    "empty_desc": "Use Add account to sign in with a provider or upload a credential file. Quota appears after an account's first request.",
+    "health": {
+      "healthy": "Healthy",
+      "cooling": "Cooling down",
+      "blocked": "Blocked",
+      "problem": "Problem",
+      "disabled": "Disabled"
+    },
+    "recent_requests": "Recent requests",
+    "enable": "Enable {{name}}",
+    "manage": "Manage",
+    "manage_aria": "Manage {{name}}",
+    "select": "Select {{name}}",
+    "status": {
+      "label": "Status",
+      "all": "All statuses",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "problem": "Problem"
+    },
+    "menu": {
+      "label": "More account actions",
+      "select": "Select accounts",
+      "stop_selecting": "Stop selecting",
+      "model_rules": "Provider model rules",
+      "delete_problem": "Delete problem accounts…",
+      "delete_problem_in": "Delete problem {{provider}} accounts…",
+      "delete_disabled": "Delete disabled accounts…",
+      "delete_disabled_in": "Delete disabled {{provider}} accounts…",
+      "delete_all": "Delete all accounts…",
+      "delete_all_in": "Delete all {{provider}} accounts…"
+    },
+    "add": {
+      "button": "Add account",
+      "title": "Add an account",
+      "oauth": "Sign in with a provider",
+      "file": "Or add a credential file",
+      "upload": "Upload auth file",
+      "upload_hint": "One or more JSON credential files",
+      "waiting_one": "{{count}} sign-in awaiting authorization",
+      "waiting_other": "{{count}} sign-ins awaiting authorization"
+    },
+    "sheet": {
+      "no_file": "No credential file",
+      "enabled": "Enabled",
+      "last_seen": "Last request",
+      "quota": "Quota and resets",
+      "health": "Health",
+      "no_cooldown": "No cooldown.",
+      "blocked": "Blocked. When it serves again is not known.",
+      "blocked_until": "Blocked until {{time}}.",
+      "credential": "Credential",
+      "advanced": "Advanced settings",
+      "advanced_hint": "Prefix, proxy, priority, weight, retries, aliases",
+      "load_settings": "Load settings"
+    }
+  }
+}

@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import { createInstance } from 'i18next';
 import { en } from '@/i18n/resources';
-import { OAuthPage } from '@/features/oauth/OAuthPage';
+import { AddAccount } from '@/features/accounts/components/AddAccount';
 import { resolveCallbackUrl, XAI_CALLBACK_URL } from '@/features/oauth/callbackUrl';
 import { resolveFlowView, splitAuthUrl } from '@/features/oauth/flowView';
 import { buildPluginOAuthProviderCards, OAUTH_PROVIDERS } from '@/features/oauth/providers';
@@ -109,7 +109,7 @@ describe('plugin OAuth tiles', () => {
   });
 });
 
-describe('OAuth provider gallery', () => {
+describe('Add account panel', () => {
   const render = async () => {
     const i18n = createInstance();
     await i18n.init({ lng: 'en', resources: { en: { translation: en } } });
@@ -117,7 +117,16 @@ describe('OAuth provider gallery', () => {
       createElement(
         I18nextProvider,
         { i18n },
-        createElement(MemoryRouter, null, createElement(OAuthPage))
+        createElement(
+          MemoryRouter,
+          null,
+          createElement(AddAccount, {
+            defaultOpen: true,
+            uploading: false,
+            disableControls: false,
+            onUpload: () => {},
+          })
+        )
       )
     );
     return { i18n, markup };
@@ -134,7 +143,7 @@ describe('OAuth provider gallery', () => {
     ]);
   });
 
-  test('renders every provider tile without raw keys, sponsors, or removed providers', async () => {
+  test('offers every provider tile and the upload, without raw keys, sponsors, or removed providers', async () => {
     const { i18n, markup } = await render();
     for (const provider of OAUTH_PROVIDERS) {
       const label =
@@ -142,8 +151,10 @@ describe('OAuth provider gallery', () => {
       expect(markup).toContain(label);
     }
     expect(markup).not.toMatch(/auth_login\.|vertex|siwc|devin|kimi\.com|sponsor/i);
-    // Every tile opens the login dialog; nothing else on the page does.
+    // Every provider tile opens the login dialog; the upload is the panel's only other action.
     expect(markup.match(/aria-haspopup="dialog"/g)?.length).toBe(OAUTH_PROVIDERS.length);
+    expect(markup).toContain('Upload auth file');
+    expect(markup.match(/<button/g)?.length).toBe(OAUTH_PROVIDERS.length + 2);
     expect(markup).not.toMatch(/href="https?:/);
   });
 });

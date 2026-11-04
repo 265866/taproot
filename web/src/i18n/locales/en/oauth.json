@@ -88,7 +88,7 @@
     "oauth_callback_status_error": "Callback URL submission failed:",
     "missing_state": "Unable to retrieve authentication state parameter",
     "login_another_account": "Log in another account",
-    "view_auth_files": "View auth files",
+    "done": "Done",
     "remote_access_disabled": "This login method is not available for remote access. Please access from localhost.",
     "kimi_ai_oauth_name": "Kimi International",
     "method_device": "Device code",
@@ -97,16 +97,13 @@
     "tile_waiting": "Awaiting authorization",
     "tile_success": "Credential added",
     "tile_error": "Authorization failed",
-    "meta_providers": "{{count}} providers",
-    "meta_waiting": "{{count}} awaiting authorization",
-    "meta_added": "{{count}} added this session",
     "step_open_auth_page": "Open the sign-in page and authorize",
     "step_enter_device_code": "Enter this code on the sign-in page",
     "optional_step": "Optional",
     "generating_link": "Generating sign-in link…",
     "waiting_background_hint": "Closing this window won't stop sign-in",
     "restart_login": "Start over",
-    "success_saved_hint": "The credential is saved — manage it in Auth Files.",
+    "success_saved_hint": "The account is saved and now listed under Accounts.",
     "copied": "Copied"
   }
 }

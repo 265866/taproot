@@ -14,7 +14,6 @@ import {
 import {
   getAuthFileIcon,
   OAUTH_PROVIDER_PRESETS,
-  QUOTA_PROVIDER_TYPES,
   supportsAuthFileManualRefresh,
   supportsAuthFileWebsockets,
 } from '@/features/authFiles/constants';
@@ -61,7 +60,6 @@ describe('Muse (Meta) provider and device OAuth', () => {
     expect(providerLabel('meta', 'Unknown')).toBe('Muse (Meta)');
     expect(supportsAuthFileManualRefresh('meta')).toBe(true);
     expect(supportsAuthFileWebsockets('meta')).toBe(false);
-    expect([...QUOTA_PROVIDER_TYPES]).toContain('meta');
   });
 
   test('classifies Muse models by name', () => {

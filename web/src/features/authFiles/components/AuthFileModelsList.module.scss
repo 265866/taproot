@@ -1,6 +1,6 @@
 @use '../../../styles/mixins' as *;
 
-/* 「支持的模型」弹窗：可点击复制的 mono 模型清单 */
+/* A credential's models: a mono list, click to copy. */
 
 .list {
   display: flex;
@@ -12,6 +12,9 @@
 }
 
 .item {
+  @include button-reset;
+  width: 100%;
+  text-align: left;
   display: flex;
   align-items: baseline;
   gap: 8px;

@@ -1,8 +1,8 @@
 /**
- * 额度提供商适配器 = 数据层（data.ts，React-free）+ 渲染体（*QuotaBody.tsx）。
+ * Quota provider adapters: a React-free data layer (data.ts) plus a body (*QuotaBody.tsx).
  *
- * 页面侧以擦除泛型的 QuotaAdapter 视图统一消费（与 AuthFileQuotaSection 的
- * 窄接口 cast 同一模式）；具体状态类型由各 data.ts 的强类型导出承载。
+ * Pages consume them through the type-erased QuotaAdapter view; each data.ts exports the
+ * provider's precise state types.
  */
 
 import type { ComponentType } from 'react';

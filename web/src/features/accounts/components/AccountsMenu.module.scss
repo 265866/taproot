@@ -1,0 +1,117 @@
+@use '../../../styles/mixins' as *;
+
+/* The overflow menu, after the routing board's member menu. */
+
+.root {
+  position: relative;
+}
+
+.trigger {
+  @include button-reset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  transition:
+    background-color var(--dur-hover) var(--ease-out-strong),
+    color var(--dur-hover) var(--ease-out-strong);
+
+  &[aria-expanded='true'] {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .trigger:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: $z-dropdown;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--floating-surface);
+  box-shadow: var(--floating-shadow);
+  transform-origin: top right;
+  animation: accounts-menu-in var(--dur-hover) var(--ease-out-strong);
+}
+
+@keyframes accounts-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.item {
+  @include button-reset;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--text-primary);
+
+  &[data-danger] {
+    color: var(--error-color);
+  }
+
+  &[data-divided] {
+    position: relative;
+    margin-top: 9px;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: -5px;
+      left: -4px;
+      right: -4px;
+      border-top: 1px solid var(--border-color);
+    }
+  }
+
+  &:disabled {
+    color: var(--text-quaternary);
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: none;
+    background: var(--bg-tertiary);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .item:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+  }
+
+  .trigger {
+    transition: none;
+  }
+}

@@ -240,7 +240,7 @@
       "pool_next_reset": "Next reset {{time}}",
       "pool_empty": "No quota observations yet.",
       "open_usage": "Open usage",
-      "open_quota": "Open quota",
+      "open_accounts": "Open accounts",
       "load_failed": "Taproot usage is unavailable: {{message}}"
     },
     "devices": {

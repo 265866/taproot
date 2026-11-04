@@ -1,10 +1,5 @@
 {
   "taproot_quota": {
-    "title": "Quota",
-    "meta_one": "{{count}} credential · {{reporting}} reporting",
-    "meta_other": "{{count}} credentials · {{reporting}} reporting",
-    "load_failed": "Could not load quota: {{message}}",
-    "empty": "No accounts yet. Add a Claude or Codex credential under OAuth Login, and its quota appears here after its first request.",
     "controls": {
       "view": "Chart view",
       "remaining": "Remaining",
@@ -137,7 +132,7 @@
       "refresh_all_none": "No enabled Claude or Codex accounts to refresh.",
       "refresh_all_done": "Refreshed {{ok}} of {{count}} accounts.",
       "refresh_all_partial": "Refreshed {{ok}} of {{count}} accounts. {{limited}} were refreshed moments ago and {{failed}} failed.",
-      "no_windows_refresh": "No quota reported yet. Refresh quota to read it now."
+      "no_windows_refresh": "No quota reported yet. Refresh it under Manage."
     }
   },
   "claude_quota": {

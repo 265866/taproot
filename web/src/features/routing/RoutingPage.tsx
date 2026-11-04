@@ -44,6 +44,7 @@ import {
 import { memberDomId } from './format';
 import { ChangeReviewDialog } from './components/ChangeReviewDialog';
 import { PolicyPanel } from './components/PolicyPanel';
+import { ProviderModelRules } from './components/ProviderModelRules';
 import { RoutingSaveBar } from './components/RoutingSaveBar';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { TierLadder } from './components/TierLadder';
@@ -379,6 +380,8 @@ export function RoutingPage() {
       </header>
 
       {renderBody()}
+
+      <ProviderModelRules disableControls={!connected} />
 
       <RoutingSaveBar
         visible={isCurrentLayer && dirty}

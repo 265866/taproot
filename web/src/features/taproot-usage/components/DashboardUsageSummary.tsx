@@ -60,7 +60,7 @@ export function DashboardUsageSummary() {
         </div>
         <nav className={styles.summaryLinks}>
           <Link to={ROUTES.usage}>{t('taproot_usage.dashboard.open_usage')} →</Link>
-          <Link to={ROUTES.quota}>{t('taproot_usage.dashboard.open_quota')} →</Link>
+          <Link to={ROUTES.accounts}>{t('taproot_usage.dashboard.open_accounts')} →</Link>
         </nav>
       </div>
       {error ? (

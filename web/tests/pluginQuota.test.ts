@@ -4,7 +4,6 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import i18n from '@/i18n';
 import { normalizeAuthFilesResponse } from '@/services/api/authFiles';
-import { resolveAuthFileQuotaType } from '@/features/authFiles/logic';
 import { classifyQuotaFiles, resolveQuotaProviderType } from '@/features/taproot-quota/live/logic';
 import { QUOTA_ADAPTERS } from '@/features/taproot-quota/live/providers';
 import { PluginQuotaBody } from '@/features/taproot-quota/live/providers/plugin/PluginQuotaBody';
@@ -87,9 +86,6 @@ describe('generic plugin quota', () => {
         for (const candidate of [raw, file]) {
           expect(isPluginQuotaFile(candidate)).toBe(false);
           expect(resolveQuotaProviderType(candidate)).toBe(type);
-          expect(resolveAuthFileQuotaType(candidate, 'all')).toBe(type);
-          expect(resolveAuthFileQuotaType(candidate, type)).toBe(type);
-          expect(resolveAuthFileQuotaType(candidate, 'plugin')).toBeNull();
         }
         expect(getQuotaCacheKey(file)).toBe(`${type}.json`);
         expect(classifyQuotaFiles([file]).map((entry) => entry.type)).toEqual([type]);
@@ -115,11 +111,6 @@ describe('generic plugin quota', () => {
         const file = normalizeAuthFilesResponse({ files: [raw] }).files[0];
         for (const candidate of [raw, file]) {
           expect(resolveQuotaProviderType(candidate)).toBe('plugin');
-          expect(resolveAuthFileQuotaType(candidate, 'all')).toBe('plugin');
-          expect(resolveAuthFileQuotaType(candidate, 'kiro')).toBe('plugin');
-          expect(resolveAuthFileQuotaType(candidate, 'plugin')).toBe('plugin');
-          expect(resolveAuthFileQuotaType(candidate, 'unrelated')).toBeNull();
-          expect(resolveAuthFileQuotaType(candidate, null)).toBeNull();
           expect(classifyQuotaFiles([{ ...candidate, disabled: true }])).toEqual([]);
         }
         const [entry] = classifyQuotaFiles([file]);
@@ -135,7 +126,6 @@ describe('generic plugin quota', () => {
       for (const supportsQuota of [undefined, false]) {
         const file = { name: 'kiro.json', type: 'kiro', supportsQuota };
         expect(resolveQuotaProviderType(file)).toBeNull();
-        expect(resolveAuthFileQuotaType(file, 'all')).toBeNull();
       }
     } finally {
       post.mockRestore();
@@ -217,7 +207,6 @@ describe('generic plugin quota', () => {
     }).files;
     expect(isPluginQuotaFile(file)).toBe(false);
     expect(classifyQuotaFiles([file])).toEqual([]);
-    expect(resolveAuthFileQuotaType(file, 'all')).toBeNull();
   });
 
   test('renders an empty state only without usable summary, subscription or buckets', async () => {
