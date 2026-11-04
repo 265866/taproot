@@ -50,7 +50,7 @@ The guard also refuses browser requests from other sites: a `Host` that is not o
 
 ### Security
 
-Taproot stores OAuth refresh tokens for your accounts, and the request logs hold every prompt and response. Treat the data directory and every backup like a password.
+Taproot stores OAuth refresh tokens for your accounts, and the request logs hold every prompt and response. Treat the data directory and every backup like a password. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 - **Do not put anything in front of taproot.** Loopback callers are admins. `tailscale serve`, `tailscale funnel`, a reverse proxy, or an SSH tunnel on the same host usually connects from loopback, so every caller it forwards becomes an admin.
 - **Publish the port on the host's Tailscale address only.** Never publish on `0.0.0.0` or `127.0.0.1`. A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
