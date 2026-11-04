@@ -16,10 +16,14 @@
 #   scripts/taproot/sync-upstream.sh --no-fetch    use the upstream/main already fetched
 #   scripts/taproot/sync-upstream.sh --checks-only run the checks on HEAD, e.g. after resolving conflicts
 set -euo pipefail
+# Command substitutions keep set -e (bash 4.4 and later). The snapshot steps
+# also check their own status, for older shells.
+shopt -s inherit_errexit 2>/dev/null || true
 
 remote=upstream
 branch=main
 staging=taproot/upstream
+old_path=github.com/router-for-me/CLIProxyAPI/v8
 # Marks a rewritten upstream snapshot and names the upstream commit it holds.
 trailer=Taproot-Upstream
 dry_run=0
@@ -118,10 +122,13 @@ snapshot() {
 	# Command substitution runs this in a subshell, which drops the EXIT trap.
 	trap cleanup EXIT
 	# The rewrite comes from this branch; upstream's tree does not have it.
-	cp scripts/taproot/rewrite-module-path.sh "$scratch/rewrite-module-path.sh"
-	git worktree add --quiet --detach "$scratch/tree" "$upstream"
-	(cd "$scratch/tree" && bash "$scratch/rewrite-module-path.sh" && git add --update) >&2
-	tree="$(git -C "$scratch/tree" write-tree)"
+	cp scripts/taproot/rewrite-module-path.sh "$scratch/rewrite-module-path.sh" || return 1
+	git worktree add --quiet --detach "$scratch/tree" "$upstream" || return 1
+	if ! (cd "$scratch/tree" && bash "$scratch/rewrite-module-path.sh" && git add --update) >&2; then
+		printf 'rewriting the module path of upstream %s failed\n' "${upstream:0:9}" >&2
+		return 1
+	fi
+	tree="$(git -C "$scratch/tree" write-tree)" || return 1
 	cleanup
 	scratch=""
 	git commit-tree "$tree" -p "$upstream" -p "$previous" -m "chore(upstream): rewrite the module path of upstream ${upstream:0:9}
@@ -174,7 +181,15 @@ if ((incoming == 0)); then
 fi
 
 echo "Rewriting the module path of upstream $(git rev-parse --short "$upstream")..."
-next="$(snapshot "$upstream" "$previous")"
+next="$(snapshot "$upstream" "$previous")" || {
+	echo "Could not build the rewritten upstream snapshot; nothing was merged." >&2
+	exit 1
+}
+# A snapshot that still holds upstream's path would merge it in.
+if git grep -q -F -e "$old_path" "$next" -- '*.go' '*go.mod' '*go.sum'; then
+	printf 'The rewritten snapshot %s still mentions %s; nothing was merged.\n' "$(git rev-parse --short "$next")" "$old_path" >&2
+	exit 1
+fi
 
 if ((dry_run)); then
 	git log --oneline --no-decorate "$merged..$upstream" | head -n 20
