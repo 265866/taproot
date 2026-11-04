@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Merges upstream/main into the current branch and runs taproot's checks.
-# It never pushes.
+# It never pushes. A file taproot deleted that upstream changed stays deleted;
+# every other conflict stops the merge for a person to resolve.
 #
 #   scripts/taproot/sync-upstream.sh               fetch, merge, check
 #   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits and conflicts only
@@ -19,7 +20,7 @@ for arg in "$@"; do
 	--no-fetch) fetch=0 ;;
 	--checks-only) checks_only=1 ;;
 	-h | --help)
-		sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+		sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 		exit 0
 		;;
 	*)
@@ -62,6 +63,22 @@ build_server() {
 	go build -o "$out/taproot" ./cmd/server || status=$?
 	rm -rf "$out"
 	return "$status"
+}
+
+# classify_conflicts reads unmerged index entries ("<mode> <object> <stage>\t<path>",
+# NUL-separated, as git ls-files -u -z and git merge-tree -z write them) and
+# prints "<kind>\t<path>" per path. The kind is "deleted" when the file existed
+# at the merge base, taproot deleted it, and upstream changed it (stages 1 and
+# 3 without 2), and "conflict" otherwise.
+classify_conflicts() {
+	tr '\0' '\n' | awk -F '\t' '
+		NF >= 2 { split($1, f, " "); seen[$2] = 1; stage[$2, f[3]] = 1 }
+		END {
+			for (p in seen) {
+				kind = (stage[p, 1] && !stage[p, 2] && stage[p, 3]) ? "deleted" : "conflict"
+				print kind "\t" p
+			}
+		}' | sort
 }
 
 run_checks() {
@@ -107,22 +124,49 @@ fi
 
 if ((dry_run)); then
 	git log --oneline --no-decorate "HEAD..$target" | head -n 20
-	if conflicts="$(git merge-tree --write-tree --name-only --no-messages HEAD "$target")"; then
-		echo "Dry run: the merge would apply cleanly."
-	else
+	tree="$(mktemp)"
+	trap 'rm -f "$tree"' EXIT
+	status=0
+	git merge-tree --write-tree -z --no-messages HEAD "$target" >"$tree" || status=$?
+	if ((status > 1)); then
+		echo "git merge-tree failed" >&2
+		exit "$status"
+	fi
+	classified="$(classify_conflicts <"$tree")"
+	deleted="$(printf '%s\n' "$classified" | awk -F '\t' '$1 == "deleted" { print $2 }')"
+	conflicts="$(printf '%s\n' "$classified" | awk -F '\t' '$1 == "conflict" { print $2 }')"
+	if [[ -n "$deleted" ]]; then
+		echo "Dry run: these files taproot deleted would stay deleted:"
+		printf '%s\n' "$deleted" | sed 's/^/  /'
+	fi
+	if [[ -n "$conflicts" ]]; then
 		echo "Dry run: the merge would conflict in:"
-		printf '%s\n' "$conflicts" | tail -n +2 | sed 's/^/  /'
+		printf '%s\n' "$conflicts" | sed 's/^/  /'
 		exit 1
 	fi
+	echo "Dry run: the merge would apply cleanly."
 	exit 0
 fi
 
 if ! git merge --no-edit --no-ff "$target"; then
-	echo
-	echo "Merge stopped on conflicts in:"
-	git diff --name-only --diff-filter=U | sed 's/^/  /'
-	echo "Resolve them and commit, then run $0 --checks-only. Or run 'git merge --abort' to undo."
-	exit 1
+	if ! git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
+		echo "git merge failed before merging; nothing changed." >&2
+		exit 1
+	fi
+	while IFS=$'\t' read -r kind path; do
+		if [[ "$kind" == deleted ]]; then
+			git rm --quiet -- "$path"
+			printf 'Kept deleted (taproot removed it, upstream changed it): %s\n' "$path"
+		fi
+	done < <(git ls-files -u -z | classify_conflicts)
+	if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+		echo
+		echo "Merge stopped on conflicts in:"
+		git diff --name-only --diff-filter=U | sed 's/^/  /'
+		echo "Resolve them and commit, then run $0 --checks-only. Or run 'git merge --abort' to undo."
+		exit 1
+	fi
+	git commit --quiet --no-edit
 fi
 
 run_checks
