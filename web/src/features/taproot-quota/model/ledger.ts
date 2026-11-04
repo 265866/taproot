@@ -356,3 +356,17 @@ export function credentialRetryAt(file: Record<string, unknown>): number | null 
   const ms = Date.parse(raw);
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
+
+/**
+ * The rows the ledger puts on screen: every shown row in the flat list, and only open groups' rows
+ * when grouped. The Cards view renders no rows.
+ */
+export function renderedLedgerRows<T extends { provider: string; shown: LedgerRow[] }>(
+  groups: T[],
+  options: { view: 'ledger' | 'cards'; grouping: 'provider' | 'none'; hidden: ReadonlySet<string> }
+): LedgerRow[] {
+  if (options.view === 'cards') return [];
+  return groups.flatMap((group) =>
+    options.grouping === 'provider' && options.hidden.has(group.provider) ? [] : group.shown
+  );
+}

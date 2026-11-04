@@ -285,10 +285,13 @@ export function AccountSheet(props: AccountSheetProps) {
                 />
               ))}
             </div>
-          ) : liveEntry ? (
-            <LiveQuotaGrid entries={[liveEntry]} />
-          ) : (
+          ) : liveEntry ? null : (
             <p className={styles.muted}>{t('taproot_quota.ledger.no_windows')}</p>
+          )}
+          {/* Without recorded quota the live read is all there is; for Codex it also holds the
+              reset credits, which taproot does not record. */}
+          {liveEntry && (columns.length === 0 || account.provider === 'codex') && (
+            <LiveQuotaGrid entries={[liveEntry]} />
           )}
           <QuotaActions
             provider={account.provider}

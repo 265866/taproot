@@ -4,6 +4,7 @@ import { apiClient, authFilesApi } from '@/services/api';
 import type { AuthFileRefreshResult } from '@/services/api/authFiles';
 import { getAuthFileRefreshKey } from '@/features/authFiles/manualRefresh';
 import { notifyAuthFilesChanged } from '@/features/authFiles/authFilesEvents';
+import { providerBreakdown } from '@/features/authFiles/batchSummary';
 import { useNotificationStore } from '@/stores';
 import type { AuthFileItem } from '@/types';
 import { formatFileSize } from '@/utils/format';
@@ -68,6 +69,7 @@ export type UseAuthFilesDataResult = {
   selectAllVisible: (visibleFiles: AuthFileItem[]) => void;
   invertVisibleSelection: (visibleFiles: AuthFileItem[]) => void;
   deselectAll: () => void;
+  retainSelection: (names: Iterable<string>) => void;
   batchDownload: (names: string[]) => Promise<void>;
   batchSetStatus: (names: string[], enabled: boolean) => Promise<void>;
   batchDelete: (names: string[]) => void;
@@ -158,6 +160,15 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
 
   const deselectAll = useCallback(() => {
     setSelectedFiles(new Set());
+  }, []);
+
+  /** Drops selected names outside `names`, such as rows a filter or a collapsed group hides. */
+  const retainSelection = useCallback((names: Iterable<string>) => {
+    const keep = new Set(names);
+    setSelectedFiles((prev) => {
+      const next = new Set([...prev].filter((name) => keep.has(name)));
+      return next.size === prev.size ? prev : next;
+    });
   }, []);
 
   const applyDeletedFiles = useCallback(
@@ -893,7 +904,10 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
 
       showConfirmation({
         title: t('auth_files.batch_delete_title'),
-        message: t('auth_files.batch_delete_confirm', { count: uniqueNames.length }),
+        message: t('auth_files.batch_delete_confirm', {
+          count: uniqueNames.length,
+          providers: providerBreakdown(files, uniqueNames, (provider) => getTypeLabel(t, provider)),
+        }),
         variant: 'danger',
         confirmText: t('common.confirm'),
         onConfirm: async () => {
@@ -924,7 +938,7 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
         },
       });
     },
-    [applyDeletedFiles, showConfirmation, showNotification, t]
+    [applyDeletedFiles, files, showConfirmation, showNotification, t]
   );
 
   return {
@@ -959,6 +973,7 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
     selectAllVisible,
     invertVisibleSelection,
     deselectAll,
+    retainSelection,
     batchDownload,
     batchSetStatus,
     batchDelete,

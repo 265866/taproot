@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { IconPlus, IconUpload } from '@/components/ui/icons';
@@ -16,13 +16,18 @@ import {
   type OAuthProviderCard,
 } from '@/features/oauth/providers';
 import { useAuthStore, useThemeStore } from '@/stores';
-import { usePopover } from './usePopover';
+import { moveFocusWithArrows, usePopover } from './usePopover';
 import styles from './AddAccount.module.scss';
 
 interface AddAccountProps {
   uploading: boolean;
   /** Starts with the panel open. */
   defaultOpen?: boolean;
+  /** Controlled panel state, so the page's empty state can open it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Called after a sign-in adds a credential. */
+  onAdded?: () => void;
   disableControls: boolean;
   onUpload: () => void;
 }
@@ -34,6 +39,9 @@ interface AddAccountProps {
 export function AddAccount({
   uploading,
   defaultOpen = false,
+  open: openProp,
+  onOpenChange,
+  onAdded,
   disableControls,
   onUpload,
 }: AddAccountProps) {
@@ -41,7 +49,11 @@ export function AddAccount({
   const apiBase = useAuthStore((state) => state.apiBase);
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const panelId = useId();
-  const { open, setOpen, close, rootRef, triggerRef, panelRef } = usePopover(defaultOpen);
+  const { open, setOpen, close, rootRef, triggerRef, panelRef } = usePopover({
+    defaultOpen,
+    open: openProp,
+    onOpenChange,
+  });
 
   const pluginProviders = usePluginOAuthProviders(apiBase);
   const providerCards = useMemo<OAuthProviderCard[]>(
@@ -58,6 +70,11 @@ export function AddAccount({
     providerCards,
     isFocused: (provider) => focusedRef.current === provider,
   });
+
+  const { addedCount } = flows;
+  useEffect(() => {
+    if (addedCount > 0) onAdded?.();
+  }, [addedCount, onAdded]);
 
   const labelOf = (card: OAuthProviderCard) =>
     card.kind === 'plugin'
@@ -121,7 +138,7 @@ export function AddAccount({
         className={`btn btn-primary btn-sm ${styles.trigger}`}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
       >
         <IconPlus size={15} />
         {t('accounts.add.button')}
@@ -138,6 +155,7 @@ export function AddAccount({
           className={styles.panel}
           role="group"
           aria-label={t('accounts.add.title')}
+          onKeyDown={moveFocusWithArrows}
         >
           <p className={styles.heading}>{t('accounts.add.oauth')}</p>
           <div className={styles.grid}>

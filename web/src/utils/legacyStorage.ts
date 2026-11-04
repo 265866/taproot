@@ -12,6 +12,9 @@ export const LEGACY_STORAGE_KEYS = [
   'apiUrl',
   // The Usage page once persisted its email toggle; the preference is now session-only.
   'taproot.usage.showEmails',
+  // The removed Auth Files page persisted its filters, and its search can hold an email.
+  'authFilesPage.uiState',
+  'authFilesPage.compactMode',
 ] as const;
 
 const LEGACY_STORAGE_PREFIXES = ['api-key-names:v1:'] as const;

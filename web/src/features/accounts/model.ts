@@ -3,7 +3,11 @@
  * account, whichever side knows it first. Pure.
  */
 
-import { isProblemAuthFile, normalizeProviderKey } from '@/features/authFiles/constants';
+import {
+  getAuthFileStatusMessage,
+  isProblemAuthFile,
+  normalizeProviderKey,
+} from '@/features/authFiles/constants';
 import { summarizeCooldowns } from '@/features/authFiles/cooldowns';
 import { stripJsonExtension } from '@/features/authFiles/identity';
 import {
@@ -134,4 +138,36 @@ export function matchesStatusFilter(
     case 'problem':
       return Boolean(file && isProblemAuthFile(file));
   }
+}
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The account search: label, email, credential file name, provider, project id, and the
+ * credential's status message (so `403` or `invalid` finds failing accounts). `*` matches any run
+ * of characters within one field. Never the `account` field: for API-key credentials it is the key.
+ */
+export function matchesAccountSearch(
+  row: { label: string; email: string; fileName: string; provider: string },
+  file: AuthFileItem | undefined,
+  query: string
+): boolean {
+  const term = query.trim();
+  if (!term) return true;
+  const fields = [
+    row.label,
+    row.email,
+    row.fileName,
+    row.provider,
+    textOf(file?.type),
+    textOf(file?.provider),
+    textOf(file?.projectId),
+    file ? getAuthFileStatusMessage(file) : '',
+  ];
+  if (term.includes('*')) {
+    const pattern = new RegExp(term.split('*').map(escapeRegExp).join('.*'), 'i');
+    return fields.some((value) => pattern.test(value));
+  }
+  const needle = term.toLowerCase();
+  return fields.some((value) => value.toLowerCase().includes(needle));
 }

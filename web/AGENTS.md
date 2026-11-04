@@ -79,7 +79,7 @@ The visual direction follows `internal/taproot/docs/quota-reference.png`, taken 
 - Primary actions, including feature-owned pills, use `--button-primary-bg`, `--button-primary-hover`, and `--button-primary-text` (white with black text in dark, near-black with white text in light). Toggles and checkboxes use `--primary-color`.
 - The taproot mark: `src/components/common/TaprootMark.tsx` draws the bare glyph in `--mark-color`; only the favicon (`src/assets/taprootMark.ts`, repeated in `index.html`) sits on a dark tile.
 
-Charts use Recharts. Reuse shared components from `src/components/ui/` before adding primitives. Preserve keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
+Charts use Recharts. Reuse shared components from `src/components/ui/` before adding primitives. Sheets and modals join the layer stack in `src/components/ui/layerStack.ts`, so only the top dialog handles Escape and traps Tab; a new dialog primitive must join it too. Preserve keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
 
 ## Testing & Verification
 

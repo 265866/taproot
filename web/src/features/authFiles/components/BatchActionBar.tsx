@@ -25,13 +25,17 @@ export type BatchActionBarProps = {
   onEnable: () => void;
   onDisable: () => void;
   onDelete: () => void;
+  /** Keeps the bar up with nothing selected, as in a selection mode. */
+  active?: boolean;
+  /** Leaves the selection mode; shown when set. */
+  onDone?: () => void;
 };
 
 /**
- * 悬浮批量操作条：portal 到 body 的玻璃工具栏。
- * - 选中数 >0 时上浮入场（0.28s 强减速），清零后加速退场（0.22s）再卸载；
- * - reduced-motion 下只做透明度淡入淡出（保留 translateX(-50%) 基础变换，防止错位半宽）；
- * - 实时高度写入 --auth-files-action-bar-height 供页面底部留白。
+ * The floating batch toolbar, portalled to the body. It rises in (0.28s) when it has something to
+ * act on and drops out (0.22s) before unmounting; with reduced motion it only fades, keeping the
+ * translateX(-50%) base so it stays centred. Its live height goes to
+ * --auth-files-action-bar-height so the page can leave room below.
  */
 export function BatchActionBar(props: BatchActionBarProps) {
   const {
@@ -46,27 +50,31 @@ export function BatchActionBar(props: BatchActionBarProps) {
     onEnable,
     onDisable,
     onDelete,
+    active = false,
+    onDone,
   } = props;
   const { t } = useTranslation();
+  // The bar enters and leaves with this: the selection, or the mode that wants it up.
+  const presence = active ? Math.max(1, selectionCount) : selectionCount;
 
   const [visible, setVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const animationRef = useRef<ReturnType<typeof animate> | null>(null);
-  const selectionCountRef = useRef(selectionCount);
+  const presenceRef = useRef(presence);
   const previousCountRef = useRef(0);
 
   useActionBarHeightVar(containerRef, '--auth-files-action-bar-height', visible);
 
   useEffect(() => {
-    selectionCountRef.current = selectionCount;
-    if (selectionCount > 0) {
+    presenceRef.current = presence;
+    if (presence > 0) {
       setVisible(true);
     }
-  }, [selectionCount]);
+  }, [presence]);
 
   useLayoutEffect(() => {
     if (!visible) return;
-    const currentCount = selectionCount;
+    const currentCount = presence;
     const previousCount = previousCountRef.current;
     const el = containerRef.current;
     if (!el) return;
@@ -106,7 +114,7 @@ export function BatchActionBar(props: BatchActionBarProps) {
       }
     } else if (currentCount === 0 && previousCount > 0) {
       const finishExit = () => {
-        if (selectionCountRef.current === 0) {
+        if (presenceRef.current === 0) {
           setVisible(false);
         }
       };
@@ -127,7 +135,7 @@ export function BatchActionBar(props: BatchActionBarProps) {
     }
 
     previousCountRef.current = currentCount;
-  }, [visible, selectionCount]);
+  }, [visible, presence]);
 
   useEffect(
     () => () => {
@@ -162,9 +170,14 @@ export function BatchActionBar(props: BatchActionBarProps) {
           <Button variant="ghost" size="sm" onClick={onInvert} disabled={selectableCount === 0}>
             {t('auth_files.batch_invert')}
           </Button>
-          <Button variant="ghost" size="sm" onClick={onDeselectAll}>
+          <Button variant="ghost" size="sm" onClick={onDeselectAll} disabled={selectionCount === 0}>
             {t('auth_files.batch_deselect')}
           </Button>
+          {onDone && (
+            <Button variant="ghost" size="sm" onClick={onDone}>
+              {t('auth_files.batch_done')}
+            </Button>
+          )}
         </div>
         <div className={styles.right}>
           <Button

@@ -9,7 +9,6 @@ import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { IconChevronLeft, IconRefreshCw } from '@/components/ui/icons';
-import { AUTH_FILES_CHANGED_EVENT } from '@/features/authFiles/authFilesEvents';
 import { invalidateAuthFileDerivedCaches } from '@/features/authFiles/cacheInvalidation';
 import { AuthFileRefreshResults } from '@/features/authFiles/components/AuthFileRefreshResults';
 import { BatchActionBar } from '@/features/authFiles/components/BatchActionBar';
@@ -31,7 +30,6 @@ import { ProviderCard } from '@/features/taproot-quota/components/ProviderCard';
 import { Segmented } from '@/features/taproot-quota/components/Segmented';
 import type { ChartView } from '@/features/taproot-quota/model/chart';
 import { accountName, formatDay } from '@/features/taproot-quota/model/format';
-import { matchesSearch } from '@/features/taproot-quota/model/ledger';
 import { liveEntriesByAuthIndex, liveEntriesByProvider } from '@/features/taproot-quota/model/live';
 import {
   BURN_WINDOWS_HOURS,
@@ -66,6 +64,7 @@ import {
   STATUS_FILTERS,
   accountHealth,
   fileAccountKey,
+  matchesAccountSearch,
   matchesStatusFilter,
   mergeAccountGroups,
   type StatusFilter,
@@ -99,6 +98,8 @@ export function AccountsPage() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selecting, setSelecting] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   // The managed account stays set after closing so the sheet's exit animation keeps its content.
   const [manageKey, setManageKey] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
@@ -140,6 +141,7 @@ export function AccountsPage() {
     selectAllVisible,
     invertVisibleSelection,
     deselectAll,
+    retainSelection,
     batchStatusUpdating,
     batchDownload,
     batchSetStatus,
@@ -174,14 +176,10 @@ export function AccountsPage() {
     isCurrentLayer ? FILES_REFRESH_MS : null
   );
 
-  // A sign-in elsewhere on the page adds a credential; pick it up and its first quota.
-  useEffect(() => {
-    const reload = () => {
-      void loadFilesInBackground();
-      void reloadQuota();
-    };
-    window.addEventListener(AUTH_FILES_CHANGED_EVENT, reload);
-    return () => window.removeEventListener(AUTH_FILES_CHANGED_EVENT, reload);
+  // Upload and delete update the list themselves; a finished sign-in does not.
+  const reloadAfterSignIn = useCallback(() => {
+    void loadFilesInBackground();
+    void reloadQuota();
   }, [loadFilesInBackground, reloadQuota]);
 
   const reloadAll = useCallback(
@@ -221,20 +219,23 @@ export function AccountsPage() {
     matchesStatusFilter('problem', a, fileByKey.get(a.authIndex))
   ).length;
 
-  /** Files of the rows shown now: the tab, the status filter, and the search. */
+  /**
+   * Files of the rows on screen with a checkbox: what the ledger renders after the tab, filters,
+   * search, and collapsed groups (nothing in the Cards view). Batch actions reach only these.
+   */
+  const [renderedKeys, setRenderedKeys] = useState<readonly string[]>([]);
   const shownFiles = useMemo(
     () =>
-      visible.flatMap((group) =>
-        group.accounts.flatMap((account) => {
-          const file = fileByKey.get(account.authIndex);
-          if (!file || isRuntimeOnlyAuthFile(file)) return [];
-          if (!matchesStatusFilter(statusFilter, account, file)) return [];
-          const searchable = { ...account, fileName: file.name };
-          return matchesSearch(searchable, query) ? [file] : [];
-        })
-      ),
-    [visible, fileByKey, statusFilter, query]
+      renderedKeys.flatMap((key) => {
+        const file = fileByKey.get(key);
+        return file && !isRuntimeOnlyAuthFile(file) ? [file] : [];
+      }),
+    [renderedKeys, fileByKey]
   );
+  // A selection never outlives its rows: hiding a row unselects it.
+  useEffect(() => {
+    retainSelection(shownFiles.map((file) => file.name));
+  }, [retainSelection, shownFiles]);
 
   const statusDataFor = useCallback(
     (file: AuthFileItem | undefined) => {
@@ -285,6 +286,15 @@ export function AccountsPage() {
       disabledOnly,
       onResetFilterToAll: () => setTab('all'),
     });
+  const stopSelecting = () => {
+    deselectAll();
+    setSelecting(false);
+  };
+  const clearFilters = () => {
+    setQuery('');
+    setStatusFilter('all');
+    setTab('all');
+  };
   const bulkDisabled = disableControls || filesLoading || deletingAll || files.length === 0;
   const menuItems: AccountsMenuItem[] = [
     {
@@ -296,10 +306,7 @@ export function AccountsPage() {
     {
       key: 'select',
       label: selecting ? t('accounts.menu.stop_selecting') : t('accounts.menu.select'),
-      onSelect: () => {
-        if (selecting) deselectAll();
-        setSelecting(!selecting);
-      },
+      onSelect: selecting ? stopSelecting : () => setSelecting(true),
     },
     {
       key: 'model-rules',
@@ -340,8 +347,22 @@ export function AccountsPage() {
 
   const managed = manageKey ? (allAccounts.find((a) => a.authIndex === manageKey) ?? null) : null;
   const managedFile = manageKey ? fileByKey.get(manageKey) : undefined;
-  // A deleted account closes its sheet.
   const sheetOpen = manageOpen && managed !== null;
+
+  // An account that disappears while managed (deleted from the sheet, or elsewhere) closes the
+  // sheet for good: the same credential uploaded again must not reopen it. Its Manage button is
+  // gone too, so focus moves to the page title.
+  const { closePrefixProxyEditor } = editor;
+  const { closeModels } = models;
+  const managedGone = manageKey !== null && managed === null && filesLoaded;
+  useEffect(() => {
+    if (!managedGone) return;
+    closePrefixProxyEditor();
+    closeModels();
+    setManageOpen(false);
+    setManageKey(null);
+    titleRef.current?.focus();
+  }, [closeModels, closePrefixProxyEditor, managedGone]);
 
   const futureOptions = (Object.keys(FUTURE_USAGE) as FutureUsage[]).map((value) => ({
     value,
@@ -360,7 +381,9 @@ export function AccountsPage() {
     <div className={`${quotaStyles.page} ${styles.page}`}>
       <header className={quotaStyles.header}>
         <div className={quotaStyles.titleBlock}>
-          <h1 className={quotaStyles.title}>{t('accounts.title')}</h1>
+          <h1 ref={titleRef} tabIndex={-1} className={`${quotaStyles.title} ${styles.title}`}>
+            {t('accounts.title')}
+          </h1>
           {!firstLoad && (
             <span className={quotaStyles.meta}>
               {t('accounts.meta', { count: counts.all, reporting })}
@@ -381,9 +404,12 @@ export function AccountsPage() {
           </Button>
           <AccountsMenu items={menuItems} />
           <AddAccount
+            open={addOpen}
+            onOpenChange={setAddOpen}
             uploading={uploading}
             disableControls={disableControls}
             onUpload={handleUploadClick}
+            onAdded={reloadAfterSignIn}
           />
         </div>
       </header>
@@ -491,7 +517,25 @@ export function AccountsPage() {
           <Skeleton height={320} rounded={16} />
         </div>
       ) : groups.length === 0 ? (
-        <EmptyState title={t('accounts.empty_title')} description={t('accounts.empty_desc')} />
+        <EmptyState
+          title={t('accounts.empty_title')}
+          description={t('accounts.empty_desc')}
+          action={
+            <div className={styles.emptyActions}>
+              <Button size="sm" onClick={() => setAddOpen(true)} disabled={disableControls}>
+                {t('accounts.add.button')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleUploadClick}
+                disabled={disableControls || uploading}
+              >
+                {t('accounts.add.upload')}
+              </Button>
+            </div>
+          }
+        />
       ) : (
         <div className={quotaStyles.cards}>
           {visible.map((group) => (
@@ -516,7 +560,11 @@ export function AccountsPage() {
             liveByAuthIndex={liveByAuthIndex}
             query={query}
             onQueryChange={setQuery}
+            matchesQuery={matchesAccountSearch}
             rowFilter={(row, file) => matchesStatusFilter(statusFilter, row, file)}
+            filtersActive={statusFilter !== 'all' || activeTab !== 'all'}
+            onClearFilters={clearFilters}
+            onRenderedRowsChange={setRenderedKeys}
             toolbarExtra={
               <Select
                 value={statusFilter}
@@ -590,21 +638,21 @@ export function AccountsPage() {
         onClose={() => setManageOpen(false)}
       />
 
-      {selecting && (
-        <BatchActionBar
-          selectionCount={selectionCount}
-          selectableCount={shownFiles.length}
-          disableControls={disableControls}
-          batchStatusDisabled={disableControls || selectionCount === 0 || batchStatusUpdating}
-          onSelectAll={() => selectAllVisible(shownFiles)}
-          onInvert={() => invertVisibleSelection(shownFiles)}
-          onDeselectAll={deselectAll}
-          onDownload={() => void batchDownload([...selectedFiles])}
-          onEnable={() => void batchSetStatus([...selectedFiles], true)}
-          onDisable={() => void batchSetStatus([...selectedFiles], false)}
-          onDelete={() => batchDelete([...selectedFiles])}
-        />
-      )}
+      <BatchActionBar
+        active={selecting}
+        selectionCount={selectionCount}
+        selectableCount={shownFiles.length}
+        disableControls={disableControls}
+        batchStatusDisabled={disableControls || selectionCount === 0 || batchStatusUpdating}
+        onSelectAll={() => selectAllVisible(shownFiles)}
+        onInvert={() => invertVisibleSelection(shownFiles)}
+        onDeselectAll={deselectAll}
+        onDone={stopSelecting}
+        onDownload={() => void batchDownload([...selectedFiles])}
+        onEnable={() => void batchSetStatus([...selectedFiles], true)}
+        onDisable={() => void batchSetStatus([...selectedFiles], false)}
+        onDelete={() => batchDelete([...selectedFiles])}
+      />
     </div>
   );
 }

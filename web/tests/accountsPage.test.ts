@@ -12,6 +12,9 @@ import type {
   UseAuthFilesPrefixProxyEditorResult,
 } from '@/features/authFiles/hooks/useAuthFilesPrefixProxyEditor';
 import type { QuotaRefresh } from '@/features/taproot-quota/useQuotaRefresh';
+import type { QuotaFileEntry } from '@/features/taproot-quota/live/logic';
+import { classifyQuotaFiles } from '@/features/taproot-quota/live/logic';
+import type { QuotaAccount } from '@/features/taproot-quota/model/fromApi';
 import { accountHealth, mergeAccountGroups } from '@/features/accounts/model';
 import { LEGACY_REDIRECTS, ROUTES, legacyRedirectTarget } from '@/router/routes';
 import type { AuthFileItem } from '@/types/authFile';
@@ -169,10 +172,16 @@ const editorState = (file: AuthFileItem): PrefixProxyEditorState => ({
   headersError: null,
 });
 
-const renderSheet = (file: AuthFileItem, editing = false) => {
-  const account = mergeAccountGroups(GROUPS, FILES, true)
-    .flatMap((group) => group.accounts)
-    .find((a) => a.authIndex === file.authIndex)!;
+const renderSheet = (
+  file: AuthFileItem,
+  editing = false,
+  overrides: { account?: QuotaAccount; liveEntry?: QuotaFileEntry } = {}
+) => {
+  const account =
+    overrides.account ??
+    mergeAccountGroups(GROUPS, FILES, true)
+      .flatMap((group) => group.accounts)
+      .find((a) => a.authIndex === file.authIndex)!;
   const noop = () => {};
   const asyncNoop = async () => {};
   const models: UseAuthFilesModelsResult = {
@@ -210,7 +219,7 @@ const renderSheet = (file: AuthFileItem, editing = false) => {
         open: true,
         account,
         file,
-        liveEntry: undefined,
+        liveEntry: overrides.liveEntry,
         now: NOW,
         disableControls: false,
         statusData: null,
@@ -362,5 +371,148 @@ describe('Manage sheet file names', () => {
     const html = renderSheet(CODEX);
     expect(leaks(html)).toEqual([]);
     expect(html).toContain('codex-1a2b3c4d-se•••n@e•••.com-team.json');
+  });
+});
+
+describe('account search', () => {
+  const row = (file: AuthFileItem) => ({
+    label: String(file.email ?? ''),
+    email: String(file.email ?? ''),
+    fileName: file.name,
+    provider: String(file.provider ?? file.type),
+  });
+
+  test('matches label, email, file name, provider, project, and status message', async () => {
+    const { matchesAccountSearch } = await import('@/features/accounts/model');
+    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'anthropic1')).toBe(true);
+    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'CLAUDE')).toBe(true);
+    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'refresh failed')).toBe(true);
+    const project = { ...NEW_FILE, projectId: 'gcp-proj-77' };
+    expect(matchesAccountSearch(row(project), project, 'proj-77')).toBe(true);
+    expect(matchesAccountSearch(row(CODEX), CODEX, 'refresh failed')).toBe(false);
+  });
+
+  test('* matches anything, anywhere in a field', async () => {
+    const { matchesAccountSearch } = await import('@/features/accounts/model');
+    expect(matchesAccountSearch(row(CLAUDE), CLAUDE, 'claude-*admin')).toBe(true);
+    expect(matchesAccountSearch(row(CODEX), CODEX, 'codex*team')).toBe(true);
+    expect(matchesAccountSearch(row(CODEX), CODEX, 'claude-*admin')).toBe(false);
+  });
+
+  test('an empty query matches everything', async () => {
+    const { matchesAccountSearch } = await import('@/features/accounts/model');
+    expect(matchesAccountSearch(row(CODEX), CODEX, '  ')).toBe(true);
+  });
+});
+
+describe('Codex reset credits', () => {
+  test('Manage shows the live Codex card, which holds reset credits, beside recorded quota', () => {
+    const file: AuthFileItem = { ...CODEX, disabled: false };
+    const [liveEntry] = classifyQuotaFiles([file]);
+    expect(liveEntry?.type).toBe('codex');
+    const account: QuotaAccount = {
+      authIndex: 'a2',
+      provider: 'codex',
+      label: 'second.person@example.com',
+      email: 'second.person@example.com',
+      plan: 'team',
+      disabled: false,
+      lastSeen: null,
+      windows: [
+        {
+          window: 'codex_secondary',
+          utilization: 0.5,
+          resetsAt: NOW + 86_400_000,
+          observedAt: NOW - 60_000,
+          periodMs: 7 * 86_400_000,
+        },
+      ],
+      series: [],
+    };
+    const html = renderSheet(file, false, { account, liveEntry });
+    expect(html).toContain('aria-label="7-day limit: 50% remaining"');
+    expect(html).toContain('Click here to refresh quota');
+    // Codex resets come from the live card, so Manage offers no disabled stand-in.
+    expect(html).not.toContain('This provider has no reset grants.');
+    expect(html).toContain('Refresh quota');
+    expect(leaks(html)).toEqual([]);
+  });
+});
+
+describe('batch reach', () => {
+  test('only rows on screen count: collapsed groups and the Cards view contribute none', async () => {
+    const { renderedLedgerRows } = await import('@/features/taproot-quota/model/ledger');
+    const row = (authIndex: string, provider: string) =>
+      ({
+        authIndex,
+        provider,
+      }) as unknown as import('@/features/taproot-quota/model/ledger').LedgerRow;
+    const groups = [
+      { provider: 'claude', shown: [row('a1', 'claude'), row('a3', 'claude')] },
+      { provider: 'codex', shown: [row('a2', 'codex')] },
+    ];
+    const ids = (rows: { authIndex: string }[]) => rows.map((r) => r.authIndex);
+    const open = new Set<string>();
+    const codexHidden = new Set(['codex']);
+    expect(
+      ids(renderedLedgerRows(groups, { view: 'ledger', grouping: 'provider', hidden: open }))
+    ).toEqual(['a1', 'a3', 'a2']);
+    expect(
+      ids(renderedLedgerRows(groups, { view: 'ledger', grouping: 'provider', hidden: codexHidden }))
+    ).toEqual(['a1', 'a3']);
+    // A collapse only applies while grouped.
+    expect(
+      ids(renderedLedgerRows(groups, { view: 'ledger', grouping: 'none', hidden: codexHidden }))
+    ).toEqual(['a1', 'a3', 'a2']);
+    expect(
+      renderedLedgerRows(groups, { view: 'cards', grouping: 'provider', hidden: open })
+    ).toEqual([]);
+  });
+
+  test('the page acts on rendered rows and prunes the selection to them', () => {
+    const source = readFileSync('src/features/accounts/AccountsPage.tsx', 'utf8');
+    expect(source).toContain('onRenderedRowsChange={setRenderedKeys}');
+    expect(source).toContain('retainSelection(shownFiles.map((file) => file.name));');
+    expect(source).not.toContain('matchesSearch(');
+  });
+
+  test('a sign-in reloads once, through Add account, not through the global change event', () => {
+    const source = readFileSync('src/features/accounts/AccountsPage.tsx', 'utf8');
+    expect(source).not.toContain('AUTH_FILES_CHANGED_EVENT');
+    expect(source).toContain('onAdded={reloadAfterSignIn}');
+  });
+});
+
+describe('ledger search while emails are hidden', () => {
+  const renderLedger = async (query: string) => {
+    const { Ledger } = await import('@/features/taproot-quota/components/Ledger');
+    return renderToStaticMarkup(
+      createElement(Ledger, {
+        groups: GROUPS,
+        fileByIndex: new Map(FILES.map((file) => [String(file.authIndex), file])),
+        showEmails: false,
+        resolvedTheme: 'dark',
+        liveByAuthIndex: new Map(),
+        query,
+        onQueryChange: () => {},
+        onClearFilters: () => {},
+      })
+    );
+  };
+
+  test('masks an email in the search field and in the no-match message', async () => {
+    const html = await renderLedger('zebrafinch.alpha@sl.example.run-nomatch');
+    expect(leaks(html)).toEqual([]);
+    // Not focused: the search shows as a masked chip, with no input carrying the value.
+    expect(html).toContain('title="ze•••a@s•••.run-nomatch"');
+    expect(html).not.toContain('type="search"');
+    expect(html).toContain('No accounts match “ze•••a@s•••.run-nomatch”.');
+    expect(html).toContain('Clear filters');
+  });
+
+  test('shows the search as typed once emails are shown', async () => {
+    usePrivacyStore.getState().toggleShowEmails();
+    const html = await renderLedger('zebrafinch.alpha@sl.example.run-nomatch');
+    expect(html).toContain('value="zebrafinch.alpha@sl.example.run-nomatch"');
   });
 });

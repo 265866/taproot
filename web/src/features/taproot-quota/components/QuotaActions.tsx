@@ -210,6 +210,15 @@ export function QuotaActions({
     </button>
   ) : null;
 
+  // Codex reset credits live on the provider's live card, which the caller shows beside this.
+  if (provider === 'codex') {
+    return (
+      <div className={styles.side}>
+        <div className={styles.actions}>{refreshButton}</div>
+      </div>
+    );
+  }
+
   if (provider === 'claude' && file) {
     return (
       <div className={styles.side}>

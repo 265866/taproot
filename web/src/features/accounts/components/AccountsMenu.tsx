@@ -1,7 +1,7 @@
-import { useId, type KeyboardEvent } from 'react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconEllipsis } from '@/components/ui/icons';
-import { usePopover } from './usePopover';
+import { moveFocusWithArrows, usePopover } from './usePopover';
 import styles from './AccountsMenu.module.scss';
 
 export interface AccountsMenuItem {
@@ -25,18 +25,7 @@ export function AccountsMenu({
 }) {
   const { t } = useTranslation();
   const menuId = useId();
-  const { open, setOpen, close, rootRef, triggerRef, panelRef } = usePopover(defaultOpen);
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    event.preventDefault();
-    const buttons = Array.from(
-      panelRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []
-    );
-    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    const next = event.key === 'ArrowDown' ? index + 1 : index - 1;
-    buttons[(next + buttons.length) % buttons.length]?.focus();
-  };
+  const { open, setOpen, close, rootRef, triggerRef, panelRef } = usePopover({ defaultOpen });
 
   return (
     <div className={styles.root} ref={rootRef}>
@@ -48,7 +37,7 @@ export function AccountsMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
       >
         <IconEllipsis size={18} />
       </button>
@@ -59,13 +48,14 @@ export function AccountsMenu({
           role="menu"
           aria-label={t('accounts.menu.label')}
           className={styles.menu}
-          onKeyDown={handleKeyDown}
+          onKeyDown={moveFocusWithArrows}
         >
           {items.map((item) => (
             <button
               key={item.key}
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className={styles.item}
               data-danger={item.danger || undefined}
               data-divided={item.divided || undefined}
