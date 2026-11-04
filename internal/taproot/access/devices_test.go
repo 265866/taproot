@@ -74,7 +74,8 @@ func TestDeviceNames(t *testing.T) {
 			Identity{Via: ViaTailnet, Login: "a@github", Node: "server.tailnet-0000.ts.net", NodeID: "nserver", self: true},
 			Device{ID: "local", Name: "server (local)", Login: "a@github", Via: ViaTailnet},
 		},
-		{Identity{Via: ViaCIDR, Node: "192.168.0.88"}, Device{ID: "cidr:192.168.0.88", Name: "server (via 192.168.0.88)", Via: ViaCIDR}},
+		// The request path stores the bare address; DeviceName names it at read time.
+		{Identity{Via: ViaCIDR, Node: "192.168.0.88"}, Device{ID: "cidr:192.168.0.88", Name: "192.168.0.88", Via: ViaCIDR}},
 		{Identity{Via: ViaCIDR, Node: "192.168.0.20"}, Device{ID: "cidr:192.168.0.20", Name: "192.168.0.20", Via: ViaCIDR}},
 		{
 			Identity{Via: ViaTailnet, Login: "a@github", Node: "desktop.tailnet-0000.ts.net", NodeID: "nDesk"},
@@ -212,8 +213,8 @@ func TestOwnAddressNamingLeavesAccessUnchanged(t *testing.T) {
 		}
 		if len(own) > 0 {
 			// The naming did look: the trusted own address was named after the server.
-			if d := g.deviceFor(Identity{Via: ViaCIDR, Node: "192.168.0.88"}); d.Name != "server (via 192.168.0.88)" {
-				t.Errorf("%s: trusted own address named %q", label, d.Name)
+			if name := g.DeviceName("cidr:192.168.0.88", "192.168.0.88"); name != "server (via 192.168.0.88)" {
+				t.Errorf("%s: trusted own address named %q", label, name)
 			}
 		}
 	}

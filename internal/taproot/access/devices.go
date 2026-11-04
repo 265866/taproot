@@ -126,7 +126,9 @@ func (g *Guard) deviceFor(id Identity) Device {
 	case id.Via == ViaLoopback || id.self:
 		return Device{ID: LocalDeviceID, Name: serverName(self) + " (local)", Login: id.Login, Via: id.Via}
 	case id.Via == ViaCIDR:
-		return Device{ID: cidrDevicePrefix + id.Node, Name: g.cidrDeviceName(id.Node, self), Via: id.Via}
+		// Stored as the bare address; DeviceName names it at read time, which keeps
+		// the interface read off the request path.
+		return Device{ID: cidrDevicePrefix + id.Node, Name: id.Node, Via: id.Via}
 	}
 	d := Device{ID: "node:" + id.NodeID, Name: shortNodeName(id.Node, self), Login: id.Login, Via: id.Via}
 	if id.NodeID == "" {
