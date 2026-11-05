@@ -360,6 +360,81 @@ func TestAdminNodes(t *testing.T) {
 	assertDenied(t, do(e, "100.90.0.1:1", "/v8/management/config", nil), "not_admin_node")
 }
 
+// A tagged server node has no user login, so whois reports none that
+// allow-logins could list. The server's own node still reaches the proxy, and
+// only the proxy; another tagged node does not.
+func TestTaggedServerNodeReachesProxyOnly(t *testing.T) {
+	peers := defaultPeers()
+	tagged := fakePeer{login: "tagged-devices", displayName: "Tagged Devices", node: "server"}
+	peers[selfIP], peers[selfIPv6] = tagged, tagged
+	peers["100.64.0.20"] = fakePeer{login: "tagged-devices", displayName: "Tagged Devices", node: "ci-runner"}
+	ts := newFakeTailscaled(t, peers)
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop", "server"}})
+	e, _ := testEngine(g)
+
+	for _, remote := range []string{selfIP + ":40000", "[" + selfIPv6 + "]:40000"} {
+		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
+			t.Fatalf("%s proxy status = %d, want 200; body %s", remote, rec.Code, rec.Body)
+		}
+		assertForbidden(t, do(e, remote, "/v8/management/config", nil))
+		assertForbidden(t, do(e, remote, "/taproot/api/v1/me", nil))
+	}
+	id, reason := g.admit(t.Context(), selfIP+":40000", func() *selfNode { return g.self(t.Context()) })
+	if reason != "" || !id.self || id.Admin {
+		t.Fatalf("admit(self) = %+v, %q; want the proxy-only own node", id, reason)
+	}
+	if d := g.deviceFor(id); d.ID != LocalDeviceID {
+		t.Fatalf("own node device = %+v, want %s", d, LocalDeviceID)
+	}
+	assertForbidden(t, do(e, "100.64.0.20:40000", "/v1/models", nil))
+
+	// When whois fails, the own address in status still admits the node. A
+	// fresh guard has no cached whois answer, so the lookup really fails.
+	fresh := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	freshEngine, _ := testEngine(fresh)
+	before := ts.callCount(selfIP)
+	ts.failNext(selfIP, 1)
+	if rec := do(freshEngine, selfIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("own node with whois failing: proxy status = %d, want 200; body %s", rec.Code, rec.Body)
+	}
+	if ts.callCount(selfIP) != before+1 {
+		t.Fatalf("whois calls for the own address = %d, want %d", ts.callCount(selfIP), before+1)
+	}
+
+	// Until the server's own node is known, a tagged own node is just a login
+	// outside allow-logins.
+	ts.failStatus(1000)
+	unknown := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	unknownEngine, _ := testEngine(unknown)
+	assertForbidden(t, do(unknownEngine, selfIP+":40000", "/v1/models", nil))
+}
+
+// An address the console moved from the server to another node is still in
+// the cached status list until the next refresh. whois names the node that
+// holds it now, so that node gets no own-node pass and no admin access.
+func TestReassignedOwnAddressIsNotTheServer(t *testing.T) {
+	peers := defaultPeers()
+	peers[selfIP] = fakePeer{login: "mallory@example.org", displayName: "Mallory", node: "intruder"}
+	ts := newFakeTailscaled(t, peers)
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop", "intruder"}}))
+	assertForbidden(t, do(e, selfIP+":40000", "/v1/models", nil))
+
+	// The same address under an allowed login reaches the proxy as that node,
+	// not as the server, and is kept off the admin surface while status still
+	// lists it as the server's.
+	ts.setPeer(selfIP, fakePeer{login: testLogin, displayName: "Alice", node: "intruder"})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop", "intruder"}})
+	e, _ = testEngine(g)
+	if rec := do(e, selfIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("allowed login on a reassigned address: proxy status = %d, want 200", rec.Code)
+	}
+	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
+	id, reason := g.admit(t.Context(), selfIP+":40000", func() *selfNode { return g.self(t.Context()) })
+	if reason != "" || id.self || id.NodeID != "nintruderCNTRL" {
+		t.Fatalf("admit(reassigned) = %+v, %q; want node nintruderCNTRL, not the server", id, reason)
+	}
+}
+
 // Without admin-nodes no tailnet caller is an admin, whatever its login.
 // Loopback still is.
 func TestEmptyAdminNodesDenyEveryTailnetCaller(t *testing.T) {

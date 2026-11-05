@@ -2,6 +2,12 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`.
 
+## Unreleased
+
+### Fixed
+
+- The server's own Tailscale node reaches the proxy again after the node is tagged. A tagged node has no user login, so `allow-logins` refused it, and local clients that use the Tailscale address got 403.
+
 ## v0.1.0
 
 The first release. Taproot is a fork of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), merged with upstream up to commit `6e6afab99`, that pools Claude and Codex subscription accounts behind one endpoint on a Tailscale tailnet.

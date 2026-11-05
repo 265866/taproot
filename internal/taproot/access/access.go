@@ -15,19 +15,25 @@
 //     on the development machine, connect from loopback.
 //   - trusted-cidrs reach the proxy only. They hold host-local addresses, such
 //     as the LAN address that a host-local publish arrives from.
-//   - A tailnet address reaches the proxy when tailscaled's whois login is in
-//     allow-logins. It reaches the admin surface only when, in addition, its
-//     node is listed in admin-nodes and is not the server's own node. With
-//     admin-nodes empty, no tailnet caller is an admin. The server's own node
-//     is excluded because every process and container on the host connects
-//     through it, and they all resolve to the host owner's login.
+//   - The server's own tailnet node reaches the proxy only, whatever its login.
+//     Every process and container on the host connects through it, so it
+//     never reaches the admin surface. It is admitted without allow-logins
+//     because a tagged node has no user login, and an untagged server node
+//     admitted every process on the host anyway. whois decides which node an
+//     address belongs to; the status address list is the fallback when whois
+//     fails.
+//   - Any other tailnet address reaches the proxy when tailscaled's whois login
+//     is in allow-logins. It reaches the admin surface only when, in addition,
+//     its node is listed in admin-nodes. With admin-nodes empty, no tailnet
+//     caller is an admin.
 //
 // Every admitted caller may load the dashboard page itself, which is static,
 // so a device outside admin-nodes sees why the API refuses it.
 //
 // The server's own node comes from tailscaled's LocalAPI status. Until it has
-// been read once, tailnet callers get no admin access and only local host
-// names pass the Host check.
+// been read once, tailnet callers get no admin access, only local host names
+// pass the Host check, and the server's own node needs an allowed login like
+// any other node, so a tagged one is refused.
 //
 // The admin surface is keyless for admitted callers, so a browser is its weak
 // point: any page the admin visits could send requests with the admin's
@@ -61,6 +67,7 @@
 package access
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -497,21 +504,37 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 	if !isTailnet(addr) {
 		return Identity{}, "not a tailnet address"
 	}
+	s := self()
 	p, err := g.lookup(ctx, addr)
-	if err != nil {
+	// whois names the node behind the address now; the status address list can
+	// be a refresh behind a reassignment, so it decides only when whois cannot.
+	own := false
+	if s != nil {
+		if err == nil && p.StableID != "" {
+			own = p.StableID == s.StableID
+		} else {
+			own = containsAddr(s.IPs, addr)
+		}
+	}
+	if err != nil && !own {
 		return Identity{}, err.Error()
+	}
+	if own {
+		return Identity{
+			Login: p.Login, DisplayName: p.DisplayName,
+			Node: cmp.Or(p.Node, s.DNSName), NodeID: cmp.Or(p.StableID, s.StableID),
+			Via: ViaTailnet, notAdmin: "this server's own node reaches the proxy only", self: true,
+		}, ""
 	}
 	if !slices.Contains(*g.allow.Load(), strings.ToLower(p.Login)) {
 		return Identity{}, "login " + p.Login + " not in allow-logins"
 	}
 	id := Identity{Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, NodeID: p.StableID, Via: ViaTailnet}
-	s := self()
 	switch {
 	case s == nil:
 		id.notAdmin = "this server's own tailnet node is unknown, so tailnet callers reach the proxy only"
-	case containsAddr(s.IPs, addr) || (p.StableID != "" && p.StableID == s.StableID):
-		id.notAdmin = "this server's own node reaches the proxy only"
-		id.self = true
+	case containsAddr(s.IPs, addr):
+		id.notAdmin = "the address is still this server's own in tailscaled status, so it reaches the proxy only"
 	case !matchAdminNode(*g.adminNodes.Load(), p.Node, p.StableID, s):
 		id.notAdmin = "node " + quoteHeader(p.Node) + " not in admin-nodes"
 		id.unlistedNode = true
