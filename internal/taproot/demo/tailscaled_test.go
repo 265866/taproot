@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +19,13 @@ import (
 // call with an error, so the guard never learns about a tailnet.
 func TestStandInTailscaledPassesStartupCheck(t *testing.T) {
 	t.Setenv("MANAGEMENT_PASSWORD", "demo-test-only")
-	dir := t.TempDir()
+	// Short path: seed puts the socket in dir, and unix socket paths are
+	// limited to about 104 bytes on macOS.
+	dir, err := os.MkdirTemp("", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	if _, err := seed(context.Background(), dir, 8399, testStart); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

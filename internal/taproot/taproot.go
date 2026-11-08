@@ -114,7 +114,10 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (_ []api.ServerOption, stop func(), _ error) {
 	tpPath := ConfigPath(upstreamConfigPath)
 	if _, err := os.Stat(tpPath); errors.Is(err, os.ErrNotExist) {
-		return nil, nil, fmt.Errorf("taproot.yaml not found at %s: create it there (examples/taproot/taproot.yaml is a starting point), or set TAPROOT_CONFIG to its path", tpPath)
+		if abs, errAbs := filepath.Abs(tpPath); errAbs == nil {
+			tpPath = abs
+		}
+		return nil, nil, fmt.Errorf("taproot.yaml not found at %s: create it there (the taproot repository's examples/taproot/taproot.yaml is a starting point), or set TAPROOT_CONFIG to its path", tpPath)
 	}
 	tp, err := LoadConfig(tpPath)
 	if err != nil {

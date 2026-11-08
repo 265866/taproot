@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/265866/taproot/internal/httpwire"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
@@ -141,3 +142,15 @@ func (w *heldErrorWriter) Flush() {
 		w.ResponseWriter.Flush()
 	}
 }
+
+// FlushError and Unwrap keep upstream's error-aware flush and
+// http.ResponseController reaching the transport, as its own wrappers do:
+// streaming handlers cancel the upstream request on a flush error.
+func (w *heldErrorWriter) FlushError() error {
+	if w.held {
+		return nil
+	}
+	return httpwire.FlushResponse(w.ResponseWriter)
+}
+
+func (w *heldErrorWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

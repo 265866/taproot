@@ -36,6 +36,7 @@ func VersionLine() string {
 // HandleArgs is taproot's command-line hook. cmd/server/main.go calls it once,
 // after upstream defines its flags and before flag.Parse. It replaces the help
 // text with taproot's and serves --version, which prints VersionLine and exits 0.
+// If upstream or a plugin defines its own version flag, --version is theirs.
 // Anything else that must run before upstream reads the config, such as
 // writing default config files on first run, belongs here.
 func HandleArgs(args []string) {
@@ -43,11 +44,12 @@ func HandleArgs(args []string) {
 }
 
 func handleArgs(fs *flag.FlagSet, args []string, stdout io.Writer, exit func(int)) {
-	if fs.Lookup("version") == nil {
+	owned := fs.Lookup("version") == nil
+	if owned {
 		fs.Bool("version", false, "Print the version and exit")
 	}
 	fs.Usage = func() { writeUsage(fs) }
-	if len(args) > 1 && versionRequested(fs, args[1:]) {
+	if owned && len(args) > 1 && versionRequested(fs, args[1:]) {
 		_, _ = fmt.Fprintln(stdout, VersionLine())
 		exit(0)
 	}
@@ -88,7 +90,7 @@ func versionRequested(fs *flag.FlagSet, args []string) bool {
 func writeUsage(fs *flag.FlagSet) {
 	out := fs.Output()
 	_, _ = fmt.Fprintln(out, "Usage: taproot [flags]")
-	_, _ = fmt.Fprintln(out, "\nWith no login or import flag, taproot starts the server. It reads taproot.yaml from beside --config, or from TAPROOT_CONFIG.")
+	_, _ = fmt.Fprintln(out, "\nWithout a login, import, -tui, or -discover flag, taproot starts the server. It reads taproot.yaml from beside --config, or from TAPROOT_CONFIG.")
 	_, _ = fmt.Fprintln(out, "\nFlags:")
 	fs.VisitAll(func(f *flag.Flag) {
 		if hiddenFlags[f.Name] {

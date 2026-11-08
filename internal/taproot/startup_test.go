@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,12 +31,27 @@ func TestSetupNamesMissingTaprootYAML(t *testing.T) {
 	if _, err := setupServer(t, ""); err == nil || !strings.Contains(err.Error(), "taproot.yaml not found at "+elsewhere+":") {
 		t.Fatalf("Setup with TAPROOT_CONFIG=%s = %v, want an error naming it", elsewhere, err)
 	}
+
+	// A relative --config still names where taproot looked, whatever the
+	// supervisor's working directory is.
+	t.Setenv("TAPROOT_CONFIG", "")
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	want := "taproot.yaml not found at " + filepath.Join(cwd, "taproot.yaml") + ":"
+	if _, err := Setup(context.Background(), nil, "config.yaml"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Setup with --config config.yaml = %v, want %q", err, want)
+	}
 }
 
 // An enabled guard without tailscaled would refuse every tailnet caller, so
 // startup fails and says how to mount the socket; a disabled guard needs none.
 func TestSetupRequiresTailscaledSocket(t *testing.T) {
-	dir := t.TempDir()
+	// Short path: unix socket paths are limited to about 104 bytes on macOS.
+	dir, err := os.MkdirTemp("", "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	missing := filepath.Join(dir, "missing.sock")
 	// A socket file nobody listens on: it exists, but connecting is refused.
 	stale := filepath.Join(dir, "stale.sock")

@@ -85,14 +85,25 @@ func TestHandleArgsVersion(t *testing.T) {
 	}
 }
 
-// An upstream flag named version is left alone rather than redefined.
+// An upstream flag named version is left alone rather than redefined, and
+// --version is upstream's to serve.
 func TestHandleArgsKeepsAnExistingVersionFlag(t *testing.T) {
-	fs := upstreamFlags()
-	fs.String("version", "", "upstream's own version flag")
-	exited := false
-	handleArgs(fs, []string{"taproot"}, &bytes.Buffer{}, func(int) { exited = true })
-	if exited || fs.Lookup("version").Usage != "upstream's own version flag" {
-		t.Fatalf("exited %t, version flag %+v", exited, fs.Lookup("version"))
+	for _, args := range [][]string{{"taproot"}, {"taproot", "--version", "1.2"}, {"taproot", "--version=1.2"}} {
+		fs := upstreamFlags()
+		fs.String("version", "", "upstream's own version flag")
+		exited := false
+		var out bytes.Buffer
+		handleArgs(fs, args, &out, func(int) { exited = true })
+		if exited || out.Len() != 0 || fs.Lookup("version").Usage != "upstream's own version flag" {
+			t.Fatalf("%q: exited %t, printed %q, version flag %+v", args, exited, out.String(), fs.Lookup("version"))
+		}
+		want := ""
+		if len(args) > 1 {
+			want = "1.2"
+		}
+		if err := fs.Parse(args[1:]); err != nil || fs.Lookup("version").Value.String() != want {
+			t.Fatalf("%q: Parse = %v, version %q, want %q", args, err, fs.Lookup("version").Value, want)
+		}
 	}
 }
 

@@ -1,10 +1,13 @@
 package taproot
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/265866/taproot/internal/httpwire"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
 )
@@ -34,6 +37,43 @@ func TestNoAccountsPassesStreamsThrough(t *testing.T) {
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/x", nil))
 	if rec.Code != http.StatusOK || rec.Body.String() != "data: one\n\ndata: two\n\n" {
 		t.Fatalf("stream = %d %q", rec.Code, rec.Body)
+	}
+}
+
+// goneTransport is a connection whose client has gone away.
+type goneTransport struct {
+	*httptest.ResponseRecorder
+	readDeadline time.Time
+}
+
+var errClientGone = errors.New("client gone")
+
+func (g *goneTransport) FlushError() error { return errClientGone }
+
+func (g *goneTransport) SetReadDeadline(t time.Time) error {
+	g.readDeadline = t
+	return nil
+}
+
+// Streaming handlers cancel the upstream request when a flush fails, and
+// close an unread body through http.ResponseController, so both must reach
+// the connection through the middleware.
+func TestNoAccountsForwardsFlushErrorsAndTheConnection(t *testing.T) {
+	transport := &goneTransport{ResponseRecorder: httptest.NewRecorder()}
+	deadline := time.Unix(1, 0)
+	var flushErr, deadlineErr error
+	e := noAccountsEngine(func(c *gin.Context) {
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.WriteString("data: one\n\n")
+		flushErr = httpwire.FlushResponse(c.Writer)
+		deadlineErr = http.NewResponseController(c.Writer).SetReadDeadline(deadline)
+	})
+	e.ServeHTTP(transport, httptest.NewRequest(http.MethodPost, "/x", nil))
+	if !errors.Is(flushErr, errClientGone) {
+		t.Errorf("FlushResponse = %v, want the transport's %v", flushErr, errClientGone)
+	}
+	if deadlineErr != nil || !transport.readDeadline.Equal(deadline) {
+		t.Errorf("SetReadDeadline = %v, transport deadline %v, want %v", deadlineErr, transport.readDeadline, deadline)
 	}
 }
 
