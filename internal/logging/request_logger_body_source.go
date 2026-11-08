@@ -17,6 +17,20 @@ type FileBodySource struct {
 	dir     string
 	paths   []string
 	cleaned bool
+	// appendFile stays open on the last part between AppendBytes calls, so a
+	// streamed response costs one write per chunk instead of an open, write,
+	// and close.
+	appendFile *os.File
+}
+
+// closeAppendLocked closes the cached append handle; s.mu must be held.
+func (s *FileBodySource) closeAppendLocked() error {
+	if s.appendFile == nil {
+		return nil
+	}
+	err := s.appendFile.Close()
+	s.appendFile = nil
+	return err
 }
 
 // NewFileBodySourceInDir creates a temp-backed source under baseDir.
@@ -74,6 +88,9 @@ func (s *FileBodySource) CreatePart(prefix string) (*os.File, error) {
 		return nil, fmt.Errorf("file body source has been cleaned")
 	}
 	prefix = sanitizeTempPrefix(prefix)
+	if errClose := s.closeAppendLocked(); errClose != nil {
+		return nil, errClose
+	}
 	if errMkdir := os.MkdirAll(s.dir, 0755); errMkdir != nil {
 		return nil, errMkdir
 	}
@@ -117,31 +134,28 @@ func (s *FileBodySource) AppendBytes(data []byte) error {
 	if s.cleaned {
 		return fmt.Errorf("file body source has been cleaned")
 	}
-	if errMkdir := os.MkdirAll(s.dir, 0755); errMkdir != nil {
-		return errMkdir
-	}
-
-	var file *os.File
-	var errOpen error
-	if len(s.paths) == 0 {
-		file, errOpen = os.CreateTemp(s.dir, "part-*.tmp")
-		if errOpen == nil {
-			s.paths = append(s.paths, file.Name())
+	if s.appendFile == nil {
+		if errMkdir := os.MkdirAll(s.dir, 0755); errMkdir != nil {
+			return errMkdir
 		}
-	} else {
-		file, errOpen = os.OpenFile(s.paths[len(s.paths)-1], os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	}
-	if errOpen != nil {
-		return errOpen
-	}
-
-	_, writeErr := file.Write(data)
-	if errClose := file.Close(); errClose != nil {
-		if writeErr == nil {
-			writeErr = errClose
+		var errOpen error
+		if len(s.paths) == 0 {
+			s.appendFile, errOpen = os.CreateTemp(s.dir, "part-*.tmp")
+			if errOpen == nil {
+				s.paths = append(s.paths, s.appendFile.Name())
+			}
+		} else {
+			s.appendFile, errOpen = os.OpenFile(s.paths[len(s.paths)-1], os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		}
+		if errOpen != nil {
+			return errOpen
 		}
 	}
-	return writeErr
+	if _, writeErr := s.appendFile.Write(data); writeErr != nil {
+		_ = s.closeAppendLocked()
+		return writeErr
+	}
+	return nil
 }
 
 // HasPayload reports whether any detail parts were recorded.
@@ -232,9 +246,9 @@ func (s *FileBodySource) Cleanup() error {
 	dir := s.dir
 	s.paths = nil
 	s.cleaned = true
+	firstErr := s.closeAppendLocked()
 	s.mu.Unlock()
 
-	var firstErr error
 	for _, path := range paths {
 		if errRemove := os.Remove(path); errRemove != nil && !os.IsNotExist(errRemove) && firstErr == nil {
 			firstErr = errRemove
