@@ -2,7 +2,7 @@
  * The taproot mark: a seedling above the soil line, one tapering root below with two lateral
  * roots. In the app it is a plain glyph in the theme's mark color (see TaprootMark); the favicon
  * puts the white glyph on a dark rounded tile so it stays visible on light and dark browser tabs.
- * The favicon stays a data URL so the single-file build needs no asset file. `web/index.html`
+ * The favicon is a data URL, so index.html needs no separate request for it. `web/index.html`
  * repeats it verbatim; tests/taprootMark.test.ts keeps the two in sync.
  */
 

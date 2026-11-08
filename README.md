@@ -258,7 +258,7 @@ go build -o taproot ./cmd/server
 ./taproot --config ./config.yaml
 ```
 
-`build-web.sh` builds `web/` into one HTML file and copies it to `internal/taproot/web/dist/index.html`, which the binary embeds. Without that step, the binary serves a placeholder page.
+`build-web.sh` builds `web/` into `index.html` and hashed chunks under `assets/`, and copies them to `internal/taproot/web/dist/`, which the binary embeds. Without that step, the binary serves a placeholder page.
 
 If you start from `examples/taproot/config.yaml`, change `oauth.auth-dir` to a path on your machine. Outside a container, every process on the machine can connect from loopback, so every process is an admin. Use this for development only.
 

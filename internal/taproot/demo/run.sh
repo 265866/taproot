@@ -30,7 +30,7 @@ while (($#)); do
 done
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-if (($(wc -c <"$root/internal/taproot/web/dist/index.html") < 100000)); then
+if ! grep -q "/assets/" "$root/internal/taproot/web/dist/index.html"; then
 	echo "The embedded dashboard is the placeholder. Run: bash scripts/taproot/build-web.sh" >&2
 	exit 1
 fi

@@ -1,6 +1,6 @@
 # taproot dashboard
 
-The dashboard taproot serves at `/` on its proxy port. It is a React and TypeScript app, built with Vite into a single `index.html` that the Go server embeds.
+The dashboard taproot serves at `/` on its proxy port. It is a React and TypeScript app, built with Vite into `index.html` and hashed chunks under `assets/`, which the Go server embeds.
 
 It started as a fork of the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) and no longer follows it. It has no login page and holds no key: taproot's access guard decides who reaches it.
 

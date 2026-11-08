@@ -1,20 +1,50 @@
+import { Suspense, lazy, type ComponentType } from 'react';
 import { Navigate, useLocation, useRoutes, type Location } from 'react-router-dom';
-import { DashboardPage } from '@/features/dashboard/DashboardPage';
-import { AccountsPage } from '@/features/accounts/AccountsPage';
-import { AuthFilesOAuthExcludedEditPage } from '@/pages/AuthFilesOAuthExcludedEditPage';
-import { AuthFilesOAuthModelAliasEditPage } from '@/pages/AuthFilesOAuthModelAliasEditPage';
-import { RoutingPage } from '@/features/routing/RoutingPage';
-import { PluginResourcePage } from '@/features/plugins/PluginResourcePage';
-import { PluginsPage } from '@/features/plugins/PluginsPage';
-import { PluginStorePage } from '@/features/plugins/PluginStorePage';
-import { ConfigPage } from '@/features/config/ConfigPage';
-import { SystemPage } from '@/pages/SystemPage';
-import { TaprootUsagePage } from '@/features/taproot-usage/TaprootUsagePage';
-import { TaprootLogsPage } from '@/features/taproot-logs/TaprootLogsPage';
-import { TaprootBackupsPage } from '@/features/taproot-backups/TaprootBackupsPage';
-import { TaprootSettingsPage } from '@/features/taproot-settings/TaprootSettingsPage';
 import { useAuthStore } from '@/stores';
+import { pageImports } from './pageImports';
 import { LEGACY_REDIRECTS, ROUTES, legacyRedirectTarget } from './routes';
+
+const RELOADED_FOR_CHUNK = 'taproot.reloadedForChunk';
+
+function page<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) {
+  return lazy(async () => {
+    try {
+      const module = await load();
+      sessionStorage.removeItem(RELOADED_FOR_CHUNK);
+      return { default: module[name] };
+    } catch (error) {
+      // After an upgrade the server holds only the new build's chunks, so a tab still running the
+      // old build cannot load a page it has not opened yet. Reload once to pick up the new build.
+      if (sessionStorage.getItem(RELOADED_FOR_CHUNK) === null) {
+        sessionStorage.setItem(RELOADED_FOR_CHUNK, '1');
+        window.location.reload();
+        return new Promise<never>(() => undefined);
+      }
+      throw error;
+    }
+  });
+}
+
+const DashboardPage = page(pageImports.dashboard, 'DashboardPage');
+const AccountsPage = page(pageImports.accounts, 'AccountsPage');
+const AuthFilesOAuthExcludedEditPage = page(
+  pageImports.oauthExcluded,
+  'AuthFilesOAuthExcludedEditPage'
+);
+const AuthFilesOAuthModelAliasEditPage = page(
+  pageImports.oauthModelAlias,
+  'AuthFilesOAuthModelAliasEditPage'
+);
+const RoutingPage = page(pageImports.routing, 'RoutingPage');
+const PluginResourcePage = page(pageImports.pluginResource, 'PluginResourcePage');
+const PluginsPage = page(pageImports.plugins, 'PluginsPage');
+const PluginStorePage = page(pageImports.pluginStore, 'PluginStorePage');
+const ConfigPage = page(pageImports.config, 'ConfigPage');
+const SystemPage = page(pageImports.system, 'SystemPage');
+const TaprootUsagePage = page(pageImports.usage, 'TaprootUsagePage');
+const TaprootLogsPage = page(pageImports.requestLogs, 'TaprootLogsPage');
+const TaprootBackupsPage = page(pageImports.backups, 'TaprootBackupsPage');
+const TaprootSettingsPage = page(pageImports.settings, 'TaprootSettingsPage');
 
 /** Sends an old address to its new page. */
 function LegacyRedirect({ to }: { to: string }) {
@@ -57,5 +87,6 @@ const createMainRoutes = (supportsPlugin: boolean) => [
 
 export function MainRoutes({ location }: { location?: Location }) {
   const supportsPlugin = useAuthStore((state) => state.supportsPlugin);
-  return useRoutes(createMainRoutes(supportsPlugin), location);
+  const element = useRoutes(createMainRoutes(supportsPlugin), location);
+  return <Suspense fallback={null}>{element}</Suspense>;
 }
