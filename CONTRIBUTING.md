@@ -11,6 +11,7 @@ Taproot changes are welcome in these places:
 - `internal/taproot/**`: the fork's Go modules (access, ingest, request logs, backups, alerts, settings, routing, and the embedded dashboard).
 - `web/**`: the dashboard. It is a hard fork of the CLIProxyAPI Management Center and no longer follows it.
 - `scripts/taproot/**`, `Containerfile.taproot`, `examples/taproot/**`, and the taproot documentation.
+- `flake.nix`, `flake.lock`, and `nix/`: the Nix packages, the NixOS module `services.taproot`, and its VM test.
 
 These belong upstream, in CLIProxyAPI, rather than here:
 
@@ -79,6 +80,8 @@ A plain `go build` links a stub request-log codec. A server built that way canno
 (cd internal/taproot/reqlog/codec/native && cargo build --release)
 go build -tags taproot_codecs -o taproot ./cmd/server
 ```
+
+The Nix build reads two files that the lockfiles decide: `nix/vendor-hash` (from `go.sum`) and `web/bun.nix` (from `web/bun.lock`). After a change to either lockfile, run `scripts/taproot/nix-refresh.sh` on a machine with Nix and commit what it changes; CI's `nix-hashes` job fails until you do. `nix flake check` builds the packages and runs the NixOS VM test, as CI's `nix` job does; the VM test needs KVM.
 
 Keep personal data out of the repository. Tests, fixtures, screenshots, and examples use example values such as `alice@github`, `example.com`, `100.64.0.x`, and `tailnet-0000.ts.net`, never a real login, email, node ID, address, or token.
 
