@@ -94,7 +94,7 @@ func TestStreamingRecordWithDeltasRebuilds(t *testing.T) {
 	}
 	h.flush()
 	h.sealAll()
-	d, err := h.logs.Get(context.Background(), "sse-1")
+	d, err := h.logs.Get(context.Background(), "sse-1", true)
 	if err != nil {
 		t.Fatal(err)
 	}

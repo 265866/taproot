@@ -4,16 +4,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +54,25 @@ func testPNG(t *testing.T, seed int64) []byte {
 		t.Fatal(err)
 	}
 	return b.Bytes()
+}
+
+func testGIF(t *testing.T) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	if err := gif.Encode(&b, testImage(5, 64, 48), nil); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
+// testWebP is a WebP header padded with zeros: enough to sniff, and
+// compressible, so the compactor stores it as zstd.
+func testWebP() []byte {
+	b := make([]byte, 4096)
+	copy(b, "RIFF")
+	binary.LittleEndian.PutUint32(b[4:], uint32(len(b)-8))
+	copy(b[8:], "WEBPVP8L")
+	return b
 }
 
 // imageTurn is a Claude-style request carrying every image so far, as Claude
@@ -86,7 +111,7 @@ func TestBlobsStoredOnceAndRebuiltExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	images := [][]byte{testJPEG(t, 1), zlibPNG, testJPEG(t, 3), make([]byte, 8192)}
+	images := [][]byte{testJPEG(t, 1), zlibPNG, testJPEG(t, 3), make([]byte, 8192), testGIF(t), testWebP()}
 	ts := h.clock.now()
 	bodies := map[string][]byte{}
 	raws := map[string][]byte{}
@@ -102,13 +127,14 @@ func TestBlobsStoredOnceAndRebuiltExactly(t *testing.T) {
 	check := func(stage string) {
 		t.Helper()
 		for id, body := range bodies {
-			d, err := h.logs.Get(context.Background(), id)
+			d, err := h.logs.Get(context.Background(), id, true)
 			if err != nil {
 				t.Fatalf("%s: get %s: %v", stage, id, err)
 			}
 			if d.Request.Body != string(body) || !strings.Contains(d.Upstream.Request, string(body)) {
 				t.Fatalf("%s: %s did not rebuild exactly", stage, id)
 			}
+			checkRefs(t, h, id, d)
 			_, raw, err := h.logs.Raw(context.Background(), id)
 			if err != nil {
 				t.Fatalf("%s: raw %s: %v", stage, id, err)
@@ -140,12 +166,12 @@ func TestBlobsStoredOnceAndRebuiltExactly(t *testing.T) {
 	if full != 0 || packed != 1 {
 		t.Fatalf("after packing: %d full and %d packed packs, want 0 and 1", full, packed)
 	}
-	var zeros int
-	if err := h.db.QueryRow(`SELECT codec FROM reqlog_blobs WHERE raw_bytes = 8192`).Scan(&zeros); err != nil {
+	var zeros, webp int
+	if err := h.db.QueryRow(`SELECT (SELECT codec FROM reqlog_blobs WHERE raw_bytes = 8192), (SELECT codec FROM reqlog_blobs WHERE raw_bytes = 4096)`).Scan(&zeros, &webp); err != nil {
 		t.Fatal(err)
 	}
-	if codec.Kind(zeros) != codec.Zstd {
-		t.Fatalf("zero-filled blob packed as kind %d, want zstd", zeros)
+	if codec.Kind(zeros) != codec.Zstd || codec.Kind(webp) != codec.Zstd {
+		t.Fatalf("zero-filled blob and WebP packed as kinds %d and %d, want zstd", zeros, webp)
 	}
 	if codec.Native() {
 		var lepton, pngs int
@@ -163,6 +189,56 @@ func TestBlobsStoredOnceAndRebuiltExactly(t *testing.T) {
 	h.open(Config{})
 	h.logs.engine.blobs.cache = newBlobCache(blobCacheMax)
 	check("reopened")
+}
+
+var placeholderRe = regexp.MustCompile(`\[taproot-blob:([0-9a-f]{64}):([0-9]+)\]`)
+
+// checkRefs reads id without blobs and checks that putting each blob's base64
+// in place of its placeholder gives the inline detail back, that every blob
+// was left out, and that each image's type was sniffed from its stored bytes.
+func checkRefs(t *testing.T, h *harness, id string, inline *Detail) {
+	t.Helper()
+	// An empty cache makes the type come from the pack, not cached bytes.
+	h.logs.engine.blobs.cache = newBlobCache(blobCacheMax)
+	d, err := h.logs.Get(context.Background(), id, false)
+	if err != nil {
+		t.Fatalf("get %s without blobs: %v", id, err)
+	}
+	expand := func(s string) string {
+		return placeholderRe.ReplaceAllStringFunc(s, func(m string) string {
+			sub := placeholderRe.FindStringSubmatch(m)
+			info, ok := d.Blobs[sub[1]]
+			if !ok || strconv.Itoa(info.Bytes) != sub[2] {
+				t.Fatalf("%s: placeholder %s not described in blobs", id, m)
+			}
+			hb, _ := hex.DecodeString(sub[1])
+			raw, err := h.logs.engine.blobs.get(context.Background(), blobHash(hb))
+			if err != nil || len(raw) != info.Bytes {
+				t.Fatalf("%s: blob %s: %v (%d bytes)", id, sub[1], err, len(raw))
+			}
+			want := http.DetectContentType(raw)
+			if !strings.HasPrefix(want, "image/") {
+				want = ""
+			}
+			if info.Type != want {
+				t.Fatalf("%s: blob %s typed %q, want %q", id, sub[1][:8], info.Type, want)
+			}
+			return base64.StdEncoding.EncodeToString(raw)
+		})
+	}
+	sections := func(d *Detail) []string {
+		return []string{d.Request.Body, d.Response.Body, d.Upstream.Request, d.Upstream.Response, d.Upstream.WebsocketTimeline, d.Upstream.APIWebsocketTimeline}
+	}
+	want := sections(inline)
+	for i, got := range sections(d) {
+		if expand(got) != want[i] {
+			t.Fatalf("%s: section %d differs once placeholders are expanded", id, i)
+		}
+		residual, refs := splitBlobs([]byte(got), func(blobHash, []byte) {})
+		if len(refs) != 0 || len(residual) != len(got) {
+			t.Fatalf("%s: section %d still holds %d base64 payloads", id, i, len(refs))
+		}
+	}
 }
 
 // TestLetterRunsThatLookLikeBase64 checks that text which happens to be valid
@@ -183,7 +259,7 @@ func TestLetterRunsThatLookLikeBase64(t *testing.T) {
 	h.flush()
 	h.sealAll()
 	for id, body := range bodies {
-		d, err := h.logs.Get(context.Background(), id)
+		d, err := h.logs.Get(context.Background(), id, true)
 		if err != nil || d.Request.Body != string(body) {
 			t.Fatalf("%s did not rebuild exactly: %v", id, err)
 		}
@@ -219,14 +295,14 @@ func TestBlobGCKeepsSharedBlobs(t *testing.T) {
 		t.Fatalf("before retention: %d blobs, want 2", got)
 	}
 	h.logs.engine.applyRetention(context.Background())
-	if _, err := h.logs.Get(context.Background(), "old"); err == nil {
+	if _, err := h.logs.Get(context.Background(), "old", true); err == nil {
 		t.Fatal("old record survived max-days")
 	}
 	if got := blobCount(t, h); got != 1 {
 		t.Fatalf("after retention: %d blobs, want only the shared one", got)
 	}
 	h.logs.engine.blobs.cache = newBlobCache(blobCacheMax)
-	d, err := h.logs.Get(context.Background(), "new")
+	d, err := h.logs.Get(context.Background(), "new", true)
 	if err != nil || d.Request.Body != string(imageTurn([][]byte{shared})) {
 		t.Fatalf("shared blob lost: %v", err)
 	}
@@ -275,7 +351,7 @@ func TestBlobPackRecoveredAfterCrash(t *testing.T) {
 	if got := blobCount(t, h); got != 1 {
 		t.Fatalf("recovered %d blobs, want 1", got)
 	}
-	d, err := h.logs.Get(context.Background(), "crash")
+	d, err := h.logs.Get(context.Background(), "crash", true)
 	if err != nil || d.Request.Body != string(imageTurn([][]byte{img})) {
 		t.Fatalf("record after recovery: %v", err)
 	}
@@ -336,12 +412,12 @@ func TestDictionaryTrainedAndUsed(t *testing.T) {
 	h.stop()
 	h.open(Config{})
 	for i := 0; i < dictMinSegments; i++ {
-		if d, err := h.logs.Get(context.Background(), fmt.Sprintf("before-%d", i)); err != nil || d.Request.Body != string(body(i)) {
+		if d, err := h.logs.Get(context.Background(), fmt.Sprintf("before-%d", i), true); err != nil || d.Request.Body != string(body(i)) {
 			t.Fatalf("before-%d: %v", i, err)
 		}
 	}
 	for i := 0; i < 4; i++ {
-		if d, err := h.logs.Get(context.Background(), fmt.Sprintf("after-%d", i)); err != nil || d.Request.Body != string(body(100+i)) {
+		if d, err := h.logs.Get(context.Background(), fmt.Sprintf("after-%d", i), true); err != nil || d.Request.Body != string(body(100+i)) {
 			t.Fatalf("after-%d: %v", i, err)
 		}
 	}
@@ -417,7 +493,7 @@ func TestRestoreKeepsBlobsAndDictionaries(t *testing.T) {
 	h.logs.engine.compactQueued(context.Background())
 	h.logs.engine.blobs.cache = newBlobCache(blobCacheMax)
 	for id, body := range map[string][]byte{"sealed-before": sealed, "open-at-snapshot": open} {
-		d, err := h.logs.Get(context.Background(), id)
+		d, err := h.logs.Get(context.Background(), id, true)
 		if err != nil {
 			t.Fatalf("%s after restore: %v", id, err)
 		}
@@ -499,7 +575,7 @@ func TestMaxBytesStopsWhenGCIsPinned(t *testing.T) {
 	h.sealAll()
 	h.logs.engine.applyRetention(context.Background())
 	for i := 0; i < 3; i++ {
-		if _, err := h.logs.Get(context.Background(), fmt.Sprintf("kept-%d", i)); err != nil {
+		if _, err := h.logs.Get(context.Background(), fmt.Sprintf("kept-%d", i), true); err != nil {
 			t.Fatalf("kept-%d deleted while blob GC was pinned: %v", i, err)
 		}
 	}
@@ -541,7 +617,7 @@ func TestFailedBlobSyncIsStoredAgain(t *testing.T) {
 	h.stop()
 	h.open(Config{})
 	h.logs.engine.blobs.cache = newBlobCache(blobCacheMax)
-	d, err := h.logs.Get(context.Background(), "after")
+	d, err := h.logs.Get(context.Background(), "after", true)
 	if err != nil || d.Request.Body != string(imageTurn([][]byte{img})) {
 		t.Fatalf("record after a failed blob sync: %v", err)
 	}

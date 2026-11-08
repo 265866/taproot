@@ -193,6 +193,22 @@ func TestHTTPRoutes(t *testing.T) {
 	if status != 200 || json.Unmarshal(raw, &detail) != nil || detail.Request.Body != `{"model":"claude-x"}` || detail.Meta.SessionID != "claude:sess-route" {
 		t.Fatalf("detail: %d %s", status, raw)
 	}
+	if detail.Upstream.Request == "" || detail.Upstream.RequestBytes != 0 {
+		t.Fatalf("full detail upstream: %+v", detail.Upstream)
+	}
+	status, _, raw = get("/request-logs/route-a?upstream=defer")
+	var deferred Detail
+	if status != 200 || json.Unmarshal(raw, &deferred) != nil || deferred.Request.Body != detail.Request.Body ||
+		deferred.Upstream.Request != "" || deferred.Upstream.RequestBytes != len(detail.Upstream.Request) ||
+		deferred.Upstream.Response != "" || deferred.Upstream.ResponseBytes != len(detail.Upstream.Response) {
+		t.Fatalf("deferred detail: %d %s", status, raw)
+	}
+	status, _, raw = get("/request-logs/route-a/upstream")
+	var upstream struct{ Request, Response string }
+	if status != 200 || json.Unmarshal(raw, &upstream) != nil ||
+		upstream.Request != detail.Upstream.Request || upstream.Response != detail.Upstream.Response {
+		t.Fatalf("upstream: %d %s", status, raw)
+	}
 	status, header, raw := get("/request-logs/route-a/raw")
 	if status != 200 || !strings.HasPrefix(string(raw), "=== REQUEST INFO ===") || !strings.Contains(header.Get("Content-Disposition"), "request-route-a.log") {
 		t.Fatalf("raw: %d %s", status, raw)
@@ -204,12 +220,13 @@ func TestHTTPRoutes(t *testing.T) {
 	}
 
 	for path, want := range map[string]int{
-		"/request-logs/missing":        404,
-		"/request-logs/missing/raw":    404,
-		"/request-logs?cursor=@@":      400,
-		"/request-logs?status=teapot":  400,
-		"/request-logs?from=yesterday": 400,
-		"/request-logs?limit=-3":       400,
+		"/request-logs/missing":          404,
+		"/request-logs/missing/raw":      404,
+		"/request-logs/missing/upstream": 404,
+		"/request-logs?cursor=@@":        400,
+		"/request-logs?status=teapot":    400,
+		"/request-logs?from=yesterday":   400,
+		"/request-logs?limit=-3":         400,
 	} {
 		status, _, raw := get(path)
 		var body struct {

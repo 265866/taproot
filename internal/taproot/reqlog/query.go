@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -43,6 +44,9 @@ type Detail struct {
 	Request  DetailRequest  `json:"request"`
 	Response DetailResponse `json:"response"`
 	Upstream DetailUpstream `json:"upstream"`
+	// Blobs describes the placeholders of a detail read with blobs=ref, by
+	// hex SHA-256.
+	Blobs map[string]BlobInfo `json:"blobs,omitempty"`
 }
 
 type DetailRequest struct {
@@ -66,6 +70,20 @@ type DetailUpstream struct {
 	Errors               []apiErrorView `json:"errors,omitempty"`
 	WebsocketTimeline    string         `json:"websocketTimeline,omitempty"`
 	APIWebsocketTimeline string         `json:"apiWebsocketTimeline,omitempty"`
+	// With upstream=defer, Request and Response are left out and these give
+	// their lengths in the original record, blobs inline; GET
+	// /request-logs/:requestId/upstream returns them.
+	RequestBytes  int `json:"requestBytes,omitempty"`
+	ResponseBytes int `json:"responseBytes,omitempty"`
+
+	requestLen, responseLen int
+}
+
+// UpstreamSections is GET /request-logs/:requestId/upstream.
+type UpstreamSections struct {
+	Request  string              `json:"request"`
+	Response string              `json:"response"`
+	Blobs    map[string]BlobInfo `json:"blobs,omitempty"`
 }
 
 // Stats is GET /request-logs/stats.
@@ -280,21 +298,30 @@ func (l *Logs) Raw(ctx context.Context, requestID string) (LogMeta, []byte, erro
 	return m, text, err
 }
 
-func (l *Logs) read(ctx context.Context, requestID string) (LogMeta, *recordMeta, []byte, error) {
+// readParts locates a record and decodes its frame, leaving blobs out.
+func (l *Logs) readParts(ctx context.Context, requestID string) (LogMeta, *recordMeta, []byte, []blobRef, error) {
 	m, loc, err := l.locate(ctx, requestID)
 	if err != nil {
-		return m, nil, nil, err
+		return m, nil, nil, nil, err
 	}
 	frame, err := l.engine.readFrame(ctx, loc)
 	if err != nil {
-		return m, nil, nil, err
+		return m, nil, nil, nil, err
 	}
 	frameMeta, residual, refs, err := decodeFrame(frame)
 	if err != nil {
-		return m, nil, nil, fmt.Errorf("segment %d offset %d: %w", loc.segment, loc.offset, err)
+		return m, nil, nil, nil, fmt.Errorf("segment %d offset %d: %w", loc.segment, loc.offset, err)
 	}
 	if frameMeta.RequestID != m.RequestID {
-		return m, nil, nil, fmt.Errorf("segment %d offset %d holds %q, index says %q", loc.segment, loc.offset, frameMeta.RequestID, m.RequestID)
+		return m, nil, nil, nil, fmt.Errorf("segment %d offset %d holds %q, index says %q", loc.segment, loc.offset, frameMeta.RequestID, m.RequestID)
+	}
+	return m, frameMeta, residual, refs, nil
+}
+
+func (l *Logs) read(ctx context.Context, requestID string) (LogMeta, *recordMeta, []byte, error) {
+	m, frameMeta, residual, refs, err := l.readParts(ctx, requestID)
+	if err != nil {
+		return m, nil, nil, err
 	}
 	blobs, err := l.engine.blobs.getAll(ctx, refs)
 	if err != nil {
@@ -307,18 +334,51 @@ func (l *Logs) read(ctx context.Context, requestID string) (LogMeta, *recordMeta
 	return m, frameMeta, text, nil
 }
 
-// Get returns a record split into its parts.
-func (l *Logs) Get(ctx context.Context, requestID string) (*Detail, error) {
-	m, fm, text, err := l.read(ctx, requestID)
+// Get returns a record split into its parts. Without inline, each base64
+// payload is a placeholder (blobPlaceholder) described in Detail.Blobs, and no
+// blob is read or decoded.
+func (l *Logs) Get(ctx context.Context, requestID string, inline bool) (*Detail, error) {
+	m, fm, residual, refs, err := l.readParts(ctx, requestID)
 	if err != nil {
 		return nil, err
 	}
+	var text []byte
+	at := func(p int) int { return p }
+	var infos map[string]BlobInfo
+	if inline {
+		blobs, err := l.engine.blobs.getAll(ctx, refs)
+		if err != nil {
+			return nil, err
+		}
+		if text, err = spliceBlobs(residual, refs, blobs); err != nil {
+			return nil, err
+		}
+	} else if text, at, infos, err = l.engine.blobs.spliceRefs(ctx, residual, refs); err != nil {
+		return nil, err
+	}
+	// span is where a section lies in text; s is where it lies in the
+	// original, blobs inline.
+	span := func(name string) (s [2]int, start, end int, ok bool) {
+		s, ok = fm.Sections[name]
+		if !ok || s[0] < 0 || s[0] > s[1] {
+			return s, 0, 0, false
+		}
+		start, end = at(s[0]), at(s[1])
+		return s, start, end, end <= len(text) && start <= end
+	}
 	section := func(name string) string {
-		s, ok := fm.Sections[name]
-		if !ok || s[0] < 0 || s[1] > len(text) || s[0] > s[1] {
+		_, start, end, ok := span(name)
+		if !ok {
 			return ""
 		}
-		return string(text[s[0]:s[1]])
+		return string(text[start:end])
+	}
+	originalLen := func(name string) int {
+		s, _, _, ok := span(name)
+		if !ok {
+			return 0
+		}
+		return s[1] - s[0]
 	}
 	return &Detail{
 		Meta:     m,
@@ -330,7 +390,10 @@ func (l *Logs) Get(ctx context.Context, requestID string) (*Detail, error) {
 			Errors:               fm.APIErrors,
 			WebsocketTimeline:    section(secWebsocketTimeline),
 			APIWebsocketTimeline: section(secAPIWSTimeline),
+			requestLen:           originalLen(secAPIRequest),
+			responseLen:          originalLen(secAPIResponse),
 		},
+		Blobs: infos,
 	}, nil
 }
 
@@ -378,6 +441,8 @@ func (l *Logs) Routes(r *gin.RouterGroup) {
 	r.GET("/request-logs/stats", l.handleStats)
 	r.GET("/request-logs/:requestId", l.handleGet)
 	r.GET("/request-logs/:requestId/raw", l.handleRaw)
+	r.GET("/request-logs/:requestId/upstream", l.handleUpstream)
+	r.GET("/request-logs/blobs/:hash", l.handleBlob)
 }
 
 func apiError(c *gin.Context, status int, code, message string) {
@@ -437,12 +502,31 @@ func (l *Logs) handleList(c *gin.Context) {
 }
 
 func (l *Logs) handleGet(c *gin.Context) {
-	detail, err := l.Get(c.Request.Context(), c.Param("requestId"))
+	detail, err := l.Get(c.Request.Context(), c.Param("requestId"), c.Query("blobs") != "ref")
 	if err != nil {
 		l.readError(c, err)
 		return
 	}
+	// The upstream request and response mostly repeat the client's, and gzip
+	// cannot see repeats that far apart, so they would double the transfer.
+	// The dashboard fetches them when their section opens.
+	if c.Query("upstream") == "defer" {
+		u := &detail.Upstream
+		u.RequestBytes, u.ResponseBytes = u.requestLen, u.responseLen
+		u.Request, u.Response = "", ""
+	}
 	c.JSON(http.StatusOK, detail)
+}
+
+// handleUpstream returns the sections handleGet defers, with blobs as
+// handleGet reads them.
+func (l *Logs) handleUpstream(c *gin.Context) {
+	detail, err := l.Get(c.Request.Context(), c.Param("requestId"), c.Query("blobs") != "ref")
+	if err != nil {
+		l.readError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, UpstreamSections{Request: detail.Upstream.Request, Response: detail.Upstream.Response, Blobs: detail.Blobs})
 }
 
 func (l *Logs) handleRaw(c *gin.Context) {
@@ -459,6 +543,37 @@ func (l *Logs) handleRaw(c *gin.Context) {
 	}, m.RequestID) + ".log"
 	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", text)
+}
+
+// handleBlob serves one decoded payload. Blobs are addressed by content, so a
+// response never changes.
+func (l *Logs) handleBlob(c *gin.Context) {
+	raw, err := hex.DecodeString(c.Param("hash"))
+	if err != nil || len(raw) != len(blobHash{}) {
+		apiError(c, http.StatusBadRequest, "invalid_hash", "hash must be a hex SHA-256")
+		return
+	}
+	data, err := l.engine.blobs.get(c.Request.Context(), blobHash(raw))
+	if errors.Is(err, errBlobMissing) {
+		apiError(c, http.StatusNotFound, "not_found", "blob not found")
+		return
+	}
+	if err != nil {
+		l.readError(c, err)
+		return
+	}
+	h := c.Writer.Header()
+	h.Set("Cache-Control", "private, max-age=31536000, immutable")
+	h.Set("X-Content-Type-Options", "nosniff")
+	// A payload is whatever a client sent, so only the four image types are
+	// served for display; anything else downloads and never renders as a page
+	// on the admin origin.
+	typ := imageType(data)
+	if typ == "" {
+		typ = "application/octet-stream"
+		h.Set("Content-Disposition", `attachment; filename="blob-`+hex.EncodeToString(raw)+`.bin"`)
+	}
+	c.Data(http.StatusOK, typ, data)
 }
 
 func (l *Logs) readError(c *gin.Context, err error) {
