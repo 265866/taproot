@@ -64,9 +64,9 @@ export function BodyViewer({
       const text = full();
       ok = await copyPending(text);
       if (!ok) {
-        // Over plain http the browser offers no ClipboardItem, and a copy made
-        // after a long fetch has lost the click. The text is loaded now, so the
-        // next click copies it within the click.
+        // Over plain http the browser offers no ClipboardItem, and a browser
+        // may refuse a copy made after a long fetch. The text is loaded now,
+        // so the next click copies it within the click.
         loaded.current = await text.catch(() => null);
         if (loaded.current !== null) {
           showNotification(t('taproot_logs.body.copy_ready'), 'info');
