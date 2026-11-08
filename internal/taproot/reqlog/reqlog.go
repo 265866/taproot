@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS reqlog_records (
 CREATE INDEX IF NOT EXISTS reqlog_records_ts ON reqlog_records (ts, id);
 CREATE INDEX IF NOT EXISTS reqlog_records_request_id ON reqlog_records (request_id);
 CREATE INDEX IF NOT EXISTS reqlog_records_session ON reqlog_records (session_id, ts);
+-- List filters walk these newest first instead of scanning every record.
+-- errors_ts serves every status filter at or above 400 (statusClause repeats
+-- its term), and text_bytes covers the stats sum.
+CREATE INDEX IF NOT EXISTS reqlog_records_model ON reqlog_records (model, ts);
+CREATE INDEX IF NOT EXISTS reqlog_records_auth ON reqlog_records (auth_index, ts);
+CREATE INDEX IF NOT EXISTS reqlog_records_errors_ts ON reqlog_records (ts) WHERE status >= 400;
+CREATE INDEX IF NOT EXISTS reqlog_records_text_bytes ON reqlog_records (text_bytes);
 
 CREATE TABLE IF NOT EXISTS reqlog_packs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,

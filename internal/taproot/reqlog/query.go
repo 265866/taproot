@@ -128,53 +128,10 @@ func formatTime(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.R
 
 // List returns rows newest first. The cursor is opaque to callers.
 func (l *Logs) List(ctx context.Context, f ListFilter) ([]LogMeta, string, error) {
-	var where []string
-	var args []any
-	if !f.From.IsZero() {
-		where, args = append(where, "l.ts >= ?"), append(args, f.From.UnixMilli())
+	query, args, limit, err := listQuery(f)
+	if err != nil {
+		return nil, "", err
 	}
-	if !f.To.IsZero() {
-		where, args = append(where, "l.ts < ?"), append(args, f.To.UnixMilli())
-	}
-	if f.Model != "" {
-		where, args = append(where, "l.model = ?"), append(args, f.Model)
-	}
-	if f.AuthIndex != "" {
-		where, args = append(where, "l.auth_index = ?"), append(args, f.AuthIndex)
-	}
-	if f.SessionID != "" {
-		where, args = append(where, "l.session_id = ?"), append(args, f.SessionID)
-	}
-	if f.Status != "" {
-		clause, statusArgs, err := statusClause(f.Status)
-		if err != nil {
-			return nil, "", err
-		}
-		where, args = append(where, clause), append(args, statusArgs...)
-	}
-	if q := strings.TrimSpace(f.Query); q != "" {
-		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(q) + "%"
-		where = append(where, `(l.request_id LIKE ? ESCAPE '\' OR l.trace_id LIKE ? ESCAPE '\' OR l.url LIKE ? ESCAPE '\' OR l.model LIKE ? ESCAPE '\' OR l.session_id LIKE ? ESCAPE '\')`)
-		args = append(args, like, like, like, like, like)
-	}
-	if f.Cursor != "" {
-		ts, id, err := decodeCursor(f.Cursor)
-		if err != nil {
-			return nil, "", err
-		}
-		where, args = append(where, "(l.ts < ? OR (l.ts = ? AND l.id < ?))"), append(args, ts, ts, id)
-	}
-	limit := f.Limit
-	if limit <= 0 {
-		limit = 100
-	}
-	limit = min(limit, 1000)
-	query := "SELECT " + listColumns + " FROM reqlog_records l"
-	if len(where) > 0 {
-		query += " WHERE " + strings.Join(where, " AND ")
-	}
-	query += " ORDER BY l.ts DESC, l.id DESC LIMIT ?"
-	args = append(args, limit+1)
 	rows, err := l.engine.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("list request logs: %w", err)
@@ -201,18 +158,81 @@ func (l *Logs) List(ctx context.Context, f ListFilter) ([]LogMeta, string, error
 	return logs, next, nil
 }
 
+// listQuery builds List's query, which fetches one row past limit to tell
+// whether another page follows.
+func listQuery(f ListFilter) (query string, args []any, limit int, err error) {
+	var where []string
+	if !f.From.IsZero() {
+		where, args = append(where, "l.ts >= ?"), append(args, f.From.UnixMilli())
+	}
+	if !f.To.IsZero() {
+		where, args = append(where, "l.ts < ?"), append(args, f.To.UnixMilli())
+	}
+	if f.Model != "" {
+		where, args = append(where, "l.model = ?"), append(args, f.Model)
+	}
+	if f.AuthIndex != "" {
+		where, args = append(where, "l.auth_index = ?"), append(args, f.AuthIndex)
+	}
+	if f.SessionID != "" {
+		where, args = append(where, "l.session_id = ?"), append(args, f.SessionID)
+	}
+	if f.Status != "" {
+		clause, statusArgs, err := statusClause(f.Status)
+		if err != nil {
+			return "", nil, 0, err
+		}
+		where, args = append(where, clause), append(args, statusArgs...)
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(q) + "%"
+		where = append(where, `(l.request_id LIKE ? ESCAPE '\' OR l.trace_id LIKE ? ESCAPE '\' OR l.url LIKE ? ESCAPE '\' OR l.model LIKE ? ESCAPE '\' OR l.session_id LIKE ? ESCAPE '\')`)
+		args = append(args, like, like, like, like, like)
+	}
+	if f.Cursor != "" {
+		ts, id, err := decodeCursor(f.Cursor)
+		if err != nil {
+			return "", nil, 0, err
+		}
+		where, args = append(where, "(l.ts < ? OR (l.ts = ? AND l.id < ?))"), append(args, ts, ts, id)
+	}
+	limit = f.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	limit = min(limit, 1000)
+	query = "SELECT " + listColumns + " FROM reqlog_records l"
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY l.ts DESC, l.id DESC LIMIT ?"
+	return query, append(args, limit+1), limit, nil
+}
+
+// errorsTerm is the WHERE term of reqlog_records_errors_ts. SQLite uses a
+// partial index only when the query repeats its term literally, so every
+// status filter that implies it states it too.
+const errorsTerm = "l.status >= 400"
+
 func statusClause(raw string) (string, []any, error) {
 	raw = strings.ToLower(strings.TrimSpace(raw))
 	if raw == "error" {
-		return "l.status >= 400", nil, nil
+		return errorsTerm, nil, nil
 	}
 	if len(raw) == 3 && strings.HasSuffix(raw, "xx") && raw[0] >= '1' && raw[0] <= '5' {
 		base := int(raw[0]-'0') * 100
-		return "l.status >= ? AND l.status < ?", []any{base, base + 100}, nil
+		clause := "l.status >= ? AND l.status < ?"
+		if base >= 400 {
+			clause += " AND " + errorsTerm
+		}
+		return clause, []any{base, base + 100}, nil
 	}
 	code, err := strconv.Atoi(raw)
 	if err != nil {
 		return "", nil, filterError("status must be a code, Nxx, or error")
+	}
+	if code >= 400 {
+		return "l.status = ? AND " + errorsTerm, []any{code}, nil
 	}
 	return "l.status = ?", []any{code}, nil
 }
@@ -325,7 +345,10 @@ func nonNil(h map[string][]string) map[string][]string {
 func (l *Logs) Stats(ctx context.Context) (Stats, error) {
 	var s Stats
 	var oldest, newest sql.NullInt64
-	if err := l.engine.db.QueryRowContext(ctx, `SELECT COUNT(*), MIN(ts), MAX(ts), COALESCE(SUM(text_bytes), 0) FROM reqlog_records`).Scan(&s.Count, &oldest, &newest, &s.RawBytes); err != nil {
+	// Separate MIN and MAX subqueries each read one end of the ts index; the
+	// count and sum scan the narrow text_bytes index, not the table.
+	if err := l.engine.db.QueryRowContext(ctx, `SELECT COUNT(*), (SELECT MIN(ts) FROM reqlog_records), (SELECT MAX(ts) FROM reqlog_records),
+		COALESCE(SUM(text_bytes), 0) FROM reqlog_records`).Scan(&s.Count, &oldest, &newest, &s.RawBytes); err != nil {
 		return s, fmt.Errorf("request log stats: %w", err)
 	}
 	var packBytes int64
