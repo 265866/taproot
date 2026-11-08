@@ -21,7 +21,7 @@ describe('Bun toolchain version', () => {
     );
   });
 
-  test('repository guidance documents the pinned Bun release', () => {
-    expect(readProjectFile('AGENTS.md')).toContain(`\`bun@${bunVersion}\``);
+  test('the dashboard README documents the pinned Bun release', () => {
+    expect(readProjectFile('README.md')).toContain(`\`bun@${bunVersion}\``);
   });
 });

@@ -1,8 +1,12 @@
 # taproot dashboard
 
-The dashboard taproot serves at `/` on its proxy port. It is a React and TypeScript app, built with Vite into `index.html` and hashed chunks under `assets/`, which the Go server embeds.
+The dashboard taproot serves at `/` on its proxy port. It is a React 19 and TypeScript app, built with Vite into `index.html` and hashed chunks under `assets/`, which the Go server embeds.
 
-It started as a fork of the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) and no longer follows it. It has no login page and holds no key: taproot's access guard decides who reaches it.
+It started as a fork of the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) and no longer follows it. It has no login page and holds no key: taproot's access guard decides who reaches it. The [repository README](../README.md) covers taproot itself, and the "Web" and "Dashboard scope" sections of [`internal/taproot/DESIGN.md`](../internal/taproot/DESIGN.md) cover how the server serves the dashboard and what it includes. The dashboard keeps the Management Center's [MIT License](LICENSE).
+
+## Commands
+
+Use Bun; `package.json` pins `bun@1.4.3`. Keep dependency changes in `bun.lock` and add no other package manager's lockfile.
 
 ```sh
 bun install --frozen-lockfile
@@ -10,4 +14,81 @@ bun run dev      # Vite at http://localhost:5173, proxying to a local taproot
 bun run verify   # tests, lint, and the production build
 ```
 
-`bash ../scripts/taproot/build-web.sh` builds the dashboard and copies it to where the server embeds it. [`AGENTS.md`](AGENTS.md) describes the structure, conventions, and checks. The [repository README](../README.md) covers taproot itself. The dashboard keeps the Management Center's [MIT License](LICENSE).
+- `bun run dev` proxies `/v8`, `/v0`, and `/taproot` to `TAPROOT_DEV_SERVER` (default `http://127.0.0.1:8317`). With the guard off (`access.enabled: false`), nothing injects the management key, so start the server with `MANAGEMENT_PASSWORD=<key>` and set `TAPROOT_DEV_MANAGEMENT_KEY=<key>` for Vite; the proxy adds the header in development only.
+- `bun test tests/apiError.test.ts` runs one test file.
+- `bun run type-check` covers `src` only, not `tests`.
+- `bun run format` formats all of `src`. Several files from the Management Center are not Prettier-clean, so prefer formatting only the files you change.
+- `bash ../scripts/taproot/build-web.sh` builds the dashboard and copies it to `internal/taproot/web/dist/`, where the server embeds it.
+
+## What the dashboard talks to
+
+It calls two same-origin APIs and never holds a credential:
+
+- The CLIProxyAPI v8 Management API under `/v8/management`. Taproot's guard admits allowlisted Tailscale callers and injects the management key server-side, so requests carry no `Authorization` header. Do not add v0 fallbacks or legacy config adapters. Plugin resources and custom HTTP extensions keep their backend-declared paths.
+- Taproot's own API under `/taproot/api/v1`, through the typed client in `src/services/api/taproot.ts`. Its contract is in `DESIGN.md`.
+
+There is no login page, management-key prompt, or key storage. `src/router/ConnectionGate.tsx` connects once and shows progress, access denied, or server unreachable. `src/utils/legacyStorage.ts` deletes keys the Management Center left in localStorage on the same origin.
+
+Removed for good: Quick Start, AI Providers and API-key provider editing, sponsor or affiliate content, Kimi China, Devin, Vertex, SIWC, Config panel API-key editing, non-English locales, and System's "Check for updates" button (it compared taproot's version with CLIProxyAPI's releases). Their backend code stays in the Go tree; only the dashboard drops them.
+
+- Treat the backend as the source of truth. Read the Go code before changing endpoint names, payloads, provider keys, OAuth callback parameters, auth-file semantics, or plugin and config contracts.
+- Use `apiClient` from `src/services/api/client.ts` for Management API requests, through domain modules. It centralizes the API prefix, error normalization, and response headers. Use `taprootApi` for taproot endpoints. Components make no ad hoc requests.
+- Keep the client's events: `unauthorized` marks the connection as access denied, `server-version-update` carries version and build metadata, and `server-plugin-support-update` carries plugin capability. Plugin routes and nav items stay gated by backend support.
+- Normalize backend fields on read and serialize them on write in the API layer (`transformers.ts` and the domain modules), not in UI components.
+- `useConfigStore.fetchConfig(forceRefresh?)` caches the full config with a TTL and deduplicates requests in flight. Reuse it, and update or invalidate the cache after a mutation with the store's actions.
+- Keep stale-request guards (`apiClient.getConnectionRevision()`) around read-modify-write sequences.
+
+## Layout
+
+- `src/features/`: feature-owned pages, components, hooks, types, and logic: `dashboard`, `accounts`, `authFiles` (credential data hooks, the details form, and policy editors under `policy/`), `oauth` (provider sign-in flows), `routing` (OAuth credentials only), `config`, and `plugins`.
+- `accounts` (`#/accounts`) is one page for every account. It composes other features rather than owning their logic: the pool charts and ledger from `taproot-quota`, credential actions from `authFiles`, and sign-in from `oauth`. Its `model.ts` joins taproot's accounts with the credential files; once the file list loads, it decides which accounts exist and which are enabled. `#/quota`, `#/auth-files`, and `#/oauth` redirect there (`LEGACY_REDIRECTS` in `src/router/routes.ts`).
+- `src/features/taproot-{quota,usage,logs,backups,settings}/`: taproot's sections. `taproot-quota` has no page of its own: Accounts renders its pool charts and ledger. It keeps its pure projection model in `model/` and the live provider adapters in `live/`. `taproot-logs` also holds the application log tail (`appLogs/`, the `?tab=app` tab of `#/request-logs`).
+- `src/pages/`: route pages outside the feature layout: System, and the OAuth excluded-model and model-alias editors at `#/routing/oauth-excluded` and `#/routing/oauth-model-alias` (Routing lists the rules).
+- `src/components/`, `src/hooks/`, `src/utils/`: shared UI, hooks, and utilities. Feature-specific code stays in its feature.
+- `src/services/api/`: API clients, domain endpoints, and backend data normalization.
+- `src/stores/`: Zustand state. `useAuthStore` holds the connection state (status, failure reason, server version, plugin support), not credentials.
+- `src/App.tsx` sets up the hash router. `src/router/routes.ts` holds the route paths that the route table (`MainRoutes.tsx`), the sidebar, and links share. `src/components/layout/MainLayout.tsx` is the shell and sidebar.
+
+## Text
+
+The UI is English only, and the i18n layer stays: user-facing text, including accessible labels, goes in catalogs.
+
+- Each feature owns `src/i18n/locales/en/<feature>.json`. A file owns its top-level keys (`taproot-usage.json` owns `taproot_usage`), and call sites use `t('taproot_usage.title')`.
+- `src/i18n/resources.ts` merges every file in that folder at startup with `import.meta.glob`, so a new file needs no registration. Two files that define the same top-level key throw at startup.
+- Shell strings (nav, sidebar, header, theme, connection gate) live in `shell.json`, and strings several features share in `common.json`.
+- Tests read the merged catalog with `import { en } from '@/i18n/resources'`. `bunfig.toml` preloads `tests/helpers/viteGlobPlugin.ts`, which expands the same glob under `bun test`.
+
+## Build output
+
+The build emits only `index.html` and content-hashed JS and CSS chunks under `assets/`; `scripts/taproot/build-web.sh` refuses anything else. Images stay inlined in the chunks that use them. Each route page is its own chunk (`src/router/pageImports.ts`), and `main.tsx` starts loading the current page's chunk before the connection gate answers. Keep hash routing. Do not edit the generated `dist/` files. The app version, `__APP_VERSION__`, comes from `VERSION`, then a `taproot-v*` git tag, then the package version, and falls back to `dev`.
+
+## Visual style
+
+The dashboard is monochrome: a pure black page where cards are the page color, separated by 1px hairlines, with generous spacing and large numerals for headline figures. The interface has no hue of its own. A neutral gray marks selection and focus, and the primary button is near-white with black text. Provider and status colors are the only color on the page. Dark is the default theme; the light, white, and auto themes get the same neutral treatment (gray pills, a near-black primary button) and must keep working. Use the tokens in `src/styles/themes.scss`, not hard-coded colors:
+
+- Surfaces and text: `--bg-secondary` (page), `--bg-primary` (cards; pure black in dark, so a card needs its `--border-color` hairline), `--bg-tertiary` and `--bg-hover` (hover, active), `--floating-surface` (menus, popovers, tooltips; a step lighter with a border so they read as floating), `--border-color`, `--text-primary`, `--text-secondary`, `--text-tertiary`, and `--input-bg`. Text tokens meet WCAG AA on every surface in every theme; `tests/themeContrast.test.ts` enforces it.
+- Neutral accent: `--accent` (focus outlines, toggles, checkboxes, the selected tab underline), `--accent-hover`, `--accent-subtle` (selected pill fill), `--accent-text` (selected text), `--accent-border`, and `--focus-ring`. `--primary-color` maps to `--accent`; `--primary-contrast` is the ink drawn on it, such as a checked toggle's thumb.
+- Links are not colored, so a text link needs an underline, or a trailing arrow and heavier weight as panel links use.
+- Selection: a selected tab's underline uses `--accent`; a selected segment or chip uses `--accent-subtle` with `--accent-text`. Never mark a selection or a primary action with a `--text-primary` fill.
+- Provider colors: `--provider-claude`, `--provider-codex`, and their `-soft` fills, reserved for provider data. Chart series use muted cool hues that keep clear of them and of the status colors, so Claude orange is the only warm series; `tests/usagePalette.test.ts` checks this and the series' separation.
+- Display type: `--font-size-page-title`, `--font-size-numeral-xl`, `--font-size-numeral-lg`, and the `.numeral-xl` and `.numeral-lg` classes.
+- Primary actions, including feature-owned pills, use `--button-primary-bg`, `--button-primary-hover`, and `--button-primary-text`. Toggles and checkboxes use `--primary-color`.
+- The taproot mark: `src/components/common/TaprootMark.tsx` draws the bare glyph in `--mark-color`. Only the favicon (`src/assets/taprootMark.ts`, repeated in `index.html`) sits on a dark tile.
+
+Charts use Recharts. Reuse the components in `src/components/ui/` before adding primitives. Sheets and modals join the layer stack in `src/components/ui/layerStack.ts`, so only the top dialog handles Escape and traps Tab; a new dialog primitive must join it too. Keep keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
+
+Code style: 2-space indentation, semicolons, single quotes, ES5 trailing commas, and a 100-character line (`.prettierrc`). Use `unknown` with narrowing for untrusted data rather than `any`, and the `@/` alias for imports from `src`. Components are PascalCase, hooks `useName`, and API modules domain names such as `oauth.ts`. SCSS Modules sit beside their component as `Name.module.scss`; Vite injects `src/styles/variables.scss` into every SCSS file.
+
+## Account emails
+
+Emails are hidden by default everywhere. Auth file names carry the email (`claude-<hash>-<email>.json`), and so can error text, logs, bodies, and session IDs. Render any such text through `mask` from `src/hooks/useEmailMask.ts`, including `title`, `aria-label`, and DOM IDs. Toasts, confirmations, modal and sheet titles, and `Select` labels already mask strings. Search, filters, API calls, copy, and download keep the real values. Error banners and `EmptyState` text come from the server, so they are masked too; `tests/emailRedactionErrors.test.ts` scans for unmasked ones.
+
+- A filter field whose value holds an email shows `MaskedValueChip` while emails are hidden. An edit field shows the value masked and read-only until emails are shown (see `AuthFileDetailsForm`).
+- A value that can hold an email goes into the URL through `encodeUrlValue` (`src/utils/urlValue.ts`).
+- The preference lives in `src/stores/usePrivacyStore.ts` and lasts for the session. Pages that show masked values carry `ShowEmailsToggle`. Settings shows Tailscale logins as they are.
+
+The browser never receives or stores the management key. Keep keys, credentials, auth files, request logs, and backups out of fixtures and screenshots.
+
+## Tests
+
+Tests live in `tests/` as `*.test.ts` and use `bun:test`, with fixtures in `tests/fixtures/` and helpers in `tests/helpers/`. They cover pure logic, React static rendering through `renderToStaticMarkup`, source and contract checks, and real HTTP against `Bun.serve`. There is no browser DOM harness, so static markup tests do not prove browser interactions: load a changed page in a browser against a running server too.

@@ -22,7 +22,7 @@ The server has two surfaces:
 
 The admin surface needs no key: for admitted callers, the guard adds the management key inside the process, and the key never reaches a browser. Because of that, the guard also refuses browser requests made on behalf of another site: a `Host` that is not one of the server's names, a cross-origin `Origin`, cross-site `Sec-Fetch-Site` values, and a state-changing `GET` without `X-Taproot-Request: 1`. Upstream's Redis-protocol usage queue on the same port accepts loopback connections only.
 
-Taproot refuses to start without `access.allow-logins`, refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. The [README](README.md#how-access-works) and [`internal/taproot/PLAN.md`](internal/taproot/PLAN.md) describe the model in full.
+Taproot refuses to start without `access.allow-logins`, refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. The [README](README.md#how-access-works) and [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md) describe the model in full.
 
 ## Run taproot safely
 

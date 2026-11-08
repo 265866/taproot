@@ -1,10 +1,12 @@
-# Taproot plan
+# Taproot design
 
 Taproot is a fork of CLIProxyAPI. It runs on one server and serves every Claude and Codex account to its owner's tailnet through one endpoint, with one dashboard that covers credentials, quota, usage and cost, request logs, and backups.
 
-## Outcome and acceptance
+This document records how taproot is built and why: which upstream files it changes, its security model, each module's design and the measurements behind it, the `/taproot/api/v1` contract, and the dashboard's scope. Update it in the same change as the code it describes.
 
-- Taproot is a new service with its own data. Nothing is migrated: usage and quota history start with taproot. When it replaces another proxy, that proxy is stopped before its auth files are copied in, so the two proxies never refresh the same OAuth tokens.
+## Goals
+
+- Taproot is a service with its own data. The code has no importer and no migrations (see "Decisions"). When it replaces another proxy, that proxy is stopped before its auth files are copied in, so the two proxies never refresh the same OAuth tokens.
 - Only allowlisted Tailscale logins reach the proxy, the management API, or the dashboard. Nobody types a key or password.
 - The dashboard has no Quick Start, AI Providers, sponsor or affiliate content, Kimi China, Devin, Vertex, SIWC, or config API-key editing.
 - Quota, on the Accounts page: pooled remaining percentage per provider as a chart of recorded and projected lines, with large figures for pool empty, first empty, next reset, and burn rate over 1h, 3h, or 6h.
@@ -25,8 +27,9 @@ Taproot is a fork of CLIProxyAPI. It runs on one server and serves every Claude 
 - The removed providers come out of the dashboard only. Their backend code stays, because deleting it would conflict with every upstream merge.
 - `web/` is a hard fork of Cli-Proxy-API-Management-Center at `f154fa9`, imported with `git subtree`. The fork stops following upstream UI changes. It follows the backend's management API instead.
 - `scripts/taproot/sync-upstream.sh` merges the rewritten `upstream/main` (see above) and runs the checks.
-- Taproot deleted upstream files a stranger would mistake for taproot's (launch audit S1 and S2): the GitHub workflows, funding file, issue template, and catalog-refresh script under `.github/`; `Dockerfile`, `docker-compose.yml`, `docker-compose.cluster.yml`, `docker-build.sh`, and `docker-build.ps1`; `README_CN.md`, `README_JA.md`, and the sponsor images in `assets/`; `.env.cluster.example`, which configured Home mode (taproot refuses it); the upstream SDK guides in `docs/`; and the Management Center's READMEs, logo, and workflows under `web/`. `.github/workflows/ci.yml` and `Containerfile.taproot` replace them.
+- Taproot deleted upstream files a stranger would mistake for taproot's (launch audit S1 and S2): the GitHub workflows, funding file, issue template, and catalog-refresh script under `.github/`; `Dockerfile`, `docker-compose.yml`, `docker-compose.cluster.yml`, `docker-build.sh`, and `docker-build.ps1`; `README_CN.md`, `README_JA.md`, and the sponsor images in `assets/`; `.env.cluster.example`, which configured Home mode (taproot refuses it); the upstream SDK guides in `docs/`; and the Management Center's READMEs, logo, and workflows under `web/`. `.github/workflows/ci.yml` and `Containerfile.taproot` replace them. `CLAUDE.md`, a one-line `@AGENTS.md` import, is deleted too: Claude Code 2.1.277 and later reads `AGENTS.md` itself.
   - When upstream changes a file taproot deleted, the merge stops on a modify/delete conflict. The sync script resolves those as "keep deleted" (`git rm`) and stops on every other conflict. `--dry-run` lists both kinds. A file upstream deleted that taproot changed is still a conflict for a person to resolve.
+- Taproot rewrote some of upstream's repository files for itself: `README.md`, `AGENTS.md` (a pointer to `CONTRIBUTING.md`), `LICENSE` (one added copyright line), `.gitignore`, and `.dockerignore`. When upstream changes the lines taproot changed, the sync stops on a conflict. Keep taproot's text. When an upstream change to its `AGENTS.md` adds a rule for code taproot changes, copy the rule into `CONTRIBUTING.md`.
 - `go.mod` requires `github.com/klauspost/compress` v1.20.3, not upstream's v1.17.4. Request-log segments and blobs compress at `SpeedBestCompression`, and v1.17.4 writes corrupt frames there for some inputs (fixed in v1.17.6, "zstd: Fix incorrect repeat coding in best mode"): one of 107 real PNG image streams failed its own CRC on v1.17.4 and none on v1.20.3. A sync that brings upstream's line back conflicts here; keep the higher version.
   - `internal/api/middleware/request_logging_test.go` gains `zstd.WithSingleSegment(true)` in `TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb` (one option). The test's bomb was single-segment in name only: v1.17.4's best level happened to pick a 32 MiB window, which the middleware's 8 MiB bound refused, while v1.20.3 picks 8 MiB and the frame decodes up to the capture limit. Real single-segment frames are refused on both versions, so the middleware is unchanged and the option makes the test build the frame it is named for.
 - `sdk/cliproxy/service_config.go` maps `routing.strategy: soonest-reset-first` to `internal/taproot/routing.SoonestResetSelector` (7 lines).
@@ -202,7 +205,7 @@ The guard splits the server into two surfaces. The package comment in `internal/
   - List filters on status (at or above 400), model, and account walk an index newest first (`reqlog_records_errors_ts`, `_model`, `_auth`); `statusClause` repeats the partial index's term so SQLite uses it. Those lists went from 56 to 166 ms to about 2 ms, stats from 95 to 20 ms. Text search without another filter still scans every record (about 280 ms). The indexes are in the schema, so an existing database builds them on its first start, about 1 s on the production copy.
   - Measured on the full production corpus before the format was accepted: all 203,341 records converted and every one rebuilt byte for byte (SHA-256 against the original text), stored in 3.55 GB against 105 GB before (29.6x): 0.95 GB of segments for 189 GB of residual text, and 2.6 GB of blobs (JPEG 2.27 GB to 1.73 GB with Lepton, PNG 0.40 GB to 0.26 GB with preflate, 0.45 GB of incompressible signatures). The detail view of the largest records (about 85 MB of JSON each) answered in 0.56 to 0.76 s.
 - **Retention.** By days and total bytes, plus a path exclusion list (default excludes 404s on unknown routes, such as `HEAD /api/hello`, and the dashboard's static files).
-- **Budget.** Compressed storage at or below 1 GB a day at the first deployment's traffic, measured on a real sample before the format is accepted.
+- **Budget.** Compressed storage at or below 1 GB a day at the first deployment's traffic. The format was accepted on the production measurement above.
 - **Application logs.** These stay upstream's `/v8/management/observability/logs`.
 
 ### Backups
@@ -304,38 +307,13 @@ Taproot posts to one Discord channel through a webhook. The webhook URL is the o
   - A collapsible left nav.
   - Recharts for charts.
 
-## Workstreams and ownership
+## Decisions
 
-| ID | Owner writes | Depends on |
-|---|---|---|
-| S0 scaffold (done) | `internal/taproot/{taproot.go,store,PLAN.md}`, `cmd/server/main.go` hook | none |
-| A1 ingest | `internal/taproot/ingest/**` | S0 |
-| A2 access | `internal/taproot/access/**` | S0 |
-| A3 request logs | `internal/taproot/reqlog/**` | S0 |
-| A4 backups and web embed | `internal/taproot/backup/**`, `internal/taproot/web/**`, `scripts/taproot/**`, `Containerfile.taproot` | S0 |
-| A5 dashboard strip and shell | `web/**` except new feature folders | S0 |
-| B1 quota page | `web/src/features/taproot-quota/**` | A1 contract, A5 shell |
-| B2 usage page | `web/src/features/taproot-usage/**` | A1 contract, A5 shell |
-| B3 request logs, backups, and settings pages | `web/src/features/taproot-{logs,backups,settings}/**` | A3, A4 contract, A5 shell |
-
-- **Coordinator-only files:** `go.mod`, `go.sum`, `taproot.go`, `web/package.json`, `bun.lock`, route registration, and nav.
-  - Workers that need a dependency list it in their result. The coordinator adds it.
-- **Exception: A5** owns `web/package.json` and `bun.lock` during phase A.
-
-## Verification
-
-- **Go.** `gofmt`, `go vet`, `go build`, and `go test ./internal/taproot/...`. `go test ./...` runs before each integration.
-- **Web.** `bun run verify`. The baseline has 8 timezone test failures on Windows from upstream; those files get deleted or replaced with the old quota timeline.
-- **Real-surface check.** The real binary, driven in a browser for every page. Development data comes from real or fake-upstream traffic; screenshots go in the result.
-- **Review.** A fresh-context review of access first, because it decides who can read OAuth tokens.
-
-## Decisions after phase A
-
-- **No data migration.** Taproot starts fresh. The usage importer that phase A built for test data was removed.
+- **Data from before taproot.** The code has no importer and no format converter. When the first deployment replaced CLIProxyAPI and CPA Usage Keeper on 2026-11-03, their history from 2026-09-18 on (request logs, usage, and quota) was imported once with a one-off tool that is not in the repository; the earlier Usage Keeper importer (`cmd/taproot-import`) was removed. Its request logs in the first storage format were converted to the current format in place on 2026-11-07, also once, and the code reads only the current format.
 - **Request log segments.** Segments roll on idle (15m), age (6h), day change, or 128 MiB stored, not hourly. On the real fixture, per-session segments compressed 97x, while per-session-hour segments compressed 73x. On the production corpus, with blobs out, 128 MiB segments stored 1.28 GB against 1.15 GB for 256 MiB and 1.59 GB for 64 MiB; 128 MiB halves sealing and lookup memory (about 145 MB each) for 3% of the total.
 - **Not adopted.** Global chunk dedup across sessions (5% for an index the size of its savings), dropping the upstream request and response copies (6%, loses what was sent upstream), lossless JPEG XL for PNGs (36% smaller but rebuilds a different PNG file), C zstd through cgo (7% over Go's best level), and xz (seconds-long lookups).
 - **Plugin resource routes** (`/v0/resource/plugins/*`) are guarded but get no injected key. Upstream serves them unauthenticated and forwards headers to plugin code.
 - **RESP usage queue.** Upstream multiplexes this Redis-protocol queue on the proxy port, outside gin, so the guard never sees it, and the generated `MANAGEMENT_PASSWORD` enables remote `AUTH`. The security recheck (F2) showed a tailnet peer authenticating with the secret. Taproot does not use the queue, so the RESP connection filter (see "Upstream boundary") closes every RESP connection that does not come from loopback, before any reply. Drop the hook if upstream adds a switch to disable the queue.
-- **Poller timeout.** The idle-account poller's 30 s timeout on its read-only usage probe is an intended exception to AGENTS.md's no-timeout rule. That rule targets proxied upstream traffic. The alerts module's reset-grant read (30 s) and Discord webhook POST (15 s) are exceptions for the same reason.
+- **Poller timeout.** The idle-account poller's 30 s timeout on its read-only usage probe is an intended exception to the no-timeout rule in `CONTRIBUTING.md`. That rule targets proxied upstream traffic. The alerts module's reset-grant read (30 s) and Discord webhook POST (15 s) are exceptions for the same reason.
 - **Shutdown drain.** Setup runs on `context.Background()`, so request-log records still queued at shutdown are recovered from the open segment on the next start rather than drained. Usage events still queued are lost. The flush interval is 1 s.
 - **Mounts.** `config.yaml` lives in the mounted data directory, which is what restore's atomic rename needs. The tailscaled socket must be mounted at `/var/run/tailscale/tailscaled.sock`. After deploying, `GET /taproot/api/v1/me` from a tailnet client listed in `admin-nodes` must report `via: "tailnet"` and `admin: true`, and the same request from another node of the same login outside `admin-nodes` must get 403 `not_admin_node`. If it reports loopback, the port forwarding is rewriting source addresses and the guard would admit everyone. From the server host itself, `curl http://100.64.0.1:8317/taproot/api/v1/me` (with the host's Tailscale address) must return 403 and `curl http://100.64.0.1:8317/v1/models` must not, which shows the server's own node is proxy-only. A `127.0.1.1:8317` publish, from the host, gets 403 on both unless the host's LAN address is in `trusted-cidrs` (see "Security model").

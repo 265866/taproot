@@ -1,7 +1,7 @@
 /**
  * Typed client for taproot's own API at same-origin `/taproot/api/v1`.
  *
- * The contract is the "Taproot API contract" table in internal/taproot/PLAN.md. Times are
+ * The contract is the "Taproot API contract" table in internal/taproot/DESIGN.md. Times are
  * RFC 3339 UTC strings; errors arrive as `{ error: { code, message } }`. The server admits callers
  * by Tailscale identity, so requests carry no credentials of their own.
  */

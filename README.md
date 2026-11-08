@@ -233,6 +233,8 @@ Set `access.allow-logins`. Every other key in `taproot.yaml` is optional. An unk
 
 The environment variable `TAPROOT_CONFIG` overrides the location of `taproot.yaml`. `config.example.yaml` documents every key of `config.yaml`. Request logs are stored only while `observability.logs.request-log` is `true` in `config.yaml`.
 
+The server loads a `.env` file from its working directory at startup, so variables there apply without being set in the shell. The upstream `PGSTORE_*`, `GITSTORE_*`, and `OBJECTSTORE_*` variables move `config.yaml` and the auth files from local files to Postgres, a git repository, or an object store. Taproot is tested only with local files. With a store, a backup captures the local copies, not the remote store.
+
 ## Terms of service
 
 This section is a warning. It is not legal advice.
@@ -258,15 +260,15 @@ go build -o taproot ./cmd/server
 ./taproot --config ./config.yaml
 ```
 
-`build-web.sh` builds `web/` into `index.html` and hashed chunks under `assets/`, and copies them to `internal/taproot/web/dist/`, which the binary embeds. Without that step, the binary serves a placeholder page.
+`build-web.sh` builds `web/` into `index.html` and hashed chunks under `assets/`, and copies them to `internal/taproot/web/dist/`, which the binary embeds. Without that step, the binary serves a placeholder page. This build also leaves out the native request-log codec, so it cannot read the JPEG and PNG blobs the image stores; [CONTRIBUTING.md](CONTRIBUTING.md#before-you-send-a-change) shows the `taproot_codecs` build the image uses.
 
 If you start from `examples/taproot/config.yaml`, change `oauth.auth-dir` to a path on your machine. Outside a container, every process on the machine can connect from loopback, so every process is an admin. Use this for development only.
 
-To check a change, run `go test ./...` and, in `web/`, `bun run verify`.
+To check a change, run `go test ./...` and, in `web/`, `bun run verify`. [CONTRIBUTING.md](CONTRIBUTING.md) lists the full checks and the rules for changing code.
 
 ## Upstream sync
 
-Taproot's Go module path is `github.com/265866/taproot`, and upstream's is `github.com/router-for-me/CLIProxyAPI/v8`. The sync script rewrites each upstream snapshot to taproot's path before it merges, so import lines do not conflict. Taproot changes only a few upstream files, each listed with its reason in [`internal/taproot/PLAN.md`](internal/taproot/PLAN.md).
+Taproot's Go module path is `github.com/265866/taproot`, and upstream's is `github.com/router-for-me/CLIProxyAPI/v8`. The sync script rewrites each upstream snapshot to taproot's path before it merges, so import lines do not conflict. Taproot changes only a few upstream files, each listed with its reason in [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md).
 
 To merge CLIProxyAPI's `main` branch:
 
