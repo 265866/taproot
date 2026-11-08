@@ -281,11 +281,16 @@ func nextRun(now time.Time, hour, minute int) time.Time {
 
 func wallTime(y int, m time.Month, d, hour, minute int, loc *time.Location) time.Time {
 	t := time.Date(y, m, d, hour, minute, 0, 0, loc)
-	// time.Date may resolve a skipped wall time before the gap; compare the
-	// wall clocks it asked for and got, and move it by the difference.
+	// time.Date resolves a skipped wall time to either side of the gap: before
+	// it in zones west of UTC, after it in zones east. Move a time that landed
+	// before the gap forward by the wall-clock shortfall. Never move it back:
+	// a gap at midnight would put the run on the previous day.
 	want := time.Date(y, m, d, hour, minute, 0, 0, time.UTC)
 	got := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, time.UTC)
-	return t.Add(want.Sub(got))
+	if short := want.Sub(got); short > 0 {
+		t = t.Add(short)
+	}
+	return t
 }
 
 // Create writes a new backup and prunes old ones beyond the retention count.

@@ -41,7 +41,18 @@ export function TaprootBackupsPage() {
   const [restored, setRestored] = useState<RestoreResult | null>(null);
   const [watch, setWatch] = useState<RestartWatch | null>(null);
 
+  // The schedule line is informational; the list still works without it.
+  const loadSettings = useCallback(
+    () =>
+      taprootApi
+        .settings()
+        .then(setSettings)
+        .catch(() => {}),
+    []
+  );
+
   const load = useCallback(async () => {
+    const settingsLoaded = loadSettings();
     try {
       const res = await taprootApi.backups();
       setBackups(res.backups);
@@ -49,16 +60,11 @@ export function TaprootBackupsPage() {
     } catch (err: unknown) {
       setError(getErrorMessage(err));
     }
-  }, []);
+    await settingsLoaded;
+  }, [loadSettings]);
 
   useEffect(() => {
     void load();
-    taprootApi
-      .settings()
-      .then(setSettings)
-      .catch(() => {
-        // The schedule line is informational; the list still works without it.
-      });
   }, [load]);
   useHeaderRefresh(load);
 
@@ -71,11 +77,13 @@ export function TaprootBackupsPage() {
         .then((res) => {
           setWatch((current) => current && stepRestartWatch(current, true));
           setBackups(res.backups);
+          // The restore may have replaced taproot.yaml and with it the schedule.
+          void loadSettings();
         })
         .catch(() => setWatch((current) => current && stepRestartWatch(current, false)));
     }, RESTART_PROBE_MS);
     return () => window.clearTimeout(timer);
-  }, [watch]);
+  }, [watch, loadSettings]);
 
   const create = async () => {
     setCreating(true);

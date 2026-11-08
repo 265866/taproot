@@ -636,14 +636,21 @@ func TestNextRun(t *testing.T) {
 	}
 }
 
-// TestNextRunAcrossDST drives NextRun with a fake clock in New York, where
-// 2027-03-14 skips 02:00 to 03:00 and 2027-11-07 repeats 01:00 to 02:00.
-// Each want is the absolute UTC instant, so a run that drifts by the DST hour fails.
+// TestNextRunAcrossDST drives NextRun with a fake clock across DST changes.
+// New York (west of UTC) skips 02:00 to 03:00 on 2027-03-14 and repeats 01:00
+// on 2027-11-07. Berlin (east of UTC) skips 02:00 to 03:00 on 2027-03-28.
+// Cairo skips 00:00 to 01:00 on 2027-04-30, so the default run's wall time
+// does not exist that day. Each want is the absolute UTC instant, so a run that
+// drifts by the DST hour fails.
 func TestNextRunAcrossDST(t *testing.T) {
-	ny, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		t.Fatal(err)
+	load := func(name string) *time.Location {
+		loc, err := time.LoadLocation(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return loc
 	}
+	ny, berlin, cairo := load("America/New_York"), load("Europe/Berlin"), load("Africa/Cairo")
 	f := newFixture(t, Config{})
 	if at, _ := f.b.Schedule(); at != "00:00" {
 		t.Fatalf("default daily-at = %q, want 00:00", at)
@@ -661,6 +668,9 @@ func TestNextRunAcrossDST(t *testing.T) {
 		{"day after fall back", "00:00", time.Date(2027, 11, 7, 0, 0, 0, 0, ny), time.Date(2027, 11, 8, 5, 0, 0, 0, time.UTC), "-05:00"},
 		{"repeated time runs at its first occurrence", "01:30", time.Date(2027, 11, 7, 0, 0, 0, 0, ny), time.Date(2027, 11, 7, 5, 30, 0, 0, time.UTC), "-04:00"},
 		{"repeated time does not run twice", "01:30", time.Date(2027, 11, 7, 5, 31, 0, 0, time.UTC).In(ny), time.Date(2027, 11, 8, 6, 30, 0, 0, time.UTC), "-05:00"},
+		{"skipped time east of UTC runs an hour later", "02:30", time.Date(2027, 3, 28, 0, 0, 0, 0, berlin), time.Date(2027, 3, 28, 1, 30, 0, 0, time.UTC), "+02:00"},
+		{"skipped midnight runs after the gap", "00:00", time.Date(2027, 4, 29, 23, 0, 2, 0, cairo), time.Date(2027, 4, 29, 22, 0, 0, 0, time.UTC), "+03:00"},
+		{"skipped midnight is after earlier that day", "00:00", time.Date(2027, 4, 29, 12, 0, 0, 0, cairo), time.Date(2027, 4, 29, 22, 0, 0, 0, time.UTC), "+03:00"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := f.b.SetSchedule(tc.dailyAt, 3); err != nil {
