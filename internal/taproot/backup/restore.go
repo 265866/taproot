@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/265866/taproot/internal/taproot/store"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -59,6 +60,11 @@ func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error)
 	c, err := extractVerified(archive, dbTmp)
 	if err != nil {
 		return RestoreResult{}, err
+	}
+	// The code holds no migrations, so a snapshot from before a schema change
+	// would stop the next start. Refuse it now, before anything changes.
+	if err := store.CheckFile(ctx, dbTmp); err != nil {
+		return RestoreResult{}, fmt.Errorf("%w: %v", errIncompatible, err)
 	}
 	// Pruning waits until the restore is done and spares its source, which
 	// may be the oldest archive.

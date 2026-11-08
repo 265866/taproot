@@ -91,6 +91,8 @@ func writeError(c *gin.Context, err error) {
 		status, code = http.StatusNotFound, "not_found"
 	case errors.Is(err, errCorrupt):
 		status, code = http.StatusUnprocessableEntity, "corrupt_backup"
+	case errors.Is(err, errIncompatible):
+		status, code = http.StatusConflict, "incompatible_backup"
 	default:
 		log.WithError(err).Error("taproot backups: request failed")
 	}

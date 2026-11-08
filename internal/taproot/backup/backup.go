@@ -66,6 +66,9 @@ var (
 	errInvalidID = errors.New("invalid backup id")
 	errNotFound  = errors.New("backup not found")
 	errCorrupt   = errors.New("corrupt backup")
+	// errIncompatible is a backup whose database lacks columns this release
+	// declares; it needs the schema change applied by hand first.
+	errIncompatible = errors.New("backup database predates the current schema")
 )
 
 // idPattern is the only id shape accepted from callers, which keeps ids from

@@ -2,18 +2,14 @@ package ingest
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/access"
-	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/265866/taproot/sdk/cliproxy/usage"
 )
 
@@ -326,87 +322,5 @@ type summaryResp struct {
 	Buckets []struct {
 		T      string
 		Groups map[string]Totals
-	}
-}
-
-// TestDeviceMigrationKeepsExistingEvents opens a database written before the
-// device columns existed and checks the rows survive with no device.
-func TestDeviceMigrationKeepsExistingEvents(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "taproot.db")
-	raw, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, stmt := range []string{
-		`CREATE TABLE schema_migrations (module TEXT NOT NULL, version INTEGER NOT NULL, applied_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (module, version))`,
-		schemaV1, seedPricesSQL(), `ALTER TABLE accounts ADD COLUMN removed_at INTEGER`,
-		`INSERT INTO schema_migrations (module, version) VALUES ('ingest', 1), ('ingest', 2), ('ingest', 3)`,
-		`INSERT INTO usage_events (event_key, ts, provider, model, session_id, cache_write_tokens) VALUES ('old', 1793613600000, 'claude', 'claude-opus-5-5', 's', 300)`,
-	} {
-		if _, err := raw.Exec(stmt); err != nil {
-			t.Fatalf("build v3 database: %v", err)
-		}
-	}
-	if err := raw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(context.Background(), store.Config{}, dir)
-	if err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	devices, err := loadDevices(context.Background(), db, 0, math.MaxInt64, newPriceBook(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(devices) != 1 || devices[0].DeviceID != "" || devices[0].Requests != 1 || devices[0].CacheWriteTokens != 300 {
-		t.Fatalf("devices after migration = %+v", devices)
-	}
-}
-
-// TestDeviceMigrationOnSeededDB migrates a copy of a real database when
-// TAPROOT_SEEDED_DB names one, and checks device totals match the events.
-func TestDeviceMigrationOnSeededDB(t *testing.T) {
-	src := os.Getenv("TAPROOT_SEEDED_DB")
-	if src == "" {
-		t.Skip("TAPROOT_SEEDED_DB is not set")
-	}
-	dir := t.TempDir()
-	data, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "taproot.db"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(context.Background(), store.Config{}, dir)
-	if err != nil {
-		t.Fatalf("migrate seeded copy: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	var events, version int64
-	if err := db.QueryRow(`SELECT COUNT(*) FROM usage_events`).Scan(&events); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`SELECT MAX(version) FROM schema_migrations WHERE module = 'ingest'`).Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	prices, err := loadPrices(context.Background(), db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	started := time.Now()
-	devices, err := loadDevices(context.Background(), db, 0, math.MaxInt64, newPriceBook(prices))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var total int64
-	for _, d := range devices {
-		total += d.Requests
-	}
-	t.Logf("migrated to ingest v%d; %d events; devices over all history in %s: %d", version, events, time.Since(started), len(devices))
-	if version < 4 || total != events || events == 0 {
-		t.Fatalf("version %d, device requests %d, events %d", version, total, events)
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/access"
-	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/gin-gonic/gin"
 )
@@ -24,50 +23,11 @@ func (e event) mainConversation() bool {
 	return e.Provider == "claude" && e.SessionID != "" && e.ParentSessionID == ""
 }
 
-// Events written before device attribution have an empty device_id; the API
-// reports them as the "(none)" group so totals still add up. The device rollup
-// is backfilled from existing events, so it covers all history.
-const schemaV4Devices = `
-ALTER TABLE usage_events ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
-ALTER TABLE usage_events ADD COLUMN device_name TEXT NOT NULL DEFAULT '';
-ALTER TABLE usage_events ADD COLUMN device_login TEXT NOT NULL DEFAULT '';
-ALTER TABLE usage_events ADD COLUMN device_via TEXT NOT NULL DEFAULT '';
-CREATE INDEX usage_events_device_ts ON usage_events(device_id, ts);
--- Covers the cache TTL estimate's walk over main conversations.
-CREATE INDEX usage_events_main_ts ON usage_events(ts, session_id, auth_index, model, cache_write_5m_tokens, device_id)
-	WHERE ` + mainConversationSQL + `;
-
-CREATE TABLE usage_rollup_device_hourly (
-	hour INTEGER NOT NULL,
-	device_id TEXT NOT NULL,
-	model TEXT NOT NULL,
-	main INTEGER NOT NULL,
-	requests INTEGER NOT NULL DEFAULT 0,
-	failures INTEGER NOT NULL DEFAULT 0,
-	input_tokens INTEGER NOT NULL DEFAULT 0,
-	output_tokens INTEGER NOT NULL DEFAULT 0,
-	reasoning_tokens INTEGER NOT NULL DEFAULT 0,
-	cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-	cache_write_tokens INTEGER NOT NULL DEFAULT 0,
-	cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0,
-	cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
-	split_requests INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (hour, device_id, model, main)
-) WITHOUT ROWID;
-INSERT INTO usage_rollup_device_hourly
-	SELECT ts / 3600000, ` + deviceAggColumns + `
-	FROM usage_events GROUP BY 1, 2, 3, 4;
-`
-
 // deviceAggColumns aggregates usage_events into the device rollup's columns
 // after hour.
 const deviceAggColumns = `device_id, model, ` + mainConversationSQL + `, COUNT(*), SUM(failed),
 	SUM(input_tokens), SUM(output_tokens), SUM(reasoning_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens),
 	SUM(cache_write_5m_tokens), SUM(cache_write_1h_tokens), SUM(cache_write_5m_tokens + cache_write_1h_tokens > 0)`
-
-func init() {
-	store.Register(store.Migration{Module: "ingest", Version: 4, SQL: schemaV4Devices})
-}
 
 // deviceSource resolves upstream's per-request ID (usage.Record.TraceID) to
 // the device the access guard admitted, and names stored devices.

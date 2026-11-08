@@ -29,9 +29,10 @@ const (
 	openAISource    = "OpenAI standard tier, developers.openai.com/api/docs/pricing fetched 2026-11-02 (5m/1h columns = 30m/12h writes; short-context tier)"
 )
 
-// seedPrices are the list prices at the time the table was created. Edits
-// made through PUT /prices replace them; later list-price changes need a new
-// migration so operator edits are never overwritten silently.
+// seedPrices fill the prices table when store.Open creates it, and never
+// again, so edits made through PUT /prices are never overwritten. A later
+// list-price change reaches an existing database only through PUT /prices or
+// by hand.
 var seedPrices = []Price{
 	{"claude-fable-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSource, ""},
 	{"claude-mythos-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSource, ""},
