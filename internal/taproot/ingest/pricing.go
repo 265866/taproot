@@ -29,24 +29,20 @@ const (
 	anthropicSource = "Anthropic list price, platform.claude.com/docs/en/about-claude/pricing read 2026-11-08"
 	openAISource    = "OpenAI standard tier, developers.openai.com/api/docs/pricing read 2026-11-08 (5m/1h columns = 30m/12h writes; short-context tier)"
 	// The pricing page lists GPT-5.6 Sol's promotional rate until 2026-11-30.
-	// The standard rate is from the same page before the promotion; it had one
-	// cache-write column, and the 12h write is 2.5x input like the other
-	// GPT-5.6 models.
-	gpt56SolSource = "OpenAI standard tier, developers.openai.com/api/docs/pricing as of 2026-08-12 (5m/1h columns = 30m/12h writes; short-context tier)"
+	// The standard rate is from the same page before the promotion, which had
+	// one cache-write column.
+	gpt56SolSource = "OpenAI standard tier, developers.openai.com/api/docs/pricing as of 2026-08-12 (5m/1h columns = 30m/12h writes; short-context tier; 12h write inferred as 2.5x input)"
 )
 
-// priceSeedVersion is the version of the shipped price rows. Adding a row
-// raises it, and seedPriceAddedIn names the version that added the row, so
-// an existing database gets the new row once and a row its user deleted
-// stays deleted. A changed rate of a shipped row reaches an existing
-// database only through POST /prices/reset or an edit.
-const priceSeedVersion = 2
+// priceSeeds is the price table each seed version shipped, oldest first; the
+// last one is seedPrices. A database records the version it was seeded to,
+// and an upgrade reads the older tables to tell the rows it has from them.
+// A release that changes seedPrices after a version shipped first freezes
+// that version as a new priceSeedV<N> and appends it here; a shipped
+// version never changes. TestShippedPriceVersionsAreFrozen enforces this.
+var priceSeeds = [][]Price{priceSeedV1, seedPrices}
 
-// seedPriceAddedIn lists the rows added after version 1.
-var seedPriceAddedIn = map[string]int{
-	"claude-opus-4-5*":   2,
-	"claude-sonnet-4-5*": 2,
-}
+var priceSeedVersion = len(priceSeeds)
 
 var seedPrices = []Price{
 	{"claude-fable-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSource, ""},
@@ -83,9 +79,53 @@ var seedPrices = []Price{
 	{"gpt-5-mini", 0.25, 2, 0.025, 0, 0, openAISource, ""},
 }
 
-// seedPriceTable is ingest's store seed. It adds the shipped rows newer than
-// the database's seed version. A database without a version predates them
-// and was seeded with every version-1 row.
+const (
+	anthropicSourceV1 = "Anthropic list price (claude-api skill table cached 2026-10-06; writes 1.25x/2x input, reads as listed or 0.1x)"
+	openAISourceV1    = "OpenAI standard tier, developers.openai.com/api/docs/pricing fetched 2026-11-02 (5m/1h columns = 30m/12h writes; short-context tier)"
+)
+
+// priceSeedV1 is the table seed version 1 shipped, which every database from
+// before seed versions has.
+var priceSeedV1 = []Price{
+	{"claude-fable-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSourceV1, ""},
+	{"claude-mythos-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSourceV1, ""},
+	{"claude-fable-5*", 10, 50, 1, 12.5, 20, anthropicSourceV1, ""},
+	{"claude-mythos-5*", 10, 50, 1, 12.5, 20, anthropicSourceV1, ""},
+	{"claude-opus-5-5*", 4, 20, 0.2, 5, 8, anthropicSourceV1, ""},
+	{"claude-opus-5*", 5, 25, 0.5, 6.25, 10, anthropicSourceV1, ""},
+	{"claude-opus-4-8*", 5, 25, 0.5, 6.25, 10, anthropicSourceV1, ""},
+	{"claude-opus-4-7*", 5, 25, 0.5, 6.25, 10, anthropicSourceV1, ""},
+	{"claude-opus-4-6*", 5, 25, 0.5, 6.25, 10, anthropicSourceV1, ""},
+	{"claude-sonnet-5-5*", 2, 10, 0.2, 2.5, 4, anthropicSourceV1, ""},
+	{"claude-sonnet-5*", 2, 10, 0.2, 2.5, 4, anthropicSourceV1, ""},
+	{"claude-sonnet-4-6*", 3, 15, 0.3, 3.75, 6, anthropicSourceV1, ""},
+	{"claude-haiku-5-5*", 0.1, 0.5, 0.01, 0.125, 0.2, anthropicSourceV1 + "; prompts <=100K tokens", ""},
+	{"claude-haiku-4-5*", 1, 5, 0.1, 1.25, 2, anthropicSourceV1, ""},
+	{"gpt-6-astra", 10, 50, 1, 12.5, 25, openAISourceV1, ""},
+	{"gpt-6-sol", 2, 10, 0.2, 2.5, 5, openAISourceV1, ""},
+	{"gpt-6-luna", 0.1, 0.5, 0.01, 0.125, 0.25, openAISourceV1, ""},
+	{"gpt-6.1-sol", 2, 10, 0.1, 2.5, 5, openAISourceV1, ""},
+	{"gpt-6.1-terra", 1, 5, 0.05, 1.25, 2.5, openAISourceV1, ""},
+	{"gpt-5.6-sol", 4, 20, 0.4, 5, 10, openAISourceV1 + "; promo rate through at least 2026-11-21", ""},
+	{"gpt-5.6-terra", 2, 12, 0.2, 2.5, 5, openAISourceV1, ""},
+	{"gpt-5.6-luna", 0.2, 1.2, 0.02, 0.25, 0.5, openAISourceV1, ""},
+	{"gpt-5.5", 5, 30, 0.5, 0, 0, openAISourceV1, ""},
+	{"gpt-5.4", 2.5, 15, 0.25, 0, 0, openAISourceV1, ""},
+	{"gpt-5.4-mini", 0.75, 4.5, 0.075, 0, 0, openAISourceV1, ""},
+	{"gpt-5.3-codex", 1.75, 14, 0.175, 0, 0, openAISourceV1, ""},
+	{"gpt-5.2", 1.75, 14, 0.175, 0, 0, openAISourceV1, ""},
+	{"gpt-5.1", 1.25, 10, 0.125, 0, 0, openAISourceV1, ""},
+	{"gpt-5", 1.25, 10, 0.125, 0, 0, openAISourceV1, ""},
+	{"gpt-5-mini", 0.25, 2, 0.025, 0, 0, openAISourceV1, ""},
+}
+
+// seedPriceTable is ingest's store seed. It brings a database from an older
+// seed version to seedPrices without touching a row its user edited or
+// deleted. A pattern no earlier version shipped is inserted with INSERT OR
+// IGNORE. A row still equal to one an earlier version shipped, source
+// included, is replaced with the current row; replacePrices gives every
+// edited row a new source, so an edited row never matches. A database
+// without a version predates seed versions and has version 1.
 func seedPriceTable(ctx context.Context, tx *sql.Tx, created bool) error {
 	version := 1
 	if created {
@@ -100,15 +140,31 @@ func seedPriceTable(ctx context.Context, tx *sql.Tx, created bool) error {
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, p := range seedPrices {
-		addedIn, ok := seedPriceAddedIn[p.ModelPattern]
-		if !ok {
-			addedIn = 1
+		shipped, earlier := false, []Price(nil)
+		for _, table := range priceSeeds[:version] {
+			for _, old := range table {
+				if old.ModelPattern != p.ModelPattern {
+					continue
+				}
+				shipped = true
+				if old != p {
+					earlier = append(earlier, old)
+				}
+			}
 		}
-		if addedIn <= version {
+		if !shipped {
+			if err := insertPrice(ctx, tx, `INSERT OR IGNORE`, p, now); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := insertPrice(ctx, tx, `INSERT OR IGNORE`, p, now); err != nil {
-			return err
+		for _, old := range earlier {
+			if _, err := tx.ExecContext(ctx, `UPDATE prices SET input = ?, output = ?, cache_read = ?, cache_write_5m = ?, cache_write_1h = ?, source = ?, updated_at = ?
+				WHERE model_pattern = ? AND input = ? AND output = ? AND cache_read = ? AND cache_write_5m = ? AND cache_write_1h = ? AND source = ?`,
+				p.Input, p.Output, p.CacheRead, p.CacheWrite5m, p.CacheWrite1h, p.Source, now,
+				old.ModelPattern, old.Input, old.Output, old.CacheRead, old.CacheWrite5m, old.CacheWrite1h, old.Source); err != nil {
+				return fmt.Errorf("update shipped price %q: %w", p.ModelPattern, err)
+			}
 		}
 	}
 	return setPriceSeedVersion(ctx, tx)
@@ -274,7 +330,9 @@ func validatePrices(prices []Price) error {
 }
 
 // replacePrices swaps the whole table. Rows whose values did not change keep
-// their source and timestamp; changed or new rows are marked as edited.
+// their source and timestamp. A changed or new row keeps a source the user
+// wrote and is otherwise marked as edited; it never keeps a shipped row's
+// source, which the seed reads as an unedited row.
 func replacePrices(ctx context.Context, db *sql.DB, prices []Price, now time.Time) error {
 	current, err := loadPrices(ctx, db)
 	if err != nil {
@@ -295,7 +353,7 @@ func replacePrices(ctx context.Context, db *sql.DB, prices []Price, now time.Tim
 			if ok && prev.Input == p.Input && prev.Output == p.Output && prev.CacheRead == p.CacheRead &&
 				prev.CacheWrite5m == p.CacheWrite5m && prev.CacheWrite1h == p.CacheWrite1h {
 				source, updated = prev.Source, prev.UpdatedAt
-			} else if source == "" || (ok && source == prev.Source) {
+			} else if source == "" || (ok && source == prev.Source) || isShippedSource(source) {
 				source = "edited in dashboard"
 			}
 			p.Source = source
@@ -305,6 +363,17 @@ func replacePrices(ctx context.Context, db *sql.DB, prices []Price, now time.Tim
 		}
 		return nil
 	})
+}
+
+func isShippedSource(source string) bool {
+	for _, table := range priceSeeds {
+		for _, p := range table {
+			if p.Source == source {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // resetPrices replaces the whole table with the shipped rows and records the

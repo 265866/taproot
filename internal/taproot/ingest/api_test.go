@@ -452,7 +452,7 @@ func TestResetPricesRestoresShippedRowsAndRepricesHistory(t *testing.T) {
 	if _, ok := got["claude-*"]; ok {
 		t.Fatal("reset kept a row that does not ship")
 	}
-	if v := queryInt(t, i, `SELECT version FROM price_seed`); v != priceSeedVersion {
+	if v := queryInt(t, i, `SELECT version FROM price_seed`); v != int64(priceSeedVersion) {
 		t.Fatalf("seed version after reset %d, want %d", v, priceSeedVersion)
 	}
 	call(t, r, http.MethodGet, summaryPath, nil, &summary)

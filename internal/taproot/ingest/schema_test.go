@@ -2,8 +2,12 @@ package ingest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/265866/taproot/internal/taproot/store"
 )
@@ -80,34 +84,62 @@ func TestPriceSeedKeepsDeletedAndEditedRowsOnReopen(t *testing.T) {
 	}
 }
 
-// A database from an earlier seed version gets the rows added since, once,
-// and keeps its edits and deletions of older rows.
-func TestPriceSeedUpgradeAddsNewRowsOnly(t *testing.T) {
+// writeVersion1Table makes db look like one version 1 seeded: the version-1
+// rows, written the way that release's seed SQL wrote them.
+func writeVersion1Table(t *testing.T, db *store.DB) {
+	t.Helper()
+	exec(t, db, `DELETE FROM prices`)
+	for _, p := range priceSeedV1 {
+		exec(t, db, fmt.Sprintf("INSERT INTO prices (model_pattern, input, output, cache_read, cache_write_5m, cache_write_1h, source, updated_at) VALUES (?, %g, %g, %g, %g, %g, ?, '2026-11-02T00:00:00Z')",
+			p.Input, p.Output, p.CacheRead, p.CacheWrite5m, p.CacheWrite1h), p.ModelPattern, p.Source)
+	}
+}
+
+// A database from version 1 gets the rows added since and the corrected
+// rows, once, and keeps its edits, additions, and deletions.
+func TestPriceSeedUpgradeFromVersion1(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		// downgrade makes a fresh database look like one from version 1.
+		// downgrade sets the seed version a version-1 database has.
 		downgrade string
 	}{
 		{"version 1", `UPDATE price_seed SET version = 1`},
 		{"before seed versions", `DELETE FROM price_seed`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
 			dir := t.TempDir()
 			db := openStore(t, dir)
+			writeVersion1Table(t, db)
 			exec(t, db, tc.downgrade)
-			added := map[string]Price{}
-			for _, p := range seedPrices {
-				if seedPriceAddedIn[p.ModelPattern] > 1 {
-					added[p.ModelPattern] = p
-					exec(t, db, `DELETE FROM prices WHERE model_pattern = ?`, p.ModelPattern)
+
+			deleted, edited, editedBack, custom := "gpt-5", "gpt-6-sol", "claude-sonnet-5-5*", "my-model"
+			exec(t, db, `DELETE FROM prices WHERE model_pattern = ?`, deleted)
+			table, err := loadPrices(ctx, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			editedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			for i := range table {
+				switch table[i].ModelPattern {
+				case edited:
+					table[i].Output = 77
+				case editedBack:
+					table[i].CacheRead = 0.3
 				}
 			}
-			if len(added) == 0 {
-				t.Fatal("no shipped row is newer than version 1")
+			table = append(table, Price{ModelPattern: custom, Input: 1, Output: 2})
+			if err := replacePrices(ctx, db.DB, table, editedAt); err != nil {
+				t.Fatal(err)
 			}
-			deleted, edited := "gpt-5", "gpt-6-sol"
-			exec(t, db, `DELETE FROM prices WHERE model_pattern = ?`, deleted)
-			exec(t, db, `UPDATE prices SET output = 77, source = 'edited in dashboard', updated_at = '2026-01-01T00:00:00Z' WHERE model_pattern = ?`, edited)
+			for i := range table {
+				if table[i].ModelPattern == editedBack {
+					table[i].CacheRead = 0.2
+				}
+			}
+			if err := replacePrices(ctx, db.DB, table, editedAt); err != nil {
+				t.Fatal(err)
+			}
 			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -115,24 +147,39 @@ func TestPriceSeedUpgradeAddsNewRowsOnly(t *testing.T) {
 			db = openStore(t, dir)
 			t.Cleanup(func() { _ = db.Close() })
 			prices := pricesByPattern(t, db)
-			for pattern, want := range added {
-				got, ok := prices[pattern]
+			for _, want := range seedPrices {
+				got, ok := prices[want.ModelPattern]
+				switch want.ModelPattern {
+				case deleted:
+					if ok {
+						t.Fatalf("upgrade restored deleted row %q", deleted)
+					}
+					continue
+				case edited, editedBack:
+					continue
+				}
 				if !ok {
-					t.Fatalf("upgrade did not add %q", pattern)
+					t.Fatalf("upgrade lost or did not add %q", want.ModelPattern)
 				}
-				if got.Input != want.Input || got.Output != want.Output || got.CacheRead != want.CacheRead ||
-					got.CacheWrite5m != want.CacheWrite5m || got.CacheWrite1h != want.CacheWrite1h || got.Source != want.Source || got.UpdatedAt == "" {
-					t.Fatalf("added %q = %+v, want %+v", pattern, got, want)
+				if got.UpdatedAt == "" {
+					t.Fatalf("%q has no updatedAt", want.ModelPattern)
 				}
-			}
-			if _, ok := prices[deleted]; ok {
-				t.Fatalf("upgrade restored deleted version-1 row %q", deleted)
+				got.UpdatedAt = ""
+				if got != want {
+					t.Fatalf("upgraded %q = %+v, want the shipped %+v", want.ModelPattern, got, want)
+				}
 			}
 			if p := prices[edited]; p.Output != 77 || p.Source != "edited in dashboard" || p.UpdatedAt != "2026-01-01T00:00:00Z" {
 				t.Fatalf("upgrade changed edited row: %+v", p)
 			}
-			if len(prices) != len(seedPrices)-1 {
-				t.Fatalf("upgraded database has %d prices, want %d", len(prices), len(seedPrices)-1)
+			if p := prices[editedBack]; p.CacheRead != 0.2 || p.Source != "edited in dashboard" || p.UpdatedAt != "2026-01-01T00:00:00Z" {
+				t.Fatalf("upgrade changed a row edited back to its version-1 values: %+v", p)
+			}
+			if p := prices[custom]; p.Input != 1 || p.Output != 2 {
+				t.Fatalf("upgrade changed an added row: %+v", p)
+			}
+			if len(prices) != len(seedPrices) {
+				t.Fatalf("upgraded database has %d prices, want %d", len(prices), len(seedPrices))
 			}
 			if v := seedVersion(t, db); v != priceSeedVersion {
 				t.Fatalf("seed version after upgrade %d, want %d", v, priceSeedVersion)
@@ -179,17 +226,26 @@ func TestShippedPricesAreConsistent(t *testing.T) {
 	if err := validatePrices(seedPrices); err != nil {
 		t.Fatal(err)
 	}
-	newest := 1
-	for pattern, v := range seedPriceAddedIn {
-		if !patterns[pattern] {
-			t.Errorf("seedPriceAddedIn names %q, which does not ship", pattern)
-		}
-		if v < 2 || v > priceSeedVersion {
-			t.Errorf("%q added in version %d, want 2..%d", pattern, v, priceSeedVersion)
-		}
-		newest = max(newest, v)
+}
+
+// shippedPriceDigests pins each seed version's table. A database records the
+// version it has, so a version that already shipped must not change: an
+// install at that version would never see the change, and an upgrade would
+// no longer recognize its unedited rows.
+var shippedPriceDigests = []string{
+	"932ba1541edc9fc7925ec77a68de64a838bddff4a8d8ee691c81e0f8410abae0",
+	"a0321398a83e41292cd14ce1bc63df6ba9eeac8f7574047ffead28896ef9c4d5",
+}
+
+func TestShippedPriceVersionsAreFrozen(t *testing.T) {
+	if len(shippedPriceDigests) != priceSeedVersion {
+		t.Fatalf("%d digests for %d seed versions; add the new version's digest", len(shippedPriceDigests), priceSeedVersion)
 	}
-	if newest != priceSeedVersion {
-		t.Errorf("priceSeedVersion is %d, but the newest row is from version %d", priceSeedVersion, newest)
+	for i, table := range priceSeeds {
+		sum := sha256.Sum256([]byte(fmt.Sprint(table)))
+		if got := hex.EncodeToString(sum[:]); got != shippedPriceDigests[i] {
+			t.Errorf("seed version %d changed (digest %s). If it shipped, restore it, freeze it as priceSeedV%d, append the changed table to priceSeeds as version %d, and add its digest; update this digest only for a version that never shipped",
+				i+1, got, i+1, i+2)
+		}
 	}
 }
