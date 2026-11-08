@@ -84,6 +84,8 @@ type Ingest struct {
 	lastRefresh map[string]time.Time
 }
 
+var _ usage.Plugin = (*Ingest)(nil)
+
 // New prepares the module and rebuilds empty or stale derived tables. It must register
 // its usage sink before the service starts.
 func New(cfg Config, db *store.DB) (*Ingest, error) {

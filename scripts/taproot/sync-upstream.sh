@@ -8,24 +8,29 @@
 # taproot/upstream, then merges that branch. The staging commit's second
 # parent is the previous rewritten snapshot, which is already in taproot's
 # history, so the merge base has the new path too and import lines do not
-# conflict. A file taproot deleted that upstream changed stays deleted; every
-# other conflict stops the merge for a person to resolve.
+# conflict. Before that it checks that the rewrite still reproduces the
+# previous snapshot. A file taproot deleted that upstream changed stays
+# deleted. Every other conflict, and every new upstream file of a kind taproot
+# deletes (such as a new docs/*.md guide), stops the merge for a person to
+# decide. The checks are those of CI's go and web jobs, except golangci-lint
+# and govulncheck.
 #
 #   scripts/taproot/sync-upstream.sh               fetch, merge, check
-#   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits and conflicts only
+#   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits, conflicts, and new files to decide on;
+#                                                  exits 1 when the merge would stop
 #   scripts/taproot/sync-upstream.sh --no-fetch    use the upstream/main already fetched
 #   scripts/taproot/sync-upstream.sh --checks-only run the checks on HEAD, e.g. after resolving conflicts
 set -euo pipefail
 # Command substitutions keep set -e (bash 4.4 and later). The snapshot steps
 # also check their own status, for older shells.
 shopt -s inherit_errexit 2>/dev/null || true
+# shellcheck source=scripts/taproot/upstream-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/upstream-lib.sh"
 
 remote=upstream
 branch=main
 staging=taproot/upstream
 old_path=github.com/router-for-me/CLIProxyAPI/v8
-# Marks a rewritten upstream snapshot and names the upstream commit it holds.
-trailer=Taproot-Upstream
 dry_run=0
 fetch=1
 checks_only=0
@@ -64,20 +69,17 @@ check() {
 }
 
 gofmt_clean() {
-	local unformatted
-	unformatted="$(git ls-files -z -- '*.go' | xargs -0 gofmt -l)"
+	local gofmt unformatted
+	gofmt="$(pinned_gofmt)" || return 1
+	unformatted="$(git ls-files -z -- '*.go' | xargs -0 "$gofmt" -l)" || return 1
 	if [[ -n "$unformatted" ]]; then
 		printf '%s\n' "$unformatted"
 		return 1
 	fi
 }
 
-build_server() {
-	local out status=0
-	out="$(mktemp -d)"
-	go build -o "$out/taproot" ./cmd/server || status=$?
-	rm -rf "$out"
-	return "$status"
+web_verify() {
+	(cd web && bun install --frozen-lockfile && bun run verify)
 }
 
 # classify_conflicts reads unmerged index entries ("<mode> <object> <stage>\t<path>",
@@ -96,47 +98,40 @@ classify_conflicts() {
 		}' | sort
 }
 
+# The checks an upstream merge can break: CI's go and web jobs, except the
+# Go version, golangci-lint, and govulncheck steps.
 run_checks() {
 	check "gofmt" gofmt_clean
-	check "go build ./cmd/server" build_server
-	check "go vet ./internal/taproot/..." go vet ./internal/taproot/...
-	check "go test ./internal/taproot/... ./sdk/..." go test -count=1 ./internal/taproot/... ./sdk/...
+	check "go build ./..." go build ./...
+	check "GOOS=linux go vet ./..." env GOOS=linux go vet ./...
+	# TestAdvertiserAndBrowser_Integration needs real mDNS multicast, which CI
+	# runners and most hosts do not have.
+	check "go test ./..." go test -count=1 -skip '^TestAdvertiserAndBrowser_Integration$' ./...
+	check "web: bun run verify" web_verify
 	printf '\n== Summary\n'
 }
-
-scratch=""
-cleanup() {
-	if [[ -n "$scratch" ]]; then
-		git worktree remove --force "$scratch/tree" >/dev/null 2>&1 || true
-		rm -rf "$scratch"
-	fi
-}
-trap cleanup EXIT
 
 # snapshot commits upstream's tip with the module path rewritten. Its parents
 # are that tip and the previous snapshot, so later merges find the previous
 # snapshot as their base. It prints the new commit.
 snapshot() {
 	local upstream="$1" previous="$2" tree
-	scratch="$(mktemp -d)"
-	# Command substitution runs this in a subshell, which drops the EXIT trap.
-	trap cleanup EXIT
-	# The rewrite comes from this branch; upstream's tree does not have it.
-	cp scripts/taproot/rewrite-module-path.sh "$scratch/rewrite-module-path.sh" || return 1
-	git worktree add --quiet --detach "$scratch/tree" "$upstream" || return 1
-	if ! (cd "$scratch/tree" && bash "$scratch/rewrite-module-path.sh" && git add --update) >&2; then
+	tree="$(rewrite_tree "$upstream")" || {
 		printf 'rewriting the module path of upstream %s failed\n' "${upstream:0:9}" >&2
 		return 1
-	fi
-	tree="$(git -C "$scratch/tree" write-tree)" || return 1
-	cleanup
-	scratch=""
+	}
 	git commit-tree "$tree" -p "$upstream" -p "$previous" -m "chore(upstream): rewrite the module path of upstream ${upstream:0:9}
 
 Upstream $upstream with the module path rewritten by
 scripts/taproot/rewrite-module-path.sh.
 
-$trailer: $upstream"
+$upstream_trailer: $upstream"
+}
+
+# print_new_files lists new upstream files of the kinds taproot deletes.
+print_new_files() {
+	echo "Upstream added files of kinds taproot deletes (see \"Upstream boundary\" in internal/taproot/DESIGN.md). Keep each one, or delete it with git rm:"
+	printf '%s\n' "$1" | sed 's/^/  /'
 }
 
 if ((checks_only)); then
@@ -163,12 +158,11 @@ upstream="$(git rev-parse --verify --quiet "$target^{commit}")" || {
 	exit 1
 }
 
-previous="$(git log -1 --format=%H --grep="^$trailer: " HEAD)"
-if [[ -z "$previous" ]]; then
-	printf 'HEAD has no rewritten upstream snapshot (a commit with a %s: trailer); see "Upstream boundary" in internal/taproot/DESIGN.md\n' "$trailer" >&2
+previous="$(latest_snapshot HEAD)" || {
+	printf 'HEAD has no rewritten upstream snapshot (a commit with a %s: trailer naming its first parent); see "Upstream boundary" in internal/taproot/DESIGN.md\n' "$upstream_trailer" >&2
 	exit 1
-fi
-merged="$(git log -1 --format="%(trailers:key=$trailer,valueonly)" "$previous" | tr -d '[:space:]')"
+}
+merged="$(git rev-parse "$previous^1")"
 
 current="$(git rev-parse --abbrev-ref HEAD)"
 before="$(git rev-parse HEAD)"
@@ -180,6 +174,13 @@ if ((incoming == 0)); then
 	exit 0
 fi
 
+# A rewrite that no longer gives the previous snapshot would also change, in
+# the new snapshot, lines upstream never touched.
+check_snapshot "$previous" || {
+	echo "The rewrite no longer reproduces the previous snapshot; nothing was merged. Fix scripts/taproot/rewrite-module-path.sh first." >&2
+	exit 1
+}
+
 echo "Rewriting the module path of upstream $(git rev-parse --short "$upstream")..."
 next="$(snapshot "$upstream" "$previous")" || {
 	echo "Could not build the rewritten upstream snapshot; nothing was merged." >&2
@@ -190,11 +191,13 @@ if git grep -q -F -e "$old_path" "$next" -- '*.go' '*go.mod' '*go.sum'; then
 	printf 'The rewritten snapshot %s still mentions %s; nothing was merged.\n' "$(git rev-parse --short "$next")" "$old_path" >&2
 	exit 1
 fi
+new_files="$(new_in_deleted_categories "$previous" "$next")"
 
 if ((dry_run)); then
-	git log --oneline --no-decorate "$merged..$upstream" | head -n 20
+	# -n, not a pipe to head: with pipefail, git log's SIGPIPE would end the script.
+	git log --oneline --no-decorate -n 20 "$merged..$upstream"
 	tree="$(mktemp)"
-	trap 'cleanup; rm -f "$tree"' EXIT
+	trap 'rm -f "$tree"' EXIT
 	status=0
 	git merge-tree --write-tree -z --no-messages HEAD "$next" >"$tree" || status=$?
 	if ((status > 1)); then
@@ -208,9 +211,18 @@ if ((dry_run)); then
 		echo "Dry run: these files taproot deleted would stay deleted:"
 		printf '%s\n' "$deleted" | sed 's/^/  /'
 	fi
+	stops=0
+	if [[ -n "$new_files" ]]; then
+		printf 'Dry run: the merge would stop for a decision. '
+		print_new_files "$new_files"
+		stops=1
+	fi
 	if [[ -n "$conflicts" ]]; then
 		echo "Dry run: the merge would conflict in:"
 		printf '%s\n' "$conflicts" | sed 's/^/  /'
+		stops=1
+	fi
+	if ((stops)); then
 		exit 1
 	fi
 	echo "Dry run: the merge would apply cleanly."
@@ -218,7 +230,11 @@ if ((dry_run)); then
 fi
 
 git branch --force "$staging" "$next"
-if ! git merge --no-edit --no-ff -m "Merge upstream $(git rev-parse --short "$upstream") into $current" "$staging"; then
+merge_args=(--no-edit --no-ff -m "Merge upstream $(git rev-parse --short "$upstream") into $current")
+if [[ -n "$new_files" ]]; then
+	merge_args+=(--no-commit)
+fi
+if ! git merge "${merge_args[@]}" "$staging"; then
 	if ! git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
 		echo "git merge failed before merging; nothing changed." >&2
 		exit 1
@@ -233,10 +249,22 @@ if ! git merge --no-edit --no-ff -m "Merge upstream $(git rev-parse --short "$up
 		echo
 		echo "Merge stopped on conflicts in:"
 		git diff --name-only --diff-filter=U | sed 's/^/  /'
+		if [[ -n "$new_files" ]]; then
+			print_new_files "$new_files"
+		fi
 		echo "Resolve them and commit, then run $0 --checks-only. Or run 'git merge --abort' to undo."
 		exit 1
 	fi
-	git commit --quiet --no-edit
+	if [[ -z "$new_files" ]]; then
+		git commit --quiet --no-edit
+	fi
+fi
+if [[ -n "$new_files" ]]; then
+	echo
+	printf 'Merge stopped before committing. '
+	print_new_files "$new_files"
+	echo "Then commit and run $0 --checks-only. Or run 'git merge --abort' to undo."
+	exit 1
 fi
 
 run_checks

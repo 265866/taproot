@@ -278,7 +278,7 @@ scripts/taproot/sync-upstream.sh --dry-run
 scripts/taproot/sync-upstream.sh
 ```
 
-The script commits `upstream/main` with the module path rewritten to the branch `taproot/upstream`, merges that branch into the current branch, then runs `gofmt`, `go build`, `go vet`, and the taproot and SDK tests. Files taproot deleted stay deleted. It never pushes. The dashboard does not follow the Management Center's changes.
+The script commits `upstream/main` with the module path rewritten to the branch `taproot/upstream`, merges that branch into the current branch, then runs CI's Go and dashboard checks, except golangci-lint and govulncheck. Files taproot deleted stay deleted, and new upstream files of those kinds, such as a new `docs/*.md` guide, stop the merge for you to keep or delete. It never pushes. The dashboard does not follow the Management Center's changes.
 
 ## License and credits
 

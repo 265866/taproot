@@ -28,7 +28,8 @@ Taproot stays cheap to merge with upstream. The "Upstream boundary" section of `
 - Taproot's module path is `github.com/265866/taproot`. The sync script rewrites upstream's path (`github.com/router-for-me/CLIProxyAPI/v8`) in each upstream snapshot before merging it, with `scripts/taproot/rewrite-module-path.sh`, so import lines do not conflict. Do not rewrite imports by hand.
 - Fork code lives in `internal/taproot/**` and plugs into the server through server options.
 - `DESIGN.md` lists each upstream file taproot edits, with the reason and the size of the edit. A new upstream edit needs the same: keep it as small as you can, and add its reason to `DESIGN.md` in the same change.
-- Upstream files that taproot deleted stay deleted. `scripts/taproot/sync-upstream.sh` keeps them deleted when upstream changes them, and stops on every other conflict.
+- Upstream files that taproot deleted stay deleted. `scripts/taproot/sync-upstream.sh` keeps them deleted when upstream changes them. It stops on every other conflict, and on new upstream files of the kinds taproot deletes, such as a new `docs/*.md` guide, so a person decides whether to keep each one.
+- The rewrite must give the same output for the same upstream commit. `scripts/taproot/check-rewrite.sh` checks that it still reproduces the last snapshot; the sync script runs that check first.
 - Backend code for providers the dashboard dropped stays in the Go tree, because deleting it would conflict with upstream merges.
 
 To merge upstream, add the remote and run the sync script. It never pushes.
@@ -60,7 +61,7 @@ Run the checks that CI runs:
 ```sh
 go build ./...
 GOOS=linux go vet ./...
-gofmt -l $(git ls-files '*.go')
+git ls-files -z '*.go' | xargs -0 "$(GOTOOLCHAIN=go$(go list -m -f '{{.GoVersion}}') go env GOROOT)/bin/gofmt" -l
 go test -skip '^TestAdvertiserAndBrowser_Integration$' ./...
 golangci-lint run
 go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
@@ -68,7 +69,7 @@ cd web && bun install --frozen-lockfile && bun run verify && cd ..
 docker build -f Containerfile.taproot .
 ```
 
-`go vet` runs for linux, as in CI: on Windows it also checks upstream's `internal/pluginhost/loader_windows*.go` and flags its `unsafe.Pointer` use. CI uses the Go version in `go.mod`, and `Containerfile.taproot`'s `GO_VERSION` must match it. `gofmt -l` must print nothing. The skipped test is upstream's and needs real mDNS multicast. `.golangci.yml` reports only taproot-owned code (`internal/taproot/`, `cmd/`, and `taproot_*.go` files); CI runs golangci-lint v2.15.0. Format Go code with `gofmt` (or `gofumpt`). Add or update tests for any change in behavior. For a dashboard change, also load the page in a browser against a running server.
+`go vet` runs for linux, as in CI: on Windows it also checks upstream's `internal/pluginhost/loader_windows*.go` and flags its `unsafe.Pointer` use. CI uses the Go version in `go.mod`, and `Containerfile.taproot`'s `GO_VERSION` must match it. `gofmt -l` must print nothing. Run the `gofmt` of `go.mod`'s Go version, as that line does, and not the installed Go's. `gofmt`'s output changes between Go releases, so a newer `gofmt` flags upstream files, and rewriting them makes upstream merges conflict. `scripts/taproot/sync-upstream.sh --checks-only` runs that `gofmt` check along with the build, vet, test, and dashboard checks. The skipped test is upstream's and needs real mDNS multicast. `.golangci.yml` reports only taproot-owned code (`internal/taproot/`, `cmd/`, `scripts/taproot/`, and `taproot_*.go` files); CI runs golangci-lint v2.15.0. Format the Go files you change with that `gofmt` (or `gofumpt`). Add or update tests for any change in behavior. For a dashboard change, also load the page in a browser against a running server.
 
 A plain `go build` links a stub request-log codec. A server built that way cannot read the Lepton (JPEG) and PNG blobs that the image's compactor writes. The image builds the Rust codec library and links it with the `taproot_codecs` build tag; to build the same way on Linux, with cgo and a Rust toolchain:
 
