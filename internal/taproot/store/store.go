@@ -76,6 +76,11 @@ func Open(ctx context.Context, cfg Config, dataDir string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
+	// A dashboard page load reads through several connections at once.
+	// database/sql keeps 2 idle by default, so every burst would open (and
+	// later close) the rest, paying SQLite's open, the pragmas, a schema
+	// parse, and a cold page cache each time.
+	sqlDB.SetMaxIdleConns(8)
 	db := &DB{DB: sqlDB, path: path}
 	if err := db.applySchema(ctx); err != nil {
 		_ = sqlDB.Close()
