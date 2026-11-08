@@ -4,7 +4,7 @@ go 1.26.10
 
 require (
 	github.com/MoeForge/moego v0.1.0-alpha.1
-	github.com/andybalholm/brotli v1.0.6
+	github.com/andybalholm/brotli v1.2.7
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10

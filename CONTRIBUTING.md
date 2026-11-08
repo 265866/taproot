@@ -60,12 +60,15 @@ Run the checks that CI runs:
 ```sh
 go build ./...
 GOOS=linux go vet ./...
-go test ./internal/taproot/... ./internal/api/... ./sdk/cliproxy/... ./cmd/...
+gofmt -l $(git ls-files '*.go')
+go test -skip '^TestAdvertiserAndBrowser_Integration$' ./...
+golangci-lint run
+go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 cd web && bun install --frozen-lockfile && bun run verify && cd ..
 docker build -f Containerfile.taproot .
 ```
 
-`go vet` runs for linux, as in CI: on Windows it also checks upstream's `internal/pluginhost/loader_windows*.go` and flags its `unsafe.Pointer` use. Format Go code with `gofmt` (or `gofumpt`). Add or update tests for any change in behavior. For a dashboard change, also load the page in a browser against a running server.
+`go vet` runs for linux, as in CI: on Windows it also checks upstream's `internal/pluginhost/loader_windows*.go` and flags its `unsafe.Pointer` use. CI uses the Go version in `go.mod`, and `Containerfile.taproot`'s `GO_VERSION` must match it. `gofmt -l` must print nothing. The skipped test is upstream's and needs real mDNS multicast. `.golangci.yml` reports only taproot-owned code (`internal/taproot/`, `cmd/`, and `taproot_*.go` files); CI runs golangci-lint v2.15.0. Format Go code with `gofmt` (or `gofumpt`). Add or update tests for any change in behavior. For a dashboard change, also load the page in a browser against a running server.
 
 A plain `go build` links a stub request-log codec. A server built that way cannot read the Lepton (JPEG) and PNG blobs that the image's compactor writes. The image builds the Rust codec library and links it with the `taproot_codecs` build tag; to build the same way on Linux, with cgo and a Rust toolchain:
 
