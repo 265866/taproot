@@ -2,9 +2,12 @@ package settings
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/265866/taproot/internal/taproot/alerts"
 	"github.com/265866/taproot/internal/taproot/ingest"
@@ -133,5 +136,77 @@ func TestAlertsInvalidWebhookFromFileIsShownAndReplaceable(t *testing.T) {
 	code, v, body = f.do(t, http.MethodPut, `{"alerts": {"discordWebhook": "`+hookURL+`"}}`)
 	if code != http.StatusOK || v.Alerts.WebhookInvalid || !v.Alerts.Active || svc.Config().DiscordWebhook != hookURL {
 		t.Fatalf("replace = %d %s", code, body)
+	}
+}
+
+// announceCounter counts the "Webhook connected" requests settings make.
+type announceCounter struct {
+	*alerts.Service
+	calls int
+}
+
+func (a *announceCounter) AnnounceWebhook() {
+	a.calls++
+	a.Service.AnnounceWebhook()
+}
+
+// TestAlertsAnnounceOnlyANewSavedWebhook checks that settings ask for the
+// "Webhook connected" message once per new webhook, and only after
+// taproot.yaml holds it.
+func TestAlertsAnnounceOnlyANewSavedWebhook(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	counter := &announceCounter{Service: withAlerts(t, f)}
+	f.s.deps.Alerts = counter
+	other := "https://discord.com/api/webhooks/42/otherTAIL-xyz"
+
+	for _, step := range []struct {
+		body  string
+		code  int
+		calls int
+	}{
+		{`{"alerts": {"discordWebhook": "` + hookURL + `"}, "ingest": {"pollInterval": "soon"}}`, http.StatusBadRequest, 0},
+		{`{"alerts": {"discordWebhook": "` + hookURL + `"}}`, http.StatusOK, 1},
+		{`{"alerts": {"discordWebhook": " ` + hookURL + ` "}}`, http.StatusOK, 1},
+		{`{"alerts": {"enabled": false}}`, http.StatusOK, 1},
+		{`{"alerts": {"enabled": true}}`, http.StatusOK, 1},
+		{`{"alerts": {"discordWebhook": "` + other + `"}}`, http.StatusOK, 2},
+		{`{"alerts": {"discordWebhook": ""}}`, http.StatusOK, 2},
+	} {
+		code, _, body := f.do(t, http.MethodPut, step.body)
+		if code != step.code || counter.calls != step.calls {
+			t.Fatalf("PUT %s = %d %s, announcements = %d; want %d and %d", step.body, code, body, counter.calls, step.code, step.calls)
+		}
+	}
+}
+
+// TestAlertsConnectedMessageDoesNotHoldTheRequest saves a webhook while the
+// fake Discord holds every post: the PUT returns, and the message arrives.
+func TestAlertsConnectedMessageDoesNotHoldTheRequest(t *testing.T) {
+	posts := make(chan string, 1)
+	release := make(chan struct{})
+	discord := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		posts <- r.URL.RequestURI() + " " + string(body)
+		<-release
+	}))
+	t.Cleanup(discord.Close)
+	t.Cleanup(func() { close(release) })
+	t.Setenv(alerts.OriginEnv, discord.URL)
+	f := newFixture(t, options{yaml: commentedYAML})
+	svc := withAlerts(t, f)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	svc.Start(ctx)
+
+	if code, _, body := f.do(t, http.MethodPut, `{"alerts": {"discordWebhook": "`+hookURL+`"}}`); code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	select {
+	case got := <-posts:
+		if !strings.HasPrefix(got, "/api/webhooks/1234567890/"+hookToken+"?wait=true&with_components=true ") || !strings.Contains(got, `"content":"### Webhook connected"`) {
+			t.Fatalf("post = %s", got)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no connected message reached the fake Discord")
 	}
 }
