@@ -74,15 +74,27 @@ func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 // currentWindows reads the latest observation of every window, for one
 // account or, with an empty authIndex, for every account not removed.
 func (i *Ingest) currentWindows(ctx context.Context, authIndex string) (map[string]*quotaAccountJSON, error) {
-	where := "auth_index NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)"
+	// A loose index scan: each account, then each of its windows, then the
+	// window's latest row are one seek each on quota_observations_key, so the
+	// cost follows the number of windows rather than the length of history.
+	auths := `SELECT MIN(auth_index) FROM quota_observations
+		UNION ALL
+		SELECT (SELECT MIN(auth_index) FROM quota_observations WHERE auth_index > a) FROM auths WHERE a IS NOT NULL`
 	var args []any
 	if authIndex != "" {
-		where += " AND auth_index = ?"
+		auths = `SELECT ?`
 		args = append(args, authIndex)
 	}
-	// SQLite fills bare columns from the row that holds MAX(observed_at).
-	rows, err := i.db.QueryContext(ctx, `SELECT auth_index, provider, window_name, utilization, resets_at, status, period_seconds, MAX(observed_at)
-		FROM quota_observations WHERE `+where+` GROUP BY auth_index, window_name`, args...)
+	rows, err := i.db.QueryContext(ctx, `WITH RECURSIVE
+		auths(a) AS (`+auths+`),
+		windows(a, w) AS (
+			SELECT a, (SELECT MIN(window_name) FROM quota_observations WHERE auth_index = a) FROM auths WHERE a IS NOT NULL
+			UNION ALL
+			SELECT a, (SELECT MIN(window_name) FROM quota_observations WHERE auth_index = a AND window_name > w) FROM windows WHERE w IS NOT NULL)
+		SELECT q.auth_index, q.provider, q.window_name, q.utilization, q.resets_at, q.status, q.period_seconds, q.observed_at
+		FROM windows JOIN quota_observations q ON q.id = (SELECT id FROM quota_observations
+			WHERE auth_index = a AND window_name = w ORDER BY observed_at DESC LIMIT 1)
+		WHERE w IS NOT NULL AND a NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)`, args...)
 	if err != nil {
 		return nil, err
 	}
