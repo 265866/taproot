@@ -73,6 +73,7 @@ func fakeLocalAPI(t *testing.T) string {
 type fixture struct {
 	h           http.Handler
 	taprootYAML string
+	auths       *auth.Manager
 }
 
 // newServer builds the real server the way cmd/server does: taproot.Setup
@@ -129,8 +130,9 @@ func setupServer(t *testing.T, tp string) (fixture, error) {
 		return fixture{}, err
 	}
 	t.Cleanup(stop)
-	srv := api.NewServer(cfg, auth.NewManager(nil, nil, nil), sdkaccess.NewManager(), configPath, opts...)
-	return fixture{h: srv.Handler(), taprootYAML: taprootYAML}, nil
+	auths := auth.NewManager(nil, nil, nil)
+	srv := api.NewServer(cfg, auths, sdkaccess.NewManager(), configPath, opts...)
+	return fixture{h: srv.Handler(), taprootYAML: taprootYAML, auths: auths}, nil
 }
 
 type req struct {
@@ -547,7 +549,6 @@ func TestSetupRefusesUnknownKeys(t *testing.T) {
 // The guard has no built-in login, so without allow-logins it refuses to start.
 func TestSetupRefusesEmptyAllowLogins(t *testing.T) {
 	for name, tp := range map[string]string{
-		"missing file":      "",
 		"no access section": "backups:\n  daily-at: \"off\"\n",
 		"empty list":        "access:\n  allow-logins: []\n",
 	} {

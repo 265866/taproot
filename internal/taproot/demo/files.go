@@ -46,8 +46,9 @@ oauth:
 
 // taprootYAML turns off everything that reads from a provider or posts
 // elsewhere: the idle-account poller and alerts (no webhook, so no
-// reset-grant reads either). The tailscaled socket path does not exist, so
-// the guard admits loopback only and never reads a real tailnet.
+// reset-grant reads either). run.sh serves a stand-in tailscaled on the
+// socket that answers every call with an error, so the guard admits loopback
+// only and never reads a real tailnet.
 const taprootYAML = `data-dir: taproot
 access:
   allow-logins:
@@ -66,13 +67,16 @@ request-logs:
   max-bytes: 20GiB
 `
 
+// tailscaledSocket is the stand-in tailscaled's socket, in the demo directory.
+const tailscaledSocket = "tailscaled.sock"
+
 // writeConfig writes config.yaml and taproot.yaml into dir.
 func writeConfig(dir, authDir string, port int) error {
 	cfg := fmt.Sprintf(configYAML, port, deadProxy, filepath.ToSlash(authDir))
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(cfg), 0o600); err != nil {
 		return fmt.Errorf("write config.yaml: %w", err)
 	}
-	socket := filepath.ToSlash(filepath.Join(dir, "no-tailscaled.sock"))
+	socket := filepath.ToSlash(filepath.Join(dir, tailscaledSocket))
 	tp := fmt.Sprintf(taprootYAML, demoLogin, socket)
 	if err := os.WriteFile(filepath.Join(dir, "taproot.yaml"), []byte(tp), 0o600); err != nil {
 		return fmt.Errorf("write taproot.yaml: %w", err)
