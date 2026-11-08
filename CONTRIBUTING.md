@@ -80,7 +80,7 @@ go build -tags taproot_codecs -o taproot ./cmd/server
 
 Keep personal data out of the repository. Tests, fixtures, screenshots, and examples use example values such as `alice@github`, `example.com`, `100.64.0.x`, and `tailnet-0000.ts.net`, never a real login, email, node ID, address, or token.
 
-Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(taproot): …` or `feat(web): …`. After a dependency change, run `bun scripts/taproot/third-party-notices.ts` to update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(taproot): …` or `feat(web): …`. After a dependency change in `go.mod`, `web/package.json`, or the codec's `Cargo.lock`, run `bun scripts/taproot/third-party-notices.ts` to update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). It needs Go, Bun, and a Rust toolchain, and CI fails when the file is stale.
 
 By contributing, you agree that your contribution is released under the [MIT License](LICENSE).
 

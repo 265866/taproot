@@ -1,10 +1,12 @@
 #!/usr/bin/env bun
 // Regenerates THIRD_PARTY_NOTICES.md: the Go modules linked into cmd/server
-// (linux, darwin, and windows builds, reported by go-licenses) and the
-// dashboard's production npm dependencies (reported by license-checker),
-// with each package's license text and, where it ships one, its NOTICE file.
-// Run it from anywhere in the repository after go.mod or web/package.json
-// changes:
+// (linux, darwin, and windows builds, reported by go-licenses), the Rust
+// crates in the request-log codec library (Linux builds, reported by cargo
+// metadata), and the dashboard's production npm dependencies (reported by
+// license-checker), with each package's license text and, where it ships one,
+// its NOTICE file. Run it from anywhere in the repository after go.mod,
+// web/package.json, or the codec's Cargo.lock changes; CI fails when the file
+// is stale:
 //
 //   bun scripts/taproot/third-party-notices.ts
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,6 +16,10 @@ import { basename, dirname, join } from 'node:path';
 const GO_LICENSES = 'github.com/google/go-licenses/v2@v2.0.1';
 const LICENSE_CHECKER = 'license-checker@25.0.1';
 const TARGETS = ['linux/amd64', 'darwin/arm64', 'windows/amd64'];
+const CODEC_DIR = 'internal/taproot/reqlog/codec/native';
+// Taproot's codec crate itself, covered by LICENSE.
+const CODEC_PACKAGE = 'taproot_codec';
+const RUST_TARGETS = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
 // Taproot itself, covered by LICENSE.
 const SELF_MODULE = 'github.com/265866/taproot';
 // Modules whose license is stated only in their README. go-licenses cannot
@@ -83,11 +89,90 @@ function goModules(): Entry[] {
       }
       if (!prev) {
         const notice = noticeIn(dirname(licensePath.trim()));
-        byName.set(name, { name, version, license, url, text: normalize(text), notice });
+        // On Windows, go-licenses builds the URL's path part with backslashes.
+        byName.set(name, {
+          name,
+          version,
+          license,
+          url: url.replaceAll('\\', '/'),
+          text: normalize(text),
+          notice,
+        });
       }
     }
   }
   return [...byName.values()];
+}
+
+type CargoMetadata = {
+  packages: {
+    id: string;
+    name: string;
+    version: string;
+    license: string | null;
+    license_file: string | null;
+    manifest_path: string;
+  }[];
+  resolve: {
+    nodes: { id: string; deps: { pkg: string; dep_kinds: { kind: string | null }[] }[] }[];
+  };
+};
+
+// Reads the named files of a package directory. With more than one file,
+// each text is headed by its file name.
+function readFiles(dir: string, files: string[]): string {
+  const texts = files.map((f) => normalize(readFileSync(join(dir, f), 'utf8')));
+  return texts.length === 1 ? texts[0] : texts.map((t, i) => `${files[i]}:\n\n${t}`).join('\n\n');
+}
+
+// The codec crate's normal dependencies, which the static library links or,
+// for procedural macros, which generate part of its code. Build and dev
+// dependencies are left out.
+function rustCrates(): Entry[] {
+  const dir = join(root, CODEC_DIR);
+  const byId = new Map<string, Entry>();
+  for (const target of RUST_TARGETS) {
+    const meta = JSON.parse(
+      run(
+        ['cargo', 'metadata', '--locked', '--format-version', '1', '--filter-platform', target],
+        dir
+      )
+    ) as CargoMetadata;
+    const packages = new Map(meta.packages.map((p) => [p.id, p]));
+    const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
+    const self = meta.packages.find((p) => p.name === CODEC_PACKAGE);
+    if (!self) throw new Error(`cargo metadata has no ${CODEC_PACKAGE} package`);
+    const seen = new Set<string>([self.id]);
+    const queue = [self.id];
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      for (const dep of nodes.get(id)?.deps ?? []) {
+        if (seen.has(dep.pkg) || !dep.dep_kinds.some((k) => k.kind === null)) continue;
+        seen.add(dep.pkg);
+        queue.push(dep.pkg);
+      }
+    }
+    seen.delete(self.id);
+    for (const id of seen) {
+      const pkg = packages.get(id);
+      if (!pkg || byId.has(id)) continue;
+      const crateDir = dirname(pkg.manifest_path);
+      const files = readdirSync(crateDir).sort();
+      const licenseFiles = files.filter((f) => /^(license|copying)/i.test(f));
+      if (pkg.license_file && !licenseFiles.includes(pkg.license_file)) {
+        licenseFiles.push(pkg.license_file);
+      }
+      const noticeFiles = files.filter((f) => /^notice/i.test(f));
+      byId.set(id, {
+        name: pkg.name,
+        version: pkg.version,
+        license: pkg.license ?? `see ${pkg.license_file ?? 'its source'}`,
+        url: `https://crates.io/crates/${pkg.name}/${pkg.version}`,
+        text: readFiles(crateDir, licenseFiles),
+        notice: readFiles(crateDir, noticeFiles),
+      });
+    }
+  }
+  return [...byId.values()];
 }
 
 function webPackages(): Entry[] {
@@ -122,20 +207,26 @@ function webPackages(): Entry[] {
   return entries;
 }
 
-// Packages with the same license text share one copy of it.
-function section(title: string, intro: string, entries: Entry[]): string {
+// The 'en' locale and the version tiebreak keep the order the same on every
+// machine; a Rust crate can appear in two versions.
+const byNameVersion = (a: Entry, b: Entry) =>
+  a.name.localeCompare(b.name, 'en') || a.version.localeCompare(b.version, 'en');
+
+// Packages with the same license text share one copy of it. missing says where
+// the license of a package without a license file is stated.
+function section(title: string, intro: string, entries: Entry[], missing: string): string {
   const groups = new Map<string, Entry[]>();
-  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    const key = e.text || `(no license file) ${e.name}`;
+  for (const e of entries.sort(byNameVersion)) {
+    const key = e.text || `(no license file) ${e.name} ${e.version}`;
     groups.set(key, [...(groups.get(key) ?? []), e]);
   }
   const parts = [`## ${title}\n\n${intro}\n`];
-  for (const [key, group] of [...groups].sort((a, b) => a[1][0].name.localeCompare(b[1][0].name))) {
+  for (const [key, group] of [...groups].sort((a, b) => byNameVersion(a[1][0], b[1][0]))) {
     const list = group
       .map((e) => `- ${e.name} ${e.version}, ${e.license}${e.url ? ` (${e.url})` : ''}`)
       .join('\n');
     const body = key.startsWith('(no license file)')
-      ? 'This package ships no license file. Its README states the license above.'
+      ? `This package ships no license file. ${missing}`
       : `~~~~text\n${key}\n~~~~`;
     const notices = group
       .filter((e) => e.notice)
@@ -147,11 +238,13 @@ function section(title: string, intro: string, entries: Entry[]): string {
 
 try {
   const goroot = run(['go', 'env', 'GOROOT'], root).trim();
-  const goVersion = run(['go', 'env', 'GOVERSION'], root).trim();
+  // go.mod's go directive, the oldest Go that builds the server, rather than
+  // the local toolchain, so that every machine writes the same file.
+  const goVersion = (JSON.parse(run(['go', 'mod', 'edit', '-json'], root)) as { Go: string }).Go;
   const go: Entry[] = [
     {
       name: 'Go standard library and runtime',
-      version: goVersion,
+      version: `go${goVersion}`,
       license: 'BSD-3-Clause',
       url: 'https://go.dev/LICENSE',
       text: normalize(readFileSync(join(goroot, 'LICENSE'), 'utf8')),
@@ -167,23 +260,55 @@ try {
       notice: '',
     })),
   ];
+  // The image's Rust toolchain, which links the standard library into the
+  // codec library. The license texts come from the local toolchain.
+  const rustVersion = readFileSync(join(root, 'Containerfile.taproot'), 'utf8').match(
+    /^ARG RUST_VERSION=(\S+)$/m
+  )?.[1];
+  if (!rustVersion) throw new Error('Containerfile.taproot has no ARG RUST_VERSION');
+  const sysroot = run(['rustc', '--print', 'sysroot'], root).trim();
+  const rust: Entry[] = [
+    {
+      name: 'Rust standard library',
+      version: rustVersion,
+      license: 'MIT OR Apache-2.0',
+      url: 'https://www.rust-lang.org/policies/licenses',
+      text: readFiles(join(sysroot, 'share/doc/rust/licenses'), ['MIT.txt', 'Apache-2.0.txt']),
+      notice: '',
+    },
+    ...rustCrates(),
+  ];
   const web = webPackages();
   const out = [
     '# Third-party notices',
     '',
-    "Taproot's server binary links the Go modules below, and its dashboard bundles the npm packages below. Each entry gives its license text and, where the package ships one, its NOTICE file. Taproot's own license is in [LICENSE](LICENSE), and the dashboard's in [web/LICENSE](web/LICENSE).",
+    "Taproot's server binary links the Go modules below. In the image, it also links the request-log codec library, which is built from the Rust crates below. The dashboard bundles the npm packages below. Each entry gives its license text and, where the package ships one, its NOTICE file. Taproot's own license is in [LICENSE](LICENSE), and the dashboard's in [web/LICENSE](web/LICENSE).",
     '',
-    `This file is generated by \`bun scripts/taproot/third-party-notices.ts\` with ${GO_LICENSES} and ${LICENSE_CHECKER}. Do not edit it by hand.`,
+    `This file is generated by \`bun scripts/taproot/third-party-notices.ts\` with ${GO_LICENSES}, \`cargo metadata\`, and ${LICENSE_CHECKER}. Do not edit it by hand.`,
     '',
     section(
       'Go modules',
       `The modules linked into \`cmd/server\` for ${TARGETS.join(', ')}.`,
-      go
+      go,
+      'Its README states the license above.'
     ),
-    section('npm packages', "The dashboard's production dependencies.", web),
+    section(
+      'Rust crates',
+      `The crates that \`libtaproot_codec.a\` is built from for ${RUST_TARGETS.join(', ')}: the codec's normal dependencies, including the procedural macros that generate part of its code, and the Rust standard library.`,
+      rust,
+      'Its Cargo.toml states the license above.'
+    ),
+    section(
+      'npm packages',
+      "The dashboard's production dependencies.",
+      web,
+      'Its README states the license above.'
+    ),
   ].join('\n');
   writeFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), out.trimEnd() + '\n');
-  console.log(`Wrote THIRD_PARTY_NOTICES.md: ${go.length} Go entries, ${web.length} npm packages.`);
+  console.log(
+    `Wrote THIRD_PARTY_NOTICES.md: ${go.length} Go entries, ${rust.length} Rust entries, ${web.length} npm packages.`
+  );
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }
