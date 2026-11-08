@@ -87,6 +87,30 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run verify
 
+  # THIRD_PARTY_NOTICES.md must match what its generator writes from go.mod,
+  # web/bun.lock, and the codec's Cargo.lock.
+  notices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: web/package.json
+      # The image's Rust toolchain; the generator reads the standard library's
+      # license texts from it and runs cargo metadata.
+      - run: |
+          rust_version="$(sed -n 's/^ARG RUST_VERSION=//p' Containerfile.taproot)"
+          rustup toolchain install "$rust_version" --profile minimal && rustup default "$rust_version"
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      - run: bun scripts/taproot/third-party-notices.ts
+      - run: git diff --exit-code THIRD_PARTY_NOTICES.md
+
   image:
     runs-on: ubuntu-latest
     steps:
