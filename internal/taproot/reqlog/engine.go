@@ -25,13 +25,16 @@ import (
 //
 //	<YYYY-MM-DD>/<segment id>.raw   open segment, append-only frames
 //	<YYYY-MM-DD>/<segment id>.zst   sealed segment, one zstd frame
+//	blobs/<pack id>.pack            base64 payloads, stored once (blobs.go)
+//	dicts/<id>.dict                 shared zstd dictionaries (dict.go)
 //	tmp/                            spooled bodies of in-flight requests
 //
 // One segment holds one session's records for one UTC day. Records stay raw
 // while the session is active and are compressed in one pass when the segment
-// seals, so a single encoder runs at a time no matter how many sessions are
-// open. A sealed file is written to a temp name, verified, and renamed; it is
-// never modified afterwards.
+// seals, against the newest shared dictionary (dict.go), so a single encoder
+// runs at a time no matter how many sessions are open. A sealed file is
+// written to a temp name, verified, and renamed; it is never modified
+// afterwards.
 //
 // An unclean stop loses records still in the in-memory queue and a frame cut
 // off mid-write. Complete frames in open segments carry their own metadata and
@@ -41,10 +44,10 @@ const (
 	segmentSealing = "sealing"
 	segmentSealed  = "sealed"
 
-	// zstdWindow covers the previous request of the same session even for
-	// 32 MB bodies, which is where Claude Code's redundancy lives. Sealing
-	// holds about twice this in memory and a lookup about once.
-	zstdWindow = 64 << 20
+	// zstdWindow is also the default SegmentMaxBytes, so every record
+	// compresses against the earlier turns of its conversation. Sealing and a
+	// lookup each hold about this much memory.
+	zstdWindow = 128 << 20
 
 	queueEntries   = 8192
 	writeBatchSize = 256
@@ -99,6 +102,9 @@ type engine struct {
 	stats   counters
 	readSem chan struct{}
 
+	blobs *blobStore
+	dicts *dictStore
+
 	// open and pending belong to the writer goroutine.
 	open    map[string]*segState
 	pending []indexRow
@@ -107,9 +113,10 @@ type engine struct {
 	sealQueue []int64
 	sealWake  chan struct{}
 
-	// retries belongs to the compactor: segments whose compaction failed,
-	// with the attempt count and when to try again.
-	retries map[int64]compactRetry
+	// retries and dictTried belong to the compactor. retries holds segments
+	// whose compaction failed, with the attempt count and when to try again.
+	retries   map[int64]compactRetry
+	dictTried time.Time
 
 	sweepNeeded atomic.Bool
 	startOnce   sync.Once
@@ -126,6 +133,8 @@ func newEngine(ctx context.Context, db *store.DB, dir string, cfg Config, now fu
 		queue:    make(chan *entry, queueEntries),
 		budget:   budget{limit: int64(cfg.QueueBytes)},
 		readSem:  make(chan struct{}, maxReaders),
+		blobs:    newBlobStore(db, filepath.Join(dir, "blobs"), now),
+		dicts:    newDictStore(db, filepath.Join(dir, "dicts")),
 		open:     make(map[string]*segState),
 		sealWake: make(chan struct{}, 1),
 		retries:  make(map[int64]compactRetry),
@@ -141,6 +150,9 @@ func newEngine(ctx context.Context, db *store.DB, dir string, cfg Config, now fu
 	}
 	if err := os.MkdirAll(e.tmpDir(), 0o700); err != nil {
 		return nil, fmt.Errorf("create request log temp dir: %w", err)
+	}
+	if err := e.blobs.recover(ctx); err != nil {
+		return nil, err
 	}
 	if err := e.recover(ctx); err != nil {
 		return nil, err
@@ -295,6 +307,9 @@ func (e *engine) closeOpenFiles() {
 		}
 		delete(e.open, key)
 	}
+	// Blob rows may still be pending, so the ingest pack is left for the next
+	// start's recovery to reindex and mark full.
+	e.blobs.closeIngest(false)
 }
 
 func (e *engine) writeBatch(batch []*entry) {
@@ -311,15 +326,81 @@ func (e *engine) writeBatch(batch []*entry) {
 		close(ent.done)
 	}
 	e.commitPending()
+	e.rollBlobs()
 }
 
 func (e *engine) writeOne(ent *entry) {
-	meta, f, err := ent.capture.build()
+	meta, text, err := ent.capture.build()
 	if err != nil {
 		e.stats.writeErrors.Add(1)
 		log.WithError(err).Warn("request logs: build record")
 		return
 	}
+	e.store(meta, text)
+}
+
+// encodedRecord is a record ready to append: its frame and the blobs it
+// references, each once.
+type encodedRecord struct {
+	meta  *recordMeta
+	frame frame
+	refs  []blobRef
+	blobs []newBlob
+}
+
+type newBlob struct {
+	hash blobHash
+	raw  []byte
+}
+
+// encodeRecord does a record's CPU work: base64 extraction, hashing, and the
+// SSE transform.
+func encodeRecord(meta *recordMeta, text []byte) (encodedRecord, error) {
+	rec := encodedRecord{meta: meta}
+	seen := make(map[blobHash]bool)
+	f, refs, err := encodeFrame(meta, text, func(h blobHash, raw []byte) {
+		if !seen[h] {
+			seen[h] = true
+			rec.blobs = append(rec.blobs, newBlob{h, raw})
+		}
+	})
+	rec.frame, rec.refs = f, refs
+	return rec, err
+}
+
+// store appends one record to its session's open segment. It runs on the
+// writer goroutine.
+func (e *engine) store(meta *recordMeta, text []byte) {
+	rec, err := encodeRecord(meta, text)
+	if err != nil {
+		e.stats.writeErrors.Add(1)
+		log.WithError(err).Warn("request logs: encode record")
+		return
+	}
+	e.appendRecord(rec)
+}
+
+// appendRecord stores a record's new blobs and appends its frame. It runs on
+// the writer goroutine.
+func (e *engine) appendRecord(rec encodedRecord) {
+	mark := len(e.blobs.pending)
+	for _, b := range rec.blobs {
+		if _, err := e.blobs.add(b.hash, b.raw); err != nil {
+			e.blobs.forget(mark)
+			e.stats.writeErrors.Add(1)
+			log.WithError(err).Warn("request logs: store blob")
+			return
+		}
+	}
+	if len(e.blobs.pending) > mark {
+		if err := e.blobs.sync(); err != nil {
+			e.blobs.forget(mark)
+			e.stats.writeErrors.Add(1)
+			log.WithError(err).Warn("request logs: store blob")
+			return
+		}
+	}
+	meta, f, refs := rec.meta, rec.frame, rec.refs
 	day := utcDay(meta.TimeMs)
 	seg, err := e.segmentFor(meta.SessionID, day)
 	if err == nil && seg.size > 0 && seg.size+int64(f.size()) > int64(e.cfg.SegmentMaxBytes) {
@@ -341,6 +422,11 @@ func (e *engine) writeOne(ent *entry) {
 		e.seal(seg)
 		return
 	}
+	hashes := make([]blobHash, len(refs))
+	for i, r := range refs {
+		hashes[i] = r.hash
+	}
+	e.blobs.touch(hashes, meta.TimeMs)
 	seg.size += int64(f.size())
 	seg.lastWrite = e.now()
 	if seg.firstTs == 0 || meta.TimeMs < seg.firstTs {
@@ -352,19 +438,29 @@ func (e *engine) writeOne(ent *entry) {
 	e.pending = append(e.pending, indexRow{meta: meta, segment: seg.id, offset: offset, length: f.size()})
 }
 
+// rollBlobs hands a due ingest pack to the compactor. It runs right after a
+// commit, when no blob row of the pack is pending.
+func (e *engine) rollBlobs() {
+	if e.blobs.roll(e.now()) {
+		e.wakeCompactor()
+	}
+}
+
 // maxPendingRows bounds index rows kept for retry while the database fails.
 const maxPendingRows = 16384
 
-// commitPending indexes written records. On failure, rows for segments still
-// open stay pending and are retried with the next batch. Every frame is
-// re-indexed from the raw file when its segment seals, so rows for segments
-// no longer open are dropped: retrying them is redundant, and a row whose
-// segment retention deleted would fail its foreign key on every attempt.
+// commitPending indexes written records and their new blobs in one
+// transaction. On failure, rows for segments still open stay pending and are
+// retried with the next batch. Every frame is re-indexed from the raw file
+// when its segment seals, so rows for segments no longer open are dropped:
+// retrying them is redundant, and a row whose segment retention deleted would
+// fail its foreign key on every attempt. Pending blob rows stay until a
+// commit succeeds; their bytes are already in the ingest pack.
 func (e *engine) commitPending() {
-	if len(e.pending) == 0 {
+	if len(e.pending) == 0 && len(e.blobs.pending) == 0 && len(e.blobs.touched) == 0 {
 		return
 	}
-	if err := insertRows(context.Background(), e.db, e.pending); err != nil {
+	if err := insertRows(context.Background(), e.db, e.pending, e.blobs.commit); err != nil {
 		log.WithError(err).Warn("request logs: index records")
 		openIDs := make(map[int64]bool, len(e.open))
 		for _, seg := range e.open {
@@ -383,6 +479,7 @@ func (e *engine) commitPending() {
 		e.pending = kept
 		return
 	}
+	e.blobs.committed()
 	clear(e.pending)
 	e.pending = e.pending[:0]
 }
@@ -393,7 +490,7 @@ func (e *engine) segmentFor(sessionID, day string) (*segState, error) {
 		return seg, nil
 	}
 	now := e.now()
-	res, err := e.db.Exec(`INSERT INTO request_log_segments (session_id, day, state, created_at) VALUES (?, ?, ?, ?)`,
+	res, err := e.db.Exec(`INSERT INTO reqlog_segments (session_id, day, state, created_at) VALUES (?, ?, ?, ?)`,
 		sessionID, day, segmentOpen, now.UnixMilli())
 	if err != nil {
 		return nil, fmt.Errorf("insert segment: %w", err)
@@ -421,7 +518,7 @@ func (e *engine) seal(seg *segState) {
 	if err := seg.file.Close(); err != nil {
 		log.WithError(err).Warn("request logs: close segment")
 	}
-	if _, err := e.db.Exec(`UPDATE request_log_segments SET state = ? WHERE id = ?`, segmentSealing, seg.id); err != nil {
+	if _, err := e.db.Exec(`UPDATE reqlog_segments SET state = ? WHERE id = ?`, segmentSealing, seg.id); err != nil {
 		log.WithError(err).Warn("request logs: mark segment sealing")
 	}
 	e.enqueueSeal(seg.id)
@@ -431,6 +528,10 @@ func (e *engine) enqueueSeal(id int64) {
 	e.sealMu.Lock()
 	e.sealQueue = append(e.sealQueue, id)
 	e.sealMu.Unlock()
+	e.wakeCompactor()
+}
+
+func (e *engine) wakeCompactor() {
 	select {
 	case e.sealWake <- struct{}{}:
 	default:
@@ -455,11 +556,13 @@ func (e *engine) sealDue(now time.Time) {
 			}
 		}
 		if largest == nil {
-			return
+			break
 		}
 		total -= largest.size
 		e.seal(largest)
 	}
+	e.commitPending()
+	e.rollBlobs()
 }
 
 // sealAll seals every open segment; it must run on the writer goroutine.
@@ -475,6 +578,9 @@ func (e *engine) runCompactor(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		e.compactQueued(ctx)
+		if err := e.blobs.packFull(ctx); err != nil && ctx.Err() == nil {
+			log.WithError(err).Warn("request logs: pack blobs")
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -482,6 +588,7 @@ func (e *engine) runCompactor(ctx context.Context) {
 		case <-ticker.C:
 			e.requeueFailed(ctx)
 			e.applyRetention(ctx)
+			e.maybeTrainDict(ctx)
 		}
 	}
 }
@@ -534,7 +641,7 @@ func (e *engine) requeueFailed(ctx context.Context) {
 	}
 	for _, id := range due {
 		var state string
-		err := e.db.QueryRowContext(ctx, `SELECT state FROM request_log_segments WHERE id = ?`, id).Scan(&state)
+		err := e.db.QueryRowContext(ctx, `SELECT state FROM reqlog_segments WHERE id = ?`, id).Scan(&state)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && state != segmentSealing) {
 			delete(e.retries, id)
 			continue
@@ -551,7 +658,7 @@ func (e *engine) requeueFailed(ctx context.Context) {
 // until the compressed copy is verified and recorded as sealed.
 func (e *engine) compact(ctx context.Context, id int64) error {
 	var day, state string
-	if err := e.db.QueryRowContext(ctx, `SELECT day, state FROM request_log_segments WHERE id = ?`, id).Scan(&day, &state); err != nil {
+	if err := e.db.QueryRowContext(ctx, `SELECT day, state FROM reqlog_segments WHERE id = ?`, id).Scan(&day, &state); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -569,8 +676,12 @@ func (e *engine) compact(ctx context.Context, id int64) error {
 	if validEnd == 0 {
 		return e.deleteSegments(ctx, []int64{id})
 	}
+	dictID, dict, err := e.dicts.latest()
+	if err != nil {
+		return err
+	}
 	tmpPath := zstPath + ".tmp"
-	diskBytes, err := compressFile(rawPath, tmpPath, validEnd)
+	diskBytes, err := compressFile(rawPath, tmpPath, validEnd, dictID, dict)
 	if err != nil {
 		_ = os.Remove(tmpPath)
 		return err
@@ -579,8 +690,8 @@ func (e *engine) compact(ctx context.Context, id int64) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("publish sealed segment: %w", err)
 	}
-	if _, err := e.db.ExecContext(ctx, `UPDATE request_log_segments SET state = ?, disk_bytes = ?, raw_bytes = ?, sealed_at = ? WHERE id = ?`,
-		segmentSealed, diskBytes, validEnd, e.now().UnixMilli(), id); err != nil {
+	if _, err := e.db.ExecContext(ctx, `UPDATE reqlog_segments SET state = ?, dict_id = ?, disk_bytes = ?, raw_bytes = ?, sealed_at = ? WHERE id = ?`,
+		segmentSealed, dictID, diskBytes, validEnd, e.now().UnixMilli(), id); err != nil {
 		return fmt.Errorf("mark segment sealed: %w", err)
 	}
 	if err := os.Remove(rawPath); err != nil {
@@ -591,7 +702,7 @@ func (e *engine) compact(ctx context.Context, id int64) error {
 	return nil
 }
 
-func compressFile(rawPath, outPath string, size int64) (int64, error) {
+func compressFile(rawPath, outPath string, size, dictID int64, dict []byte) (int64, error) {
 	in, err := os.Open(rawPath)
 	if err != nil {
 		return 0, fmt.Errorf("open raw segment: %w", err)
@@ -611,10 +722,15 @@ func compressFile(rawPath, outPath string, size int64) (int64, error) {
 	}
 	defer func() { _ = closeOut() }()
 
-	enc, err := zstd.NewWriter(out,
-		zstd.WithEncoderLevel(zstd.SpeedBetterCompression),
+	opts := []zstd.EOption{
+		zstd.WithEncoderLevel(zstd.SpeedBestCompression),
 		zstd.WithWindowSize(windowFor(size)),
-		zstd.WithEncoderConcurrency(1))
+		zstd.WithEncoderConcurrency(1),
+	}
+	if dictID != 0 {
+		opts = append(opts, zstd.WithEncoderDictRaw(uint32(dictID), dict))
+	}
+	enc, err := zstd.NewWriter(out, opts...)
 	if err != nil {
 		return 0, fmt.Errorf("create encoder: %w", err)
 	}
@@ -636,19 +752,19 @@ func compressFile(rawPath, outPath string, size int64) (int64, error) {
 	if err := closeOut(); err != nil {
 		return 0, fmt.Errorf("close sealed segment: %w", err)
 	}
-	if err := verifyCompressed(outPath, size, sum.Sum32()); err != nil {
+	if err := verifyCompressed(outPath, size, sum.Sum32(), dictID, dict); err != nil {
 		return 0, err
 	}
 	return info.Size(), nil
 }
 
-func verifyCompressed(path string, size int64, want uint32) error {
+func verifyCompressed(path string, size int64, want uint32, dictID int64, dict []byte) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open sealed segment for verify: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	dec, err := newDecoder(f)
+	dec, err := newDecoder(f, dictID, dict)
 	if err != nil {
 		return err
 	}
@@ -664,8 +780,12 @@ func verifyCompressed(path string, size int64, want uint32) error {
 	return nil
 }
 
-func newDecoder(r io.Reader) (*zstd.Decoder, error) {
-	dec, err := zstd.NewReader(r, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxWindow(zstdWindow))
+func newDecoder(r io.Reader, dictID int64, dict []byte) (*zstd.Decoder, error) {
+	opts := []zstd.DOption{zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxWindow(zstdWindow)}
+	if dictID != 0 {
+		opts = append(opts, zstd.WithDecoderDictRaw(uint32(dictID), dict))
+	}
+	dec, err := zstd.NewReader(r, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create decoder: %w", err)
 	}
@@ -697,12 +817,16 @@ func (e *engine) reindexRaw(ctx context.Context, id int64, rawPath string) (int6
 	}
 	var rows []indexRow
 	var firstTs, lastTs int64
-	validEnd, err := scanFrames(f, 0, info.Size(), func(offset int64, length int, meta *recordMeta) {
+	touched := make(map[blobHash]int64)
+	validEnd, err := scanFrames(f, 0, info.Size(), func(offset int64, length int, meta *recordMeta, refs []blobHash) {
 		rows = append(rows, indexRow{meta: meta, segment: id, offset: offset, length: length})
 		if firstTs == 0 || meta.TimeMs < firstTs {
 			firstTs = meta.TimeMs
 		}
 		lastTs = max(lastTs, meta.TimeMs)
+		for _, h := range refs {
+			touched[h] = max(touched[h], meta.TimeMs)
+		}
 	})
 	if err != nil {
 		return 0, fmt.Errorf("scan raw segment: %w", err)
@@ -712,13 +836,21 @@ func (e *engine) reindexRaw(ctx context.Context, id int64, rawPath string) (int6
 			return 0, fmt.Errorf("truncate torn segment tail: %w", err)
 		}
 	}
-	if err := insertRows(ctx, e.db, rows); err != nil {
+	touch := func(ctx context.Context, tx *sql.Tx) error {
+		for h, ts := range touched {
+			if _, err := tx.ExecContext(ctx, `UPDATE reqlog_blobs SET last_ts = ? WHERE hash = ? AND last_ts < ?`, ts, h[:], ts); err != nil {
+				return fmt.Errorf("touch blob: %w", err)
+			}
+		}
+		return nil
+	}
+	if err := insertRows(ctx, e.db, rows, touch); err != nil {
 		return 0, err
 	}
-	if _, err := e.db.ExecContext(ctx, `DELETE FROM request_logs WHERE segment_id = ? AND offset + length > ?`, id, validEnd); err != nil {
+	if _, err := e.db.ExecContext(ctx, `DELETE FROM reqlog_records WHERE segment_id = ? AND offset + length > ?`, id, validEnd); err != nil {
 		return 0, fmt.Errorf("drop index rows past segment end: %w", err)
 	}
-	if _, err := e.db.ExecContext(ctx, `UPDATE request_log_segments SET raw_bytes = ?, first_ts = ?, last_ts = ? WHERE id = ?`,
+	if _, err := e.db.ExecContext(ctx, `UPDATE reqlog_segments SET raw_bytes = ?, first_ts = ?, last_ts = ? WHERE id = ?`,
 		validEnd, firstTs, lastTs, id); err != nil {
 		return 0, fmt.Errorf("update segment size: %w", err)
 	}
@@ -729,7 +861,7 @@ func (e *engine) reindexRaw(ctx context.Context, id int64, rawPath string) (int6
 // are re-indexed from their frames and queued for sealing; sealed segments are
 // untouched apart from removing raw files a previous run could not delete.
 func (e *engine) recover(ctx context.Context) error {
-	rows, err := e.db.QueryContext(ctx, `SELECT id, day, state FROM request_log_segments`)
+	rows, err := e.db.QueryContext(ctx, `SELECT id, day, state FROM reqlog_segments`)
 	if err != nil {
 		return fmt.Errorf("list segments: %w", err)
 	}
@@ -749,9 +881,9 @@ func (e *engine) recover(ctx context.Context) error {
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("list segments: %w", err)
 	}
-	// A restored database can be older than the files: segments created
-	// after its snapshot have ids past its sequence. New ids must not collide
-	// with them, and the sweep below then removes them as unowned.
+	// A restored database can be older than the files: segments and packs
+	// created after its snapshot have ids past its sequences. New ids must not
+	// collide with them, and the sweep below then removes them as unowned.
 	if err := e.reserveDiskIDs(ctx); err != nil {
 		return err
 	}
@@ -763,11 +895,11 @@ func (e *engine) recover(ctx context.Context) error {
 		_ = os.Remove(zstPath + ".tmp")
 		// A restored database may list as open a segment that sealed after
 		// its snapshot; the sealed copy is then the only copy.
-		if err := restoreRawFromSealed(e.segmentPath(s.day, s.id, ".raw"), zstPath); err != nil {
+		if err := e.restoreRawFromSealed(ctx, e.segmentPath(s.day, s.id, ".raw"), zstPath); err != nil {
 			log.WithError(err).WithField("segment", s.id).Warn("request logs: recover sealed copy of open segment")
 		}
 		_ = os.Remove(zstPath)
-		if _, err := e.db.ExecContext(ctx, `UPDATE request_log_segments SET state = ? WHERE id = ?`, segmentSealing, s.id); err != nil {
+		if _, err := e.db.ExecContext(ctx, `UPDATE reqlog_segments SET state = ? WHERE id = ?`, segmentSealing, s.id); err != nil {
 			return fmt.Errorf("mark segment sealing: %w", err)
 		}
 		e.sealQueue = append(e.sealQueue, s.id)
@@ -776,15 +908,16 @@ func (e *engine) recover(ctx context.Context) error {
 	return nil
 }
 
-// reserveDiskIDs raises the segment id sequence to the largest id on disk.
+// reserveDiskIDs raises the segment and pack id sequences to the largest ids
+// on disk.
 func (e *engine) reserveDiskIDs(ctx context.Context) error {
-	var maxDisk int64
+	var maxSeg, maxPack int64
 	days, err := os.ReadDir(e.dir)
 	if err != nil {
 		return fmt.Errorf("list request log dir: %w", err)
 	}
 	for _, day := range days {
-		if !day.IsDir() || day.Name() == "tmp" {
+		if !day.IsDir() || day.Name() == "tmp" || day.Name() == "dicts" {
 			continue
 		}
 		files, err := os.ReadDir(filepath.Join(e.dir, day.Name()))
@@ -793,43 +926,82 @@ func (e *engine) reserveDiskIDs(ctx context.Context) error {
 		}
 		for _, file := range files {
 			stem, _, _ := strings.Cut(file.Name(), ".")
-			if id, err := strconv.ParseInt(stem, 10, 64); err == nil && id > maxDisk {
-				maxDisk = id
+			id, err := strconv.ParseInt(stem, 10, 64)
+			if err != nil {
+				continue
+			}
+			if day.Name() == "blobs" {
+				maxPack = max(maxPack, id)
+			} else {
+				maxSeg = max(maxSeg, id)
 			}
 		}
 	}
-	if maxDisk == 0 {
-		return nil
-	}
-	var seq int64
-	err = e.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = 'request_log_segments'`).Scan(&seq)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		_, err = e.db.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES ('request_log_segments', ?)`, maxDisk)
-	case err == nil && seq < maxDisk:
-		_, err = e.db.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = ? WHERE name = 'request_log_segments'`, maxDisk)
-	}
-	if err != nil {
-		return fmt.Errorf("reserve segment ids: %w", err)
+	for table, maxDisk := range map[string]int64{"reqlog_segments": maxSeg, "reqlog_packs": maxPack} {
+		if maxDisk == 0 {
+			continue
+		}
+		var seq int64
+		err := e.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = ?`, table).Scan(&seq)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			_, err = e.db.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)`, table, maxDisk)
+		case err == nil && seq < maxDisk:
+			_, err = e.db.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = ? WHERE name = ?`, maxDisk, table)
+		}
+		if err != nil {
+			return fmt.Errorf("reserve %s ids: %w", table, err)
+		}
 	}
 	return nil
 }
 
 // restoreRawFromSealed decompresses a sealed file back to its raw name when
 // the raw file is gone, so the segment can be re-indexed and sealed again.
-func restoreRawFromSealed(rawPath, zstPath string) error {
+func (e *engine) restoreRawFromSealed(ctx context.Context, rawPath, zstPath string) error {
 	if _, err := os.Stat(rawPath); !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	in, err := os.Open(zstPath)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(zstPath); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
+	dictID, err := frameDictID(zstPath)
+	if err != nil {
+		return err
+	}
+	dict, err := e.dicts.get(dictID)
+	if err != nil {
+		return err
+	}
+	return decompressTo(zstPath, rawPath, dictID, dict)
+}
+
+// frameDictID reads the dictionary id from a sealed segment's frame header.
+func frameDictID(path string) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = f.Close() }()
+	head := make([]byte, zstd.HeaderMaxSize)
+	n, err := io.ReadFull(f, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return 0, err
+	}
+	var h zstd.Header
+	if err := h.Decode(head[:n]); err != nil {
+		return 0, fmt.Errorf("read segment frame header: %w", err)
+	}
+	return int64(h.DictionaryID), nil
+}
+
+func decompressTo(zstPath, rawPath string, dictID int64, dict []byte) error {
+	in, err := os.Open(zstPath)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	dec, err := newDecoder(in)
+	dec, err := newDecoder(in, dictID, dict)
 	if err != nil {
 		return err
 	}
@@ -848,30 +1020,42 @@ func restoreRawFromSealed(rawPath, zstPath string) error {
 	return os.Rename(tmpPath, rawPath)
 }
 
-// sweep removes files that no segment row owns, plus raw copies of sealed
-// segments. It runs beside the writer, so files numbered past the snapshot
-// belong to segments created since and are left alone; ids are never reused.
+// sweep removes files that no segment or pack row owns, plus raw copies of
+// sealed segments. It runs beside the writer, so files numbered past the
+// snapshot belong to segments or packs created since and are left alone; ids
+// are never reused.
 func (e *engine) sweep(ctx context.Context) {
-	var maxID int64
-	err := e.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = 'request_log_segments'`).Scan(&maxID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.WithError(err).Warn("request logs: sweep")
-		return
-	}
-	known := make(map[int64]string)
-	rows, err := e.db.QueryContext(ctx, `SELECT id, state FROM request_log_segments`)
-	if err != nil {
-		log.WithError(err).Warn("request logs: sweep")
-		return
-	}
-	for rows.Next() {
-		var id int64
-		var state string
-		if rows.Scan(&id, &state) == nil {
-			known[id] = state
+	known := func(table string) (int64, map[int64]string, bool) {
+		var maxID int64
+		err := e.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = ?`, table).Scan(&maxID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			log.WithError(err).Warn("request logs: sweep")
+			return 0, nil, false
 		}
+		ids := make(map[int64]string)
+		rows, err := e.db.QueryContext(ctx, `SELECT id, state FROM `+table)
+		if err != nil {
+			log.WithError(err).Warn("request logs: sweep")
+			return 0, nil, false
+		}
+		for rows.Next() {
+			var id int64
+			var state string
+			if rows.Scan(&id, &state) == nil {
+				ids[id] = state
+			}
+		}
+		_ = rows.Close()
+		return maxID, ids, true
 	}
-	_ = rows.Close()
+	maxSeg, segs, ok := known("reqlog_segments")
+	if !ok {
+		return
+	}
+	maxPack, packs, ok := known("reqlog_packs")
+	if !ok {
+		return
+	}
 	days, err := os.ReadDir(e.dir)
 	if err != nil {
 		return
@@ -879,9 +1063,10 @@ func (e *engine) sweep(ctx context.Context) {
 	failed := false
 	quietBefore := e.now().UTC().Add(-48 * time.Hour).Format(time.DateOnly)
 	for _, day := range days {
-		if !day.IsDir() || day.Name() == "tmp" {
+		if !day.IsDir() || day.Name() == "tmp" || day.Name() == "dicts" {
 			continue
 		}
+		isBlobs := day.Name() == "blobs"
 		dayDir := filepath.Join(e.dir, day.Name())
 		files, err := os.ReadDir(dayDir)
 		if err != nil {
@@ -892,11 +1077,20 @@ func (e *engine) sweep(ctx context.Context) {
 			name := file.Name()
 			stem, ext, _ := strings.Cut(name, ".")
 			id, errID := strconv.ParseInt(stem, 10, 64)
-			if errID == nil && id > maxID {
-				continue
+			var orphan bool
+			if isBlobs {
+				if errID == nil && id > maxPack {
+					continue
+				}
+				_, owned := packs[id]
+				orphan = errID != nil || !owned || ext != "pack"
+			} else {
+				if errID == nil && id > maxSeg {
+					continue
+				}
+				state, owned := segs[id]
+				orphan = errID != nil || !owned || (state == segmentSealed && ext != "zst")
 			}
-			state, ok := known[id]
-			orphan := errID != nil || !ok || (state == segmentSealed && ext != "zst")
 			if !orphan {
 				continue
 			}
@@ -907,7 +1101,7 @@ func (e *engine) sweep(ctx context.Context) {
 			remaining--
 		}
 		// The writer may still create segments for a recent day.
-		if remaining == 0 && day.Name() < quietBefore {
+		if !isBlobs && remaining == 0 && day.Name() < quietBefore {
 			_ = os.Remove(dayDir)
 		}
 	}
@@ -915,56 +1109,112 @@ func (e *engine) sweep(ctx context.Context) {
 }
 
 // applyRetention drops whole sealed segments: first those past max-days, then
-// the oldest until the directory fits max-bytes. Open segments are live and
-// only count toward the total.
+// the oldest until stored bytes fit max-bytes. Open segments are live and only
+// count toward the total, as do live blobs. Blobs the dropped records were the
+// last to use go with them, and packs that end up mostly dead are rewritten.
 func (e *engine) applyRetention(ctx context.Context) {
 	cfg := e.retention.Load()
+	dropped := false
 	if cfg.MaxDays > 0 {
 		cutoff := e.now().Add(-time.Duration(cfg.MaxDays) * 24 * time.Hour).UnixMilli()
-		ids, err := querySegmentIDs(ctx, e.db, `SELECT id FROM request_log_segments WHERE state = ? AND last_ts < ?`, segmentSealed, cutoff)
+		ids, err := queryIDs(ctx, e.db, `SELECT id FROM reqlog_segments WHERE state = ? AND last_ts < ?`, segmentSealed, cutoff)
 		if err == nil {
 			err = e.deleteSegments(ctx, ids)
 		}
 		if err != nil {
 			log.WithError(err).Warn("request logs: age retention")
 		}
+		dropped = len(ids) > 0
+	}
+	if dropped {
+		e.collectBlobs(ctx)
 	}
 	if cfg.MaxBytes > 0 {
 		for ctx.Err() == nil {
-			var total int64
-			if err := e.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN state = ? THEN disk_bytes ELSE raw_bytes END), 0) FROM request_log_segments`, segmentSealed).Scan(&total); err != nil {
+			total, err := e.storedBytes(ctx)
+			if err != nil {
 				log.WithError(err).Warn("request logs: size retention")
 				break
 			}
 			if total <= int64(cfg.MaxBytes) {
 				break
 			}
-			ids, err := querySegmentIDs(ctx, e.db, `SELECT id FROM request_log_segments WHERE state = ? ORDER BY last_ts, id LIMIT 16`, segmentSealed)
+			// Blob GC cannot pass the oldest record. When that record sits in
+			// a segment that has not sealed, dropping sealed history would
+			// free segment bytes but no blobs, and could empty the store.
+			if pinned, err := e.oldestRecordUnsealed(ctx); err != nil || pinned {
+				if pinned {
+					log.Warn("request logs: max-bytes waits for the oldest segment to seal")
+				}
+				break
+			}
+			ids, err := queryIDs(ctx, e.db, `SELECT id FROM reqlog_segments WHERE state = ? ORDER BY last_ts, id LIMIT 1`, segmentSealed)
 			if err != nil || len(ids) == 0 {
 				break
 			}
-			if err := e.deleteSegments(ctx, ids[:1]); err != nil {
+			if err := e.deleteSegments(ctx, ids); err != nil {
 				log.WithError(err).Warn("request logs: size retention")
 				break
 			}
+			e.collectBlobs(ctx)
 		}
+	}
+	if err := e.blobs.compactPacked(ctx); err != nil && ctx.Err() == nil {
+		log.WithError(err).Warn("request logs: compact blob packs")
+	}
+	if err := e.dicts.prune(ctx); err != nil {
+		log.WithError(err).Warn("request logs: prune dictionaries")
 	}
 	if e.sweepNeeded.Load() {
 		e.sweep(ctx)
 	}
 }
 
-func querySegmentIDs(ctx context.Context, db *store.DB, query string, args ...any) ([]int64, error) {
+// collectBlobs runs blob GC on the writer goroutine, so it never races a new
+// reference to a blob it deletes.
+func (e *engine) collectBlobs(ctx context.Context) {
+	var errGC error
+	if err := e.do(ctx, func() { _, errGC = e.blobs.gc(ctx) }); err != nil {
+		errGC = err
+	}
+	if errGC != nil && ctx.Err() == nil {
+		log.WithError(errGC).Warn("request logs: collect blobs")
+	}
+}
+
+func (e *engine) oldestRecordUnsealed(ctx context.Context) (bool, error) {
+	var state string
+	err := e.db.QueryRowContext(ctx, `SELECT s.state FROM reqlog_records r JOIN reqlog_segments s ON s.id = r.segment_id ORDER BY r.ts, r.id LIMIT 1`).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil && state != segmentSealed, err
+}
+
+// storedBytes is what retention's max-bytes counts: sealed segments on disk,
+// open segments raw, and live blobs as stored.
+func (e *engine) storedBytes(ctx context.Context) (int64, error) {
+	var segs, blobs int64
+	if err := e.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN state = ? THEN disk_bytes ELSE raw_bytes END), 0) FROM reqlog_segments`, segmentSealed).Scan(&segs); err != nil {
+		return 0, err
+	}
+	if err := e.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(stored_bytes), 0) FROM reqlog_blobs`).Scan(&blobs); err != nil {
+		return 0, err
+	}
+	return segs + blobs, nil
+}
+
+func queryIDs(ctx context.Context, db *store.DB, query string, args ...any) ([]int64, error) {
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("query segments: %w", err)
+		return nil, fmt.Errorf("query ids: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var ids []int64
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan segment id: %w", err)
+			return nil, fmt.Errorf("scan id: %w", err)
 		}
 		ids = append(ids, id)
 	}
@@ -974,7 +1224,7 @@ func querySegmentIDs(ctx context.Context, db *store.DB, query string, args ...an
 func (e *engine) deleteSegments(ctx context.Context, ids []int64) error {
 	for _, id := range ids {
 		var day string
-		if err := e.db.QueryRowContext(ctx, `SELECT day FROM request_log_segments WHERE id = ?`, id).Scan(&day); err != nil {
+		if err := e.db.QueryRowContext(ctx, `SELECT day FROM reqlog_segments WHERE id = ?`, id).Scan(&day); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				continue
 			}
@@ -984,11 +1234,11 @@ func (e *engine) deleteSegments(ctx context.Context, ids []int64) error {
 		if err != nil {
 			return fmt.Errorf("begin delete: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM request_logs WHERE segment_id = ?`, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM reqlog_records WHERE segment_id = ?`, id); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("delete records: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM request_log_segments WHERE id = ?`, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM reqlog_segments WHERE id = ?`, id); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("delete segment: %w", err)
 		}
@@ -1004,49 +1254,49 @@ func (e *engine) deleteSegments(ctx context.Context, ids []int64) error {
 	return nil
 }
 
-func insertRows(ctx context.Context, db *store.DB, rows []indexRow) error {
-	if len(rows) == 0 {
-		return nil
-	}
+// insertRows indexes records in one transaction with extra, which writes the
+// blob rows and last_ts updates that belong with them.
+func insertRows(ctx context.Context, db *store.DB, rows []indexRow, extra func(context.Context, *sql.Tx) error) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin index: %w", err)
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO request_logs (
-		request_id, trace_id, session_id, parent_session_id, ts, duration_ms, method, path, url,
-		status, model, auth_index, streaming, error_only, dropped, req_bytes, resp_bytes,
-		segment_id, offset, length
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("prepare index: %w", err)
-	}
-	segStmt, err := tx.PrepareContext(ctx, `UPDATE request_log_segments SET
-		raw_bytes = MAX(raw_bytes, ?),
-		first_ts = CASE WHEN first_ts IS NULL OR first_ts > ? THEN ? ELSE first_ts END,
-		last_ts = CASE WHEN last_ts IS NULL OR last_ts < ? THEN ? ELSE last_ts END
-		WHERE id = ?`)
-	if err != nil {
-		_ = stmt.Close()
-		_ = tx.Rollback()
-		return fmt.Errorf("prepare segment update: %w", err)
-	}
-	defer func() {
-		_ = stmt.Close()
-		_ = segStmt.Close()
-	}()
-	for _, r := range rows {
-		m := r.meta
-		if _, err := stmt.ExecContext(ctx, m.RequestID, m.TraceID, m.SessionID, m.ParentSessionID, m.TimeMs, m.DurationMs,
-			m.Method, m.Path, m.URL, m.Status, m.Model, m.AuthIndex, m.Streaming, m.ErrorOnly, m.Dropped,
-			m.RequestBytes, m.ResponseBytes, r.segment, r.offset, r.length); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert record: %w", err)
+	defer func() { _ = tx.Rollback() }()
+	if extra != nil {
+		if err := extra(ctx, tx); err != nil {
+			return err
 		}
-		end := r.offset + int64(r.length)
-		if _, err := segStmt.ExecContext(ctx, end, m.TimeMs, m.TimeMs, m.TimeMs, m.TimeMs, r.segment); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("update segment: %w", err)
+	}
+	if len(rows) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO reqlog_records (
+			request_id, trace_id, session_id, parent_session_id, ts, duration_ms, method, path, url,
+			status, model, auth_index, streaming, error_only, dropped, req_bytes, resp_bytes, text_bytes,
+			segment_id, offset, length
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			return fmt.Errorf("prepare index: %w", err)
+		}
+		defer func() { _ = stmt.Close() }()
+		segStmt, err := tx.PrepareContext(ctx, `UPDATE reqlog_segments SET
+			raw_bytes = MAX(raw_bytes, ?),
+			first_ts = CASE WHEN first_ts IS NULL OR first_ts > ? THEN ? ELSE first_ts END,
+			last_ts = CASE WHEN last_ts IS NULL OR last_ts < ? THEN ? ELSE last_ts END
+			WHERE id = ?`)
+		if err != nil {
+			return fmt.Errorf("prepare segment update: %w", err)
+		}
+		defer func() { _ = segStmt.Close() }()
+		for _, r := range rows {
+			m := r.meta
+			if _, err := stmt.ExecContext(ctx, m.RequestID, m.TraceID, m.SessionID, m.ParentSessionID, m.TimeMs, m.DurationMs,
+				m.Method, m.Path, m.URL, m.Status, m.Model, m.AuthIndex, m.Streaming, m.ErrorOnly, m.Dropped,
+				m.RequestBytes, m.ResponseBytes, m.TextBytes, r.segment, r.offset, r.length); err != nil {
+				return fmt.Errorf("insert record: %w", err)
+			}
+			end := r.offset + int64(r.length)
+			if _, err := segStmt.ExecContext(ctx, end, m.TimeMs, m.TimeMs, m.TimeMs, m.TimeMs, r.segment); err != nil {
+				return fmt.Errorf("update segment: %w", err)
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -1065,19 +1315,21 @@ func (e *engine) readFrame(ctx context.Context, loc recordLocation) ([]byte, err
 				return frame, err
 			}
 			// Sealed between the index lookup and the read.
-			var state string
-			if errState := e.db.QueryRowContext(ctx, `SELECT state FROM request_log_segments WHERE id = ?`, loc.segment).Scan(&state); errState != nil {
+			if errState := e.db.QueryRowContext(ctx, `SELECT state, dict_id FROM reqlog_segments WHERE id = ?`, loc.segment).Scan(&loc.state, &loc.dictID); errState != nil {
 				return nil, fmt.Errorf("reload segment: %w", errState)
 			}
-			loc.state = state
 			continue
+		}
+		dict, err := e.dicts.get(loc.dictID)
+		if err != nil {
+			return nil, err
 		}
 		select {
 		case e.readSem <- struct{}{}:
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
-		frame, err := readSealedAt(e.segmentPath(loc.day, loc.segment, ".zst"), loc.offset, loc.length)
+		frame, err := readSealedAt(e.segmentPath(loc.day, loc.segment, ".zst"), loc.offset, loc.length, loc.dictID, dict)
 		<-e.readSem
 		return frame, err
 	}
@@ -1097,13 +1349,13 @@ func readRawAt(path string, offset int64, length int) ([]byte, error) {
 	return buf, nil
 }
 
-func readSealedAt(path string, offset int64, length int) ([]byte, error) {
+func readSealedAt(path string, offset int64, length int, dictID int64, dict []byte) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open sealed segment: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	dec, err := newDecoder(f)
+	dec, err := newDecoder(f, dictID, dict)
 	if err != nil {
 		return nil, err
 	}

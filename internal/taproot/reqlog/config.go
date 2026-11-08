@@ -30,10 +30,10 @@ type Config struct {
 	// in-flight streaming bodies. Past it, bodies are dropped and the record
 	// says so; the proxy never waits on the log.
 	QueueBytes ByteSize `yaml:"queue-bytes" json:"queueBytes"`
-	// SegmentMaxBytes caps an open segment's raw bytes; a record that would
-	// pass it starts a new segment. A lookup decompresses up to one segment, and
-	// klauspost's decoder is several times faster when the whole segment fits in
-	// the 64 MiB zstd window, so larger values cost lookup latency.
+	// SegmentMaxBytes caps an open segment's stored bytes; a record that
+	// would pass it starts a new segment. A lookup decompresses up to one
+	// segment, and records compress against earlier ones only within the
+	// 128 MiB zstd window, so larger values cost lookup latency and ratio.
 	SegmentMaxBytes ByteSize `yaml:"segment-max-bytes" json:"segmentMaxBytes"`
 	// OpenMaxBytes bounds raw bytes across all open segments; the largest is
 	// sealed early when the total passes it.

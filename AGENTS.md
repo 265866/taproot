@@ -10,6 +10,7 @@ Taproot: a hard fork of CLIProxyAPI, the Go 1.26+ proxy server providing OpenAI/
 ```bash
 gofmt -w . # Format (required after Go changes)
 go build -o cli-proxy-api ./cmd/server # Build
+(cd internal/taproot/reqlog/codec/native && cargo build --release) && go build -tags taproot_codecs -o cli-proxy-api ./cmd/server # Build as the image does; without the tag, request logs cannot read Lepton or PNG blobs
 go run ./cmd/server # Run dev server
 go test ./... # Run all tests
 go test -v -run TestName ./path/to/pkg # Run single test

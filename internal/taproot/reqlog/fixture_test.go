@@ -281,7 +281,7 @@ func replayFixture(t *testing.T, paths []string, passes int, sample bool) replay
 	res.diskBytes = stats.BytesOnDisk
 
 	rows, err := h.db.Query(`SELECT s.id, s.session_id, s.raw_bytes, s.disk_bytes, COUNT(l.id)
-		FROM request_log_segments s JOIN request_logs l ON l.segment_id = s.id GROUP BY s.id ORDER BY s.raw_bytes DESC`)
+		FROM reqlog_segments s JOIN reqlog_records l ON l.segment_id = s.id GROUP BY s.id ORDER BY s.raw_bytes DESC`)
 	if err != nil {
 		t.Fatal(err)
 	}

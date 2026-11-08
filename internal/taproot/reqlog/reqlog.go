@@ -15,11 +15,12 @@ import (
 
 func init() {
 	store.Register(store.Migration{Module: "reqlog", Version: 1, SQL: `
-CREATE TABLE request_log_segments (
+CREATE TABLE reqlog_segments (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	session_id TEXT NOT NULL,
 	day TEXT NOT NULL,
 	state TEXT NOT NULL,
+	dict_id INTEGER NOT NULL DEFAULT 0,
 	raw_bytes INTEGER NOT NULL DEFAULT 0,
 	disk_bytes INTEGER NOT NULL DEFAULT 0,
 	first_ts INTEGER,
@@ -27,9 +28,9 @@ CREATE TABLE request_log_segments (
 	created_at INTEGER NOT NULL,
 	sealed_at INTEGER
 );
-CREATE INDEX request_log_segments_state ON request_log_segments (state, last_ts);
+CREATE INDEX reqlog_segments_state ON reqlog_segments (state, last_ts);
 
-CREATE TABLE request_logs (
+CREATE TABLE reqlog_records (
 	id INTEGER PRIMARY KEY,
 	request_id TEXT NOT NULL,
 	trace_id TEXT NOT NULL DEFAULT '',
@@ -48,14 +49,34 @@ CREATE TABLE request_logs (
 	dropped TEXT NOT NULL DEFAULT '',
 	req_bytes INTEGER NOT NULL DEFAULT 0,
 	resp_bytes INTEGER NOT NULL DEFAULT 0,
-	segment_id INTEGER NOT NULL REFERENCES request_log_segments (id),
+	text_bytes INTEGER NOT NULL DEFAULT 0,
+	segment_id INTEGER NOT NULL REFERENCES reqlog_segments (id),
 	offset INTEGER NOT NULL,
 	length INTEGER NOT NULL,
 	UNIQUE (segment_id, offset)
 );
-CREATE INDEX request_logs_ts ON request_logs (ts, id);
-CREATE INDEX request_logs_request_id ON request_logs (request_id);
-CREATE INDEX request_logs_session ON request_logs (session_id, ts);
+CREATE INDEX reqlog_records_ts ON reqlog_records (ts, id);
+CREATE INDEX reqlog_records_request_id ON reqlog_records (request_id);
+CREATE INDEX reqlog_records_session ON reqlog_records (session_id, ts);
+
+CREATE TABLE reqlog_packs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	state TEXT NOT NULL,
+	bytes INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL
+);
+
+CREATE TABLE reqlog_blobs (
+	hash BLOB PRIMARY KEY,
+	pack_id INTEGER NOT NULL REFERENCES reqlog_packs (id),
+	offset INTEGER NOT NULL,
+	stored_bytes INTEGER NOT NULL,
+	raw_bytes INTEGER NOT NULL,
+	codec INTEGER NOT NULL,
+	last_ts INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX reqlog_blobs_pack ON reqlog_blobs (pack_id);
+CREATE INDEX reqlog_blobs_last_ts ON reqlog_blobs (last_ts);
 `})
 }
 

@@ -122,7 +122,7 @@ func (h *harness) sealAll() {
 
 func (h *harness) segmentStates() map[string]int {
 	h.t.Helper()
-	rows, err := h.db.Query(`SELECT state, COUNT(*) FROM request_log_segments GROUP BY state`)
+	rows, err := h.db.Query(`SELECT state, COUNT(*) FROM reqlog_segments GROUP BY state`)
 	if err != nil {
 		h.t.Fatalf("segment states: %v", err)
 	}
@@ -137,4 +137,9 @@ func (h *harness) segmentStates() map[string]int {
 		out[state] = n
 	}
 	return out
+}
+
+func (l *Logs) locateForTest(requestID string) (recordLocation, error) {
+	_, loc, err := l.locate(context.Background(), requestID)
+	return loc, err
 }

@@ -361,7 +361,7 @@ func TestRetentionByAgeAndBytes(t *testing.T) {
 
 	// Keep only what fits in roughly four segments: the oldest go first.
 	var perSegment int64
-	if err := h.db.QueryRow(`SELECT MAX(disk_bytes) FROM request_log_segments`).Scan(&perSegment); err != nil {
+	if err := h.db.QueryRow(`SELECT MAX(disk_bytes) FROM reqlog_segments`).Scan(&perSegment); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.logs.SetRetention(Retention{MaxDays: 3, MaxBytes: ByteSize(perSegment * 4)}); err != nil {
@@ -554,9 +554,9 @@ func TestCrashRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = f.WriteString(frameMagic + "500 9000\n{\"requestId\":\"torn\"")
+	_, _ = f.WriteString(frameMagic + "0 500 0 0 9000 0\n{\"requestId\":\"torn\"")
 	_ = f.Close()
-	if _, err := h.db.Exec(`DELETE FROM request_logs WHERE request_id IN ('new-4', 'new-5')`); err != nil {
+	if _, err := h.db.Exec(`DELETE FROM reqlog_records WHERE request_id IN ('new-4', 'new-5')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -595,9 +595,14 @@ func TestSegmentRollsAtSizeCap(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	bodies := map[string][]byte{}
 	for i := 0; i < 20; i++ {
+		// Spaces keep the body from being one long base64 run, which would
+		// move it to the blob store and keep the segment small.
 		body := make([]byte, 16<<10)
 		for j := range body {
 			body[j] = byte('a' + rng.Intn(26))
+			if j%50 == 49 {
+				body[j] = ' '
+			}
 		}
 		id := fmt.Sprintf("roll-%d", i)
 		bodies[id] = body
@@ -622,7 +627,7 @@ func TestSegmentRollsAtSizeCap(t *testing.T) {
 func TestSealTriggers(t *testing.T) {
 	h := newHarness(t, Config{SealIdle: 10 * time.Minute, SealAge: time.Hour, OpenMaxBytes: 48 << 10})
 	start := h.clock.now()
-	body := func(n int) []byte { return bytes.Repeat([]byte("z"), n) }
+	body := func(n int) []byte { return bytes.Repeat([]byte("z "), n/2) }
 	sealDue := func() {
 		t.Helper()
 		if err := h.logs.engine.do(context.Background(), func() { h.logs.engine.sealDue(h.clock.now()) }); err != nil {
@@ -698,7 +703,7 @@ func TestSweepRemovesOrphansButNotNewSegments(t *testing.T) {
 	h.sealAll()
 	dir := filepath.Join(h.dataDir, "request-logs", utcDay(ts.UnixMilli()))
 	var seq int64
-	if err := h.db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'request_log_segments'`).Scan(&seq); err != nil {
+	if err := h.db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'reqlog_segments'`).Scan(&seq); err != nil {
 		t.Fatal(err)
 	}
 	orphan := filepath.Join(dir, fmt.Sprintf("%d.raw", seq-1))

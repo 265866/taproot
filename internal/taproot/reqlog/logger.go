@@ -387,13 +387,13 @@ func authIndexFromTrace(traceID, requestID string) string {
 	return ""
 }
 
-// build renders the record and its index row.
-func (c *capture) build() (*recordMeta, frame, error) {
+// build renders the record text and its index row.
+func (c *capture) build() (*recordMeta, []byte, error) {
 	c.identify()
 	if c.requestID == "" {
 		id, err := uuid.NewV7()
 		if err != nil {
-			return nil, frame{}, err
+			return nil, nil, err
 		}
 		c.requestID = id.String()
 	}
@@ -436,11 +436,7 @@ func (c *capture) build() (*recordMeta, frame, error) {
 		}
 		meta.APIErrors = append(meta.APIErrors, view)
 	}
-	f, err := encodeFrame(meta, text)
-	if err != nil {
-		return nil, frame{}, err
-	}
-	return meta, f, nil
+	return meta, text, nil
 }
 
 func isEventStream(headers map[string][]string) bool {
