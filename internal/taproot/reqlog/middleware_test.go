@@ -60,7 +60,7 @@ func TestDashboardFetchesAreNotRecorded(t *testing.T) {
 	}
 	h.flush()
 	for id, want := range ids {
-		_, err := h.logs.Get(context.Background(), id)
+		_, err := h.logs.Get(context.Background(), id, true)
 		if want && err != nil {
 			t.Errorf("%s should be stored: %v", id, err)
 		}
