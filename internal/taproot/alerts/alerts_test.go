@@ -108,8 +108,7 @@ func (h *harness) step(t *testing.T, d time.Duration) {
 
 func (h *harness) titles(t *testing.T, want int) []string {
 	t.Helper()
-	waitFor(t, func() bool { return h.fake.count() >= want })
-	time.Sleep(20 * time.Millisecond) // catch anything posted beyond want
+	waitFor(t, h.svc.sender.idle)
 	h.fake.mu.Lock()
 	defer h.fake.mu.Unlock()
 	var out []string
