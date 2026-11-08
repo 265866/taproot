@@ -1,0 +1,23 @@
+[package]
+name = "taproot_codec"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+publish = false
+description = "C ABI over lepton_jpeg, preflate-rs, and zstd for taproot's request-log blob codecs"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+lepton_jpeg = "=0.5.8"
+preflate-rs = "=0.7.6"
+zstd = { version = "=0.14.3", default-features = false }
+
+[profile.release]
+codegen-units = 1
+lto = true
+# Every entry point relies on catch_unwind, which needs unwinding panics.
+panic = "unwind"

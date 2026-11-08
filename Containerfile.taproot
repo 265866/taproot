@@ -12,6 +12,8 @@
 
 # Matches packageManager in web/package.json.
 ARG BUN_VERSION=1.4.3
+# Matches the Rust toolchain of the codec job in .github/workflows/ci.yml.
+ARG RUST_VERSION=1.99
 
 FROM docker.io/oven/bun:${BUN_VERSION} AS web
 WORKDIR /src
@@ -26,6 +28,15 @@ RUN rm -rf web/node_modules web/dist \
 	&& mv /deps/node_modules web/node_modules \
 	&& VERSION="${VERSION}" bash scripts/taproot/build-web.sh
 
+# The request-log codec library (Lepton, preflate, zstd), linked statically
+# into the server with the taproot_codecs build tag.
+FROM docker.io/library/rust:${RUST_VERSION}-slim-bookworm AS codec
+WORKDIR /src
+COPY internal/taproot/reqlog/codec/native/Cargo.toml internal/taproot/reqlog/codec/native/Cargo.lock ./
+RUN mkdir src && touch src/lib.rs && cargo fetch --locked
+COPY internal/taproot/reqlog/codec/native/src ./src
+RUN cargo build --release --locked --offline
+
 FROM docker.io/library/golang:1.26-bookworm AS build
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
@@ -33,13 +44,16 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/internal/taproot/web/dist/index.html ./internal/taproot/web/dist/index.html
+# A host build of the codec library may target another glibc; use the stage's.
+RUN rm -rf internal/taproot/reqlog/codec/native/target
+COPY --from=codec /src/target/release/libtaproot_codec.a ./internal/taproot/reqlog/codec/native/target/release/libtaproot_codec.a
 ARG VERSION=dev
 ARG COMMIT=none
 ARG BUILD_DATE=unknown
 RUN set -eu; \
 	ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'"; \
 	mkdir -p /out; \
-	CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="${ldflags}" -o /out/taproot ./cmd/server; \
+	CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -tags taproot_codecs -ldflags="${ldflags}" -o /out/taproot ./cmd/server; \
 	chmod 0755 /out/*
 
 FROM docker.io/library/debian:bookworm-slim
