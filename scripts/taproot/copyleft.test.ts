@@ -35,6 +35,28 @@ describe('copyleft', () => {
     expect(copyleft('Apache-2.0 WITH LLVM-exception')).toBe('none');
   });
 
+  test('weak copyleft licenses are not handled either', () => {
+    for (const id of [
+      'MPL-2.0',
+      'MPL-2.0-no-copyleft-exception',
+      'EPL-2.0',
+      'CDDL-1.0',
+      'EUPL-1.2',
+      'OSL-3.0',
+      'CC-BY-SA-4.0',
+      'SSPL-1.0',
+      'MS-RL',
+      'CECILL-2.1',
+    ]) {
+      expect(copyleft(id)).toBe('other');
+    }
+    expect(copyleft('MIT OR MPL-2.0')).toBe('none');
+    expect(copyleft('MIT AND MPL-2.0')).toBe('other');
+    expect(copyleft('CC-BY-4.0')).toBe('none');
+    expect(copyleft('BSD-3-Clause')).toBe('none');
+    expect(copyleft('MPL')).toBe('other');
+  });
+
   test('an expression it cannot parse throws', () => {
     expect(() => copyleft('MIT OR')).toThrow();
     expect(() => copyleft('(MIT')).toThrow();

@@ -2,10 +2,17 @@
 
 // 'none': nothing beyond passing on the notice. 'lgpl': the GNU LGPL v3,
 // which the notices handle for Rust crates. 'other': a copyleft license the
-// notices do not handle, such as the GPL, the AGPL, or an older LGPL.
+// notices do not handle, strong or weak, such as the GPL, the AGPL, an older
+// LGPL, the MPL, or the EPL.
 export type Copyleft = 'none' | 'lgpl' | 'other';
 
 const RANK: Copyleft[] = ['none', 'lgpl', 'other'];
+
+// SPDX license ids, by prefix, that attach source-availability or
+// same-license duties to a binary that includes the code. Every GNU license
+// matches /GPL/ on its own.
+const COPYLEFT =
+  /GPL|^(MPL|EPL|CDDL|EUPL|OSL|CC-BY-SA|SSPL|CPL|CPAL|MS-RL|CECILL|APSL|RPL|RPSL|QPL|ODbL|LiLiQ-R|Sleepycat)(-|$)/i;
 
 // copyleft evaluates an SPDX license expression, taking the cheapest
 // alternative of each OR and the strictest part of each AND. It throws on an
@@ -49,10 +56,10 @@ export function copyleft(expression: string): Copyleft {
       // An exception adds permissions but is not one the notices know.
       if (tokens[pos + 1] === undefined) fail();
       pos += 2;
-      return /GPL/i.test(token) ? 'other' : 'none';
+      return COPYLEFT.test(token) ? 'other' : 'none';
     }
     if (/^LGPL-3\.0(-only|-or-later|\+)?$/i.test(token)) return 'lgpl';
-    return /GPL/i.test(token) ? 'other' : 'none';
+    return COPYLEFT.test(token) ? 'other' : 'none';
   };
   const result = expr();
   if (pos !== tokens.length) fail();
