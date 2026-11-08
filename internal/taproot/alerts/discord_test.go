@@ -313,8 +313,7 @@ func TestEnqueueCoalescesByKeyAndKeepsRecoveries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go s.Run(ctx)
-	waitFor(t, func() bool { return fake.count() >= 101 })
-	time.Sleep(20 * time.Millisecond)
+	waitFor(t, s.idle)
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	if len(fake.bodies) != 101 {

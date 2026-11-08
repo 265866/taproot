@@ -121,6 +121,8 @@ type Sender struct {
 	pending map[string]Message
 	order   []string
 	ready   chan struct{}
+	// busy is set while Run delivers a message it took from the queue.
+	busy bool
 
 	webhook func() string
 	// origin, when set, replaces the webhook's scheme and host. It exists for
@@ -169,6 +171,7 @@ func (s *Sender) Enqueue(m Message) {
 func (s *Sender) next() (Message, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.busy = len(s.order) > 0
 	if len(s.order) == 0 {
 		return Message{}, false
 	}
@@ -177,6 +180,13 @@ func (s *Sender) next() (Message, bool) {
 	m := s.pending[key]
 	delete(s.pending, key)
 	return m, true
+}
+
+// idle reports whether the queue is empty and Run is not delivering a message.
+func (s *Sender) idle() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.busy && len(s.order) == 0
 }
 
 // Run delivers queued messages until ctx ends.

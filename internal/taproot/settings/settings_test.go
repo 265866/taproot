@@ -416,11 +416,11 @@ func TestWriteFailureRollsBackLiveChanges(t *testing.T) {
 
 func TestUnchangedValuesLeaveFileAlone(t *testing.T) {
 	f := newFixture(t, options{yaml: commentedYAML})
-	before, err := os.Stat(f.path)
-	if err != nil {
+	// A rewrite replaces the file, so it would carry the current time instead.
+	written := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
+	if err := os.Chtimes(f.path, written, written); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	code, _, body := f.do(t, http.MethodPut, `{
 		"access": {"allowLogins": ["alice@github"]},
 		"requestLogs": {"maxDays": 14, "maxBytes": 21474836480, "excludePaths": [], "keepUnrouted404": false},
@@ -434,7 +434,7 @@ func TestUnchangedValuesLeaveFileAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.file(t) != commentedYAML || !after.ModTime().Equal(before.ModTime()) {
+	if f.file(t) != commentedYAML || !after.ModTime().Equal(written) {
 		t.Errorf("no-op PUT rewrote the file:\n%s", f.file(t))
 	}
 }
