@@ -70,6 +70,8 @@ type SoonestResetSelector struct {
 	now        func() time.Time
 }
 
+var _ coreauth.Selector = (*SoonestResetSelector)(nil)
+
 // NewSoonestResetSelector returns a selector using the wall clock.
 func NewSoonestResetSelector() *SoonestResetSelector {
 	return &SoonestResetSelector{}

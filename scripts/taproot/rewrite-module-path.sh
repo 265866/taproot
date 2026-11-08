@@ -9,15 +9,18 @@
 #   scripts/taproot/rewrite-module-path.sh [old-path [new-path]]
 #
 # The rewrite must stay deterministic: the same input tree always gives the
-# same output, or upstream merges conflict on import lines again.
+# same output, or upstream merges conflict on import lines again. So gofmt
+# comes from the Go toolchain that the tree's go.mod names, not from the Go
+# installed; check-rewrite.sh checks the result.
 set -euo pipefail
+# shellcheck source=scripts/taproot/upstream-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/upstream-lib.sh"
 
 old="${1:-github.com/router-for-me/CLIProxyAPI/v8}"
 new="${2:-github.com/265866/taproot}"
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
-# The toolchain's own gofmt, so the import order does not depend on PATH.
-gofmt="$(go env GOROOT)/bin/gofmt"
+gofmt="$(pinned_gofmt)"
 export OLD="$old" NEW="$new"
 
 go_files="$(mktemp)"
