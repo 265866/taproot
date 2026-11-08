@@ -37,6 +37,7 @@ auths/*
 # Documentation
 docs/*
 !docs/management-api-v8.md
+!docs/stability.md
 GEMINI.md
 AGENTS.override.md
 

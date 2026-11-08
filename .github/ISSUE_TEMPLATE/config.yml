@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/265866/taproot/security/advisories/new
+    about: Report a vulnerability privately through GitHub. SECURITY.md lists what is in scope.
+  - name: Proxy and provider bugs
+    url: https://github.com/router-for-me/CLIProxyAPI/issues
+    about: Report provider protocol and translator bugs that do not depend on taproot to CLIProxyAPI.

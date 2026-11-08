@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a change to taproot or its dashboard.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Taproot adds an access guard, quota and usage tracking, request logs, backups, alerts, and a dashboard to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI). Ask CLIProxyAPI for provider protocols, translators, and other proxy behavior instead. [CONTRIBUTING.md](https://github.com/265866/taproot/blob/main/CONTRIBUTING.md#what-belongs-here) says what belongs in taproot.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you want to do, and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The change you want
+      description: What taproot should do instead. If you know the dashboard page or the `taproot.yaml` key it affects, name it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you tried

@@ -1,0 +1,49 @@
+name: Bug report
+description: Report something in taproot that does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        To report a vulnerability, do not open an issue. Follow [SECURITY.md](https://github.com/265866/taproot/blob/main/SECURITY.md) instead.
+
+        Before you paste a config file or a log, remove tokens, API keys, account emails, Tailscale logins, node IDs, and addresses.
+  - type: input
+    id: version
+    attributes:
+      label: Taproot version
+      description: Run `taproot --version`, or open the dashboard's **System** page and copy the versions it shows.
+      placeholder: taproot-v0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Podman quadlet
+        - Docker
+        - NixOS
+        - Binary
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Include the steps that cause the problem, so that someone else can repeat them.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The server log lines around the problem, such as the output of `podman logs taproot` or `journalctl --user -u taproot`. Remove secrets first.
+      render: text

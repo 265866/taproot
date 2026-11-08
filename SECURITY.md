@@ -53,8 +53,14 @@ Out of scope:
 - The providers' terms of service. See the README's [Terms of service](README.md#terms-of-service).
 - Bugs in upstream CLIProxyAPI that do not affect taproot's access model or data. Report those to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
 
+## Supported versions
+
+Only the latest minor release gets security fixes. For example, once `taproot-v0.3.0` is out, a fix ships in a `0.3.x` release and not in a `0.2.x` release. [`docs/stability.md`](docs/stability.md) explains how to upgrade.
+
 ## Report a vulnerability
 
 Use GitHub's private vulnerability reporting on this repository: open the **Security** tab and select **Report a vulnerability**. Do not open a public issue or pull request for a vulnerability.
 
-Include the taproot commit, how you deployed it (container runtime, publish addresses, and the relevant parts of `taproot.yaml` with logins and node IDs removed), the steps to reproduce, and what an attacker gains. Fixes land on the `main` branch.
+Include the taproot version or commit, how you deployed it (container runtime, publish addresses, and the relevant parts of `taproot.yaml` with logins and node IDs removed), the steps to reproduce, and what an attacker gains.
+
+The maintainer acknowledges every report within 7 days. Fixes land on the `main` branch and ship in the next release of the latest minor version.
