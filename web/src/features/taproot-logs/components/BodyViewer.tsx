@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { IconCopy } from '@/components/ui/icons';
 import { useNotificationStore } from '@/stores';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { copyToClipboard } from '@/utils/clipboard';
+import { expandedLength, hasBlobRef } from '../model/blobs';
+import { BlobsContext } from './blobsContext';
 import {
   COLLAPSE_BYTES,
   SSE_PAGE,
@@ -27,20 +29,31 @@ type Mode = 'formatted' | 'raw';
 /**
  * A request or response body. Large bodies start collapsed, JSON is parsed only after the body is
  * opened (after a paint, so the click responds first), and raw text renders in chunks.
+ *
+ * `text` may hold blob placeholders; `full` then loads the original, which copy uses.
  */
-export function BodyViewer({ text: raw, size }: { text: string; size?: number }) {
+export function BodyViewer({
+  text: raw,
+  size,
+  full,
+}: {
+  text: string;
+  size?: number;
+  full?: () => Promise<string>;
+}) {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const blobs = useContext(BlobsContext);
   // Views mask what they draw: raw text as text, JSON after parsing. Copy keeps the real body.
   const kind = useMemo(() => sniffBody(raw), [raw]);
-  const bytes = size ?? raw.length;
+  const bytes = useMemo(() => size ?? expandedLength(raw, blobs), [size, raw, blobs]);
   const [open, setOpen] = useState(raw.length <= COLLAPSE_BYTES);
   const [mode, setMode] = useState<Mode>(kind === 'json' || kind === 'sse' ? 'formatted' : 'raw');
 
   if (kind === 'empty') return <div className={styles.empty}>{t('taproot_logs.body.empty')}</div>;
 
   const copy = async () => {
-    const ok = await copyToClipboard(raw);
+    const ok = full && hasBlobRef(raw) ? await copyPending(full()) : await copyToClipboard(raw);
     showNotification(
       t(ok ? 'taproot_logs.body.copied' : 'taproot_logs.body.copy_failed'),
       ok ? 'success' : 'error'
@@ -95,6 +108,28 @@ export function BodyViewer({ text: raw, size }: { text: string; size?: number })
       )}
     </div>
   );
+}
+
+/**
+ * Copies text that is still loading. Safari and Firefox let a click write to the clipboard only
+ * briefly, so a write after the fetch would fail; a ClipboardItem holding the pending text is
+ * written within the click.
+ */
+async function copyPending(text: Promise<string>): Promise<boolean> {
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    try {
+      const blob = text.then((value) => new Blob([value], { type: 'text/plain' }));
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+      return true;
+    } catch {
+      // Fall back to writing the text once it has loaded.
+    }
+  }
+  try {
+    return await copyToClipboard(await text);
+  } catch {
+    return false;
+  }
 }
 
 function RawText({ text: raw }: { text: string }) {

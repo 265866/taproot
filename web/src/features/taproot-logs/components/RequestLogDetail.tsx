@@ -9,13 +9,18 @@ import {
   taprootApi,
   type HeaderMap,
   type RequestLogDetail as Detail,
+  type RequestLogUpstream,
 } from '@/services/api/taproot';
 import { copyToClipboard } from '@/utils/clipboard';
 import { getErrorMessage } from '@/utils/helpers';
+import { lazyOnce, type Blobs } from '../model/blobs';
 import { formatBytes, formatDurationMs, statusTone } from '../model/format';
 import { parseUpstream } from '../model/upstream';
+import { BlobsContext } from './blobsContext';
 import { BodyViewer } from './BodyViewer';
 import styles from './RequestLogDetail.module.scss';
+
+const NO_BLOBS: Blobs = {};
 
 type Load =
   | { status: 'loading' }
@@ -42,7 +47,7 @@ export function RequestLogDetail({
     let cancelled = false;
     setLoad({ status: 'loading' });
     taprootApi
-      .requestLog(requestId)
+      .requestLog(requestId, 'ref')
       .then((detail) => {
         if (!cancelled) setLoad({ status: 'ready', detail });
       })
@@ -127,6 +132,18 @@ function DetailBody({
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const { meta, request, response, upstream } = detail;
+  // Both upstream sections share one fetch, made when the first of them opens. Copying a body
+  // that holds placeholders fetches the original, once per record.
+  const load = useMemo(() => {
+    const id = meta.requestId;
+    return {
+      upstream: lazyOnce(() => taprootApi.requestLogUpstream(id, 'ref')),
+      fullUpstream: lazyOnce(() => taprootApi.requestLogUpstream(id, 'inline')),
+      full: lazyOnce(() => taprootApi.requestLog(id, 'inline')),
+    };
+  }, [meta.requestId]);
+  const fullUpstream = (part: UpstreamPart) => () =>
+    load.fullUpstream().then((sections) => sections[part]);
   const facts: [string, ReactNode][] = [
     [t('taproot_logs.columns.time'), new Date(meta.timestamp).toLocaleString()],
     [t('taproot_logs.columns.duration'), formatDurationMs(meta.durationMs)],
@@ -164,7 +181,7 @@ function DetailBody({
   ];
 
   return (
-    <>
+    <BlobsContext.Provider value={detail.blobs ?? NO_BLOBS}>
       <header className={styles.header}>
         <span className={`${styles.status} ${styles[statusTone(meta.status)]}`}>{meta.status}</span>
         <h2 id="request-log-detail-title" className={styles.title}>
@@ -189,7 +206,11 @@ function DetailBody({
       <Section title={t('taproot_logs.detail.request')} defaultOpen>
         <Headers headers={request.headers} />
         <SubTitle>{t('taproot_logs.detail.body')}</SubTitle>
-        <BodyViewer text={request.body} size={meta.requestBytes} />
+        <BodyViewer
+          text={request.body}
+          size={meta.requestBytes}
+          full={() => load.full().then((full) => full.request.body)}
+        />
       </Section>
 
       <Section
@@ -199,7 +220,11 @@ function DetailBody({
       >
         <Headers headers={response.headers} />
         <SubTitle>{t('taproot_logs.detail.body')}</SubTitle>
-        <BodyViewer text={response.body} size={meta.responseBytes} />
+        <BodyViewer
+          text={response.body}
+          size={meta.responseBytes}
+          full={() => load.full().then((full) => full.response.body)}
+        />
       </Section>
 
       {upstream.errors && upstream.errors.length > 0 && (
@@ -216,29 +241,55 @@ function DetailBody({
           </ul>
         </Section>
       )}
-      {upstream.request && (
-        <Section title={t('taproot_logs.detail.upstream_request')}>
-          <UpstreamAttempts text={upstream.request} />
+      {(upstream.request || upstream.requestBytes) && (
+        <Section
+          title={t('taproot_logs.detail.upstream_request')}
+          hint={upstream.requestBytes ? formatBytes(upstream.requestBytes) : undefined}
+        >
+          {upstream.request ? (
+            <UpstreamAttempts text={upstream.request} full={fullUpstream('request')} />
+          ) : (
+            <DeferredUpstream load={load.upstream} part="request" full={fullUpstream('request')} />
+          )}
         </Section>
       )}
-      {upstream.response && (
-        <Section title={t('taproot_logs.detail.upstream_response')}>
-          <UpstreamAttempts text={upstream.response} />
+      {(upstream.response || upstream.responseBytes) && (
+        <Section
+          title={t('taproot_logs.detail.upstream_response')}
+          hint={upstream.responseBytes ? formatBytes(upstream.responseBytes) : undefined}
+        >
+          {upstream.response ? (
+            <UpstreamAttempts text={upstream.response} full={fullUpstream('response')} />
+          ) : (
+            <DeferredUpstream
+              load={load.upstream}
+              part="response"
+              full={fullUpstream('response')}
+            />
+          )}
         </Section>
       )}
       {upstream.websocketTimeline && (
         <Section title={t('taproot_logs.detail.websocket_timeline')}>
-          <BodyViewer text={upstream.websocketTimeline} />
+          <BodyViewer
+            text={upstream.websocketTimeline}
+            full={() => load.full().then((full) => full.upstream.websocketTimeline ?? '')}
+          />
         </Section>
       )}
       {upstream.apiWebsocketTimeline && (
         <Section title={t('taproot_logs.detail.api_websocket_timeline')}>
-          <BodyViewer text={upstream.apiWebsocketTimeline} />
+          <BodyViewer
+            text={upstream.apiWebsocketTimeline}
+            full={() => load.full().then((full) => full.upstream.apiWebsocketTimeline ?? '')}
+          />
         </Section>
       )}
-    </>
+    </BlobsContext.Provider>
   );
 }
+
+type UpstreamPart = 'request' | 'response';
 
 function Section({
   title,
@@ -293,11 +344,49 @@ function KeyValues({ rows }: { rows: [string, string][] }) {
   );
 }
 
+/** Fetches the upstream sections the detail left out, on first open. */
+function DeferredUpstream({
+  load,
+  part,
+  full,
+}: {
+  load: () => Promise<RequestLogUpstream>;
+  part: UpstreamPart;
+  full: () => Promise<string>;
+}) {
+  const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const [state, setState] = useState<RequestLogUpstream | { error: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    load()
+      .then((upstream) => !cancelled && setState(upstream))
+      .catch((error: unknown) => !cancelled && setState({ error: getErrorMessage(error) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+  if (state === null) return <p className={styles.state}>{t('taproot_logs.detail.loading')}</p>;
+  if ('error' in state) return <p className={styles.state}>{mask(state.error)}</p>;
+  return (
+    <BlobsContext.Provider value={state.blobs ?? NO_BLOBS}>
+      <UpstreamAttempts text={state[part]} full={full} />
+    </BlobsContext.Provider>
+  );
+}
+
 /** Mounted only inside an open section, so the split runs when someone looks. */
-function UpstreamAttempts({ text }: { text: string }) {
+function UpstreamAttempts({ text, full }: { text: string; full: () => Promise<string> }) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const blocks = useMemo(() => parseUpstream(text), [text]);
+  // The original splits into the same blocks: a placeholder holds no line break.
+  const fullBody = (index: number) => () =>
+    full().then((original) => {
+      const block = parseUpstream(original)[index];
+      if (!block) throw new Error('upstream section changed');
+      return block.body;
+    });
   return (
     <>
       {blocks.map((block, index) => (
@@ -313,7 +402,7 @@ function UpstreamAttempts({ text }: { text: string }) {
           {block.body && (
             <>
               <SubTitle>{t('taproot_logs.detail.body')}</SubTitle>
-              <BodyViewer text={block.body} />
+              <BodyViewer text={block.body} full={fullBody(index)} />
             </>
           )}
         </div>
