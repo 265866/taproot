@@ -81,8 +81,8 @@ func newProxyServer(t *testing.T, upstream string, trusted ...string) http.Handl
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() { cancel(); _ = os.RemoveAll(dir) })
+	ctx := context.Background()
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	authDir := filepath.Join(dir, "auth")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -103,10 +103,11 @@ func newProxyServer(t *testing.T, upstream string, trusted ...string) http.Handl
 	cfg := &config.Config{}
 	cfg.Port = 8317
 	cfg.AuthDir = authDir
-	opts, err := Setup(ctx, cfg, configPath)
+	opts, stop, err := setup(ctx, cfg, configPath)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
+	t.Cleanup(stop)
 
 	manager := auth.NewManager(nil, nil, nil)
 	manager.RegisterExecutor(executor.NewClaudeExecutor(cfg))

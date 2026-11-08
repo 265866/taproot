@@ -104,39 +104,47 @@ func CheckServerMode(homeMode, tuiMode, standalone bool) error {
 // It must run before the service is built, because the access guard prepares
 // the management secret that the management handler reads at construction.
 func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) ([]api.ServerOption, error) {
+	opts, _, err := setup(ctx, cfg, upstreamConfigPath)
+	return opts, err
+}
+
+// setup is Setup that also returns stop, which cancels the background work
+// and waits for the request-log writer and compactor. The writer saves queued
+// records to new files as it stops, so delete a data dir only after stop.
+func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (_ []api.ServerOption, stop func(), _ error) {
 	tpPath := ConfigPath(upstreamConfigPath)
 	tp, err := LoadConfig(tpPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dataDir := DataDir(tp, upstreamConfigPath)
 
 	guard, err := access.New(tp.Access)
 	if err != nil {
-		return nil, fmt.Errorf("taproot access (%s): %w", tpPath, err)
+		return nil, nil, fmt.Errorf("taproot access (%s): %w", tpPath, err)
 	}
 	api.SetRESPConnectionFilter(access.RESPFilter)
 	if err := backup.ApplyPendingRestore(dataDir); err != nil {
-		return nil, fmt.Errorf("taproot pending restore: %w", err)
+		return nil, nil, fmt.Errorf("taproot pending restore: %w", err)
 	}
 	db, err := store.Open(ctx, tp.Store, dataDir)
 	if err != nil {
-		return nil, fmt.Errorf("taproot store: %w", err)
+		return nil, nil, fmt.Errorf("taproot store: %w", err)
 	}
 	usage, err := ingest.New(tp.Ingest, db)
 	if err != nil {
-		return nil, fmt.Errorf("taproot ingest: %w", err)
+		return nil, nil, fmt.Errorf("taproot ingest: %w", err)
 	}
 	usage.AttachDevices(guard)
 	plugins := &pluginCallers{}
 	usage.AttachPlugins(plugins)
 	logs, err := reqlog.New(tp.RequestLogs, db, dataDir)
 	if err != nil {
-		return nil, fmt.Errorf("taproot request logs: %w", err)
+		return nil, nil, fmt.Errorf("taproot request logs: %w", err)
 	}
 	authDir, err := util.ResolveAuthDir(cfg.AuthDir)
 	if err != nil {
-		return nil, fmt.Errorf("taproot auth dir: %w", err)
+		return nil, nil, fmt.Errorf("taproot auth dir: %w", err)
 	}
 	backups, err := backup.New(tp.Backups, db, backup.Paths{
 		ConfigFile:  upstreamConfigPath,
@@ -145,11 +153,11 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		DataDir:     dataDir,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("taproot backups: %w", err)
+		return nil, nil, fmt.Errorf("taproot backups: %w", err)
 	}
 	notify, err := alerts.New(tp.Alerts, db, usage)
 	if err != nil {
-		return nil, fmt.Errorf("taproot alerts: %w", err)
+		return nil, nil, fmt.Errorf("taproot alerts: %w", err)
 	}
 	editable, err := settings.New(settings.Deps{
 		Access:        guard,
@@ -162,9 +170,14 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		DataDir:       dataDir,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("taproot settings: %w", err)
+		return nil, nil, fmt.Errorf("taproot settings: %w", err)
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	stop = func() {
+		cancel()
+		logs.Close()
+	}
 	usage.Start(ctx)
 	logs.Start(ctx)
 	backups.Start(ctx)
@@ -191,5 +204,5 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if factory := logs.LoggerFactory(); factory != nil {
 		opts = append(opts, api.WithRequestLoggerFactory(factory))
 	}
-	return opts, nil
+	return opts, stop, nil
 }

@@ -100,9 +100,8 @@ func setupServer(t *testing.T, tp string) (fixture, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	// The store stays open for the process, so on Windows removal is best effort.
-	t.Cleanup(func() { cancel(); _ = os.RemoveAll(dir) })
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 	authDir := filepath.Join(dir, "auth")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
@@ -125,10 +124,11 @@ func setupServer(t *testing.T, tp string) (fixture, error) {
 	cfg := &config.Config{}
 	cfg.Port = 8317
 	cfg.AuthDir = authDir
-	opts, err := Setup(ctx, cfg, configPath)
+	opts, stop, err := setup(context.Background(), cfg, configPath)
 	if err != nil {
 		return fixture{}, err
 	}
+	t.Cleanup(stop)
 	srv := api.NewServer(cfg, auth.NewManager(nil, nil, nil), sdkaccess.NewManager(), configPath, opts...)
 	return fixture{h: srv.Handler(), taprootYAML: taprootYAML}, nil
 }
