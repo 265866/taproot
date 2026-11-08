@@ -192,7 +192,7 @@ func blobPlaceholder(h blobHash, raw int) string {
 
 // spliceRefs is spliceBlobs with a placeholder in place of each blob's
 // base64. It reads blob sizes and at most a few leading bytes of each blob,
-// never a whole blob. at maps an offset in the full text, outside any base64
+// except that a run after an escaping backslash keeps its base64. at maps an offset in the full text, outside any base64
 // run, to the same place in the result.
 func (b *blobStore) spliceRefs(ctx context.Context, residual []byte, refs []blobRef) (text []byte, at func(int) int, infos map[string]BlobInfo, err error) {
 	if len(refs) == 0 {
@@ -203,9 +203,6 @@ func (b *blobStore) spliceRefs(ctx context.Context, residual []byte, refs []blob
 		return nil, nil, nil, err
 	}
 	infos = make(map[string]BlobInfo, len(rows))
-	for h, row := range rows {
-		infos[hex.EncodeToString(h[:])] = BlobInfo{Bytes: row.raw, Type: b.typeOf(row)}
-	}
 	// fullEnd[i] and outEnd[i] are where run i ends in the full text and in
 	// the result.
 	fullEnd := make([]int, len(refs))
@@ -218,8 +215,23 @@ func (b *blobStore) spliceRefs(ctx context.Context, residual []byte, refs []blob
 			return nil, nil, nil, fmt.Errorf("blob %x: %w", r.hash[:8], errBlobMissing)
 		}
 		out = append(out, residual[last:r.pos]...)
-		out = append(out, blobPlaceholder(r.hash, row.raw)...)
 		shift += base64.StdEncoding.EncodedLen(row.raw)
+		// A run can start with the letter of a JSON escape such as \n, and a
+		// placeholder there would leave "\[", which is not valid JSON. Such a
+		// run keeps its base64; this needs the whole blob, but is rare.
+		if escapedAt(out) {
+			raw, err := b.get(ctx, r.hash)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			out = base64.StdEncoding.AppendEncode(out, raw)
+		} else {
+			out = append(out, blobPlaceholder(r.hash, row.raw)...)
+			key := hex.EncodeToString(r.hash[:])
+			if _, seen := infos[key]; !seen {
+				infos[key] = BlobInfo{Bytes: row.raw, Type: b.typeOf(row)}
+			}
+		}
 		fullEnd[i], outEnd[i] = r.pos+shift, len(out)
 		last = r.pos
 	}
@@ -233,6 +245,16 @@ func (b *blobStore) spliceRefs(ctx context.Context, residual []byte, refs []blob
 		return outEnd[i] + p - fullEnd[i]
 	}
 	return out, at, infos, nil
+}
+
+// escapedAt reports whether the next byte after text is escaped: text ends in
+// an odd number of backslashes.
+func escapedAt(text []byte) bool {
+	n := 0
+	for n < len(text) && text[len(text)-1-n] == '\\' {
+		n++
+	}
+	return n%2 == 1
 }
 
 // typeOf sniffs a blob's image type from its codec, the cache, or its first

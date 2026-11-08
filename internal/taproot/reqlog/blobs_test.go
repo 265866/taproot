@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -234,9 +235,15 @@ func checkRefs(t *testing.T, h *harness, id string, inline *Detail) {
 		if expand(got) != want[i] {
 			t.Fatalf("%s: section %d differs once placeholders are expanded", id, i)
 		}
+		if json.Valid([]byte(want[i])) && !json.Valid([]byte(got)) {
+			t.Fatalf("%s: section %d is JSON, but not with placeholders", id, i)
+		}
+		// Only a run after an escaping backslash keeps its base64.
 		residual, refs := splitBlobs([]byte(got), func(blobHash, []byte) {})
-		if len(refs) != 0 || len(residual) != len(got) {
-			t.Fatalf("%s: section %d still holds %d base64 payloads", id, i, len(refs))
+		for _, r := range refs {
+			if !escapedAt(residual[:r.pos]) {
+				t.Fatalf("%s: section %d still holds a base64 payload at %d", id, i, r.pos)
+			}
 		}
 	}
 }
@@ -267,6 +274,41 @@ func TestLetterRunsThatLookLikeBase64(t *testing.T) {
 	// "letters" and "padded" are canonical and long enough; the rest stay text.
 	if got := blobCount(t, h); got != 2 {
 		t.Fatalf("stored %d blobs, want 2", got)
+	}
+}
+
+// TestRefDetailKeepsEscapedRunsValidJSON stores base64-looking runs that
+// start with the letter of a JSON escape. A placeholder there would leave an
+// invalid "\[" escape, so such a run keeps its base64 in the ref detail.
+func TestRefDetailKeepsEscapedRunsValidJSON(t *testing.T) {
+	h := newHarness(t, Config{})
+	ts := h.clock.now()
+	letters := strings.Repeat("abcd", 511) + "abc"
+	bodies := map[string][]byte{
+		"escape":    []byte(`{"text":"line\n` + letters + `"}`),
+		"backslash": []byte(`{"text":"a\\` + letters + `d"}`),
+	}
+	for id, body := range bodies {
+		logSimple(t, h.logs.logger, id, "/v1/messages", "escapes", 200, ts, body)
+	}
+	h.flush()
+	h.sealAll()
+	if got := blobCount(t, h); got != 2 {
+		t.Fatalf("stored %d blobs, want 2", got)
+	}
+	for id, body := range bodies {
+		inline, err := h.logs.Get(context.Background(), id, true)
+		if err != nil || inline.Request.Body != string(body) {
+			t.Fatalf("%s did not rebuild exactly: %v", id, err)
+		}
+		checkRefs(t, h, id, inline)
+		d, err := h.logs.Get(context.Background(), id, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if placeholder := strings.Contains(d.Request.Body, "[taproot-blob:"); placeholder != (id == "backslash") {
+			t.Fatalf("%s: placeholder in ref body = %v", id, placeholder)
+		}
 	}
 }
 
