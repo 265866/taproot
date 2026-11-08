@@ -6,11 +6,14 @@
 
 - [ ] `go build ./...`
 - [ ] `GOOS=linux go vet ./...`
-- [ ] `go test ./internal/taproot/... ./internal/api/... ./sdk/cliproxy/... ./cmd/...`
-- [ ] `gofmt -l` prints nothing for the Go files I changed
+- [ ] `gofmt -l`, using the `gofmt` of `go.mod`'s Go version, prints nothing
+- [ ] `go test -skip '^TestAdvertiserAndBrowser_Integration$' ./...`
+- [ ] `golangci-lint run`
+- [ ] `go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...`
 - [ ] `cd web && bun install --frozen-lockfile && bun run verify` (dashboard changes)
 - [ ] I loaded the changed dashboard page in a browser against a running server (dashboard changes)
 - [ ] `docker build -f Containerfile.taproot .` (image, build script, or embedded asset changes)
+- [ ] `bun scripts/taproot/third-party-notices.ts` updated `THIRD_PARTY_NOTICES.md` (dependency changes)
 - [ ] Tests cover the changed behavior
 - [ ] `internal/taproot/DESIGN.md` lists every upstream file I edited, with the reason
 - [ ] No real logins, emails, node IDs, addresses, or tokens in code, tests, or screenshots
