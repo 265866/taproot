@@ -31,10 +31,12 @@ type Schema struct {
 	// SQL creates the module's tables and indexes. Every statement must be
 	// idempotent (CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS).
 	SQL string
-	// Seed fills the module's tables. It runs only when Open creates the
-	// database, so rows a user deletes or edits stay that way, and a seed added
-	// later never reaches a deployed database.
-	Seed string
+	// Seed fills the module's tables. It runs on every Open, after every
+	// module's SQL and in the same transaction; created reports whether this
+	// Open created the database. A seed must not overwrite or restore rows a
+	// user edited or deleted, so one that adds rows later records which rows
+	// it already added.
+	Seed func(ctx context.Context, tx *sql.Tx, created bool) error
 }
 
 var (
@@ -92,8 +94,8 @@ func Open(ctx context.Context, cfg Config, dataDir string) (*DB, error) {
 // Path returns the database file path.
 func (db *DB) Path() string { return db.path }
 
-// applySchema creates missing tables and indexes, and seeds a database it
-// created, in module order and in one transaction. A database whose existing
+// applySchema creates missing tables and indexes, then runs each module's
+// seed, in module order and in one transaction. A database whose existing
 // tables lack declared columns is refused and left unchanged.
 func (db *DB) applySchema(ctx context.Context) error {
 	schemas := registered()
@@ -120,14 +122,12 @@ func (db *DB) applySchema(ctx context.Context) error {
 			return fmt.Errorf("apply %s schema: %w", s.Module, err)
 		}
 	}
-	if len(existed) == 0 {
-		for _, s := range schemas {
-			if s.Seed == "" {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx, s.Seed); err != nil {
-				return fmt.Errorf("seed %s: %w", s.Module, err)
-			}
+	for _, s := range schemas {
+		if s.Seed == nil {
+			continue
+		}
+		if err := s.Seed(ctx, tx, len(existed) == 0); err != nil {
+			return fmt.Errorf("seed %s: %w", s.Module, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

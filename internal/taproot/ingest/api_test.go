@@ -403,3 +403,60 @@ func TestPricesRoutesRepriceHistory(t *testing.T) {
 		t.Fatalf("empty put: %d %+v", code, prices)
 	}
 }
+
+func TestResetPricesRestoresShippedRowsAndRepricesHistory(t *testing.T) {
+	i, r, clock := newAPI(t)
+	base := seedUsage(t, i)
+	summaryPath := "/api/usage/summary" + q("from", rfc(base), "to", rfc(base.Add(2*time.Hour)))
+	var summary struct {
+		Totals Totals `json:"totals"`
+	}
+	call(t, r, http.MethodGet, summaryPath, nil, &summary)
+	shippedCost := summary.Totals.CostUSD
+	if shippedCost == 0 {
+		t.Fatal("seeded usage has no cost at shipped prices")
+	}
+
+	var prices struct {
+		Prices []Price `json:"prices"`
+	}
+	edited := []Price{{ModelPattern: "claude-*", Input: 1}, {ModelPattern: "gpt-6-astra", Input: 1}}
+	if code := call(t, r, http.MethodPut, "/api/prices", gin.H{"prices": edited}, &prices); code != http.StatusOK {
+		t.Fatalf("put: %d", code)
+	}
+	call(t, r, http.MethodGet, summaryPath, nil, &summary)
+	if summary.Totals.CostUSD == shippedCost {
+		t.Fatal("edited prices did not reprice history")
+	}
+	if _, err := i.db.ExecContext(context.Background(), `UPDATE price_seed SET version = 1`); err != nil {
+		t.Fatal(err)
+	}
+
+	clock.t = clock.t.Add(time.Hour)
+	if code := call(t, r, http.MethodPost, "/api/prices/reset", nil, &prices); code != http.StatusOK {
+		t.Fatalf("reset: %d", code)
+	}
+	if len(prices.Prices) != len(seedPrices) {
+		t.Fatalf("reset returned %d prices, want %d", len(prices.Prices), len(seedPrices))
+	}
+	got := map[string]Price{}
+	for _, p := range prices.Prices {
+		got[p.ModelPattern] = p
+	}
+	for _, want := range seedPrices {
+		want.UpdatedAt = "2026-11-02T13:00:00Z"
+		if got[want.ModelPattern] != want {
+			t.Fatalf("reset row %+v, want %+v", got[want.ModelPattern], want)
+		}
+	}
+	if _, ok := got["claude-*"]; ok {
+		t.Fatal("reset kept a row that does not ship")
+	}
+	if v := queryInt(t, i, `SELECT version FROM price_seed`); v != priceSeedVersion {
+		t.Fatalf("seed version after reset %d, want %d", v, priceSeedVersion)
+	}
+	call(t, r, http.MethodGet, summaryPath, nil, &summary)
+	if summary.Totals.CostUSD != shippedCost {
+		t.Fatalf("cost after reset %v, want the shipped-price cost %v", summary.Totals.CostUSD, shippedCost)
+	}
+}

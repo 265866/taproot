@@ -215,3 +215,11 @@ func (i *Ingest) handlePutPrices(c *gin.Context) {
 	}
 	i.handleGetPrices(c)
 }
+
+func (i *Ingest) handleResetPrices(c *gin.Context) {
+	if err := resetPrices(c.Request.Context(), i.db.DB, i.now()); err != nil {
+		internalError(c, err)
+		return
+	}
+	i.handleGetPrices(c)
+}

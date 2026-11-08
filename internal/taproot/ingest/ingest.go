@@ -304,4 +304,5 @@ func (i *Ingest) Routes(r *gin.RouterGroup) {
 	r.GET("/usage/devices", i.handleUsageDevices)
 	r.GET("/prices", i.handleGetPrices)
 	r.PUT("/prices", i.handlePutPrices)
+	r.POST("/prices/reset", i.handleResetPrices)
 }

@@ -9,7 +9,7 @@ import type { Notification, NotificationType } from '@/types';
 import { generateId } from '@/utils/helpers';
 import { NOTIFICATION_DURATION_MS } from '@/utils/constants';
 
-interface ConfirmationOptions {
+export interface ConfirmationOptions {
   title?: string;
   message: ReactNode;
   confirmText?: string;
