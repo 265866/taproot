@@ -1,6 +1,9 @@
-import { memo, useState } from 'react';
+import { memo, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconChevronDown } from '@/components/ui/icons';
+import { splitBlobRefs } from '../model/blobs';
+import { BlobRef } from './BlobRef';
+import { BlobsContext } from './blobsContext';
 import {
   CHILD_PAGE,
   STRING_PREVIEW,
@@ -111,11 +114,27 @@ function JsonScalar({ value }: { value: unknown }) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const [shown, setShown] = useState(STRING_PREVIEW);
-  const kind = jsonKind(value);
-  if (kind !== 'string') {
-    return <span className={styles[kind]}>{String(value)}</span>;
+  const blobs = useContext(BlobsContext);
+  if (typeof value !== 'string') {
+    return <span className={styles[jsonKind(value)]}>{String(value)}</span>;
   }
-  const text = mask(value as string);
+  const segments = splitBlobRefs(value, blobs);
+  if (segments.some((segment) => typeof segment !== 'string')) {
+    return (
+      <span className={styles.string}>
+        &quot;
+        {segments.map((segment, index) =>
+          typeof segment === 'string' ? (
+            mask(segment)
+          ) : (
+            <BlobRef key={index} hash={segment.hash} blob={segment.blob} />
+          )
+        )}
+        &quot;
+      </span>
+    );
+  }
+  const text = mask(value);
   const { visible, remaining } = textWindow(text, shown);
   return (
     <span className={styles.string}>

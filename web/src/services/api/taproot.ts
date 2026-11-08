@@ -250,7 +250,30 @@ export interface RequestLogDetail {
     errors?: { status: number; message: string }[];
     websocketTimeline?: string;
     apiWebsocketTimeline?: string;
+    /** Sizes of `request` and `response`, which `requestLog` defers to `requestLogUpstream`. */
+    requestBytes?: number;
+    responseBytes?: number;
   };
+  /** With `blobs: 'ref'`, the payloads behind `[taproot-blob:<hash>:<bytes>]` placeholders. */
+  blobs?: Record<string, RequestLogBlob>;
+}
+
+/** A base64 payload a detail read with `blobs: 'ref'` left out. */
+export interface RequestLogBlob {
+  /** Decoded size. */
+  bytes: number;
+  /** Set for JPEG, PNG, GIF, and WebP images. */
+  type?: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+}
+
+/** `ref` replaces each stored base64 payload with a placeholder; `inline` keeps the original. */
+export type RequestLogBlobs = 'ref' | 'inline';
+
+/** The upstream sections `requestLog` defers. */
+export interface RequestLogUpstream {
+  request: string;
+  response: string;
+  blobs?: Record<string, RequestLogBlob>;
 }
 
 export interface RequestLogStats {
@@ -464,10 +487,18 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       request<{ logs: RequestLogMeta[]; nextCursor: string | null }>('GET', '/request-logs', {
         query: { ...filter },
       }),
-    requestLog: (requestId: string) =>
-      request<RequestLogDetail>('GET', `/request-logs/${id(requestId)}`),
+    /** Leaves out the upstream request and response; `requestLogUpstream` returns them. */
+    requestLog: (requestId: string, blobs: RequestLogBlobs) =>
+      request<RequestLogDetail>('GET', `/request-logs/${id(requestId)}`, {
+        query: { upstream: 'defer', blobs: blobs === 'ref' ? 'ref' : undefined },
+      }),
+    requestLogUpstream: (requestId: string, blobs: RequestLogBlobs) =>
+      request<RequestLogUpstream>('GET', `/request-logs/${id(requestId)}/upstream`, {
+        query: { blobs: blobs === 'ref' ? 'ref' : undefined },
+      }),
     requestLogRawUrl: (requestId: string) =>
       buildTaprootUrl(base, `/request-logs/${id(requestId)}/raw`),
+    requestLogBlobUrl: (hash: string) => buildTaprootUrl(base, `/request-logs/blobs/${id(hash)}`),
     requestLogStats: () => request<RequestLogStats>('GET', '/request-logs/stats'),
 
     backups: () => request<{ backups: Backup[] }>('GET', '/backups'),

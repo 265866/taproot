@@ -114,6 +114,12 @@
       "not_json": "Not valid JSON; showing raw text.",
       "show_more_events": "Show more events ({{count}} left)"
     },
+    "blob": {
+      "image": "{{format}} image, {{size}}",
+      "open_image": "Open the full image in a new tab",
+      "binary": "Binary data, {{size}}",
+      "download": "Download this payload"
+    },
     "json": {
       "show_more_children": "Show {{count}} more ({{remaining}} left)",
       "show_more_text": "{{count}} more characters",

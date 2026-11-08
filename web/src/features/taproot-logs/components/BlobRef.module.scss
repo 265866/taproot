@@ -1,0 +1,45 @@
+.blob {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 2px 0;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  vertical-align: middle;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+}
+
+.thumb {
+  display: block;
+  width: auto;
+  max-width: 160px;
+  height: auto;
+  max-height: 120px;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  object-fit: contain;
+}
+
+.caption {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
