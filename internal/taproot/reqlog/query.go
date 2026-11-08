@@ -100,6 +100,7 @@ type recordLocation struct {
 	segment int64
 	day     string
 	state   string
+	dictID  int64
 	offset  int64
 	length  int
 }
@@ -112,7 +113,7 @@ type filterError string
 func (e filterError) Error() string { return string(e) }
 
 const listColumns = `l.id, l.request_id, l.trace_id, l.session_id, l.parent_session_id, l.ts, l.duration_ms, l.method, l.url, l.path,
-	l.status, l.model, l.auth_index, l.streaming, l.error_only, l.dropped, l.req_bytes, l.resp_bytes, l.length`
+	l.status, l.model, l.auth_index, l.streaming, l.error_only, l.dropped, l.req_bytes, l.resp_bytes, l.text_bytes`
 
 func scanMeta(row interface{ Scan(...any) error }) (LogMeta, int64, int64, error) {
 	var m LogMeta
@@ -168,7 +169,7 @@ func (l *Logs) List(ctx context.Context, f ListFilter) ([]LogMeta, string, error
 		limit = 100
 	}
 	limit = min(limit, 1000)
-	query := "SELECT " + listColumns + " FROM request_logs l"
+	query := "SELECT " + listColumns + " FROM reqlog_records l"
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -234,15 +235,15 @@ func decodeCursor(cursor string) (int64, int64, error) {
 }
 
 func (l *Logs) locate(ctx context.Context, requestID string) (LogMeta, recordLocation, error) {
-	row := l.engine.db.QueryRowContext(ctx, "SELECT "+listColumns+`, s.id, s.day, s.state, l.offset
-		FROM request_logs l JOIN request_log_segments s ON s.id = l.segment_id
+	row := l.engine.db.QueryRowContext(ctx, "SELECT "+listColumns+`, s.id, s.day, s.state, s.dict_id, l.offset, l.length
+		FROM reqlog_records l JOIN reqlog_segments s ON s.id = l.segment_id
 		WHERE l.request_id = ? ORDER BY l.ts DESC, l.id DESC LIMIT 1`, requestID)
 	var m LogMeta
 	var loc recordLocation
 	var id, ts int64
 	err := row.Scan(&id, &m.RequestID, &m.TraceID, &m.SessionID, &m.ParentSessionID, &ts, &m.DurationMs, &m.Method, &m.URL, &m.Path,
 		&m.Status, &m.Model, &m.AuthIndex, &m.Streaming, &m.ErrorOnly, &m.Dropped, &m.RequestBytes, &m.ResponseBytes, &m.RecordBytes,
-		&loc.segment, &loc.day, &loc.state, &loc.offset)
+		&loc.segment, &loc.day, &loc.state, &loc.dictID, &loc.offset, &loc.length)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, loc, errNotFound
 	}
@@ -250,7 +251,6 @@ func (l *Logs) locate(ctx context.Context, requestID string) (LogMeta, recordLoc
 		return m, loc, fmt.Errorf("find request log: %w", err)
 	}
 	m.Timestamp = formatTime(ts)
-	loc.length = int(m.RecordBytes)
 	return m, loc, nil
 }
 
@@ -269,12 +269,20 @@ func (l *Logs) read(ctx context.Context, requestID string) (LogMeta, *recordMeta
 	if err != nil {
 		return m, nil, nil, err
 	}
-	frameMeta, text, err := decodeFrame(frame)
+	frameMeta, residual, refs, err := decodeFrame(frame)
 	if err != nil {
 		return m, nil, nil, fmt.Errorf("segment %d offset %d: %w", loc.segment, loc.offset, err)
 	}
 	if frameMeta.RequestID != m.RequestID {
 		return m, nil, nil, fmt.Errorf("segment %d offset %d holds %q, index says %q", loc.segment, loc.offset, frameMeta.RequestID, m.RequestID)
+	}
+	blobs, err := l.engine.blobs.getAll(ctx, refs)
+	if err != nil {
+		return m, nil, nil, err
+	}
+	text, err := spliceBlobs(residual, refs, blobs)
+	if err != nil {
+		return m, nil, nil, err
 	}
 	return m, frameMeta, text, nil
 }
@@ -317,14 +325,16 @@ func nonNil(h map[string][]string) map[string][]string {
 func (l *Logs) Stats(ctx context.Context) (Stats, error) {
 	var s Stats
 	var oldest, newest sql.NullInt64
-	if err := l.engine.db.QueryRowContext(ctx, `SELECT COUNT(*), MIN(ts), MAX(ts) FROM request_logs`).Scan(&s.Count, &oldest, &newest); err != nil {
+	if err := l.engine.db.QueryRowContext(ctx, `SELECT COUNT(*), MIN(ts), MAX(ts), COALESCE(SUM(text_bytes), 0) FROM reqlog_records`).Scan(&s.Count, &oldest, &newest, &s.RawBytes); err != nil {
 		return s, fmt.Errorf("request log stats: %w", err)
 	}
-	if err := l.engine.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(state != ?), 0), COALESCE(SUM(raw_bytes), 0),
-		COALESCE(SUM(CASE WHEN state = ? THEN disk_bytes ELSE raw_bytes END), 0) FROM request_log_segments`,
-		segmentSealed, segmentSealed).Scan(&s.Segments, &s.OpenSegments, &s.RawBytes, &s.BytesOnDisk); err != nil {
+	var packBytes int64
+	if err := l.engine.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(state != ?), 0),
+		COALESCE(SUM(CASE WHEN state = ? THEN disk_bytes ELSE raw_bytes END), 0), (SELECT COALESCE(SUM(bytes), 0) FROM reqlog_packs) FROM reqlog_segments`,
+		segmentSealed, segmentSealed).Scan(&s.Segments, &s.OpenSegments, &s.BytesOnDisk, &packBytes); err != nil {
 		return s, fmt.Errorf("request log stats: %w", err)
 	}
+	s.BytesOnDisk += packBytes
 	if oldest.Valid {
 		t := formatTime(oldest.Int64)
 		s.Oldest = &t

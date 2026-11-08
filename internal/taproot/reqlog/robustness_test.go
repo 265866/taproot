@@ -163,7 +163,7 @@ func TestFailedCompactionIsRetried(t *testing.T) {
 	h.flush()
 	var id int64
 	var day string
-	if err := h.db.QueryRow(`SELECT id, day FROM request_log_segments`).Scan(&id, &day); err != nil {
+	if err := h.db.QueryRow(`SELECT id, day FROM reqlog_segments`).Scan(&id, &day); err != nil {
 		t.Fatal(err)
 	}
 	// A directory where the temp file goes makes the compressed write fail.
@@ -228,22 +228,26 @@ func TestPendingRowsForGoneSegmentsDoNotBlockIndexing(t *testing.T) {
 
 func TestScanFramesRejectsOversizedHeaders(t *testing.T) {
 	meta := []byte(`{"requestId":"a","ts":1,"durationMs":0,"method":"GET","url":"/","path":"/","status":200,"requestBytes":0,"responseBytes":0}`)
-	good := []byte(fmt.Sprintf("%s%d 2\n%sok\n", frameMagic, len(meta), meta))
+	good := []byte(fmt.Sprintf("%s0 %d 0 0 2 0\n%sok\n", frameMagic, len(meta), meta))
 	for name, tail := range map[string]string{
-		"huge meta":       frameMagic + "9223372036854775807 0\n{}",
-		"meta past end":   frameMagic + "1000000 0\n{}",
-		"huge text":       frameMagic + fmt.Sprintf("%d 9223372036854775807\n%s", len(meta), meta),
-		"text past end":   frameMagic + fmt.Sprintf("%d 100\n%sok\n", len(meta), meta),
-		"meta over limit": frameMagic + fmt.Sprintf("%d 0\n", maxFrameMeta+1),
+		"huge meta":         frameMagic + "0 9223372036854775807 0 0 0 0\n{}",
+		"meta past end":     frameMagic + "0 1000000 0 0 0 0\n{}",
+		"huge skeleton":     frameMagic + fmt.Sprintf("0 %d 0 0 9223372036854775807 0\n%s", len(meta), meta),
+		"skeleton past end": frameMagic + fmt.Sprintf("0 %d 0 0 100 0\n%sok\n", len(meta), meta),
+		"meta over limit":   frameMagic + fmt.Sprintf("0 %d 0 0 0 0\n", maxFrameMeta+1),
+		"unknown flags":     frameMagic + fmt.Sprintf("8 %d 0 0 2 0\n%sok\n", len(meta), meta),
+		"torn refs":         frameMagic + fmt.Sprintf("0 %d 3 0 2 0\n%s\x01abok\n", len(meta), meta),
+		"too few fields":    frameMagic + fmt.Sprintf("%d 2\n%sok\n", len(meta), meta),
+		"overflowing sum":   frameMagic + fmt.Sprintf("0 %d 0 4611686018427387904 4611686018427387904 4611686018427387904\n%s", len(meta), meta),
 	} {
 		t.Run(name, func(t *testing.T) {
 			data := append(append([]byte(nil), good...), tail...)
 			var seen int
-			end, err := scanFrames(bytes.NewReader(data), 0, int64(len(data)), func(int64, int, *recordMeta) { seen++ })
+			end, err := scanFrames(bytes.NewReader(data), 0, int64(len(data)), func(int64, int, *recordMeta, []blobHash) { seen++ })
 			if err != nil || end != int64(len(good)) || seen != 1 {
 				t.Fatalf("end %d seen %d err %v; want %d 1 nil", end, seen, err, len(good))
 			}
-			if _, _, err := decodeFrame([]byte(tail)); err == nil {
+			if _, _, _, err := decodeFrame([]byte(tail)); err == nil {
 				t.Fatal("decodeFrame accepted a bad frame")
 			}
 		})

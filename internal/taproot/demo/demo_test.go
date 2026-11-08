@@ -167,10 +167,10 @@ func TestSeed(t *testing.T) {
 			t.Fatalf("%s: weekly peak %d%%; want a believable pool chart", a.file, peak)
 		}
 	}
-	if got := count(`SELECT COUNT(*) FROM request_logs`); got != burstSize {
+	if got := count(`SELECT COUNT(*) FROM reqlog_records`); got != burstSize {
 		t.Fatalf("%d request logs, want %d", got, burstSize)
 	}
-	if got := count(`SELECT COUNT(*) FROM request_logs r JOIN usage_events e ON e.request_id = r.request_id AND e.session_id = r.session_id`); got != burstSize {
+	if got := count(`SELECT COUNT(*) FROM reqlog_records r JOIN usage_events e ON e.request_id = r.request_id AND e.session_id = r.session_id`); got != burstSize {
 		t.Fatalf("%d request logs match a usage event by request and session, want %d", got, burstSize)
 	}
 	backups, err := os.ReadDir(filepath.Join(dir, "taproot", "backups"))

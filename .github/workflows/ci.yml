@@ -25,8 +25,9 @@ jobs:
       - run: go vet ./...
       - run: go test ./internal/taproot/... ./internal/api/... ./sdk/cliproxy/... ./cmd/...
 
-  # The request-log codec library: Rust checks, then the Go package built with
-  # the taproot_codecs tag against it. The go job above covers the stub build.
+  # The request-log codec library: Rust checks, then request logs and the codec
+  # package built with the taproot_codecs tag against it, as the image builds
+  # them. The go job above covers the stub build.
   codec:
     runs-on: ubuntu-latest
     env:
@@ -49,9 +50,9 @@ jobs:
       - run: cargo clippy --release --locked --all-targets -- -D warnings
       - run: cargo build --release --locked
       - run: go vet -tags taproot_codecs ./...
-        working-directory: internal/taproot/reqlog/codec
+        working-directory: internal/taproot/reqlog
       - run: go test -race -tags taproot_codecs ./...
-        working-directory: internal/taproot/reqlog/codec
+        working-directory: internal/taproot/reqlog
 
   web:
     runs-on: ubuntu-latest
