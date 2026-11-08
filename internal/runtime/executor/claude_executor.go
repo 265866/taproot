@@ -134,7 +134,7 @@ func sanitizeClaudeMessagesForClaudeUpstreamDoc(doc *ojson.Doc, targetModel stri
 			partPath := fmt.Sprintf("messages.%d.content.%d", i, j)
 			partType := part.Get("type").String()
 			if partType == "tool_use" {
-				if stripClaudeToolUseProvenanceFieldsDoc(doc, partPath) {
+				if claudeToolUseHasProvenanceFields(part) && stripClaudeToolUseProvenanceFieldsDoc(doc, partPath) {
 					modified = true
 					report.DroppedSignatures++
 				}
@@ -204,6 +204,20 @@ func sanitizeClaudeMessagesForClaudeUpstreamDoc(doc *ojson.Doc, targetModel stri
 		_ = doc.Delete(fmt.Sprintf("messages.%d", droppedMessages[k]))
 	}
 	return report, modified
+}
+
+// claudeToolUseHasProvenanceFields gates stripClaudeToolUseProvenanceFieldsDoc,
+// whose doc.Get by index path rescans every earlier message, so calling it for
+// every tool_use made sanitizing quadratic in request size. part comes from the
+// document as of entry, and each part's path is edited only in its own
+// iteration, so it shows what there is to strip.
+func claudeToolUseHasProvenanceFields(part ojson.Result) bool {
+	for _, key := range []string{"signature", "thoughtSignature", "thought_signature", "extra_content", "model"} {
+		if part.Get(key).Exists() {
+			return true
+		}
+	}
+	return false
 }
 
 func stripClaudeToolUseProvenanceFieldsDoc(doc *ojson.Doc, partPath string) bool {

@@ -40,6 +40,12 @@ Taproot is a fork of CLIProxyAPI. It runs on one server and serves every Claude 
   - `PluginName` reads the active plugin's metadata name. Upstream's `RegisteredPlugins` also calls into each plugin for OAuth and quota identifiers, which ingest's flush must not do.
   - Wrapping the host's model executor instead would need no new file, but upstream resets the executor on every config reload (`internal/api/server_reload.go`).
   - `internal/pluginhost/taproot_caller_test.go` drives `host.model.execute` and checks the context the model executor receives.
+- Four hot-path speedups in upstream files, measured by replaying production Claude Code bodies through a loopback server and fake Anthropic upstream. Each belongs upstream too; a sync that touches these lines conflicts until then.
+  - `internal/runtime/executor/claude_executor.go`: `claudeToolUseHasProvenanceFields` skips the provenance strip for `tool_use` parts without those keys (about 15 lines). The strip's indexed `Doc.Get` rescans every earlier message, so sanitizing was quadratic in request size. Upstream bytes are unchanged on 18 real bodies.
+  - `internal/runtime/executor/claude_executor_request.go`: `applyClaudeHeadersWithNativeProfile` computes each body predicate once (`sync.OnceValue`, about 25 lines) instead of up to three times. With the line above, time to first token went from 63 to 22 ms at 1 MB and 331 to 55 ms at 3 MB.
+  - `internal/runtime/executor/helps/utls_client.go`: `MaxIdleConnsPerHost` 64 on the shared HTTP/1.1 Anthropic transport (3 lines). net/http's default of 2 made concurrent streams redo TCP and TLS handshakes after each burst.
+  - `internal/logging/request_logger_body_source.go`: `AppendBytes` keeps the last part open instead of opening, writing, and closing it per streamed chunk (about 30 lines).
+  - Their tests are taproot files: `internal/runtime/executor/taproot_claude_executor_provenance_test.go`, `internal/runtime/executor/helps/taproot_utls_client_pool_test.go`, and `internal/logging/taproot_request_logger_body_source_test.go`.
 
 ## Soonest-reset-first routing
 
