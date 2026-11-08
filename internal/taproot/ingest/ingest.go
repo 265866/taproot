@@ -84,7 +84,8 @@ type Ingest struct {
 	lastRefresh map[string]time.Time
 }
 
-// New prepares the module. It must register its usage sink before the service starts.
+// New prepares the module and rebuilds empty or stale derived tables. It must register
+// its usage sink before the service starts.
 func New(cfg Config, db *store.DB) (*Ingest, error) {
 	if db == nil {
 		return nil, fmt.Errorf("ingest: nil store")
@@ -92,6 +93,9 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 	interval, err := cfg.pollInterval()
 	if err != nil {
 		return nil, err
+	}
+	if err := rebuildDerived(context.Background(), db.DB); err != nil {
+		return nil, fmt.Errorf("ingest: %w", err)
 	}
 	i := &Ingest{
 		db:             db,

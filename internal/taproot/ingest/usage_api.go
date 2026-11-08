@@ -188,25 +188,33 @@ func (s *summaryBuilder) scanRaw(ctx context.Context, q querier, fromMs, toMs in
 }
 
 func (s *summaryBuilder) scanRollup(ctx context.Context, q querier, fromHour, toHour int64) error {
-	rows, err := q.QueryContext(ctx, `SELECT hour, provider, auth_index, model, requests, failures,
+	// Each rollup has the key columns of the groupings it serves.
+	keys, table := "provider, auth_index, '', ''", "usage_rollup_hourly"
+	switch s.groupBy {
+	case "device":
+		keys, table = "'', '', '', device_id", "usage_device_hourly"
+	case "session":
+		keys, table = "'', '', session_id, ''", "usage_session_hourly"
+	}
+	rows, err := q.QueryContext(ctx, `SELECT hour, `+keys+`, model, requests, failures,
 		input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
-		latency_hist, ttft_hist FROM usage_rollup_hourly WHERE hour >= ? AND hour < ?`, fromHour, toHour)
+		latency_hist, ttft_hist FROM `+table+` WHERE hour >= ? AND hour < ?`, fromHour, toHour)
 	if err != nil {
 		return fmt.Errorf("query rollup: %w", err)
 	}
 	defer closeRows(rows)
 	for rows.Next() {
 		var (
-			hour, requests, failures   int64
-			provider, authIndex, model string
-			t                          tokenSums
-			latBlob, ttftBlob          []byte
+			hour, requests, failures                    int64
+			provider, authIndex, session, device, model string
+			t                                           tokenSums
+			latBlob, ttftBlob                           []byte
 		)
-		if err := rows.Scan(&hour, &provider, &authIndex, &model, &requests, &failures,
+		if err := rows.Scan(&hour, &provider, &authIndex, &session, &device, &model, &requests, &failures,
 			&t.Input, &t.Output, &t.Reasoning, &t.CacheRead, &t.CacheWrite, &t.CacheWrite5m, &t.CacheWrite1h, &latBlob, &ttftBlob); err != nil {
 			return fmt.Errorf("scan rollup: %w", err)
 		}
-		for _, a := range []*agg{s.target(hour*hourMs, s.groupKey(provider, authIndex, model, "", "")), s.total} {
+		for _, a := range []*agg{s.target(hour*hourMs, s.groupKey(provider, authIndex, model, session, device)), s.total} {
 			a.requests += requests
 			a.failures += failures
 			a.addTokens(model, t)
@@ -263,8 +271,7 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	// The hourly rollup has no session or device column.
-	useRollup := bucketName != "5m" && groupBy != "session" && groupBy != "device" && s.hourAligned(fromMs, toMs)
+	useRollup := bucketName != "5m" && s.hourAligned(fromMs, toMs)
 	if err := s.collect(ctx, i.db, fromMs, toMs, useRollup); err != nil {
 		internalError(c, err)
 		return
@@ -472,42 +479,26 @@ func (i *Ingest) handleUsageSessions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	having := ""
-	args := []any{ms(from), ms(to)}
+	var cursor *sessionCursor
 	if raw := strings.TrimSpace(c.Query("cursor")); raw != "" {
 		cts, cid, err := decodeCursor(raw)
 		if err != nil {
 			badRequest(c, "cursor: malformed")
 			return
 		}
-		having = " HAVING MAX(ts) < ? OR (MAX(ts) = ? AND session_id < ?)"
-		args = append(args, cts, cts, cid)
+		cursor = &sessionCursor{last: cts, id: cid}
 	}
-	args = append(args, limit+1)
 	ctx := c.Request.Context()
-	rows, err := i.db.QueryContext(ctx, `SELECT session_id, MAX(ts) FROM usage_events
-		WHERE ts >= ? AND ts < ? AND session_id <> '' GROUP BY session_id`+having+`
-		ORDER BY MAX(ts) DESC, session_id DESC LIMIT ?`, args...)
+	// One read transaction gives listSessions' queries one snapshot, so a
+	// flush between them cannot drop a session from the page.
+	tx, err := i.db.BeginTx(ctx, nil)
 	if err != nil {
 		internalError(c, err)
 		return
 	}
-	type page struct {
-		id   string
-		last int64
-	}
-	var ids []page
-	for rows.Next() {
-		var p page
-		if err := rows.Scan(&p.id, &p.last); err != nil {
-			closeRows(rows)
-			internalError(c, err)
-			return
-		}
-		ids = append(ids, p)
-	}
-	closeRows(rows)
-	if err := rows.Err(); err != nil {
+	ids, err := listSessions(ctx, tx, ms(from), ms(to), cursor, limit+1)
+	_ = tx.Rollback()
+	if err != nil {
 		internalError(c, err)
 		return
 	}

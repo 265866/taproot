@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -160,7 +161,7 @@ func (d *rollupDelta) addEvent(e event) {
 }
 
 // insertEvents writes events that are not already stored (by event key) and
-// folds the newly inserted ones into the hourly rollup and account first/last
+// folds the newly inserted ones into the derived tables and account first/last
 // seen. It returns how many rows were inserted.
 func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error) {
 	if len(events) == 0 {
@@ -182,8 +183,7 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 		}
 	}()
 
-	deltas := map[rollupKey]*rollupDelta{}
-	deviceDeltas := deviceRollup{}
+	derived := derivedTables()
 	type seen struct {
 		provider    string
 		first, last int64
@@ -211,14 +211,9 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 			continue
 		}
 		inserted++
-		k := rollupKey{Hour: ms(e.TS) / hourMs, Provider: e.Provider, AuthIndex: e.AuthIndex, Model: e.Model}
-		d := deltas[k]
-		if d == nil {
-			d = newRollupDelta()
-			deltas[k] = d
+		for _, t := range derived {
+			t.delta.add(e)
 		}
-		d.addEvent(e)
-		deviceDeltas.add(e)
 		if e.AuthIndex != "" {
 			a := accounts[e.AuthIndex]
 			t := ms(e.TS)
@@ -230,13 +225,10 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 			}
 		}
 	}
-	for k, d := range deltas {
-		if err := applyRollupDelta(ctx, c, k, d); err != nil {
+	for _, t := range derived {
+		if err := t.delta.apply(ctx, c); err != nil {
 			return inserted, err
 		}
-	}
-	if err := deviceDeltas.apply(ctx, c); err != nil {
-		return inserted, err
 	}
 	for idx, a := range accounts {
 		if _, err := c.ExecContext(ctx, `INSERT INTO accounts (auth_index, provider, first_seen, last_seen) VALUES (?,?,?,?)
@@ -253,12 +245,71 @@ func insertEvents(ctx context.Context, c *sql.Conn, events []event) (int, error)
 
 const hourMs = int64(time.Hour / time.Millisecond)
 
-func applyRollupDelta(ctx context.Context, c *sql.Conn, k rollupKey, d *rollupDelta) error {
+// hourlyRollup collects additions to usage_rollup_hourly.
+type hourlyRollup map[rollupKey]*rollupDelta
+
+func (h hourlyRollup) add(e event) {
+	k := rollupKey{Hour: ms(e.TS) / hourMs, Provider: e.Provider, AuthIndex: e.AuthIndex, Model: e.Model}
+	d := h[k]
+	if d == nil {
+		d = newRollupDelta()
+		h[k] = d
+	}
+	d.addEvent(e)
+}
+
+func (h hourlyRollup) apply(ctx context.Context, c *sql.Conn) error {
+	w, err := prepareRollup(ctx, c, "usage_rollup_hourly", []string{"hour", "provider", "auth_index", "model"})
+	if err != nil {
+		return err
+	}
+	defer w.close()
+	for k, d := range h {
+		if err := w.upsert(ctx, []any{k.Hour, k.Provider, k.AuthIndex, k.Model}, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rollupWriter adds deltas to one rollup table's rows by key. Each table has
+// the key columns, rollupDelta's counters and histograms, and optional extra
+// counters.
+type rollupWriter struct {
+	table       string
+	read, write *sql.Stmt
+}
+
+func prepareRollup(ctx context.Context, c *sql.Conn, table string, keys []string, extra ...string) (*rollupWriter, error) {
+	counters := append([]string{"requests", "failures", "input_tokens", "output_tokens", "reasoning_tokens",
+		"cache_read_tokens", "cache_write_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens"}, extra...)
+	sets := make([]string, 0, len(counters)+2)
+	for _, col := range counters {
+		sets = append(sets, col+" = "+col+" + excluded."+col)
+	}
+	sets = append(sets, "latency_hist = excluded.latency_hist", "ttft_hist = excluded.ttft_hist")
+	cols := slices.Concat(keys, counters, []string{"latency_hist", "ttft_hist"})
+	w := &rollupWriter{table: table}
+	var err error
+	if w.read, err = c.PrepareContext(ctx, `SELECT latency_hist, ttft_hist FROM `+table+` WHERE `+
+		strings.Join(keys, " = ? AND ")+` = ?`); err != nil {
+		return nil, fmt.Errorf("prepare %s read: %w", table, err)
+	}
+	if w.write, err = c.PrepareContext(ctx, `INSERT INTO `+table+` (`+strings.Join(cols, ", ")+`)
+		VALUES (?`+strings.Repeat(", ?", len(cols)-1)+`)
+		ON CONFLICT(`+strings.Join(keys, ", ")+`) DO UPDATE SET `+strings.Join(sets, ", ")); err != nil {
+		w.close()
+		return nil, fmt.Errorf("prepare %s upsert: %w", table, err)
+	}
+	return w, nil
+}
+
+// upsert adds d and the extra counters, in prepareRollup's order, to the row
+// with key, merging its histograms with the stored ones.
+func (w *rollupWriter) upsert(ctx context.Context, key []any, d *rollupDelta, extra ...any) error {
 	var latBlob, ttftBlob []byte
-	err := c.QueryRowContext(ctx, `SELECT latency_hist, ttft_hist FROM usage_rollup_hourly WHERE hour=? AND provider=? AND auth_index=? AND model=?`,
-		k.Hour, k.Provider, k.AuthIndex, k.Model).Scan(&latBlob, &ttftBlob)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read rollup: %w", err)
+	if err := w.read.QueryRowContext(ctx, key...).Scan(&latBlob, &ttftBlob); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read %s: %w", w.table, err)
 	}
 	lat, ttft := histogram{}, histogram{}
 	decodeHistogram(latBlob, lat)
@@ -266,28 +317,23 @@ func applyRollupDelta(ctx context.Context, c *sql.Conn, k rollupKey, d *rollupDe
 	lat.merge(d.Latency)
 	ttft.merge(d.TTFT)
 	t := d.Tokens
-	_, err = c.ExecContext(ctx, `INSERT INTO usage_rollup_hourly (hour, provider, auth_index, model, requests, failures,
-		input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
-		latency_hist, ttft_hist) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(hour, provider, auth_index, model) DO UPDATE SET
-			requests = requests + excluded.requests,
-			failures = failures + excluded.failures,
-			input_tokens = input_tokens + excluded.input_tokens,
-			output_tokens = output_tokens + excluded.output_tokens,
-			reasoning_tokens = reasoning_tokens + excluded.reasoning_tokens,
-			cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
-			cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens,
-			cache_write_5m_tokens = cache_write_5m_tokens + excluded.cache_write_5m_tokens,
-			cache_write_1h_tokens = cache_write_1h_tokens + excluded.cache_write_1h_tokens,
-			latency_hist = excluded.latency_hist,
-			ttft_hist = excluded.ttft_hist`,
-		k.Hour, k.Provider, k.AuthIndex, k.Model, d.Requests, d.Failures,
-		t.Input, t.Output, t.Reasoning, t.CacheRead, t.CacheWrite, t.CacheWrite5m, t.CacheWrite1h,
-		lat.encode(), ttft.encode())
-	if err != nil {
-		return fmt.Errorf("upsert rollup: %w", err)
+	args := slices.Concat(key, []any{d.Requests, d.Failures, t.Input, t.Output, t.Reasoning,
+		t.CacheRead, t.CacheWrite, t.CacheWrite5m, t.CacheWrite1h}, extra, []any{lat.encode(), ttft.encode()})
+	if _, err := w.write.ExecContext(ctx, args...); err != nil {
+		return fmt.Errorf("upsert %s: %w", w.table, err)
 	}
 	return nil
+}
+
+func (w *rollupWriter) close() {
+	for _, s := range []*sql.Stmt{w.read, w.write} {
+		if s == nil {
+			continue
+		}
+		if err := s.Close(); err != nil {
+			log.WithError(err).Warn("taproot ingest: close statement")
+		}
+	}
 }
 
 func boolInt(b bool) int {

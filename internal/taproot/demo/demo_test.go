@@ -137,7 +137,7 @@ func TestSeed(t *testing.T) {
 	if got := count(`SELECT SUM(requests) FROM usage_rollup_hourly`); got != events {
 		t.Fatalf("hourly rollup counts %d requests, events table has %d", got, events)
 	}
-	if got := count(`SELECT SUM(requests) FROM usage_rollup_device_hourly`); got != events {
+	if got := count(`SELECT SUM(requests) FROM usage_device_hourly`); got != events {
 		t.Fatalf("device rollup counts %d requests, events table has %d", got, events)
 	}
 	if got := count(`SELECT COUNT(DISTINCT device_id) FROM usage_events WHERE device_id <> ''`); got != int64(len(devices)+1) {

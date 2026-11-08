@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"sort"
@@ -122,42 +123,38 @@ func (r *deviceRow) add(o deviceRow) {
 	r.tokens.add(o.tokens)
 }
 
-// deviceRollup collects one flush's additions to usage_rollup_device_hourly.
-type deviceRollup map[deviceRollupKey]*deviceRow
+// deviceDelta is an addition to one usage_device_hourly row.
+type deviceDelta struct {
+	rollupDelta
+	// splitRequests wrote cache with a known 5m/1h split.
+	splitRequests int64
+}
+
+// deviceRollup collects additions to usage_device_hourly.
+type deviceRollup map[deviceRollupKey]*deviceDelta
 
 func (d deviceRollup) add(e event) {
 	k := deviceRollupKey{Hour: ms(e.TS) / hourMs, DeviceID: e.Device.ID, Model: e.Model, Main: e.mainConversation()}
 	row := d[k]
 	if row == nil {
-		row = &deviceRow{}
+		row = &deviceDelta{rollupDelta: *newRollupDelta()}
 		d[k] = row
 	}
-	row.add(deviceRow{
-		requests: 1, failures: int64(boolInt(e.Failed)), tokens: e.Tokens,
-		splitRequests: int64(boolInt(e.Tokens.CacheWrite5m+e.Tokens.CacheWrite1h > 0)),
-	})
+	row.addEvent(e)
+	if e.Tokens.CacheWrite5m+e.Tokens.CacheWrite1h > 0 {
+		row.splitRequests++
+	}
 }
 
-func (d deviceRollup) apply(ctx context.Context, c querier) error {
+func (d deviceRollup) apply(ctx context.Context, c *sql.Conn) error {
+	w, err := prepareRollup(ctx, c, "usage_device_hourly", []string{"hour", "device_id", "model", "main"}, "split_requests")
+	if err != nil {
+		return err
+	}
+	defer w.close()
 	for k, r := range d {
-		t := r.tokens
-		if _, err := c.ExecContext(ctx, `INSERT INTO usage_rollup_device_hourly (hour, device_id, model, main, requests, failures,
-			input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
-			cache_write_1h_tokens, split_requests) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-			ON CONFLICT(hour, device_id, model, main) DO UPDATE SET
-				requests = requests + excluded.requests,
-				failures = failures + excluded.failures,
-				input_tokens = input_tokens + excluded.input_tokens,
-				output_tokens = output_tokens + excluded.output_tokens,
-				reasoning_tokens = reasoning_tokens + excluded.reasoning_tokens,
-				cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
-				cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens,
-				cache_write_5m_tokens = cache_write_5m_tokens + excluded.cache_write_5m_tokens,
-				cache_write_1h_tokens = cache_write_1h_tokens + excluded.cache_write_1h_tokens,
-				split_requests = split_requests + excluded.split_requests`,
-			k.Hour, k.DeviceID, k.Model, boolInt(k.Main), r.requests, r.failures, t.Input, t.Output, t.Reasoning,
-			t.CacheRead, t.CacheWrite, t.CacheWrite5m, t.CacheWrite1h, r.splitRequests); err != nil {
-			return fmt.Errorf("upsert device rollup: %w", err)
+		if err := w.upsert(ctx, []any{k.Hour, k.DeviceID, k.Model, boolInt(k.Main)}, &r.rollupDelta, r.splitRequests); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -356,7 +353,7 @@ func collectDeviceRows(ctx context.Context, q querier, fromMs, toMs int64) (map[
 	if err := scan(`SELECT device_id, model, main, SUM(requests), SUM(failures), SUM(input_tokens), SUM(output_tokens),
 		SUM(reasoning_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens), SUM(cache_write_5m_tokens),
 		SUM(cache_write_1h_tokens), SUM(split_requests)
-		FROM usage_rollup_device_hourly WHERE hour >= ? AND hour < ? GROUP BY 1, 2, 3`, fullStart/hourMs, fullEnd/hourMs); err != nil {
+		FROM usage_device_hourly WHERE hour >= ? AND hour < ? GROUP BY 1, 2, 3`, fullStart/hourMs, fullEnd/hourMs); err != nil {
 		return nil, err
 	}
 	if err := raw(fromMs, fullStart); err != nil {
