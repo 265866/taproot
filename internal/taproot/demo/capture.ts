@@ -103,6 +103,7 @@ const shots: Shot[] = [
   { file: 'request-log-detail.png', route: `/request-logs?requestId=${encodeURIComponent(detail.requestId)}` },
   { file: 'routing.png', route: '/routing' },
   { file: 'backups.png', route: '/backups' },
+  { file: 'access.png', route: '/access', height: 1480 },
   { file: 'settings.png', route: '/settings' },
   { file: 'accounts-light.png', route: '/accounts', theme: 'light' },
 ];
@@ -143,7 +144,8 @@ async function privacyProblems(page: Page): Promise<string[]> {
     if (!['example.com', 'example.org', 'github'].includes(domain)) problems.push(`address ${m}`);
   }
   for (const m of text.match(IPV4) ?? []) {
-    if (m !== '127.0.0.1' && !m.startsWith('100.64.0.')) problems.push(`address ${m}`);
+    // 192.0.2.0/24 is reserved for documentation (RFC 5737); the demo's address group uses it.
+    if (m !== '127.0.0.1' && !m.startsWith('100.64.0.') && !m.startsWith('192.0.2.')) problems.push(`address ${m}`);
   }
   if (HOME_PATH.test(text)) problems.push('a home directory path');
   const lower = text.toLowerCase();

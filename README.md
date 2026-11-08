@@ -210,7 +210,7 @@ All screenshots use synthetic demo data from `internal/taproot/demo` (see [CONTR
 | [<img src="docs/screenshots/usage-sessions.png" width="420" alt="Sessions">](docs/screenshots/usage-sessions.png)<br>**Sessions:** session affinity and account switches | [<img src="docs/screenshots/request-logs.png" width="420" alt="Request logs">](docs/screenshots/request-logs.png)<br>**Request Logs:** every proxied request, compressed and searchable |
 | [<img src="docs/screenshots/request-log-detail.png" width="420" alt="Request log detail">](docs/screenshots/request-log-detail.png)<br>**Request detail:** headers with credentials redacted, and the body | [<img src="docs/screenshots/routing.png" width="420" alt="Routing">](docs/screenshots/routing.png)<br>**Routing:** soonest-reset-first and session affinity |
 | [<img src="docs/screenshots/backups.png" width="420" alt="Backups">](docs/screenshots/backups.png)<br>**Backups:** scheduled and manual snapshots | [<img src="docs/screenshots/settings.png" width="420" alt="Settings">](docs/screenshots/settings.png)<br>**Settings:** retention and backup schedule |
-| [<img src="docs/screenshots/accounts-light.png" width="420" alt="Accounts, light theme">](docs/screenshots/accounts-light.png)<br>**Light theme** | |
+| [<img src="docs/screenshots/access.png" width="420" alt="Access">](docs/screenshots/access.png)<br>**Access:** every tailnet device by owner, with its Proxy and Admin switches | [<img src="docs/screenshots/accounts-light.png" width="420" alt="Accounts, light theme">](docs/screenshots/accounts-light.png)<br>**Light theme** |
 
 ## Configuration reference
 
