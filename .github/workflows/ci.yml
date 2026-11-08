@@ -17,13 +17,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - name: Go version matches the image
+        run: grep -qx "ARG GO_VERSION=$(go env GOVERSION | sed 's/^go//')" Containerfile.taproot
       - run: go build ./...
       - run: go vet ./...
-      - run: go test ./internal/taproot/... ./internal/api/... ./sdk/cliproxy/... ./cmd/...
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted=$(git ls-files -z '*.go' | xargs -0 "$(go env GOROOT)/bin/gofmt" -l)
+          if [ -n "$unformatted" ]; then
+            printf 'Run gofmt -w on:\n%s\n' "$unformatted"
+            exit 1
+          fi
+      # Upstream's TestAdvertiserAndBrowser_Integration needs real mDNS
+      # multicast, which runners do not have.
+      - run: go test -skip '^TestAdvertiserAndBrowser_Integration$' ./...
+      # .golangci.yml limits reports to taproot-owned code.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   # The request-log codec library: Rust checks, then request logs and the codec
   # package built with the taproot_codecs tag against it, as the image builds

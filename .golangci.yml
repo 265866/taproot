@@ -1,0 +1,10 @@
+version: "2"
+
+linters:
+  exclusions:
+    # Report issues only in taproot-owned code. Upstream code is analyzed for
+    # type information, but its findings belong upstream.
+    paths-except:
+      - ^internal/taproot/
+      - ^cmd/
+      - (^|/)taproot_[^/]*\.go$
