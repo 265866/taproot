@@ -279,6 +279,110 @@ func TestNewInDeletedCategories(t *testing.T) {
 	}
 }
 
+// boundaryDesign is a DESIGN.md whose "Upstream boundary" section names
+// entries in backticks. Names outside the section, or without backticks, do
+// not count.
+func boundaryDesign(entries ...string) string {
+	return "# Design\n\n## Goals\n\n- `a/y.go` is mentioned here.\n\n## Upstream boundary\n\n" +
+		"- a/y.go without backticks, and `README.md` with them.\n\n### Deletions\n\n" +
+		strings.Join(entries, "\n") + "\n\n## Later\n\n- `a/y.go` again.\n"
+}
+
+func TestCheckUpstreamBoundary(t *testing.T) {
+	r := newRepo(t)
+	up := r.commitFiles("upstream", map[string]string{
+		"a/x.go":       "package a\n",
+		"a/y.go":       "package a\n",
+		"README.md":    "upstream\n",
+		"Dockerfile":   "FROM scratch\n",
+		"assets/a.png": "png\n",
+		"assets/b.png": "png\n",
+		"logo/x.svg":   "<svg/>\n",
+		"logo/x.png":   "png\n",
+	})
+	snapshot := r.commitTree(r.git("rev-parse", up+"^{tree}"), "chore(upstream): rewrite\n\nTaproot-Upstream: "+up, up)
+	r.git("reset", "-q", "--hard", snapshot)
+	check := scriptPath(t, "check-upstream-boundary.sh")
+
+	documented := r.commitFiles("taproot", map[string]string{
+		"a/x.go":                     "package a\n\nvar X = 1\n",
+		"a/taproot_x_test.go":        "package a\n",
+		"README.md":                  "taproot\n",
+		"Dockerfile":                 "",
+		"assets/a.png":               "",
+		"logo/x.svg":                 "",
+		"internal/taproot/DESIGN.md": boundaryDesign("- `a/x.go`, `a/taproot_x_test.go`", "- `Dockerfile`, `assets/`, and `logo/*.svg`"),
+		"internal/taproot/t.go":      "package taproot\n",
+		"web/src/app.ts":             "export {}\n",
+		"scripts/taproot/s.sh":       "true\n",
+		"examples/taproot/e.yaml":    "a: 1\n",
+		"docs/guide.md":              "guide\n",
+		".github/workflows/ci.yml":   "on: push\n",
+		"nix/module.nix":             "{}\n",
+		"CHANGELOG.md":               "log\n",
+		"Containerfile.taproot":      "FROM scratch\n",
+	})
+	out, code := r.run("bash", check)
+	if code != 0 || !strings.Contains(out, "names all 6 upstream paths changed since snapshot "+snapshot[:9]) {
+		t.Errorf("check on a documented commit exited %d:\n%s", code, out)
+	}
+
+	// An edit and a new file need their own entries: a directory or a glob
+	// covers deletions only, and a/y.go is named only outside the section or
+	// without backticks.
+	undocumented := r.commitFiles("taproot: more edits", map[string]string{
+		"a/y.go":       "package a\n\nvar Y = 1\n",
+		"a/new.go":     "package a\n",
+		"assets/b.png": "png2\n",
+		"logo/x.png":   "",
+		"logo/n.svg":   "<svg/>\n",
+	})
+	out, code = r.run("bash", check)
+	if code != 1 {
+		t.Errorf("check on undocumented edits exited %d, want 1:\n%s", code, out)
+	}
+	var listed []string
+	for line := range strings.Lines(out) {
+		if path, ok := strings.CutPrefix(line, "  "); ok {
+			listed = append(listed, strings.TrimSpace(path))
+		}
+	}
+	want := []string{"A\ta/new.go", "M\ta/y.go", "M\tassets/b.png", "A\tlogo/n.svg", "D\tlogo/x.png"}
+	if !slices.Equal(listed, want) {
+		t.Errorf("check listed %q, want %q:\n%s", listed, want, out)
+	}
+
+	r.commitFiles("docs: name the edits", map[string]string{
+		"internal/taproot/DESIGN.md": boundaryDesign(
+			"- `a/x.go`, `a/taproot_x_test.go`, `a/y.go`, `a/new.go`, `assets/b.png`, `logo/n.svg`",
+			"- `Dockerfile`, `assets/`, and `logo/*.svg`; `logo/x.png`",
+		),
+	})
+	if out, code := r.run("bash", check); code != 0 {
+		t.Errorf("check after documenting exited %d:\n%s", code, out)
+	}
+	// The commit argument checks that commit with its own DESIGN.md.
+	if out, code := r.run("bash", check, undocumented); code != 1 || !strings.Contains(out, "a/new.go") {
+		t.Errorf("check of %.9s exited %d:\n%s", undocumented, code, out)
+	}
+	if out, code := r.run("bash", check, documented); code != 0 {
+		t.Errorf("check of %.9s exited %d:\n%s", documented, code, out)
+	}
+
+	r.commitFiles("docs: empty the section", map[string]string{"internal/taproot/DESIGN.md": "## Upstream boundary\n\nNothing named.\n"})
+	if out, code := r.run("bash", check); code != 1 || !strings.Contains(out, "  M\ta/x.go\n") {
+		t.Errorf("check with nothing named exited %d:\n%s", code, out)
+	}
+
+	r.commitFiles("docs: drop the section", map[string]string{"internal/taproot/DESIGN.md": "# Design\n\n- `a/x.go`\n"})
+	if out, code := r.run("bash", check); code != 1 || !strings.Contains(out, `no "## Upstream boundary" section`) {
+		t.Errorf("check without the section exited %d:\n%s", code, out)
+	}
+	if out, code := r.run("bash", check, up); code != 1 || !strings.Contains(out, "no rewritten upstream snapshot") {
+		t.Errorf("check of a commit without a snapshot exited %d:\n%s", code, out)
+	}
+}
+
 // In one import block, upstream's sorted order puts github.com/a before its
 // own path, and the rewritten path sorts before github.com/a, so gofmt must
 // reorder the block.

@@ -36,6 +36,9 @@ jobs:
             printf 'Run gofmt -w on:\n%s\n' "$unformatted"
             exit 1
           fi
+      # Fails on an upstream file changed since the last upstream snapshot
+      # that DESIGN.md's "Upstream boundary" section does not name.
+      - run: scripts/taproot/check-upstream-boundary.sh
       # Upstream's TestAdvertiserAndBrowser_Integration needs real mDNS
       # multicast, which runners do not have.
       - run: go test -skip '^TestAdvertiserAndBrowser_Integration$' ./...
