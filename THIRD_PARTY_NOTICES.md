@@ -233,7 +233,7 @@ code for these subcomponents is subject to the terms and conditions
 of Apache License Version 2.0
 ~~~~
 
-- github.com/andybalholm/brotli v1.0.6, MIT (https://github.com/andybalholm/brotli/blob/v1.0.6/LICENSE)
+- github.com/andybalholm/brotli v1.2.7, MIT (https://github.com/andybalholm/brotli/blob/v1.2.7/LICENSE)
 
 ~~~~text
 Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
