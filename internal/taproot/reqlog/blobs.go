@@ -73,9 +73,16 @@ func hashOf(b []byte) (blobHash, error) {
 	return blobHash(b), nil
 }
 
-func isBase64Byte(c byte) bool {
-	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '+' || c == '/'
-}
+// base64Alphabet is a table because splitBlobs tests every byte of every
+// record, and five range checks per byte made it the writer's largest cost.
+var base64Alphabet = func() (t [256]bool) {
+	for _, c := range []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
+		t[c] = true
+	}
+	return t
+}()
+
+func isBase64Byte(c byte) bool { return base64Alphabet[c] }
 
 // splitBlobs cuts every canonical standard-base64 run of at least
 // minBlobRun bytes out of text. Re-encoding the decoded bytes reproduces each
