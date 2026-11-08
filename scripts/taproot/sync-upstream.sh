@@ -98,8 +98,8 @@ classify_conflicts() {
 		}' | sort
 }
 
-# The checks an upstream merge can break: CI's go and web jobs, plus gofmt
-# and go test on every package rather than CI's list.
+# The checks an upstream merge can break: CI's go and web jobs, except the
+# Go version, golangci-lint, and govulncheck steps.
 run_checks() {
 	check "gofmt" gofmt_clean
 	check "go build ./..." go build ./...
