@@ -386,30 +386,33 @@ func loadLastSeen(ctx context.Context, q querier, fromMs, toMs int64, byID map[s
 // cache but not a one-hour one. The pause runs from the previous request's
 // start, when the cache was last read or written.
 func estimateTTL(ctx context.Context, q querier, fromMs, toMs int64, pb *priceBook, byID map[string]*deviceJSON) error {
+	// Reading in index order needs no sort; each session's previous request
+	// comes from a map instead of the row before.
 	rows, err := q.QueryContext(ctx, `SELECT device_id, session_id, auth_index, model, ts, cache_write_5m_tokens
 		FROM usage_events INDEXED BY usage_events_main_ts WHERE ts >= ? AND ts < ? AND `+mainConversationSQL+`
-		ORDER BY session_id, ts`, fromMs, toMs)
+		ORDER BY ts, session_id, auth_index, model, cache_write_5m_tokens, device_id`, fromMs, toMs)
 	if err != nil {
 		return fmt.Errorf("query main conversations: %w", err)
 	}
 	defer closeRows(rows)
 	type step struct {
-		session, authIndex, model string
-		ts                        int64
+		authIndex, model string
+		ts               int64
 	}
-	var prev step
+	last := map[string]step{}
 	for rows.Next() {
 		var (
-			cur      step
-			deviceID string
-			written  int64
+			cur               step
+			deviceID, session string
+			written           int64
 		)
-		if err := rows.Scan(&deviceID, &cur.session, &cur.authIndex, &cur.model, &cur.ts, &written); err != nil {
+		if err := rows.Scan(&deviceID, &session, &cur.authIndex, &cur.model, &cur.ts, &written); err != nil {
 			return fmt.Errorf("scan main conversation: %w", err)
 		}
+		prev, seen := last[session]
+		last[session] = cur
 		gap := time.Duration(cur.ts-prev.ts) * time.Millisecond
-		continued := prev.session == cur.session && prev.authIndex == cur.authIndex && prev.model == cur.model
-		prev = cur
+		continued := seen && prev.authIndex == cur.authIndex && prev.model == cur.model
 		if !continued || written <= 0 || gap <= fiveMinuteTTL || gap > oneHourTTL {
 			continue
 		}
