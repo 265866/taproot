@@ -16,8 +16,11 @@ ARG BUN_VERSION=1.4.3
 ARG RUST_VERSION=1.99
 # Matches the go line in go.mod, which CI builds, tests, and scans with.
 ARG GO_VERSION=1.26.10
+# Each FROM pins its image to the digest of the tag's multi-arch index, which
+# covers linux/amd64 and linux/arm64. Change a version only with its digest:
+# with a digest present, the tag is not used to pick the image.
 
-FROM docker.io/oven/bun:${BUN_VERSION} AS web
+FROM docker.io/oven/bun:${BUN_VERSION}@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS web
 WORKDIR /src
 COPY web/package.json web/bun.lock /deps/
 RUN cd /deps && bun install --frozen-lockfile
@@ -32,14 +35,16 @@ RUN rm -rf web/node_modules web/dist \
 
 # The request-log codec library (Lepton, preflate, zstd), linked statically
 # into the server with the taproot_codecs build tag.
-FROM docker.io/library/rust:${RUST_VERSION}-slim-bookworm AS codec
+FROM docker.io/library/rust:${RUST_VERSION}-slim-bookworm@sha256:f2c004e3d2d8b547e8cf7ffbc29205385f4e71d23e53e4e383065db5e9f822cd AS codec
 WORKDIR /src
 COPY internal/taproot/reqlog/codec/native/Cargo.toml internal/taproot/reqlog/codec/native/Cargo.lock ./
+# Modified crates that a [patch.crates-io] entry in Cargo.toml points at.
+COPY internal/taproot/reqlog/codec/native/patches ./patches
 RUN mkdir src && touch src/lib.rs && cargo fetch --locked
 COPY internal/taproot/reqlog/codec/native/src ./src
 RUN cargo build --release --locked --offline
 
-FROM docker.io/library/golang:${GO_VERSION}-bookworm AS build
+FROM docker.io/library/golang:${GO_VERSION}-bookworm@sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473 AS build
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
 COPY go.mod go.sum ./
@@ -60,11 +65,23 @@ RUN set -eu; \
 	CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -tags taproot_codecs -ldflags="${ldflags}" -o /out/taproot ./cmd/server; \
 	chmod 0755 /out/*
 
-FROM docker.io/library/debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/ /taproot/
-COPY config.example.yaml /taproot/config.example.yaml
-RUN chmod 0644 /taproot/config.example.yaml
+COPY config.example.yaml LICENSE THIRD_PARTY_NOTICES.md /taproot/
+# The dashboard's license, at the path THIRD_PARTY_NOTICES.md links to, and
+# the GNU licenses of the LGPL crates in the codec library.
+COPY web/LICENSE /taproot/web/LICENSE
+COPY licenses /taproot/licenses
+RUN chmod -R a+rX,go-w /taproot/config.example.yaml /taproot/LICENSE /taproot/THIRD_PARTY_NOTICES.md /taproot/web /taproot/licenses
+ARG VERSION=dev
+ARG COMMIT=none
+LABEL org.opencontainers.image.title="taproot" \
+	org.opencontainers.image.description="Pools Claude and Codex subscription accounts behind one endpoint on your tailnet, with a dashboard for quota, usage, request logs, and backups." \
+	org.opencontainers.image.source="https://github.com/265866/taproot" \
+	org.opencontainers.image.version="${VERSION}" \
+	org.opencontainers.image.revision="${COMMIT}" \
+	org.opencontainers.image.licenses="MIT"
 # No USER, on purpose. Under rootless Podman the default user namespace maps
 # container root to the host user who owns the bind-mounted data directory,
 # so taproot reads and writes it as that user. A fixed non-root USER would map

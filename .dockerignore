@@ -6,10 +6,9 @@
 .dockerignore
 .gitignore
 
-# Documentation and license
+# Documentation. The image ships LICENSE, THIRD_PARTY_NOTICES.md, and licenses/.
 docs
 README.md
-LICENSE
 
 # Runtime data: configuration, credentials, the database, request logs, and
 # backups are mounted at run time and must never be baked into an image.
