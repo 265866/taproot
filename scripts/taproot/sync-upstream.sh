@@ -12,8 +12,8 @@
 # previous snapshot. A file taproot deleted that upstream changed stays
 # deleted. Every other conflict, and every new upstream file of a kind taproot
 # deletes (such as a new docs/*.md guide), stops the merge for a person to
-# decide. The checks cover CI's go and web jobs, plus gofmt and go test on
-# every package.
+# decide. The checks are those of CI's go and web jobs, except golangci-lint
+# and govulncheck.
 #
 #   scripts/taproot/sync-upstream.sh               fetch, merge, check
 #   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits, conflicts, and new files to decide on;

@@ -7,4 +7,5 @@ linters:
     paths-except:
       - ^internal/taproot/
       - ^cmd/
+      - ^scripts/taproot/
       - (^|/)taproot_[^/]*\.go$

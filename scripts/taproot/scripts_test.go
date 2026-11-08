@@ -413,3 +413,25 @@ func TestSyncMergesAndRunsTheCIChecks(t *testing.T) {
 		t.Error("the merge brought back upstream's module path")
 	}
 }
+
+func TestChecksOnlyPassesWithAWebDirectory(t *testing.T) {
+	if _, err := exec.LookPath("bun"); err != nil {
+		t.Skip("bun is not installed")
+	}
+	r := newRepo(t)
+	r.commitFiles("taproot", map[string]string{
+		"go.mod":           goMod(t),
+		"main.go":          "package main\n\nfunc main() {}\n",
+		"web/package.json": `{"name":"web","private":true,"scripts":{"verify":"echo web-verified"}}` + "\n",
+	})
+
+	out, code := r.run("bash", scriptPath(t, "sync-upstream.sh"), "--checks-only")
+	if code != 0 {
+		t.Errorf("checks-only exited %d, want 0:\n%s", code, out)
+	}
+	for _, want := range []string{"web-verified", "PASS  gofmt", "PASS  go test ./...", "PASS  web: bun run verify"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("checks-only output lacks %q:\n%s", want, out)
+		}
+	}
+}
