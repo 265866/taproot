@@ -68,7 +68,10 @@ CREATE TABLE IF NOT EXISTS usage_rollup_hourly (
 	PRIMARY KEY (hour, provider, auth_index, model)
 ) WITHOUT ROWID;
 
-CREATE TABLE IF NOT EXISTS usage_rollup_device_hourly (
+-- These tables, like usage_rollup_hourly, derive from usage_events and are
+-- rebuilt from it when empty or stale (see rebuildDerived). main marks
+-- Claude main-conversation requests.
+CREATE TABLE IF NOT EXISTS usage_device_hourly (
 	hour INTEGER NOT NULL,
 	device_id TEXT NOT NULL,
 	model TEXT NOT NULL,
@@ -83,8 +86,38 @@ CREATE TABLE IF NOT EXISTS usage_rollup_device_hourly (
 	cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0,
 	cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
 	split_requests INTEGER NOT NULL DEFAULT 0,
+	latency_hist BLOB,
+	ttft_hist BLOB,
 	PRIMARY KEY (hour, device_id, model, main)
 ) WITHOUT ROWID;
+
+-- Events without a session have the empty session_id, as in usage_events.
+CREATE TABLE IF NOT EXISTS usage_session_hourly (
+	hour INTEGER NOT NULL,
+	session_id TEXT NOT NULL,
+	model TEXT NOT NULL,
+	requests INTEGER NOT NULL DEFAULT 0,
+	failures INTEGER NOT NULL DEFAULT 0,
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
+	latency_hist BLOB,
+	ttft_hist BLOB,
+	PRIMARY KEY (hour, session_id, model)
+) WITHOUT ROWID;
+
+-- Each session's first and last request, so the sessions list finds a
+-- range's newest sessions without grouping every event in the range.
+CREATE TABLE IF NOT EXISTS usage_sessions (
+	session_id TEXT PRIMARY KEY,
+	first_ts INTEGER NOT NULL,
+	last_ts INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS usage_sessions_last ON usage_sessions(last_ts, session_id);
 
 CREATE TABLE IF NOT EXISTS quota_observations (
 	id INTEGER PRIMARY KEY,
