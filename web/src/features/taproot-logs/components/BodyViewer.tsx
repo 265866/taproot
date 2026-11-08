@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { IconCopy } from '@/components/ui/icons';
@@ -49,11 +49,31 @@ export function BodyViewer({
   const bytes = useMemo(() => size ?? expandedLength(raw, blobs), [size, raw, blobs]);
   const [open, setOpen] = useState(raw.length <= COLLAPSE_BYTES);
   const [mode, setMode] = useState<Mode>(kind === 'json' || kind === 'sse' ? 'formatted' : 'raw');
+  // The full body once a copy has fetched it, so a second click copies it at once.
+  const loaded = useRef<string | null>(null);
 
   if (kind === 'empty') return <div className={styles.empty}>{t('taproot_logs.body.empty')}</div>;
 
   const copy = async () => {
-    const ok = full && hasBlobRef(raw) ? await copyPending(full()) : await copyToClipboard(raw);
+    let ok: boolean;
+    if (!full || !hasBlobRef(raw)) {
+      ok = await copyToClipboard(raw);
+    } else if (loaded.current !== null) {
+      ok = await copyToClipboard(loaded.current);
+    } else {
+      const text = full();
+      ok = await copyPending(text);
+      if (!ok) {
+        // Over plain http the browser offers no ClipboardItem, and a copy made
+        // after a long fetch has lost the click. The text is loaded now, so the
+        // next click copies it within the click.
+        loaded.current = await text.catch(() => null);
+        if (loaded.current !== null) {
+          showNotification(t('taproot_logs.body.copy_ready'), 'info');
+          return;
+        }
+      }
+    }
     showNotification(
       t(ok ? 'taproot_logs.body.copied' : 'taproot_logs.body.copy_failed'),
       ok ? 'success' : 'error'

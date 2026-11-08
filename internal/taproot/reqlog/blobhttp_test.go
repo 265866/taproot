@@ -111,7 +111,7 @@ func TestBlobAndDeferredRoutes(t *testing.T) {
 		if status != http.StatusOK || !bytes.Equal(raw, c.payload) {
 			t.Fatalf("blob %s: %d, %d bytes", c.contentType, status, len(raw))
 		}
-		if header.Get("Content-Type") != c.contentType || header.Get("X-Content-Type-Options") != "nosniff" ||
+		if header.Get("Content-Type") != c.contentType || header.Get("X-Content-Type-Options") != "nosniff" || header.Get("Cross-Origin-Resource-Policy") != "same-origin" ||
 			header.Get("Cache-Control") != "private, max-age=31536000, immutable" ||
 			strings.HasPrefix(header.Get("Content-Disposition"), "attachment") != c.attachment {
 			t.Fatalf("blob %s headers: %v", c.contentType, header)

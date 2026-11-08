@@ -336,7 +336,8 @@ func (l *Logs) read(ctx context.Context, requestID string) (LogMeta, *recordMeta
 
 // Get returns a record split into its parts. Without inline, each base64
 // payload is a placeholder (blobPlaceholder) described in Detail.Blobs, and no
-// blob is read or decoded.
+// blob is decoded, except a run after an escaping backslash, which keeps its
+// base64 so the JSON stays valid.
 func (l *Logs) Get(ctx context.Context, requestID string, inline bool) (*Detail, error) {
 	m, fm, residual, refs, err := l.readParts(ctx, requestID)
 	if err != nil {
@@ -565,6 +566,9 @@ func (l *Logs) handleBlob(c *gin.Context) {
 	h := c.Writer.Header()
 	h.Set("Cache-Control", "private, max-age=31536000, immutable")
 	h.Set("X-Content-Type-Options", "nosniff")
+	// Over plain http a cross-site <img> reaches this handler; keep other
+	// sites from loading, measuring, or forcing decodes of stored images.
+	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	// A payload is whatever a client sent, so only the four image types are
 	// served for display; anything else downloads and never renders as a page
 	// on the admin origin.

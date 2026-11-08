@@ -106,6 +106,7 @@
       "copy": "Copy body",
       "copied": "Body copied",
       "copy_failed": "Copy failed",
+      "copy_ready": "The full body is loaded. Click Copy body again to copy it.",
       "truncated": "{{size}} more not shown.",
       "show_more": "Show more",
       "show_all": "Show all",
