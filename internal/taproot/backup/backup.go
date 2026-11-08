@@ -290,6 +290,16 @@ func wallTime(y int, m time.Month, d, hour, minute int, loc *time.Location) time
 	if short := want.Sub(got); short > 0 {
 		t = t.Add(short)
 	}
+	// A repeated wall time resolves to its second occurrence in zones east of
+	// UTC. When the offset dropped shortly before t and the instant that much
+	// earlier shows the same wall clock, that instant is the first occurrence.
+	_, off := t.Zone()
+	_, offBefore := t.Add(-12 * time.Hour).Zone()
+	if back := time.Duration(offBefore-off) * time.Second; back > 0 {
+		if first := t.Add(-back); first.Format(time.DateTime) == t.Format(time.DateTime) {
+			t = first
+		}
+	}
 	return t
 }
 
