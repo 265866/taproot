@@ -185,6 +185,11 @@ func (e excluder) excluded(method, rawURL string, status int, reachedUpstream bo
 	if urlPath == "/taproot" || strings.HasPrefix(urlPath, "/taproot/") {
 		return true
 	}
+	// The dashboard page and its chunks are static files. Upstream already
+	// skips GETs; this drops HEADs, such as an uptime check of "/".
+	if (method == http.MethodGet || method == http.MethodHead) && (urlPath == "/" || strings.HasPrefix(urlPath, "/assets/")) {
+		return true
+	}
 	if !e.keepUnrouted404 && status == http.StatusNotFound && !reachedUpstream {
 		return true
 	}

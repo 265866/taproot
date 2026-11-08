@@ -551,6 +551,51 @@ func TestDashboardShellOpenToAdmittedCallers(t *testing.T) {
 	}
 }
 
+// The dashboard's chunks answer exactly the callers the page does, in both
+// guard modes. With the guard off, "/" is loopback-only, so the chunks must
+// not fall to the proxy surface, which the switch opens to every address.
+func TestDashboardAssetsFollowThePage(t *testing.T) {
+	ts := newFakeTailscaled(t, defaultPeers())
+	off := false
+	crossSite := map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "script"}
+	rebound := map[string]string{"Host": "rebind.evil.example"}
+	for mode, cfg := range map[string]Config{
+		"enabled":  {TailscaleSocket: ts.socket, TrustedCIDRs: []string{"192.168.0.88/32"}},
+		"disabled": {Enabled: &off},
+	} {
+		t.Run(mode, func(t *testing.T) {
+			e := gin.New()
+			e.Use(newTestGuard(t, cfg).Middleware())
+			for _, path := range []string{"/", "/assets/index-abc.js"} {
+				e.GET(path, func(c *gin.Context) { c.String(http.StatusOK, "static") })
+				e.HEAD(path, func(c *gin.Context) { c.Status(http.StatusOK) })
+				e.POST(path, func(c *gin.Context) { c.String(http.StatusOK, "post") })
+			}
+			admitted := 0
+			for _, remote := range []string{"127.0.0.1:1", adminIP + ":1", selfIP + ":1", "192.168.0.88:1", outsiderIP + ":1", strayIP + ":1", "203.0.113.9:1"} {
+				for _, req := range []struct {
+					method  string
+					headers map[string]string
+				}{{http.MethodGet, nil}, {http.MethodHead, nil}, {http.MethodPost, nil}, {http.MethodGet, crossSite}, {http.MethodGet, rebound}} {
+					page := doMethod(e, req.method, remote, "/", req.headers).Code
+					asset := doMethod(e, req.method, remote, "/assets/index-abc.js", req.headers).Code
+					if page != asset {
+						t.Errorf("%s from %s with %v: / = %d, asset = %d", req.method, remote, req.headers, page, asset)
+					}
+					if page == http.StatusOK && req.method == http.MethodGet && req.headers == nil {
+						admitted++
+					}
+				}
+			}
+			// Loopback, the admin node, the server's own node, and the trusted CIDR when
+			// enabled; loopback alone when disabled.
+			if want := map[string]int{"enabled": 4, "disabled": 1}[mode]; admitted != want {
+				t.Errorf("%d callers loaded the page, want %d", admitted, want)
+			}
+		})
+	}
+}
+
 // GETs that change state need RequestHeader from every caller, loopback too.
 func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
@@ -702,6 +747,8 @@ func TestClassify(t *testing.T) {
 		"/taproot/api/v1/me":               surfaceAdmin,
 		"/taproot":                         surfaceAdmin,
 		"/v0/resource/plugins/x/index.htm": surfaceAdmin,
+		"/assets/index-abc.js":             surfaceAdmin,
+		"/assetsx":                         surfaceProxy,
 		"/anthropic/callback":              surfaceAdmin,
 		"/callback":                        surfaceAdmin,
 		"/v1/ws":                           surfaceAdmin,
