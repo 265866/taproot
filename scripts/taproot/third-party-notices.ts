@@ -5,8 +5,8 @@
 // metadata), and the dashboard's production npm dependencies (reported by
 // license-checker), with each package's license text and, where it ships one,
 // its NOTICE file. Run it from anywhere in the repository after go.mod,
-// web/package.json, or the codec's Cargo.lock changes; CI fails when the file
-// is stale:
+// web/package.json, web/bun.lock, or the codec's Cargo.lock changes; CI fails
+// when the file is stale:
 //
 //   bun scripts/taproot/third-party-notices.ts
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -156,7 +156,10 @@ function rustCrates(): Entry[] {
       const pkg = packages.get(id);
       if (!pkg || byId.has(id)) continue;
       const crateDir = dirname(pkg.manifest_path);
-      const files = readdirSync(crateDir).sort();
+      const files = readdirSync(crateDir, { withFileTypes: true })
+        .filter((d) => d.isFile())
+        .map((d) => d.name)
+        .sort();
       const licenseFiles = files.filter((f) => /^(license|copying)/i.test(f));
       if (pkg.license_file && !licenseFiles.includes(pkg.license_file)) {
         licenseFiles.push(pkg.license_file);
@@ -267,18 +270,27 @@ try {
   )?.[1];
   if (!rustVersion) throw new Error('Containerfile.taproot has no ARG RUST_VERSION');
   const sysroot = run(['rustc', '--print', 'sysroot'], root).trim();
+  const licenses = join(sysroot, 'share/doc/rust/licenses');
   const rust: Entry[] = [
     {
       name: 'Rust standard library',
       version: rustVersion,
-      license: 'MIT OR Apache-2.0',
+      // core's Unicode tables are under Unicode-3.0.
+      license: '(MIT OR Apache-2.0) AND Unicode-3.0',
       url: 'https://www.rust-lang.org/policies/licenses',
-      text: readFiles(join(sysroot, 'share/doc/rust/licenses'), ['MIT.txt', 'Apache-2.0.txt']),
+      text: readFiles(licenses, ['MIT.txt', 'Apache-2.0.txt', 'Unicode-3.0.txt']),
       notice: '',
     },
     ...rustCrates(),
   ];
   const web = webPackages();
+  // LGPL-3.0 section 4(b) requires the GNU GPL v3 to accompany the LGPL text.
+  const gpl = normalize(readFileSync(join(licenses, 'GPL-3.0-or-later.txt'), 'utf8'));
+  for (const e of [...go, ...rust, ...web]) {
+    if (/LGPL-3\.0/.test(e.license) && e.text) {
+      e.text = `${e.text}\n\nThe GNU General Public License v3, which the LGPL v3 supplements:\n\n${gpl}`;
+    }
+  }
   const out = [
     '# Third-party notices',
     '',
@@ -294,7 +306,7 @@ try {
     ),
     section(
       'Rust crates',
-      `The crates that \`libtaproot_codec.a\` is built from for ${RUST_TARGETS.join(', ')}: the codec's normal dependencies, including the procedural macros that generate part of its code, and the Rust standard library.`,
+      `The crates that \`libtaproot_codec.a\` is built from for ${RUST_TARGETS.join(', ')}: the codec's normal dependencies, including the procedural macros that generate part of its code, and the Rust standard library. The licenses of the standard library's own crates.io dependencies are in \`share/doc/rust/COPYRIGHT-library.html\` of the Rust toolchain.`,
       rust,
       'Its Cargo.toml states the license above.'
     ),
