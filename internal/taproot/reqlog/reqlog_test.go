@@ -196,7 +196,7 @@ func TestRoundTripInterleavedSessions(t *testing.T) {
 		t.Helper()
 		ctx := context.Background()
 		for _, req := range sent {
-			d, err := h.logs.Get(ctx, req.id)
+			d, err := h.logs.Get(ctx, req.id, true)
 			if err != nil {
 				t.Fatalf("%s: get %s: %v", stage, req.id, err)
 			}
@@ -346,7 +346,7 @@ func TestRetentionByAgeAndBytes(t *testing.T) {
 		t.Fatalf("after age retention: %+v", stats)
 	}
 	for day := 0; day < 6; day++ {
-		_, err := h.logs.Get(context.Background(), fmt.Sprintf("d%d-r0", day))
+		_, err := h.logs.Get(context.Background(), fmt.Sprintf("d%d-r0", day), true)
 		if day < 3 && err != nil {
 			t.Fatalf("day %d should remain: %v", day, err)
 		}
@@ -375,10 +375,10 @@ func TestRetentionByAgeAndBytes(t *testing.T) {
 	if stats.BytesOnDisk > perSegment*4 || stats.Segments < 3 || stats.Segments > 4 {
 		t.Fatalf("after size retention: %+v (per segment %d)", stats, perSegment)
 	}
-	if _, err := h.logs.Get(context.Background(), "d0-r0"); err != nil {
+	if _, err := h.logs.Get(context.Background(), "d0-r0", true); err != nil {
 		t.Fatalf("newest day must survive size retention: %v", err)
 	}
-	if _, err := h.logs.Get(context.Background(), "d2-r0"); !errors.Is(err, errNotFound) {
+	if _, err := h.logs.Get(context.Background(), "d2-r0", true); !errors.Is(err, errNotFound) {
 		t.Fatalf("oldest day must go first, got %v", err)
 	}
 	files, _ = filepath.Glob(filepath.Join(h.dataDir, "request-logs", "*", "*.zst"))
@@ -407,7 +407,7 @@ func TestExclusions(t *testing.T) {
 	h.flush()
 	logSimple(t, lg, "taproot-settings", "/taproot/api/v1/settings", "", 200, ts, []byte(`{"access":{}}`))
 	for id, want := range map[string]bool{"unrouted": false, "upstream-404": true, "models": false, "health": false, "health-post": true, "taproot-settings": false} {
-		_, err := h.logs.Get(context.Background(), id)
+		_, err := h.logs.Get(context.Background(), id, true)
 		if want && err != nil {
 			t.Fatalf("%s should be stored: %v", id, err)
 		}
@@ -438,10 +438,10 @@ func TestErrorOnlyWhenDisabled(t *testing.T) {
 		t.Fatalf("disabled streaming writer is %T", w)
 	}
 	h.flush()
-	if _, err := h.logs.Get(context.Background(), "plain"); !errors.Is(err, errNotFound) {
+	if _, err := h.logs.Get(context.Background(), "plain", true); !errors.Is(err, errNotFound) {
 		t.Fatalf("unforced request stored while disabled: %v", err)
 	}
-	d, err := h.logs.Get(context.Background(), "forced")
+	d, err := h.logs.Get(context.Background(), "forced", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,14 +501,14 @@ func TestQueueOverflowDropsBodiesWithoutBlocking(t *testing.T) {
 	if err := logs.engine.flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	d, err := logs.Get(context.Background(), "big")
+	d, err := logs.Get(context.Background(), "big", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d.Meta.Dropped != "log queue full" || !strings.Contains(d.Request.Body, "1048576 bytes dropped") || d.Meta.SessionID != "claude:overflow-session" {
 		t.Fatalf("dropped record %+v body %q", d.Meta, d.Request.Body)
 	}
-	s, err := logs.Get(context.Background(), "stream-big")
+	s, err := logs.Get(context.Background(), "stream-big", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +563,7 @@ func TestCrashRecovery(t *testing.T) {
 	h.open(Config{})
 	h.logs.engine.compactQueued(context.Background())
 	for i := 0; i < 6; i++ {
-		d, err := h.logs.Get(context.Background(), fmt.Sprintf("new-%d", i))
+		d, err := h.logs.Get(context.Background(), fmt.Sprintf("new-%d", i), true)
 		if err != nil {
 			t.Fatalf("new-%d after recovery: %v", i, err)
 		}
@@ -571,7 +571,7 @@ func TestCrashRecovery(t *testing.T) {
 			t.Fatalf("new-%d body %q", i, d.Request.Body)
 		}
 	}
-	if _, err := h.logs.Get(context.Background(), "torn"); !errors.Is(err, errNotFound) {
+	if _, err := h.logs.Get(context.Background(), "torn", true); !errors.Is(err, errNotFound) {
 		t.Fatalf("torn frame indexed: %v", err)
 	}
 	after, err := os.ReadFile(sealed[0])
@@ -584,7 +584,7 @@ func TestCrashRecovery(t *testing.T) {
 	// Recording resumes in a fresh segment.
 	logSimple(t, h.logs.logger, "after", "/v1/messages", "s-new", 200, ts, []byte(`{}`))
 	h.flush()
-	if _, err := h.logs.Get(context.Background(), "after"); err != nil {
+	if _, err := h.logs.Get(context.Background(), "after", true); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -615,7 +615,7 @@ func TestSegmentRollsAtSizeCap(t *testing.T) {
 		t.Fatalf("segments did not roll at the size cap: %v", states)
 	}
 	for id, body := range bodies {
-		d, err := h.logs.Get(context.Background(), id)
+		d, err := h.logs.Get(context.Background(), id, true)
 		if err != nil || d.Request.Body != string(body) {
 			t.Fatalf("%s after roll: %v", id, err)
 		}
@@ -689,7 +689,7 @@ func TestSealTriggers(t *testing.T) {
 
 	h.logs.engine.compactQueued(context.Background())
 	for _, id := range []string{"idle-1", "busy-1", "busy-8", "yesterday-1", "big-1", "small-1"} {
-		if _, err := h.logs.Get(context.Background(), id); err != nil {
+		if _, err := h.logs.Get(context.Background(), id, true); err != nil {
 			t.Fatalf("%s: %v", id, err)
 		}
 	}
@@ -721,7 +721,7 @@ func TestSweepRemovesOrphansButNotNewSegments(t *testing.T) {
 			t.Fatalf("%s gone=%v, want %v", filepath.Base(p), gone, wantGone)
 		}
 	}
-	if _, err := h.logs.Get(context.Background(), "kept"); err != nil {
+	if _, err := h.logs.Get(context.Background(), "kept", true); err != nil {
 		t.Fatalf("sealed record lost to sweep: %v", err)
 	}
 }
@@ -772,7 +772,7 @@ func TestLifecycle(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	for i := 0; i < 20; i++ {
-		d, err := again.Get(context.Background(), fmt.Sprintf("life-%d", i))
+		d, err := again.Get(context.Background(), fmt.Sprintf("life-%d", i), true)
 		if err != nil || d.Request.Body != fmt.Sprintf(`{"n":%d}`, i) {
 			t.Fatalf("life-%d after restart: %v", i, err)
 		}
@@ -823,7 +823,7 @@ func TestStreamingSpooledSections(t *testing.T) {
 	cleanupSources(reqSrc, resSrc)
 	h.flush()
 
-	d, err := h.logs.Get(context.Background(), "spooled")
+	d, err := h.logs.Get(context.Background(), "spooled", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -851,7 +851,7 @@ func TestBufferedEventStreamIsMarkedStreaming(t *testing.T) {
 	}
 	h.flush()
 	for id, want := range map[string]bool{"sse": true, "json": false} {
-		d, err := h.logs.Get(context.Background(), id)
+		d, err := h.logs.Get(context.Background(), id, true)
 		if err != nil {
 			t.Fatalf("get %s: %v", id, err)
 		}

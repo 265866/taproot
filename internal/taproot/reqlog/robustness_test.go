@@ -59,7 +59,7 @@ func TestRestoreDoesNotReuseSegmentIDs(t *testing.T) {
 		t.Fatalf("write errors after restore: %d", n)
 	}
 	for _, id := range []string{"before", "after-0", "after-1", "after-2"} {
-		if _, err := h.logs.Get(context.Background(), id); err != nil {
+		if _, err := h.logs.Get(context.Background(), id, true); err != nil {
 			t.Fatalf("%s: %v", id, err)
 		}
 	}
@@ -89,7 +89,7 @@ func TestRestoreKeepsSegmentSealedAfterSnapshot(t *testing.T) {
 
 	h.restoreSnapshot(snapshot)
 	h.logs.engine.compactQueued(context.Background())
-	d, err := h.logs.Get(context.Background(), "open-at-snapshot")
+	d, err := h.logs.Get(context.Background(), "open-at-snapshot", true)
 	if err != nil {
 		t.Fatalf("record sealed after the snapshot lost: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestStreamBudgetReleasedWhenLoggingTurnsOff(t *testing.T) {
 	if used := h.logs.engine.budget.used.Load(); used != 0 {
 		t.Fatalf("budget after late close: %d", used)
 	}
-	if _, err := h.logs.Get(context.Background(), "abandoned"); !errors.Is(err, errNotFound) {
+	if _, err := h.logs.Get(context.Background(), "abandoned", true); !errors.Is(err, errNotFound) {
 		t.Fatalf("abandoned stream stored: %v", err)
 	}
 	lg.streamsMu.Lock()
@@ -149,7 +149,7 @@ func TestStreamBudgetReleasedWhenLoggingTurnsOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.flush()
-	if _, err := h.logs.Get(context.Background(), "kept"); err != nil {
+	if _, err := h.logs.Get(context.Background(), "kept", true); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -195,7 +195,7 @@ func TestFailedCompactionIsRetried(t *testing.T) {
 	if len(e.retries) != 0 {
 		t.Fatalf("retries left: %v", e.retries)
 	}
-	if _, err := h.logs.Get(ctx, "r"); err != nil {
+	if _, err := h.logs.Get(ctx, "r", true); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -214,7 +214,7 @@ func TestPendingRowsForGoneSegmentsDoNotBlockIndexing(t *testing.T) {
 	}
 	logSimple(t, h.logs.logger, "after", "/v1/messages", "s", 200, h.clock.now(), []byte(`{}`))
 	h.flush()
-	if _, err := h.logs.Get(context.Background(), "after"); err != nil {
+	if _, err := h.logs.Get(context.Background(), "after", true); err != nil {
 		t.Fatalf("indexing stuck behind a row for a missing segment: %v", err)
 	}
 	if err := e.do(ctx, func() {
@@ -269,10 +269,10 @@ func TestDeniedRequestsAreNotStored(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.flush()
-	if _, err := h.logs.Get(context.Background(), "denied"); !errors.Is(err, errNotFound) {
+	if _, err := h.logs.Get(context.Background(), "denied", true); !errors.Is(err, errNotFound) {
 		t.Fatalf("denied request stored: %v", err)
 	}
-	if _, err := h.logs.Get(context.Background(), "upstream-403"); err != nil {
+	if _, err := h.logs.Get(context.Background(), "upstream-403", true); err != nil {
 		t.Fatalf("upstream 403 dropped: %v", err)
 	}
 }
@@ -287,7 +287,7 @@ func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.flush()
-	d, err := h.logs.Get(context.Background(), "ws")
+	d, err := h.logs.Get(context.Background(), "ws", true)
 	if err != nil {
 		t.Fatal(err)
 	}

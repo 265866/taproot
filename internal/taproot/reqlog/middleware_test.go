@@ -137,7 +137,7 @@ func TestThroughUpstreamMiddleware(t *testing.T) {
 	h.flush()
 
 	ctx := context.Background()
-	stream, err := h.logs.Get(ctx, "mw-stream")
+	stream, err := h.logs.Get(ctx, "mw-stream", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestThroughUpstreamMiddleware(t *testing.T) {
 		stream.Request.Body != `{"model":"claude-opus-5-5","stream":true}` || stream.Meta.SessionID != "claude:mw-session" {
 		t.Fatalf("streaming record: %+v", stream)
 	}
-	plain, err := h.logs.Get(ctx, "mw-json")
+	plain, err := h.logs.Get(ctx, "mw-json", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,11 +162,11 @@ func TestThroughUpstreamMiddleware(t *testing.T) {
 		}
 	}
 	for _, id := range []string{"mw-hello", "mw-off-ok"} {
-		if _, err := h.logs.Get(ctx, id); err == nil {
+		if _, err := h.logs.Get(ctx, id, true); err == nil {
 			t.Fatalf("%s should not be stored", id)
 		}
 	}
-	failed, err := h.logs.Get(ctx, "mw-off-fail")
+	failed, err := h.logs.Get(ctx, "mw-off-fail", true)
 	if err != nil {
 		t.Fatalf("error with request-log off should be stored: %v", err)
 	}

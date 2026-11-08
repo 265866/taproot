@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/265866/taproot/internal/taproot/reqlog/codec"
 	"github.com/265866/taproot/internal/taproot/store"
+	"github.com/klauspost/compress/zstd"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -151,6 +153,163 @@ func spliceBlobs(residual []byte, refs []blobRef, blobs map[blobHash][]byte) ([]
 		last = r.pos
 	}
 	return append(out, residual[last:]...), nil
+}
+
+// BlobInfo describes a payload a detail left out in place of its base64.
+type BlobInfo struct {
+	Bytes int `json:"bytes"`
+	// Type is image/jpeg, image/png, image/gif, or image/webp for an image,
+	// and empty for anything else.
+	Type string `json:"type,omitempty"`
+}
+
+// errBlobMissing is a blob hash that no stored row describes.
+var errBlobMissing = errors.New("blob not stored")
+
+// imageHead is how many leading bytes imageType needs.
+const imageHead = 12
+
+// imageType names the image format of data's first bytes, or returns "" for
+// anything but JPEG, PNG, GIF, and WebP.
+func imageType(head []byte) string {
+	switch {
+	case bytes.HasPrefix(head, []byte{0xFF, 0xD8, 0xFF}):
+		return "image/jpeg"
+	case bytes.HasPrefix(head, []byte("\x89PNG\r\n\x1a\n")):
+		return "image/png"
+	case bytes.HasPrefix(head, []byte("GIF87a")), bytes.HasPrefix(head, []byte("GIF89a")):
+		return "image/gif"
+	case len(head) >= imageHead && string(head[:4]) == "RIFF" && string(head[8:12]) == "WEBP":
+		return "image/webp"
+	}
+	return ""
+}
+
+// blobPlaceholder stands in for a base64 run in a detail read without blobs.
+func blobPlaceholder(h blobHash, raw int) string {
+	return "[taproot-blob:" + hex.EncodeToString(h[:]) + ":" + strconv.Itoa(raw) + "]"
+}
+
+// spliceRefs is spliceBlobs with a placeholder in place of each blob's
+// base64. It reads blob sizes and at most a few leading bytes of each blob,
+// never a whole blob. at maps an offset in the full text, outside any base64
+// run, to the same place in the result.
+func (b *blobStore) spliceRefs(ctx context.Context, residual []byte, refs []blobRef) (text []byte, at func(int) int, infos map[string]BlobInfo, err error) {
+	if len(refs) == 0 {
+		return residual, func(p int) int { return p }, nil, nil
+	}
+	rows, err := b.rowsFor(ctx, refs)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	infos = make(map[string]BlobInfo, len(rows))
+	for h, row := range rows {
+		infos[hex.EncodeToString(h[:])] = BlobInfo{Bytes: row.raw, Type: b.typeOf(row)}
+	}
+	// fullEnd[i] and outEnd[i] are where run i ends in the full text and in
+	// the result.
+	fullEnd := make([]int, len(refs))
+	outEnd := make([]int, len(refs))
+	out := make([]byte, 0, len(residual)+len(refs)*90)
+	last, shift := 0, 0
+	for i, r := range refs {
+		row, ok := rows[r.hash]
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("blob %x: %w", r.hash[:8], errBlobMissing)
+		}
+		out = append(out, residual[last:r.pos]...)
+		out = append(out, blobPlaceholder(r.hash, row.raw)...)
+		shift += base64.StdEncoding.EncodedLen(row.raw)
+		fullEnd[i], outEnd[i] = r.pos+shift, len(out)
+		last = r.pos
+	}
+	out = append(out, residual[last:]...)
+	at = func(p int) int {
+		// The last run that ends at or before p.
+		i := sort.SearchInts(fullEnd, p+1) - 1
+		if i < 0 {
+			return p
+		}
+		return outEnd[i] + p - fullEnd[i]
+	}
+	return out, at, infos, nil
+}
+
+// typeOf sniffs a blob's image type from its codec, the cache, or its first
+// stored bytes. The type is only a display hint, so a failed read, such as
+// after a compaction moved the blob, leaves it empty.
+func (b *blobStore) typeOf(row blobRow) string {
+	switch row.codec {
+	case codec.Lepton:
+		return "image/jpeg"
+	case codec.PNG:
+		return "image/png"
+	}
+	if raw, ok := b.cache.get(row.hash); ok {
+		return imageType(raw)
+	}
+	f, err := os.Open(b.packPath(row.pack))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	var src io.Reader = io.NewSectionReader(f, row.offset, int64(row.stored))
+	if row.codec == codec.Zstd {
+		dec, err := zstd.NewReader(src, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
+		if err != nil {
+			return ""
+		}
+		defer dec.Close()
+		src = dec
+	}
+	head := make([]byte, min(imageHead, row.raw))
+	if _, err := io.ReadFull(src, head); err != nil {
+		return ""
+	}
+	return imageType(head)
+}
+
+// rowsFor reads the location, size, and codec of each distinct blob refs
+// name.
+func (b *blobStore) rowsFor(ctx context.Context, refs []blobRef) (map[blobHash]blobRow, error) {
+	rows := make(map[blobHash]blobRow, len(refs))
+	seen := make(map[blobHash]bool, len(refs))
+	var want []any
+	for _, r := range refs {
+		if !seen[r.hash] {
+			seen[r.hash] = true
+			want = append(want, r.hash[:])
+		}
+	}
+	const chunk = 500
+	for start := 0; start < len(want); start += chunk {
+		part := want[start:min(len(want), start+chunk)]
+		q := `SELECT hash, pack_id, offset, stored_bytes, raw_bytes, codec FROM reqlog_blobs WHERE hash IN (?` + strings.Repeat(",?", len(part)-1) + `)`
+		res, err := b.db.QueryContext(ctx, q, part...)
+		if err != nil {
+			return nil, fmt.Errorf("find blobs: %w", err)
+		}
+		for res.Next() {
+			var hb []byte
+			var row blobRow
+			var kind int
+			if err := res.Scan(&hb, &row.pack, &row.offset, &row.stored, &row.raw, &kind); err != nil {
+				_ = res.Close()
+				return nil, fmt.Errorf("scan blob: %w", err)
+			}
+			h, err := hashOf(hb)
+			if err != nil {
+				_ = res.Close()
+				return nil, err
+			}
+			row.hash, row.codec = h, codec.Kind(kind)
+			rows[h] = row
+		}
+		if err := res.Close(); err != nil {
+			return nil, fmt.Errorf("find blobs: %w", err)
+		}
+	}
+	return rows, nil
 }
 
 type blobRow struct {
@@ -732,7 +891,7 @@ func (b *blobStore) get(ctx context.Context, h blobHash) ([]byte, error) {
 		err := b.db.QueryRowContext(ctx, `SELECT pack_id, offset, stored_bytes, raw_bytes, codec FROM reqlog_blobs WHERE hash = ?`, h[:]).
 			Scan(&r.pack, &r.offset, &r.stored, &r.raw, &kind)
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("blob %x not stored", h[:8])
+			return nil, fmt.Errorf("blob %x: %w", h[:8], errBlobMissing)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("find blob: %w", err)
