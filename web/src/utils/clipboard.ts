@@ -10,6 +10,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
   try {
     if (typeof document === 'undefined') return false;
+    if (copyWithCopyEvent(text)) return true;
     if (!document.body) return false;
 
     const activeElement = document.activeElement as HTMLElement | null;
@@ -45,5 +46,26 @@ export async function copyToClipboard(text: string): Promise<boolean> {
     return copied;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Writes the text from a copy event's handler instead of selecting it in a textarea. Pages on a
+ * plain-http origin have no navigator.clipboard, and the textarea route takes about 1.4 s per MB
+ * and fails above about 3 MB in Chromium; this route copies tens of MB in milliseconds.
+ */
+function copyWithCopyEvent(text: string): boolean {
+  let written = false;
+  const onCopy = (event: ClipboardEvent) => {
+    if (!event.clipboardData) return;
+    event.clipboardData.setData('text/plain', text);
+    event.preventDefault();
+    written = true;
+  };
+  document.addEventListener('copy', onCopy);
+  try {
+    return document.execCommand('copy') && written;
+  } finally {
+    document.removeEventListener('copy', onCopy);
   }
 }
