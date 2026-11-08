@@ -24,7 +24,7 @@ import (
 )
 
 func init() {
-	store.Register(store.Migration{Module: "backup_test", Version: 1, SQL: `CREATE TABLE probe (v TEXT NOT NULL)`})
+	store.Register(store.Schema{Module: "backup_test", SQL: `CREATE TABLE IF NOT EXISTS probe (v TEXT NOT NULL, note TEXT)`})
 	gin.SetMode(gin.TestMode)
 }
 
@@ -722,5 +722,39 @@ func TestSetScheduleAppliesAtRuntime(t *testing.T) {
 	newest := f.create(t)
 	if got := f.list(t); len(got) != 2 || got[0].ID != newest.ID || got[1].Reason != ReasonScheduled {
 		t.Fatalf("after keep=1: %+v", got)
+	}
+}
+
+func TestRestoreRefusesBackupMissingDeclaredColumns(t *testing.T) {
+	f := newFixture(t, Config{})
+	if _, err := f.db.Exec(`ALTER TABLE probe DROP COLUMN note`); err != nil {
+		t.Fatal(err)
+	}
+	e := f.create(t)
+	if _, err := f.db.Exec(`ALTER TABLE probe ADD COLUMN note TEXT`); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, f.paths.ConfigFile, "port: 9999\n")
+	f.clock = f.clock.Add(time.Hour)
+
+	var apiErr apiError
+	code, body := f.do(t, http.MethodPost, "/api/backups/"+e.ID+"/restore", &apiErr)
+	if code != http.StatusConflict || apiErr.Error.Code != "incompatible_backup" || !strings.Contains(apiErr.Error.Message, "probe (note)") {
+		t.Fatalf("restore: %d %s", code, body)
+	}
+	if got := readFile(t, f.paths.ConfigFile); got != "port: 9999\n" {
+		t.Errorf("config changed by a refused restore: %q", got)
+	}
+	if got := f.list(t); len(got) != 1 {
+		t.Errorf("refused restore created backups: %+v", got)
+	}
+	for _, p := range []string{
+		filepath.Join(f.paths.DataDir, pendingMarkerName),
+		f.db.Path() + restorePendingSuffix,
+		f.db.Path() + restoreTmpSuffix,
+	} {
+		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s exists after refused restore: %v", p, err)
+		}
 	}
 }

@@ -3,14 +3,29 @@ package store
 import (
 	"context"
 	"database/sql"
-	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
-func TestOpenAppliesMigrationsOnceAndSnapshots(t *testing.T) {
-	Register(Migration{Module: "storetest", Version: 1, SQL: `CREATE TABLE storetest_items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`})
-	Register(Migration{Module: "storetest", Version: 2, SQL: `ALTER TABLE storetest_items ADD COLUMN note TEXT NOT NULL DEFAULT ''`})
+// registerForTest registers s until the test ends.
+func registerForTest(t *testing.T, s Schema) {
+	t.Helper()
+	Register(s)
+	t.Cleanup(func() {
+		registryMu.Lock()
+		defer registryMu.Unlock()
+		registry = slices.DeleteFunc(registry, func(r Schema) bool { return r.Module == s.Module })
+	})
+}
+
+func TestOpenAppliesSchemaSeedsNewTablesAndSnapshots(t *testing.T) {
+	registerForTest(t, Schema{
+		Module: "storetest",
+		SQL:    `CREATE TABLE IF NOT EXISTS storetest_items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
+		Seed:   `INSERT INTO storetest_items (name) VALUES ('seed')`,
+	})
 
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -21,25 +36,42 @@ func TestOpenAppliesMigrationsOnceAndSnapshots(t *testing.T) {
 	if got, want := db.Path(), filepath.Join(dir, "taproot.db"); got != want {
 		t.Fatalf("path = %q, want %q", got, want)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO storetest_items (name, note) VALUES ('a', 'b')`); err != nil {
-		t.Fatalf("insert after migrations: %v", err)
+	if _, err := db.ExecContext(ctx, `INSERT INTO storetest_items (name) VALUES ('a')`); err != nil {
+		t.Fatalf("insert: %v", err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Reopening must not reapply version 1, which would fail on the existing table.
 	db, err = Open(ctx, Config{}, dir)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	var applied int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE module = 'storetest'`).Scan(&applied); err != nil {
+	var names []string
+	rows, err := db.QueryContext(ctx, `SELECT name FROM storetest_items ORDER BY id`)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if applied != 2 {
-		t.Fatalf("applied migrations = %d, want 2", applied)
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, n)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names, []string{"seed", "a"}) {
+		t.Fatalf("rows after reopen = %q, want the seed once and the inserted row", names)
+	}
+	var tracked int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE name = 'schema_migrations'`).Scan(&tracked); err != nil {
+		t.Fatal(err)
+	}
+	if tracked != 0 {
+		t.Fatal("open created schema_migrations")
 	}
 
 	dest := filepath.Join(t.TempDir(), "snap.db")
@@ -54,31 +86,50 @@ func TestOpenAppliesMigrationsOnceAndSnapshots(t *testing.T) {
 		t.Fatalf("open snapshot: %v", err)
 	}
 	defer func() { _ = snap.Close() }()
-	var name string
-	if err := snap.QueryRowContext(ctx, `SELECT name FROM storetest_items`).Scan(&name); err != nil || name != "a" {
-		t.Fatalf("snapshot row = %q, %v; want a", name, err)
+	var count int
+	if err := snap.QueryRowContext(ctx, `SELECT COUNT(*) FROM storetest_items`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("snapshot rows = %d, %v; want 2", count, err)
 	}
 }
 
-func TestOpenRejectsBrokenMigration(t *testing.T) {
-	Register(Migration{Module: "storetest_broken", Version: 1, SQL: `CREATE TABLE nope (`})
-	t.Cleanup(func() {
-		registryMu.Lock()
-		defer registryMu.Unlock()
-		kept := registry[:0]
-		for _, m := range registry {
-			if m.Module != "storetest_broken" {
-				kept = append(kept, m)
-			}
-		}
-		registry = kept
-	})
-	dir := t.TempDir()
-	if _, err := Open(context.Background(), Config{}, dir); err == nil {
-		t.Fatal("open with a broken migration succeeded, want error")
+func TestOpenRejectsBrokenSchema(t *testing.T) {
+	registerForTest(t, Schema{Module: "storetest_broken", SQL: `CREATE TABLE nope (`})
+	if _, err := Open(context.Background(), Config{}, t.TempDir()); err == nil {
+		t.Fatal("open with a broken schema succeeded, want error")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "taproot.db")); err != nil {
-		t.Fatalf("db file missing after failed migration: %v", err)
+}
+
+// TestOpenRefusesMissingDeclaredColumns declares two columns, one indexed,
+// that an existing table lacks, and checks Open names both and changes nothing.
+func TestOpenRefusesMissingDeclaredColumns(t *testing.T) {
+	registerForTest(t, Schema{Module: "storetest_drift", SQL: `
+CREATE TABLE IF NOT EXISTS storetest_drift (id INTEGER PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT '', note TEXT);
+CREATE INDEX IF NOT EXISTS storetest_drift_kind ON storetest_drift (kind);
+CREATE TABLE IF NOT EXISTS storetest_drift_new (id INTEGER PRIMARY KEY);`})
+	dir := t.TempDir()
+	raw, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, "taproot.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	if _, err := raw.Exec(`CREATE TABLE storetest_drift (id INTEGER PRIMARY KEY, name TEXT NOT NULL, extra TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(context.Background(), Config{}, dir)
+	if err == nil {
+		_ = db.Close()
+		t.Fatal("open succeeded on a table missing declared columns")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "storetest_drift (kind, note)") || !strings.Contains(msg, "by hand") {
+		t.Fatalf("error = %q, want it to name storetest_drift (kind, note) and say to apply the change by hand", msg)
+	}
+	var objects int
+	if err := raw.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&objects); err != nil {
+		t.Fatal(err)
+	}
+	if objects != 1 {
+		t.Fatalf("refused open left %d schema objects, want only the original table", objects)
 	}
 }
 
@@ -108,5 +159,37 @@ func TestOpenKeepsTempStructuresInMemory(t *testing.T) {
 		if mode != 2 {
 			t.Fatalf("connection %d temp_store = %d, want 2 (memory)", n, mode)
 		}
+	}
+}
+
+func TestCheckFileReportsMissingColumnsWithoutChangingTheFile(t *testing.T) {
+	registerForTest(t, Schema{Module: "storetest_check", SQL: `CREATE TABLE IF NOT EXISTS storetest_check (id INTEGER PRIMARY KEY, kind TEXT)`})
+	path := filepath.Join(t.TempDir(), "snapshot.db")
+	raw, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE storetest_check (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := CheckFile(ctx, path); err == nil || !strings.Contains(err.Error(), "storetest_check (kind)") {
+		t.Fatalf("CheckFile = %v, want it to name storetest_check (kind)", err)
+	}
+	// SQLite names are case-insensitive, so a column added by hand in another
+	// case satisfies the declaration.
+	if _, err := raw.Exec(`ALTER TABLE storetest_check ADD COLUMN Kind TEXT`); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckFile(ctx, path); err != nil {
+		t.Fatalf("CheckFile after adding the column: %v", err)
+	}
+	var objects int
+	if err := raw.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&objects); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+	if objects != 1 {
+		t.Fatalf("CheckFile left %d schema objects, want only the original table", objects)
 	}
 }

@@ -65,11 +65,16 @@ Data lives in `<data-dir>` (default `taproot/` beside `config.yaml`):
 - `request-logs/`
 - `backups/`
 
-Each module owns its tables and registers migrations with `store.Register`, so no shared schema file exists.
+Each module owns its tables and registers its current schema with `store.Register`, so no shared schema file exists. The code holds no migrations:
+
+- `store.Open` applies every module's idempotent SQL (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) in module order, in one transaction. A seed, such as ingest's prices, runs only when that Open created the database, so deleted or edited rows stay that way.
+- A schema change in code may only add tables, indexes, or nullable or defaulted columns. A change to a table the deployed database already has is applied to that database by hand. `Open` refuses to start when an existing table lacks a declared column, and names the table and columns. A restore checks the backup's database the same way and refuses one from before such a change (409 `incompatible_backup`), so the database is never swapped for one the next start would refuse.
+- A derived table, such as a rollup, that `Open` creates on a database with history starts empty. Nothing rebuilds it from its sources yet.
+- `schema_migrations`, from releases that ran migrations, is never read, written, or dropped, so the previous release can still start on the database. That holds only for a database a migrating release created; that release cannot start on one this code created fresh.
 
 | Module | Package | Owns |
 |---|---|---|
-| store | `internal/taproot/store` | DB open, migrations, `Snapshot` |
+| store | `internal/taproot/store` | DB open, schema, `Snapshot` |
 | access | `internal/taproot/access` | Tailnet identity, allowlist, keyless management |
 | ingest | `internal/taproot/ingest` | Usage events, quota observations, pricing |
 | reqlog | `internal/taproot/reqlog` | Request log storage, index, retention |
@@ -156,7 +161,7 @@ The guard splits the server into two surfaces. The package comment in `internal/
   - latency, time to first token
   - tokens: input, output, reasoning, cache read, cache creation, and the 5m and 1h cache-creation splits
   - service tier
-  - device: the caller the access guard admitted (`node:<StableID>` for a tailnet node, `local` for loopback and the server's own node, `cidr:<address>` for trusted-cidrs), with its name, login, and how it was reached. Ingest migration 4 added these columns and an hourly device rollup backfilled from existing events. Events recorded before it have no device.
+  - device: the caller the access guard admitted (`node:<StableID>` for a tailnet node, `local` for loopback and the server's own node, `cidr:<address>` for trusted-cidrs), with its name, login, and how it was reached. Events recorded before device attribution have no device.
   - **Plugins.** A plugin's in-process model request (`host.model.execute`) has no HTTP caller. It gets the device `plugin:<plugin ID>`, named after the plugin's metadata name (for example "Claude Keep Rolling"), with via `plugin`. When the host marks a plugin call without its ID, the device is `plugins`, "In-process plugins". Limits: upstream's non-streaming `host.model.execute` does not check that a callback ID belongs to the calling plugin (the streaming path does), so a plugin can attribute its usage to another plugin or to that plugin's client; native plugins already run in-process with full access, so this is accepted. With the guard disabled, a client request a plugin forwards is credited to the plugin. Tests build the loaders' context by hand; if upstream stops tagging it, plugin usage falls back to an empty device without a failing test.
     - The admitted HTTP caller wins when the guard knows the record's request ID. A plugin that executes a client's request through the host, such as `claude-web-search-router`'s fallback, carries that request's ID, and the usage is the client's. Upstream assigns request IDs only under `/v1`, `/v1beta`, `/openai/v1`, and `/backend-api/codex`, so a plugin's timer or a management or plugin-page action never has one.
     - Stored device IDs are never rewritten. Claude Keep Rolling pings recorded before plugin attribution keep an empty device. The dashboard labels that group "No caller recorded", which is true of every empty-device event. Mapping them to the plugin at read time would rest on their shape (Haiku, 100 input and 1 output tokens, no request ID), and other callers without a request ID, such as routes outside those prefixes, share the missing ID.

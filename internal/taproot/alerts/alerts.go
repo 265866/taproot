@@ -34,7 +34,7 @@ const (
 )
 
 func init() {
-	store.Register(store.Migration{Module: "alerts", Version: 1, SQL: `CREATE TABLE alert_state (
+	store.Register(store.Schema{Module: "alerts", SQL: `CREATE TABLE IF NOT EXISTS alert_state (
 		key TEXT PRIMARY KEY,
 		state TEXT NOT NULL
 	) WITHOUT ROWID`})

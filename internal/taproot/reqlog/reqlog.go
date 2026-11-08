@@ -14,8 +14,8 @@ import (
 )
 
 func init() {
-	store.Register(store.Migration{Module: "reqlog", Version: 1, SQL: `
-CREATE TABLE reqlog_segments (
+	store.Register(store.Schema{Module: "reqlog", SQL: `
+CREATE TABLE IF NOT EXISTS reqlog_segments (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	session_id TEXT NOT NULL,
 	day TEXT NOT NULL,
@@ -28,9 +28,9 @@ CREATE TABLE reqlog_segments (
 	created_at INTEGER NOT NULL,
 	sealed_at INTEGER
 );
-CREATE INDEX reqlog_segments_state ON reqlog_segments (state, last_ts);
+CREATE INDEX IF NOT EXISTS reqlog_segments_state ON reqlog_segments (state, last_ts);
 
-CREATE TABLE reqlog_records (
+CREATE TABLE IF NOT EXISTS reqlog_records (
 	id INTEGER PRIMARY KEY,
 	request_id TEXT NOT NULL,
 	trace_id TEXT NOT NULL DEFAULT '',
@@ -55,18 +55,18 @@ CREATE TABLE reqlog_records (
 	length INTEGER NOT NULL,
 	UNIQUE (segment_id, offset)
 );
-CREATE INDEX reqlog_records_ts ON reqlog_records (ts, id);
-CREATE INDEX reqlog_records_request_id ON reqlog_records (request_id);
-CREATE INDEX reqlog_records_session ON reqlog_records (session_id, ts);
+CREATE INDEX IF NOT EXISTS reqlog_records_ts ON reqlog_records (ts, id);
+CREATE INDEX IF NOT EXISTS reqlog_records_request_id ON reqlog_records (request_id);
+CREATE INDEX IF NOT EXISTS reqlog_records_session ON reqlog_records (session_id, ts);
 
-CREATE TABLE reqlog_packs (
+CREATE TABLE IF NOT EXISTS reqlog_packs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	state TEXT NOT NULL,
 	bytes INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL
 );
 
-CREATE TABLE reqlog_blobs (
+CREATE TABLE IF NOT EXISTS reqlog_blobs (
 	hash BLOB PRIMARY KEY,
 	pack_id INTEGER NOT NULL REFERENCES reqlog_packs (id),
 	offset INTEGER NOT NULL,
@@ -75,8 +75,8 @@ CREATE TABLE reqlog_blobs (
 	codec INTEGER NOT NULL,
 	last_ts INTEGER NOT NULL
 ) WITHOUT ROWID;
-CREATE INDEX reqlog_blobs_pack ON reqlog_blobs (pack_id);
-CREATE INDEX reqlog_blobs_last_ts ON reqlog_blobs (last_ts);
+CREATE INDEX IF NOT EXISTS reqlog_blobs_pack ON reqlog_blobs (pack_id);
+CREATE INDEX IF NOT EXISTS reqlog_blobs_last_ts ON reqlog_blobs (last_ts);
 `})
 }
 
