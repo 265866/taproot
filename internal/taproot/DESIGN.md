@@ -219,7 +219,9 @@ The guard splits the server into two surfaces. The package comment in `internal/
 ### Backups
 
 - **Contents.** `config.yaml`, `taproot.yaml`, the auth dir, and a `store.Snapshot` of the DB go into `backups/<UTC timestamp>.tar.zst` with a manifest of SHA-256 sums.
-- **Schedule and retention.** Daily at a configured local time. Keep N (default 14).
+- **Schedule and retention.** Daily at a time in the server's zone (`TZ`, else `/etc/localtime`), default `00:00`. A file that sets `daily-at` keeps its time. Keep N (default 14).
+  - On a DST change, a repeated time runs at its first occurrence. A skipped time runs as far past the gap as it fell inside it, so `02:30` on a day that jumps from 02:00 to 03:00 runs at 03:30.
+  - The server's zone can differ from the browser's, so Settings and Backups show the next run twice: in server time with the server zone's name, and in the browser's time with its zone's name. Backup creation times carry a zone label.
 - **Endpoints.** List, create now, download, and restore.
   - Restore writes the current state to a pre-restore backup first.
   - It then replaces the config files and auth files, and restarts the database from the snapshot on the next start.
@@ -295,7 +297,7 @@ Taproot posts to one Discord channel through a webhook. The webhook URL is the o
 | `POST /backups` | Creates a backup now and returns the new entry |
 | `GET /backups/:id/download` | The `tar.zst` file |
 | `POST /backups/:id/restore` | `{restored: true, preRestoreBackupId}` |
-| `GET /settings` and `PUT /settings` | The editable subset of `taproot.yaml`: retention, schedule, poller interval, `allow-logins`, `admin-nodes`, and alerts (`{enabled, webhookSet, webhookHint, webhookInvalid, active}`; `PUT` takes `{discordWebhook, enabled}`, and `discordWebhook: ""` clears it) |
+| `GET /settings` and `PUT /settings` | The editable subset of `taproot.yaml`: retention, schedule, poller interval, `allow-logins`, `admin-nodes`, and alerts (`{enabled, webhookSet, webhookHint, webhookInvalid, active}`; `PUT` takes `{discordWebhook, enabled}`, and `discordWebhook: ""` clears it). `GET` also returns `backups.nextRunAt` (RFC 3339 with the server's offset, absent while the schedule is off) and, in `info`, `timeZone` (the IANA name from `TZ` or the `/etc/localtime` symlink, or `""` when it has none), `utcOffsetSeconds`, and `zoneAbbreviation` |
 | `POST /alerts/test` | `{sent: true}`, or 409 `no_webhook` or `invalid_webhook`, or 429 `rate_limited` (`retryAfter` in whole seconds, plus a `Retry-After` header), or 502 `delivery_failed` |
 
 `Totals` is `{requests, failures, inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWriteTokens, cacheWrite5mTokens, cacheWrite1hTokens, costUSD, latencyP50Ms, latencyP95Ms, ttftP50Ms, ttftP95Ms}`.

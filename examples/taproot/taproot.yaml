@@ -15,7 +15,7 @@ access:
   # tailscale-socket: /var/run/tailscale/tailscaled.sock
 backups:
   # Local time, HH:MM, in the container's TZ. "off" disables the schedule.
-  daily-at: "03:13"
+  daily-at: "00:00"
   keep: 14
 request-logs:
   max-days: 14

@@ -199,7 +199,7 @@ export function backupsForm(settings: TaprootSettings['backups']): BackupsForm {
   const off = settings.dailyAt === 'off';
   return {
     scheduled: !off,
-    dailyAt: off ? '03:13' : settings.dailyAt,
+    dailyAt: off ? '00:00' : settings.dailyAt,
     keep: String(settings.keep),
   };
 }

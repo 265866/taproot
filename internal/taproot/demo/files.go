@@ -59,7 +59,7 @@ access:
 ingest:
   poll-interval: "0"
 backups:
-  daily-at: "03:13"
+  daily-at: "00:00"
   keep: 14
 request-logs:
   max-days: 14

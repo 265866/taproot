@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	// TestNextRunAcrossDST needs tzdata on hosts that do not ship it.
+	_ "time/tzdata"
 
 	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/gin-gonic/gin"
@@ -634,6 +636,55 @@ func TestNextRun(t *testing.T) {
 	}
 }
 
+// TestNextRunAcrossDST drives NextRun with a fake clock in New York, where
+// 2027-03-14 skips 02:00 to 03:00 and 2027-11-07 repeats 01:00 to 02:00.
+// Each want is the absolute UTC instant, so a run that drifts by the DST hour fails.
+func TestNextRunAcrossDST(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, Config{})
+	if at, _ := f.b.Schedule(); at != "00:00" {
+		t.Fatalf("default daily-at = %q, want 00:00", at)
+	}
+	for _, tc := range []struct {
+		name    string
+		dailyAt string
+		now     time.Time
+		want    time.Time // UTC
+		offset  string
+	}{
+		{"before spring forward", "00:00", time.Date(2027, 3, 13, 12, 0, 0, 0, ny), time.Date(2027, 3, 14, 5, 0, 0, 0, time.UTC), "-05:00"},
+		{"day after spring forward", "00:00", time.Date(2027, 3, 14, 0, 0, 0, 0, ny), time.Date(2027, 3, 15, 4, 0, 0, 0, time.UTC), "-04:00"},
+		{"skipped time runs an hour later", "02:30", time.Date(2027, 3, 14, 0, 0, 0, 0, ny), time.Date(2027, 3, 14, 7, 30, 0, 0, time.UTC), "-04:00"},
+		{"day after fall back", "00:00", time.Date(2027, 11, 7, 0, 0, 0, 0, ny), time.Date(2027, 11, 8, 5, 0, 0, 0, time.UTC), "-05:00"},
+		{"repeated time runs at its first occurrence", "01:30", time.Date(2027, 11, 7, 0, 0, 0, 0, ny), time.Date(2027, 11, 7, 5, 30, 0, 0, time.UTC), "-04:00"},
+		{"repeated time does not run twice", "01:30", time.Date(2027, 11, 7, 5, 31, 0, 0, time.UTC).In(ny), time.Date(2027, 11, 8, 6, 30, 0, 0, time.UTC), "-05:00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := f.b.SetSchedule(tc.dailyAt, 3); err != nil {
+				t.Fatal(err)
+			}
+			f.clock = tc.now
+			got, ok := f.b.NextRun()
+			if !ok || !got.Equal(tc.want) {
+				t.Fatalf("NextRun() at %v = %v, %v; want %v", tc.now, got, ok, tc.want)
+			}
+			if s := got.Format(time.RFC3339); !strings.HasSuffix(s, tc.offset) {
+				t.Errorf("NextRun() = %s, want offset %s", s, tc.offset)
+			}
+		})
+	}
+
+	if err := f.b.SetSchedule("off", 3); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := f.b.NextRun(); ok {
+		t.Errorf("NextRun() with the schedule off = %v, true", got)
+	}
+}
+
 func TestConfigValidation(t *testing.T) {
 	root := t.TempDir()
 	db, err := store.Open(context.Background(), store.Config{}, root)
@@ -647,7 +698,7 @@ func TestConfigValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !b.scheduled || b.hour != 3 || b.minute != 13 || b.keep != 14 {
+	if !b.scheduled || b.hour != 0 || b.minute != 0 || b.keep != 14 {
 		t.Errorf("defaults: scheduled=%v %d:%d keep=%d", b.scheduled, b.hour, b.minute, b.keep)
 	}
 	b, err = New(Config{DailyAt: "off", Keep: 2}, db, paths)

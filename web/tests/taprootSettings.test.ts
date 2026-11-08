@@ -227,7 +227,7 @@ describe('backup schedule', () => {
 
   test('off keeps a default time in the form and sends "off"', () => {
     const form = backupsForm({ dailyAt: 'off', keep: 3 });
-    expect(form).toEqual({ scheduled: false, dailyAt: '03:13', keep: '3' });
+    expect(form).toEqual({ scheduled: false, dailyAt: '00:00', keep: '3' });
     expect(backupsUpdate(form)).toEqual({ ok: true, update: { dailyAt: 'off', keep: 3 } });
   });
 

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	// The zone tests need tzdata on hosts that do not ship it.
+	_ "time/tzdata"
 
 	"github.com/265866/taproot/internal/taproot/access"
 	"github.com/265866/taproot/internal/taproot/alerts"
@@ -186,7 +188,7 @@ func TestGetReportsLiveValues(t *testing.T) {
 	if v.RequestLogs.MaxDays != 14 || v.RequestLogs.MaxBytes != 20<<30 || v.RequestLogs.ExcludePaths == nil {
 		t.Errorf("requestLogs = %+v", v.RequestLogs)
 	}
-	if v.Backups.DailyAt != "03:13" || v.Backups.Keep != 3 {
+	if v.Backups.DailyAt != "00:00" || v.Backups.Keep != 3 {
 		t.Errorf("backups = %+v", v.Backups)
 	}
 	if v.Ingest.PollInterval != "15m" || v.Ingest.ActivePollInterval != "15m" || v.Ingest.RestartRequired {
@@ -194,6 +196,93 @@ func TestGetReportsLiveValues(t *testing.T) {
 	}
 	if v.Info.ConfigPath != f.path || v.Info.DataDir == "" || v.Info.Version == "" {
 		t.Errorf("info = %+v", v.Info)
+	}
+}
+
+func TestGetReportsNextBackupAndServerZone(t *testing.T) {
+	f := newFixture(t, options{})
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.timeZone = "America/New_York"
+	f.s.now = func() time.Time { return time.Date(2027, 7, 1, 12, 0, 0, 0, ny) }
+	before := time.Now()
+	_, v, body := f.do(t, http.MethodGet, "")
+	if v.Backups.DailyAt != "00:00" {
+		t.Errorf("default dailyAt = %q, want 00:00", v.Backups.DailyAt)
+	}
+	// The backup module keeps its own clock, so nextRunAt is the next local
+	// midnight after the real now, written with the server's offset.
+	next, err := time.Parse(time.RFC3339, v.Backups.NextRunAt)
+	if err != nil {
+		t.Fatalf("nextRunAt %q: %v (%s)", v.Backups.NextRunAt, err, body)
+	}
+	if next.Format("15:04:05") != "00:00:00" || !next.After(before) || next.Sub(before) > 25*time.Hour {
+		t.Errorf("nextRunAt = %s, want the next local midnight after %s", v.Backups.NextRunAt, before.Format(time.RFC3339))
+	}
+	_, gotOffset := next.Zone()
+	_, wantOffset := next.In(time.Local).Zone()
+	if gotOffset != wantOffset {
+		t.Errorf("nextRunAt %s has offset %d, want the server's %d", v.Backups.NextRunAt, gotOffset, wantOffset)
+	}
+	if v.Info.TimeZone != "America/New_York" || v.Info.UTCOffsetSeconds != -4*3600 || v.Info.ZoneAbbreviation != "EDT" {
+		t.Errorf("zone = %q %d %q, want America/New_York -14400 EDT", v.Info.TimeZone, v.Info.UTCOffsetSeconds, v.Info.ZoneAbbreviation)
+	}
+
+	if code, _, body := f.do(t, http.MethodPut, `{"backups": {"dailyAt": "off"}}`); code != http.StatusOK {
+		t.Fatalf("PUT off = %d %s", code, body)
+	}
+	_, _, body = f.do(t, http.MethodGet, "")
+	if strings.Contains(body, "nextRunAt") {
+		t.Errorf("schedule off still reports nextRunAt: %s", body)
+	}
+}
+
+func TestLocalZoneName(t *testing.T) {
+	env := func(tz string, set bool) func(string) (string, bool) {
+		return func(key string) (string, bool) {
+			if key != "TZ" {
+				t.Fatalf("looked up %s", key)
+			}
+			return tz, set
+		}
+	}
+	link := func(target string, err error) func(string) (string, error) {
+		return func(path string) (string, error) {
+			if path != "/etc/localtime" {
+				t.Fatalf("read link %s", path)
+			}
+			return target, err
+		}
+	}
+	notLink := link("", errors.New("invalid argument"))
+	for _, tc := range []struct {
+		name     string
+		tz       string
+		tzSet    bool
+		readlink func(string) (string, error)
+		want     string
+	}{
+		{"TZ names a zone", "Europe/Berlin", true, notLink, "Europe/Berlin"},
+		{"TZ with a leading colon", ":Asia/Tokyo", true, notLink, "Asia/Tokyo"},
+		{"TZ names a zone file", "/usr/share/zoneinfo/America/New_York", true, notLink, "America/New_York"},
+		{"empty TZ means UTC", "", true, notLink, "UTC"},
+		{"TZ that does not load", "Mars/Olympus_Mons", true, notLink, ""},
+		{"TZ outside a zoneinfo directory", "/tmp/zone", true, notLink, ""},
+		{"TZ pointing at /etc/localtime", "/etc/localtime", true, link("/usr/share/zoneinfo/Etc/UTC", nil), "Etc/UTC"},
+		{"symlinked /etc/localtime", "", false, link("/usr/share/zoneinfo/Etc/UTC", nil), "Etc/UTC"},
+		{"relative symlink", "", false, link("../usr/share/zoneinfo/America/Los_Angeles", nil), "America/Los_Angeles"},
+		{"posix subdirectory", "", false, link("/usr/share/zoneinfo/posix/Europe/Paris", nil), "Europe/Paris"},
+		{"NixOS zoneinfo", "", false, link("/etc/zoneinfo/Australia/Sydney", nil), "Australia/Sydney"},
+		{"copied /etc/localtime", "", false, notLink, ""},
+		{"no /etc/localtime", "", false, link("", os.ErrNotExist), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := localZoneName(env(tc.tz, tc.tzSet), tc.readlink); got != tc.want {
+				t.Errorf("localZoneName = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -380,7 +469,7 @@ func TestLaterFailureRollsBackEarlierChanges(t *testing.T) {
 			if ret := f.logs.Retention(); ret.MaxDays != 14 || len(ret.ExcludePaths) != 0 {
 				t.Errorf("retention = %+v", ret)
 			}
-			if at, keep := f.backups.Schedule(); at != "03:13" || keep != 3 {
+			if at, keep := f.backups.Schedule(); at != "00:00" || keep != 3 {
 				t.Errorf("schedule = %s keep %d", at, keep)
 			}
 			if f.file(t) != commentedYAML {
@@ -424,7 +513,7 @@ func TestUnchangedValuesLeaveFileAlone(t *testing.T) {
 	code, _, body := f.do(t, http.MethodPut, `{
 		"access": {"allowLogins": ["alice@github"]},
 		"requestLogs": {"maxDays": 14, "maxBytes": 21474836480, "excludePaths": [], "keepUnrouted404": false},
-		"backups": {"dailyAt": "03:13", "keep": 3},
+		"backups": {"dailyAt": "00:00", "keep": 3},
 		"ingest": {"pollInterval": "15m"}
 	}`)
 	if code != http.StatusOK {

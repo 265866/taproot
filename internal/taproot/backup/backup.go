@@ -30,7 +30,7 @@ type Config struct {
 }
 
 const (
-	defaultDailyAt = "03:13"
+	defaultDailyAt = "00:00"
 	defaultKeep    = 14
 	archiveExt     = ".tar.zst"
 	tempPrefix     = ".tmp-"
@@ -254,14 +254,38 @@ func (b *Backups) runSchedule(ctx context.Context) {
 	}
 }
 
+// NextRun returns when the next scheduled backup starts, in the server's local
+// time, and false while the schedule is off.
+func (b *Backups) NextRun() (time.Time, bool) {
+	b.schedMu.Lock()
+	scheduled, hour, minute := b.scheduled, b.hour, b.minute
+	b.schedMu.Unlock()
+	if !scheduled {
+		return time.Time{}, false
+	}
+	return nextRun(b.now(), hour, minute), true
+}
+
 // nextRun returns the first hour:minute in now's location strictly after now.
+// A repeated wall time runs at its first occurrence. A skipped one runs as
+// far past the gap as it fell inside it, so 02:30 on a day that jumps from
+// 02:00 to 03:00 runs at 03:30.
 func nextRun(now time.Time, hour, minute int) time.Time {
 	y, m, d := now.Date()
-	next := time.Date(y, m, d, hour, minute, 0, 0, now.Location())
+	next := wallTime(y, m, d, hour, minute, now.Location())
 	if !next.After(now) {
-		next = time.Date(y, m, d+1, hour, minute, 0, 0, now.Location())
+		next = wallTime(y, m, d+1, hour, minute, now.Location())
 	}
 	return next
+}
+
+func wallTime(y int, m time.Month, d, hour, minute int, loc *time.Location) time.Time {
+	t := time.Date(y, m, d, hour, minute, 0, 0, loc)
+	// time.Date may resolve a skipped wall time before the gap; compare the
+	// wall clocks it asked for and got, and move it by the difference.
+	want := time.Date(y, m, d, hour, minute, 0, 0, time.UTC)
+	got := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, time.UTC)
+	return t.Add(want.Sub(got))
 }
 
 // Create writes a new backup and prunes old ones beyond the retention count.
