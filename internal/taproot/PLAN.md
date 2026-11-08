@@ -221,10 +221,16 @@ Taproot posts to one Discord channel through a webhook. The webhook URL is the o
 
 ### Web
 
-- `web/` builds to one `dist/index.html` (`vite-plugin-singlefile`).
-- `internal/taproot/web` embeds `internal/taproot/web/dist/index.html` and serves it at `/` with `Cache-Control: no-store`.
-  - The build copies `web/dist/index.html` there.
-  - A committed placeholder keeps `go build` working without a web build.
+- `web/` builds to `dist/index.html` and content-hashed chunks under `dist/assets/`, one per route page.
+- `internal/taproot/web` embeds `internal/taproot/web/dist/` and serves `index.html` at `/` with `Cache-Control: no-cache` and an ETag, and the chunks at `/assets/*` with `Cache-Control: public, max-age=31536000, immutable`. Each file is gzipped once at startup and sent gzipped when `Accept-Encoding` allows; browsers offer only gzip and deflate to a plain-http tailnet name.
+  - The build copies `web/dist/` there.
+  - A committed placeholder `index.html` keeps `go build` working without a web build.
+  - A tab still running an older build reloads once when a page chunk it asks for is gone.
+  - The chunks, like the page, hold no data, and the guard admits the same callers to both (see "Security model").
+  - Request logs record neither: upstream's logging middleware skips GETs, and the request-log excluder drops `HEAD` of `/` and `/assets/*`.
+- Why it was one file, and why it no longer is.
+  - The Management Center shipped as one downloadable `management.html` that upstream fetches into its data directory and serves, so it had to be self-contained. Taproot's guard 404s that file and embeds its own build, so the constraint no longer applies.
+  - One file meant every visit downloaded and compiled the whole app (2.8 MB, sent uncompressed with `no-store`) before the connection gate could render, over a 20 Mbps tailnet link. Now the page is a small revalidated `index.html` (`no-cache` and an ETag, so an upgrade shows on the next load and an unchanged page costs a 304), and the code sits in hashed chunks that are immutable for a year, so a repeat visit downloads nothing but the page's 304, and a first visit downloads only the shell and the current page's chunk, gzipped.
 - The dashboard calls the management API at same-origin `/v8/management` with no key, and taproot at `/taproot/api/v1`.
 - The login screen and the management-key flow are removed.
 - Upstream's `/management.html` returns 404 from the guard. Deployment also sets `remote-management.disable-control-panel: true` so the panel is not downloaded.

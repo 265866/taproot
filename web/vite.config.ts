@@ -1,6 +1,5 @@
 import { defineConfig, type ProxyOptions } from 'vite';
 import react from '@vitejs/plugin-react';
-import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'path';
 import { execSync } from 'child_process';
 import fs from 'fs';
@@ -61,12 +60,7 @@ function devProxy(): Record<string, ProxyOptions> {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    viteSingleFile({
-      removeViteModuleLoader: true,
-    }),
-  ],
+  plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(getVersion()),
   },
@@ -92,13 +86,10 @@ export default defineConfig({
   build: {
     target: 'es2020',
     outDir: 'dist',
+    // Icons stay inlined in the chunks that use them; only hashed JS and CSS files are emitted.
     assetsInlineLimit: 100000000,
     chunkSizeWarningLimit: 100000000,
+    // One stylesheet, loaded with the page, so a lazy page never renders unstyled.
     cssCodeSplit: false,
-    rolldownOptions: {
-      output: {
-        codeSplitting: false,
-      },
-    },
   },
 });

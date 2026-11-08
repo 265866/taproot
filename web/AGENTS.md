@@ -49,9 +49,9 @@ Use Bun; `package.json` pins `bun@1.4.3`. Keep dependency changes consistent wit
 
 ## Deployment Constraints
 
-The production artifact is a single `dist/index.html` with JS, CSS, and assets inlined by `vite-plugin-singlefile`. Taproot embeds it (see `internal/taproot/web`) and serves it at `/` with `Cache-Control: no-store`. Upstream's `/management.html` is disabled in deployment.
+The production artifact is `dist/index.html` plus content-hashed JS and CSS chunks under `dist/assets/`; images stay inlined in the chunks that use them. Each route page is its own chunk (`src/router/pageImports.ts`), and `main.tsx` starts the current page's chunk before the connection gate answers. Taproot embeds the whole `dist/` (see `internal/taproot/web`), serves `/` with `Cache-Control: no-cache` and an ETag, so an upgrade shows at once and an unchanged page costs a 304, and serves `/assets/*` as immutable for a year. Both are gzipped once at startup. Upstream's `/management.html` is disabled in deployment.
 
-Preserve hash routing and single-file deployment. Changes to assets, imports, code splitting, or build configuration must not introduce required external build artifacts. Do not edit generated `dist/` files. App version is injected as `__APP_VERSION__` from `VERSION`, then git tags, then the package version, falling back to `dev`.
+Preserve hash routing. The build may emit only `index.html` and `assets/`; `scripts/taproot/build-web.sh` refuses anything else. Do not edit generated `dist/` files. App version is injected as `__APP_VERSION__` from `VERSION`, then git tags, then the package version, falling back to `dev`.
 
 ## API Contracts & State
 

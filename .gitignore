@@ -75,3 +75,6 @@ docker-compose.override.yml
 
 # Rust build output of the request-log codec library
 /internal/taproot/reqlog/codec/native/target/
+
+# Dashboard chunks from scripts/taproot/build-web.sh; only the index.html placeholder is tracked.
+/internal/taproot/web/dist/assets/

@@ -43,7 +43,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /src/internal/taproot/web/dist/index.html ./internal/taproot/web/dist/index.html
+# The dashboard is index.html plus hashed chunks; drop any host build's chunks first.
+RUN rm -rf internal/taproot/web/dist
+COPY --from=web /src/internal/taproot/web/dist ./internal/taproot/web/dist
 # A host build of the codec library may target another glibc; use the stage's.
 RUN rm -rf internal/taproot/reqlog/codec/native/target
 COPY --from=codec /src/target/release/libtaproot_codec.a ./internal/taproot/reqlog/codec/native/target/release/libtaproot_codec.a
