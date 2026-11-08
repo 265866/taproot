@@ -1,118 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  accessUpdate,
-  adminNodesUpdate,
   backupsForm,
   backupsUpdate,
   formatSize,
   ingestUpdate,
   keepsForever,
-  ownLogin,
-  ownNode,
   parseSize,
   retentionForm,
   retentionUpdate,
   type RetentionForm,
 } from '@/features/taproot-settings/model/settingsForm';
 import { en } from '@/i18n/resources';
-import type { TaprootMe } from '@/services/api/taproot';
-
-const tailnet: TaprootMe = {
-  login: 'Alice@GitHub',
-  displayName: 'Alice',
-  node: 'laptop',
-  via: 'tailnet',
-};
-const loopback: TaprootMe = { login: '', displayName: '', node: '127.0.0.1', via: 'loopback' };
-
-describe('access allowlist', () => {
-  test('normalizes, dedupes, and drops blank rows', () => {
-    expect(
-      accessUpdate([' alice@github ', 'Friend@GitHub', '', 'friend@github'], tailnet)
-    ).toEqual({ ok: true, update: { allowLogins: ['alice@github', 'friend@github'] } });
-  });
-
-  test('refuses a list without the tailnet caller, case-insensitively', () => {
-    expect(accessUpdate(['friend@github'], tailnet)).toEqual({
-      ok: false,
-      error: 'lockout',
-      detail: 'alice@github',
-    });
-    expect(accessUpdate(['ALICE@GITHUB'], tailnet).ok).toBe(true);
-  });
-
-  test('local and unknown callers have no login to keep', () => {
-    expect(ownLogin(loopback)).toBeNull();
-    expect(ownLogin({ ...tailnet, via: 'cidr' })).toBeNull();
-    expect(ownLogin(null)).toBeNull();
-    expect(accessUpdate(['friend@github'], loopback).ok).toBe(true);
-    expect(accessUpdate(['friend@github'], null).ok).toBe(true);
-  });
-
-  test('rejects an empty list and malformed logins', () => {
-    expect(accessUpdate([' ', ''], loopback)).toEqual({ ok: false, error: 'logins_empty' });
-    expect(accessUpdate([], loopback)).toEqual({ ok: false, error: 'logins_empty' });
-    expect(accessUpdate(['no-at-sign'], loopback)).toEqual({
-      ok: false,
-      error: 'login_format',
-      detail: 'no-at-sign',
-    });
-    expect(accessUpdate(['two words@github'], loopback).ok).toBe(false);
-  });
-});
-
-describe('admin devices', () => {
-  const onLaptop: TaprootMe = { ...tailnet, node: 'laptop.tailnet-0000.ts.net.' };
-
-  test('normalizes, dedupes, and allows an empty list from loopback', () => {
-    expect(
-      adminNodesUpdate([' Laptop. ', 'laptop', '', 'phone.tailnet-0000.ts.net'], loopback)
-    ).toEqual({ ok: true, update: { adminNodes: ['laptop', 'phone.tailnet-0000.ts.net'] } });
-    expect(adminNodesUpdate([], loopback)).toEqual({ ok: true, update: { adminNodes: [] } });
-  });
-
-  test('keeps the tailnet caller own device, by full name or first label', () => {
-    expect(ownNode(onLaptop)).toBe('laptop.tailnet-0000.ts.net');
-    expect(ownNode(loopback)).toBeNull();
-    expect(adminNodesUpdate(['laptop'], onLaptop).ok).toBe(true);
-    expect(adminNodesUpdate(['LAPTOP.tailnet-0000.ts.net'], onLaptop).ok).toBe(true);
-    expect(adminNodesUpdate(['phone'], onLaptop)).toEqual({
-      ok: false,
-      error: 'node_lockout',
-      detail: 'laptop.tailnet-0000.ts.net',
-    });
-    expect(adminNodesUpdate([], onLaptop)).toMatchObject({ ok: false, error: 'node_lockout' });
-  });
-
-  test('accepts stable-ID pins, keeps their case, and counts them for the own device', () => {
-    const pinned: TaprootMe = { ...onLaptop, nodeId: 'nAbC123CNTRL' };
-    expect(adminNodesUpdate([' ID:nAbC123CNTRL '], loopback)).toEqual({
-      ok: true,
-      update: { adminNodes: ['id:nAbC123CNTRL'] },
-    });
-    expect(adminNodesUpdate(['id:nAbC123CNTRL'], pinned).ok).toBe(true);
-    // Another device's ID, or this ID in the wrong case, does not keep this device.
-    expect(adminNodesUpdate(['id:nOther9CNTRL'], pinned)).toMatchObject({ error: 'node_lockout' });
-    expect(adminNodesUpdate(['id:nabc123cntrl'], pinned)).toMatchObject({ error: 'node_lockout' });
-    // Without a reported ID, an ID entry cannot be this device.
-    expect(adminNodesUpdate(['id:nAbC123CNTRL'], onLaptop)).toMatchObject({
-      error: 'node_lockout',
-    });
-    for (const bad of ['id:', 'id:a b', 'id:a/b', 'id:x@y']) {
-      expect(adminNodesUpdate([bad], loopback)).toMatchObject({ ok: false, error: 'node_format' });
-    }
-  });
-
-  test('rejects names that are not MagicDNS names', () => {
-    for (const bad of ['two words', 'a/b', 'host:8317', 'me@github', '-lead', 'trail-']) {
-      expect(adminNodesUpdate([bad], loopback)).toEqual({
-        ok: false,
-        error: 'node_format',
-        detail: bad,
-      });
-    }
-  });
-});
 
 describe('sizes', () => {
   test('parse with 1024-based units and a gigabyte default', () => {
@@ -287,11 +185,6 @@ describe('poll interval', () => {
 test('every validation error has copy', () => {
   const errors = en.taproot_settings.errors as Record<string, string>;
   for (const key of [
-    'login_format',
-    'logins_empty',
-    'lockout',
-    'node_format',
-    'node_lockout',
     'days_range',
     'size_format',
     'size_min',

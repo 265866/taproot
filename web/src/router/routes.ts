@@ -11,6 +11,7 @@ export const ROUTES = {
   plugins: '/plugins',
   pluginStore: '/plugin-store',
   backups: '/backups',
+  access: '/access',
   settings: '/settings',
   system: '/system',
 } as const;

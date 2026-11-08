@@ -620,4 +620,38 @@ textarea {
 .connection-gate-body {
   margin: 0;
   line-height: 1.5;
+
+  strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+}
+
+// The refused device's name, login, and stable ID, for whoever turns on its switches.
+.connection-gate-device {
+  display: flex;
+  align-self: stretch;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+
+  dt {
+    color: var(--text-tertiary);
+    font-size: 12px;
+  }
+
+  dd {
+    margin: 0;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+  }
+
+  code {
+    color: var(--text-secondary);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 12px;
+  }
 }

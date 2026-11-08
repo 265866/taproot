@@ -15,6 +15,7 @@ export const pageImports = {
   usage: () => import('@/features/taproot-usage/TaprootUsagePage'),
   requestLogs: () => import('@/features/taproot-logs/TaprootLogsPage'),
   backups: () => import('@/features/taproot-backups/TaprootBackupsPage'),
+  access: () => import('@/features/taproot-access/TaprootAccessPage'),
   settings: () => import('@/features/taproot-settings/TaprootSettingsPage'),
 };
 
