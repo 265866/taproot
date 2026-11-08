@@ -176,19 +176,25 @@ export interface RetentionUpdate {
 
 /**
  * Saves taproot.yaml first, so a refused update changes nothing, then writes request-log only
- * when it differs from the saved state.
+ * when it differs from the saved state. The saved taproot.yaml state is applied after the
+ * request-log write settles, so the card never shows new limits beside a stale switch.
  */
-export async function saveRetention(
+export async function saveRetention<Saved>(
   update: RetentionUpdate,
   saved: Recording,
   write: {
-    requestLogs: (update: RetentionUpdate['requestLogs']) => Promise<void>;
+    requestLogs: (update: RetentionUpdate['requestLogs']) => Promise<Saved>;
     recording: (enabled: boolean) => Promise<void>;
+    apply: (saved: Saved) => void;
   }
 ): Promise<void> {
-  await write.requestLogs(update.requestLogs);
-  if (update.recording !== null && update.recording !== saved) {
-    await write.recording(update.recording);
+  const result = await write.requestLogs(update.requestLogs);
+  try {
+    if (update.recording !== null && update.recording !== saved) {
+      await write.recording(update.recording);
+    }
+  } finally {
+    write.apply(result);
   }
 }
 

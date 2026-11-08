@@ -12,7 +12,6 @@ import {
   type TaprootSettings,
   type TaprootSettingsUpdate,
 } from '@/services/api/taproot';
-import { configApi } from '@/services/api/config';
 import { useConfigStore, useNotificationStore } from '@/stores';
 import { getErrorMessage } from '@/utils/helpers';
 import { formatBytes } from '@/features/taproot-logs/model/format';
@@ -38,6 +37,7 @@ import {
   type Validation,
 } from './model/settingsForm';
 import styles from './TaprootSettingsPage.module.scss';
+import { saveRecording } from './recording';
 import { AlertsSection } from './AlertsSection';
 
 type Save = (update: TaprootSettingsUpdate) => Promise<void>;
@@ -48,24 +48,30 @@ export function TaprootSettingsPage() {
   const [me, setMe] = useState<TaprootMe | null>(null);
   const [error, setError] = useState('');
   const [diskBytes, setDiskBytes] = useState<number | null>(null);
+  // The store keeps its login-time config when a fetch fails, so a failed read is tracked here
+  // rather than trusting a possibly stale value.
+  const [configRead, setConfigRead] = useState(false);
   const config = useConfigStore((state) => state.config);
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
-  const updateConfigValue = useConfigStore((state) => state.updateConfigValue);
-  const recording: Recording = config ? (config.requestLog ?? false) : null;
+  const recording: Recording = configRead && config ? (config.requestLog ?? false) : null;
 
   const load = useCallback(async () => {
     try {
       // config.yaml and the stats only add to the request-logs card, so their failures are
       // shown there rather than failing the page.
-      const [next, who, stats] = await Promise.all([
+      const [next, who, stats, read] = await Promise.all([
         taprootApi.settings(),
         taprootApi.me(),
         taprootApi.requestLogStats().catch(() => null),
-        fetchConfig(true).catch(() => null),
+        fetchConfig(true).then(
+          () => true,
+          () => false
+        ),
       ]);
       setSettings(next);
       setMe(who);
       setDiskBytes(stats?.bytesOnDisk ?? null);
+      setConfigRead(read);
       setError('');
     } catch (err: unknown) {
       setError(getErrorMessage(err));
@@ -79,14 +85,6 @@ export function TaprootSettingsPage() {
   const save: Save = useCallback(async (update) => {
     setSettings(await taprootApi.putSettings(update));
   }, []);
-
-  const saveRecording = useCallback(
-    async (enabled: boolean) => {
-      await configApi.updateRequestLog(enabled);
-      updateConfigValue('request-log', enabled);
-    },
-    [updateConfigValue]
-  );
 
   return (
     <div className={styles.page}>
@@ -112,7 +110,8 @@ export function TaprootSettingsPage() {
             settings={settings.requestLogs}
             recording={recording}
             diskBytes={diskBytes}
-            save={save}
+            putSettings={taprootApi.putSettings}
+            applySettings={setSettings}
             saveRecording={saveRecording}
           />
           <BackupsSection settings={settings.backups} zone={settings.info} save={save} />
@@ -449,22 +448,24 @@ export function RetentionSection({
   settings,
   recording,
   diskBytes,
-  save,
+  putSettings,
+  applySettings,
   saveRecording,
 }: {
   settings: TaprootSettings['requestLogs'];
   recording: Recording;
   /** The request-log store's current size, or null when the stats could not be read. */
   diskBytes: number | null;
-  save: Save;
+  putSettings: (update: TaprootSettingsUpdate) => Promise<TaprootSettings>;
+  applySettings: (settings: TaprootSettings) => void;
   saveRecording: (enabled: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const ids = { days: useId(), size: useId(), exclude: useId() };
-  const [form, setForm, dirty, reset] = useDraft<RetentionForm>(retentionForm(settings, recording));
+  const saved = retentionForm(settings, recording);
+  const [form, setForm, dirty, reset] = useDraft<RetentionForm>(saved);
   const set = <K extends keyof RetentionForm>(key: K, value: RetentionForm[K]) =>
     setForm({ ...form, [key]: value });
-  const forever = keepsForever(form);
 
   return (
     <SectionForm
@@ -475,8 +476,14 @@ export function RetentionSection({
       validate={() => retentionUpdate(form)}
       save={(update) =>
         saveRetention(update, recording, {
-          requestLogs: (requestLogs) => save({ requestLogs }),
-          recording: saveRecording,
+          requestLogs: (requestLogs) => putSettings({ requestLogs }),
+          recording: (enabled) =>
+            saveRecording(enabled).catch((err: unknown) => {
+              throw new Error(
+                t('taproot_settings.retention.record_failed', { message: getErrorMessage(err) })
+              );
+            }),
+          apply: applySettings,
         })
       }
       onReset={reset}
@@ -532,9 +539,11 @@ export function RetentionSection({
             spellCheck={false}
           />
         </LimitChoice>
-        {!forever && <p className={styles.hint}>{t('taproot_settings.retention.limits_hint')}</p>}
+        {!keepsForever(form) && (
+          <p className={styles.hint}>{t('taproot_settings.retention.limits_hint')}</p>
+        )}
       </div>
-      {forever && (
+      {keepsForever(saved) && (
         <p className={styles.summary}>
           {t('taproot_settings.retention.keeps_all')}
           {diskBytes !== null &&
