@@ -83,7 +83,7 @@ docker build -f Containerfile.taproot \
   -t taproot .
 ```
 
-Releases are tagged `taproot-vX.Y.Z`, and [CHANGELOG.md](CHANGELOG.md) lists what each one changed. Built from a release tag, the image reports that tag, such as `taproot-v0.1.0`, as its version; built from another commit, it reports the nearest release tag plus the commit. With Podman, run `podman build` with the same arguments.
+Releases are tagged `taproot-vX.Y.Z`, and [CHANGELOG.md](CHANGELOG.md) lists what each one changed. [Stability and upgrades](docs/stability.md) says what a release can break and how to upgrade and roll back. Built from a release tag, the image reports that tag, such as `taproot-v0.1.0`, as its version; built from another commit, it reports the nearest release tag plus the commit. With Podman, run `podman build` with the same arguments.
 
 ### 2. Write the configuration
 
