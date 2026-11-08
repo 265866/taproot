@@ -341,7 +341,6 @@ type blobRow struct {
 	stored int
 	raw    int
 	codec  codec.Kind
-	lastTs int64
 }
 
 type blobStore struct {
