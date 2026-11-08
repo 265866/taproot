@@ -71,7 +71,7 @@ func serve(h http.Handler, method, remote, path string, headers map[string]strin
 // from NoRoute, taproot's own API, and unknown paths.
 func TestRealServerGuardsEveryRoute(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
 	h := newRealServer(t, g).Handler()
 
 	wsUpgrade := map[string]string{
@@ -101,12 +101,28 @@ func TestRealServerGuardsEveryRoute(t *testing.T) {
 		{http.MethodGet, "/no/such/route", nil},
 		{http.MethodOptions, "/v1/models", map[string]string{"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"}},
 	}
-	for _, remote := range []string{"203.0.113.9:5000", outsiderIP + ":40000", strayIP + ":40000"} {
+	for _, remote := range []string{"203.0.113.9:5000", strayIP + ":40000"} {
 		for _, r := range routes {
 			rec := serve(h, r.method, remote, r.path, r.headers)
 			if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"forbidden"`) {
 				t.Errorf("%s %s from %s = %d %q, want the guard's 403", r.method, r.path, remote, rec.Code, rec.Body)
 			}
+		}
+	}
+	// A device with no permission loads only the static page; everything
+	// else is the guard's 403, which names the device.
+	for _, r := range routes {
+		rec := serve(h, r.method, outsiderIP+":40000", r.path, r.headers)
+		if r.path == "/" && r.method == http.MethodGet {
+			if rec.Code != http.StatusOK {
+				t.Errorf("GET / from an unlisted device = %d, want the static page", rec.Code)
+			}
+			continue
+		}
+		body := rec.Body.String()
+		guardCode := strings.Contains(body, `"no_proxy"`) || strings.Contains(body, `"not_admin"`) || strings.Contains(body, `"forbidden"`)
+		if rec.Code != http.StatusForbidden || !guardCode {
+			t.Errorf("%s %s from an unlisted device = %d %q, want the guard's 403", r.method, r.path, rec.Code, body)
 		}
 	}
 
@@ -139,7 +155,7 @@ func TestRealServerGuardsEveryRoute(t *testing.T) {
 // config.yaml.
 func TestRealServerKeylessManagement(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
 	srv := newRealServer(t, g)
 	h := srv.Handler()
 

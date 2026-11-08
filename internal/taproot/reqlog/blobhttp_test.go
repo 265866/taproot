@@ -135,8 +135,8 @@ func TestBlobAndDeferredRoutes(t *testing.T) {
 }
 
 // TestBlobRouteIsAdminOnly mounts the routes behind the access guard, as the
-// server does: a trusted-cidrs caller reaches the proxy surface but not the
-// blob route, and loopback reaches both.
+// server does: an access.addresses caller reaches the proxy surface but not
+// the blob route, and loopback reaches both.
 func TestBlobRouteIsAdminOnly(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("MANAGEMENT_PASSWORD", "test-secret")
@@ -146,8 +146,7 @@ func TestBlobRouteIsAdminOnly(t *testing.T) {
 	h.flush()
 
 	guard, err := access.New(access.Config{
-		AllowLogins:     []string{"someone@github"},
-		TrustedCIDRs:    []string{"10.9.8.7/32"},
+		Addresses:       []access.AddressGrant{{CIDR: "10.9.8.7/32"}},
 		TailscaleSocket: filepath.Join(t.TempDir(), "no-tailscaled.sock"),
 	})
 	if err != nil {

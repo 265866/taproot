@@ -19,16 +19,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// defaultDevices is the test tailnet's access: laptop has both permissions,
+// worker has Proxy only, and bob-pc and the server are not listed.
+var defaultDevices = []DeviceGrant{
+	{ID: laptopID, Name: "laptop", Proxy: true, Admin: true},
+	{ID: workerID, Name: "worker", Proxy: true},
+}
+
 // newTestGuard builds a guard with New and leaves MANAGEMENT_PASSWORD as it
-// was when the test ends. A config without allow-logins admits testLogin.
+// was when the test ends. A config with nil Devices gets defaultDevices; pass
+// an empty list for none.
 func newTestGuard(t *testing.T, cfg Config) *Guard {
 	t.Helper()
 	t.Setenv(managementEnv, "")
 	if err := os.Unsetenv(managementEnv); err != nil {
 		t.Fatalf("unsetenv: %v", err)
 	}
-	if cfg.AllowLogins == nil {
-		cfg.AllowLogins = []string{testLogin}
+	if cfg.Devices == nil {
+		cfg.Devices = defaultDevices
 	}
 	g, err := New(cfg)
 	if err != nil {
@@ -88,11 +96,14 @@ func doMethod(e http.Handler, method, remote, path string, headers map[string]st
 
 func assertForbidden(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
-	assertDenied(t, rec, "forbidden")
+	body := assertDenied(t, rec, "forbidden")
+	if body.Error.Node != "" || body.Error.NodeID != "" || body.Error.Login != "" {
+		t.Fatalf("a plain denial names a device: %s", rec.Body)
+	}
 }
 
 type deniedBody struct {
-	Error struct{ Code, Message, Node string }
+	Error struct{ Code, Message, Node, NodeID, Login string }
 }
 
 func assertDenied(t *testing.T, rec *httptest.ResponseRecorder, code string) deniedBody {
@@ -108,6 +119,21 @@ func assertDenied(t *testing.T, rec *httptest.ResponseRecorder, code string) den
 		t.Fatalf("denial carries Access-Control-Allow-Origin %q", h)
 	}
 	return body
+}
+
+// assertDeviceDenied checks a denial that names the refused device and the
+// switch to turn on.
+func assertDeviceDenied(t *testing.T, rec *httptest.ResponseRecorder, code, node, nodeID, login string) {
+	t.Helper()
+	body := assertDenied(t, rec, code)
+	if body.Error.Node != node || body.Error.NodeID != nodeID || body.Error.Login != login {
+		t.Fatalf("%s names %q %q %q, want %q %q %q", code, body.Error.Node, body.Error.NodeID, body.Error.Login, node, nodeID, login)
+	}
+	want := map[string]string{"no_proxy": "turn on Proxy", "not_admin": "turn on Admin"}[code]
+	if !strings.Contains(body.Error.Message, node) || !strings.Contains(body.Error.Message, nodeID) || !strings.Contains(strings.ToLower(body.Error.Message), strings.ToLower(want)) ||
+		!strings.Contains(body.Error.Message, "Access page") {
+		t.Fatalf("%s message %q does not name the device and the switch", code, body.Error.Message)
+	}
 }
 
 func me(t *testing.T, e http.Handler, remote string, headers map[string]string) meResponse {
@@ -130,6 +156,7 @@ func TestDeniesNonTailnetAddresses(t *testing.T) {
 		t.Run(remote, func(t *testing.T) {
 			assertForbidden(t, do(e, remote, "/v1/models", nil))
 			assertForbidden(t, do(e, remote, "/v8/management/config", nil))
+			assertForbidden(t, do(e, remote, "/", nil))
 		})
 	}
 	if n := ts.callCount("203.0.113.9"); n != 0 {
@@ -142,6 +169,7 @@ func TestDeniesWhenWhoisFails(t *testing.T) {
 		missing := filepath.Join(t.TempDir(), "absent.sock")
 		e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: missing}))
 		assertForbidden(t, do(e, adminIP+":40000", "/v1/models", nil))
+		assertForbidden(t, do(e, adminIP+":40000", "/", nil))
 	})
 	t.Run("tailscaled error then recovery", func(t *testing.T) {
 		ts := newFakeTailscaled(t, defaultPeers())
@@ -160,20 +188,40 @@ func TestDeniesWhenWhoisFails(t *testing.T) {
 		ts := newFakeTailscaled(t, defaultPeers())
 		e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
 		assertForbidden(t, do(e, strayIP+":40000", "/v1/models", nil))
+		assertForbidden(t, do(e, strayIP+":40000", "/", nil))
+	})
+	t.Run("no node ID", func(t *testing.T) {
+		// Permissions attach to the stable ID, so a whois without one admits nothing.
+		peers := defaultPeers()
+		peers[adminIP] = fakePeer{login: testLogin, node: "laptop", noID: true}
+		ts := newFakeTailscaled(t, peers)
+		e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
+		assertForbidden(t, do(e, adminIP+":40000", "/v1/models", nil))
+		assertForbidden(t, do(e, adminIP+":40000", "/v8/management/config", nil))
 	})
 }
 
-func TestDeniesUnknownLogin(t *testing.T) {
+// A device nobody turned on is refused on both surfaces, and each denial
+// tells it its own name, login, and ID, and which switch to turn on. It may
+// load the static dashboard page, which shows the same.
+func TestUnlistedDeviceIsToldWhatToTurnOn(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
-	assertForbidden(t, do(e, outsiderIP+":40000", "/v1/models", nil))
-	assertForbidden(t, do(e, outsiderIP+":40000", "/taproot/api/v1/me", nil))
-	assertForbidden(t, do(e, outsiderIP+":40000", "/v8/management/config", nil))
+	e, got := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
+	got.authorization = "unset"
+	assertDeviceDenied(t, do(e, outsiderIP+":40000", "/v1/models", nil), "no_proxy", "bob-pc", bobID, "bob@example.org")
+	assertDeviceDenied(t, do(e, outsiderIP+":40000", "/v8/management/config", nil), "not_admin", "bob-pc", bobID, "bob@example.org")
+	assertDeviceDenied(t, do(e, outsiderIP+":40000", "/taproot/api/v1/me", nil), "not_admin", "bob-pc", bobID, "bob@example.org")
+	if got.authorization != "unset" {
+		t.Fatal("a refused device reached a handler")
+	}
+	// Another site's page in that device's browser learns nothing.
+	assertForbidden(t, do(e, outsiderIP+":40000", "/v1/models", map[string]string{"Origin": "http://evil.example"}))
+	assertForbidden(t, do(e, outsiderIP+":40000", "/v8/management/config", map[string]string{"Host": "evil.example"}))
 }
 
 func TestSpoofedIdentityHeadersChangeNothing(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
+	e, got := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
 	spoof := map[string]string{
 		"X-Forwarded-For":            "127.0.0.1, " + adminIP,
 		"X-Real-IP":                  adminIP,
@@ -184,10 +232,17 @@ func TestSpoofedIdentityHeadersChangeNothing(t *testing.T) {
 		"Tailscale-User-Name":        "Alice",
 		"Tailscale-User-Profile-Pic": "https://example.invalid",
 	}
+	got.authorization = "unset"
 	for _, remote := range []string{"203.0.113.9:5000", outsiderIP + ":40000", strayIP + ":40000"} {
 		for _, path := range []string{"/v1/models", "/v8/management/config", "/taproot/api/v1/me"} {
-			assertForbidden(t, do(e, remote, path, spoof))
+			rec := do(e, remote, path, spoof)
+			if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "alice") {
+				t.Fatalf("%s from %s with spoofed headers = %d %s", path, remote, rec.Code, rec.Body)
+			}
 		}
+	}
+	if got.authorization != "unset" {
+		t.Fatal("a spoofed request reached a handler")
 	}
 	// An admitted caller stays who its address says, whatever the headers claim.
 	if got := me(t, e, "127.0.0.1:5000", map[string]string{"Tailscale-User-Login": "bob@example.org", "X-Forwarded-For": outsiderIP}); got.Via != "loopback" || got.Login != "" {
@@ -200,25 +255,25 @@ func TestSpoofedIdentityHeadersChangeNothing(t *testing.T) {
 
 func TestAdmitsLoopback(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "absent.sock")
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: missing}))
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: missing, Devices: []DeviceGrant{}}))
 	for _, remote := range []string{"127.0.0.1:5000", "127.5.6.7:5000", "[::1]:5000", "[::ffff:127.0.0.1]:5000"} {
 		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, want 200", remote, rec.Code)
 		}
-		if got := me(t, e, remote, nil); got.Via != "loopback" {
-			t.Fatalf("%s via = %q, want loopback", remote, got.Via)
+		if got := me(t, e, remote, nil); got.Via != "loopback" || !got.Admin || !got.Proxy {
+			t.Fatalf("%s /me = %+v, want loopback with both permissions", remote, got)
 		}
 	}
 }
 
-func TestAdmitsAllowlistedLogin(t *testing.T) {
+func TestAdmitsGrantedDevice(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
 	if rec := do(e, adminIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	got := me(t, e, adminIP+":40000", nil)
-	want := meResponse{Login: "alice@github", DisplayName: "Alice", Node: "laptop.tailnet-0000.ts.net", NodeID: "nlaptopCNTRL", Via: "tailnet", Admin: true}
+	want := meResponse{Login: "alice@github", DisplayName: "Alice", Node: "laptop.tailnet-0000.ts.net", NodeID: laptopID, Via: "tailnet", Proxy: true, Admin: true}
 	if got != want {
 		t.Fatalf("/me = %+v, want %+v", got, want)
 	}
@@ -232,27 +287,75 @@ func TestAdmitsIPv6TailnetAddress(t *testing.T) {
 	}
 }
 
-func TestAdmitsTrustedCIDRWithoutWhois(t *testing.T) {
+// Each switch works on its own: Proxy without Admin, and Admin without Proxy.
+func TestPermissionMatrix(t *testing.T) {
+	peers := defaultPeers()
+	peers["100.64.0.30"] = fakePeer{login: testLogin, displayName: "Alice", node: "phone"}
+	ts := newFakeTailscaled(t, peers)
+	devices := []DeviceGrant{
+		{ID: laptopID, Proxy: true, Admin: true},
+		{ID: workerID, Proxy: true},
+		{ID: stableID("phone"), Admin: true},
+	}
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: devices}))
+	for _, c := range []struct {
+		name, remote string
+		proxy, admin string // "" admits; otherwise the denial code
+	}{
+		{"both", adminIP, "", ""},
+		{"proxy only", otherNodeIP, "", "not_admin"},
+		{"admin only", "100.64.0.30", "no_proxy", ""},
+		{"neither", outsiderIP, "no_proxy", "not_admin"},
+		{"server", selfIP, "", "forbidden"},
+		{"loopback", "127.0.0.1", "", ""},
+	} {
+		for surface, want := range map[string]string{"/v1/models": c.proxy, "/v8/management/config": c.admin} {
+			rec := do(e, c.remote+":40000", surface, nil)
+			if want == "" {
+				if rec.Code != http.StatusOK {
+					t.Errorf("%s %s = %d %s, want 200", c.name, surface, rec.Code, rec.Body)
+				}
+				continue
+			}
+			assertDenied(t, rec, want)
+		}
+		// Every caller with an identity loads the dashboard page.
+		if rec := do(e, c.remote+":40000", "/", nil); rec.Code != http.StatusNotFound && rec.Code != http.StatusOK {
+			t.Errorf("%s / = %d, want past the guard", c.name, rec.Code)
+		}
+	}
+}
+
+func TestAdmitsAddressesWithoutWhois(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, TrustedCIDRs: []string{"192.168.10.0/24", " 10.88.0.0/16 "}}))
-	for _, remote := range []string{"192.168.10.44:1", "10.88.3.2:1"} {
+	addresses := []AddressGrant{{CIDR: "192.168.10.0/24"}, {CIDR: " 10.88.0.0/16 ", Note: "podman"}, {CIDR: "192.168.0.88"}}
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Addresses: addresses})
+	e, _ := testEngine(g)
+	for _, remote := range []string{"192.168.10.44:1", "10.88.3.2:1", "192.168.0.88:1"} {
 		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, want 200", remote, rec.Code)
 		}
-		// trusted-cidrs hold host-local addresses that every local process
+		// Addresses hold host-local addresses that every local process
 		// shares, so they never reach the admin surface.
 		assertForbidden(t, do(e, remote, "/v8/management/config", nil))
 		assertForbidden(t, do(e, remote, "/taproot/api/v1/me", nil))
 	}
+	assertForbidden(t, do(e, "192.168.0.89:1", "/v1/models", nil))
 	assertForbidden(t, do(e, "192.168.11.1:1", "/v1/models", nil))
 	if n := ts.callCount("192.168.10.44"); n != 0 {
-		t.Fatalf("whois called %d times for a trusted CIDR", n)
+		t.Fatalf("whois called %d times for an address in access.addresses", n)
+	}
+	want := []AddressGrant{{CIDR: "192.168.10.0/24"}, {CIDR: "10.88.0.0/16", Note: "podman"}, {CIDR: "192.168.0.88/32"}}
+	if got := g.Grants().Addresses; !slices.Equal(got, want) {
+		t.Fatalf("addresses = %+v, want %+v", got, want)
 	}
 }
 
 func TestSelfNodeReachesProxyOnly(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, got := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
+	// Even listed with Admin, the server's own node never gets it.
+	devices := append(slices.Clone(defaultDevices), DeviceGrant{ID: serverID, Admin: true})
+	e, got := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: devices}))
 	for _, remote := range []string{selfIP + ":40000", "[" + selfIPv6 + "]:40000"} {
 		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
 			t.Fatalf("self node %s proxy status = %d, want 200", remote, rec.Code)
@@ -266,7 +369,12 @@ func TestSelfNodeReachesProxyOnly(t *testing.T) {
 		}
 	}
 	if got := me(t, e, adminIP+":40000", nil); !got.Admin {
-		t.Fatalf("other allowlisted node /me = %+v, want admin", got)
+		t.Fatalf("other granted node /me = %+v, want admin", got)
+	}
+	// Unlisted, it still has Proxy.
+	e, _ = testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: []DeviceGrant{}}))
+	if rec := do(e, selfIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("unlisted self node proxy status = %d, want 200", rec.Code)
 	}
 }
 
@@ -285,20 +393,20 @@ func TestSelfNodeMatchedByStableIDToo(t *testing.T) {
 
 func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	g.now = func() time.Time { return now }
 	e, _ := testEngine(g)
 	ts.failStatus(1000)
 
-	// The proxy still works for allowlisted tailnet callers using a local
-	// name, and loopback keeps admin access.
-	for _, remote := range []string{adminIP + ":40000", selfIP + ":40000"} {
-		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
-			t.Fatalf("%s proxy status = %d, want 200", remote, rec.Code)
-		}
-		assertForbidden(t, do(e, remote, "/v8/management/config", nil))
+	// The proxy still works for granted devices using a local name, and
+	// loopback keeps admin access.
+	if rec := do(e, adminIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("proxy status = %d, want 200", rec.Code)
 	}
+	assertForbidden(t, do(e, adminIP+":40000", "/v8/management/config", nil))
+	// Until the server's node is known, it is just a device without a grant.
+	assertDenied(t, do(e, selfIP+":40000", "/v1/models", nil), "no_proxy")
 	if rec := do(e, "127.0.0.1:1", "/v8/management/config", nil); rec.Code != http.StatusOK {
 		t.Fatalf("loopback admin status = %d, want 200", rec.Code)
 	}
@@ -314,7 +422,13 @@ func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	if rec := do(e, adminIP+":40000", "/v8/management/config", map[string]string{"Host": "server:8317"}); rec.Code != http.StatusOK {
 		t.Fatalf("after recovery admin status = %d, want 200", rec.Code)
 	}
+	if rec := do(e, selfIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("known self node proxy status = %d, want 200", rec.Code)
+	}
 	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
+	if g.ServerNodeID() != serverID {
+		t.Fatalf("ServerNodeID = %q, want %q", g.ServerNodeID(), serverID)
+	}
 
 	// A later failure keeps the last known node.
 	ts.failStatus(1000)
@@ -325,51 +439,46 @@ func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	}
 }
 
-func TestAdminNodes(t *testing.T) {
+// Names grant nothing: the stable ID decides, so a device that takes the
+// name of an admin device gets nothing, and a renamed admin device keeps
+// Admin.
+func TestStableIDDecidesNotName(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"Laptop", "nowhere.other.ts.net."}}))
-	if rec := do(e, adminIP+":40000", "/v8/management/config", nil); rec.Code != http.StatusOK {
-		t.Fatalf("listed node admin status = %d, want 200", rec.Code)
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: []DeviceGrant{{ID: laptopID, Name: "worker", Proxy: true, Admin: true}}})
+	e, _ := testEngine(g)
+	if rec := do(e, adminIP+":1", "/v8/management/config", nil); rec.Code != http.StatusOK {
+		t.Fatalf("granted ID admin status = %d, want 200", rec.Code)
 	}
-	if rec := do(e, otherNodeIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
-		t.Fatalf("unlisted node proxy status = %d, want 200", rec.Code)
-	}
-	// An unlisted node of an allowed login learns which node to list.
-	body := assertDenied(t, do(e, otherNodeIP+":40000", "/v8/management/config", nil), "not_admin_node")
-	if body.Error.Node != "worker."+tailnetSuffix || !strings.Contains(body.Error.Message, "access.admin-nodes") {
-		t.Fatalf("not_admin_node body = %+v", body)
-	}
-	assertDenied(t, do(e, otherNodeIP+":40000", "/taproot/api/v1/me", nil), "not_admin_node")
-	// A browser request from another site gets no detail.
-	assertForbidden(t, do(e, otherNodeIP+":40000", "/v8/management/config", map[string]string{"Origin": "http://evil.example"}))
-	// The server's own node is not told to list itself.
-	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
+	// worker is the name in the entry, but its ID is not listed.
+	assertDeviceDenied(t, do(e, otherNodeIP+":1", "/v1/models", nil), "no_proxy", "worker", workerID, testLogin)
 
-	full := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"worker." + tailnetSuffix}})
-	e, _ = testEngine(full)
-	if rec := do(e, otherNodeIP+":40000", "/v8/management/config", nil); rec.Code != http.StatusOK {
-		t.Fatalf("full-name entry admin status = %d, want 200", rec.Code)
+	// The laptop is renamed, and the worker takes its old name.
+	ts.setPeer(adminIP, fakePeer{login: testLogin, displayName: "Alice", node: "new-laptop"})
+	ts.setPeer(otherNodeIP, fakePeer{login: testLogin, displayName: "Alice", node: "laptop"})
+	g2 := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: []DeviceGrant{{ID: "nnew-laptopCNTRL", Name: "laptop", Proxy: true, Admin: true}}})
+	e, _ = testEngine(g2)
+	assertDeviceDenied(t, do(e, otherNodeIP+":1", "/v8/management/config", nil), "not_admin", "laptop", laptopID, testLogin)
+	if rec := do(e, adminIP+":1", "/v8/management/config", nil); rec.Code != http.StatusOK {
+		t.Fatalf("renamed granted node admin status = %d, want 200", rec.Code)
 	}
-	assertDenied(t, do(e, adminIP+":40000", "/v8/management/config", nil), "not_admin_node")
 
-	// A short entry does not match a node from another tailnet.
-	peers := defaultPeers()
-	peers["100.90.0.1"] = fakePeer{login: "alice@github", node: "laptop.other.ts.net."}
-	ts2 := newFakeTailscaled(t, peers)
-	e, _ = testEngine(newTestGuard(t, Config{TailscaleSocket: ts2.socket, AdminNodes: []string{"laptop"}}))
-	assertDenied(t, do(e, "100.90.0.1:1", "/v8/management/config", nil), "not_admin_node")
+	// IDs are case-sensitive.
+	if err := g.SetGrants(Grants{Devices: []DeviceGrant{{ID: strings.ToUpper(laptopID), Admin: true, Proxy: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	e, _ = testEngine(g)
+	assertDenied(t, do(e, adminIP+":1", "/v8/management/config", nil), "not_admin")
 }
 
-// A tagged server node has no user login, so whois reports none that
-// allow-logins could list. The server's own node still reaches the proxy, and
-// only the proxy; another tagged node does not.
-func TestTaggedServerNodeReachesProxyOnly(t *testing.T) {
+// A tagged device has no user login. It is granted by ID like any other
+// device; the server's own node keeps Proxy whether tagged or not.
+func TestTaggedDevices(t *testing.T) {
 	peers := defaultPeers()
 	tagged := fakePeer{login: "tagged-devices", displayName: "Tagged Devices", node: "server"}
 	peers[selfIP], peers[selfIPv6] = tagged, tagged
 	peers["100.64.0.20"] = fakePeer{login: "tagged-devices", displayName: "Tagged Devices", node: "ci-runner"}
 	ts := newFakeTailscaled(t, peers)
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop", "server"}})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
 	e, _ := testEngine(g)
 
 	for _, remote := range []string{selfIP + ":40000", "[" + selfIPv6 + "]:40000"} {
@@ -386,7 +495,13 @@ func TestTaggedServerNodeReachesProxyOnly(t *testing.T) {
 	if d := g.deviceFor(id); d.ID != LocalDeviceID {
 		t.Fatalf("own node device = %+v, want %s", d, LocalDeviceID)
 	}
-	assertForbidden(t, do(e, "100.64.0.20:40000", "/v1/models", nil))
+	assertDeviceDenied(t, do(e, "100.64.0.20:40000", "/v1/models", nil), "no_proxy", "ci-runner", stableID("ci-runner"), "tagged-devices")
+	if err := g.SetGrants(Grants{Devices: []DeviceGrant{{ID: stableID("ci-runner"), Proxy: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(e, "100.64.0.20:40000", "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("granted tagged device proxy status = %d, want 200; body %s", rec.Code, rec.Body)
+	}
 
 	// When whois fails, the own address in status still admits the node. A
 	// fresh guard has no cached whois answer, so the lookup really fails.
@@ -400,13 +515,6 @@ func TestTaggedServerNodeReachesProxyOnly(t *testing.T) {
 	if ts.callCount(selfIP) != before+1 {
 		t.Fatalf("whois calls for the own address = %d, want %d", ts.callCount(selfIP), before+1)
 	}
-
-	// Until the server's own node is known, a tagged own node is just a login
-	// outside allow-logins.
-	ts.failStatus(1000)
-	unknown := newTestGuard(t, Config{TailscaleSocket: ts.socket})
-	unknownEngine, _ := testEngine(unknown)
-	assertForbidden(t, do(unknownEngine, selfIP+":40000", "/v1/models", nil))
 }
 
 // An address the console moved from the server to another node is still in
@@ -416,17 +524,17 @@ func TestReassignedOwnAddressIsNotTheServer(t *testing.T) {
 	peers := defaultPeers()
 	peers[selfIP] = fakePeer{login: "mallory@example.org", displayName: "Mallory", node: "intruder"}
 	ts := newFakeTailscaled(t, peers)
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop", "intruder"}}))
-	assertForbidden(t, do(e, selfIP+":40000", "/v1/models", nil))
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket}))
+	assertDenied(t, do(e, selfIP+":40000", "/v1/models", nil), "no_proxy")
 
-	// The same address under an allowed login reaches the proxy as that node,
-	// not as the server, and is kept off the admin surface while status still
-	// lists it as the server's.
-	ts.setPeer(selfIP, fakePeer{login: testLogin, displayName: "Alice", node: "intruder"})
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop", "intruder"}})
+	// Granted, the node reaches the proxy as itself, not as the server, and
+	// is kept off the admin surface while status still lists the address as
+	// the server's.
+	devices := append(slices.Clone(defaultDevices), DeviceGrant{ID: stableID("intruder"), Proxy: true, Admin: true})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: devices})
 	e, _ = testEngine(g)
 	if rec := do(e, selfIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
-		t.Fatalf("allowed login on a reassigned address: proxy status = %d, want 200", rec.Code)
+		t.Fatalf("granted device on a reassigned address: proxy status = %d, want 200", rec.Code)
 	}
 	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
 	id, reason := g.admit(t.Context(), selfIP+":40000", func() *selfNode { return g.self(t.Context()) })
@@ -435,109 +543,41 @@ func TestReassignedOwnAddressIsNotTheServer(t *testing.T) {
 	}
 }
 
-// Without admin-nodes no tailnet caller is an admin, whatever its login.
-// Loopback still is.
-func TestEmptyAdminNodesDenyEveryTailnetCaller(t *testing.T) {
+// With no device holding Admin, no tailnet caller is an admin. Loopback
+// still is, and a grant made at runtime applies at once.
+func TestNoAdminDevices(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: []DeviceGrant{{ID: laptopID, Proxy: true}, {ID: workerID, Proxy: true}}})
 	e, _ := testEngine(g)
 	for _, remote := range []string{adminIP + ":40000", otherNodeIP + ":40000"} {
 		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
 			t.Fatalf("%s proxy status = %d, want 200", remote, rec.Code)
 		}
 		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me"} {
-			assertDenied(t, do(e, remote, path, nil), "not_admin_node")
+			assertDenied(t, do(e, remote, path, nil), "not_admin")
 		}
 	}
 	if got := me(t, e, "127.0.0.1:1", nil); !got.Admin || got.Via != string(ViaLoopback) {
 		t.Fatalf("loopback /me = %+v, want admin", got)
 	}
-
-	// Listing the node at runtime applies at once.
-	if err := g.SetAdminNodes([]string{" Laptop. "}); err != nil {
+	if err := g.SetGrants(Grants{Devices: []DeviceGrant{{ID: " " + laptopID + " ", Admin: true}}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := g.AdminNodes(); len(got) != 1 || got[0] != "laptop" {
-		t.Fatalf("AdminNodes = %v", got)
+	if got := me(t, e, adminIP+":40000", nil); !got.Admin || got.Proxy {
+		t.Fatalf("admin-only device /me = %+v, want admin without proxy", got)
 	}
-	if got := me(t, e, adminIP+":40000", nil); !got.Admin {
-		t.Fatalf("listed node /me = %+v, want admin", got)
-	}
-	if err := g.SetAdminNodes([]string{"bad name"}); err == nil {
-		t.Fatal("SetAdminNodes accepted a name with a space")
-	}
-	laptop := Identity{Node: "laptop." + tailnetSuffix}
-	if !g.AdminNodesInclude([]string{"laptop"}, laptop) || g.AdminNodesInclude([]string{"worker"}, laptop) || g.AdminNodesInclude(nil, laptop) {
-		t.Fatal("AdminNodesInclude does not match the guard's rule")
-	}
+	assertDenied(t, do(e, adminIP+":40000", "/v1/models", nil), "no_proxy")
 }
 
-// An "id:" entry pins a node by stable ID, so another node that later takes
-// the same MagicDNS name is not an admin.
-func TestAdminNodesByStableID(t *testing.T) {
-	peers := defaultPeers()
-	laptopID := "nlaptopCNTRL"
-	ts := newFakeTailscaled(t, peers)
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"id:" + laptopID}})
-	e, _ := testEngine(g)
-	if rec := do(e, adminIP+":1", "/v8/management/config", nil); rec.Code != http.StatusOK {
-		t.Fatalf("id-pinned node admin status = %d, want 200", rec.Code)
-	}
-	if got := me(t, e, adminIP+":1", nil); got.NodeID != laptopID {
-		t.Fatalf("/me nodeId = %q, want %q", got.NodeID, laptopID)
-	}
-	assertDenied(t, do(e, otherNodeIP+":1", "/v8/management/config", nil), "not_admin_node")
-
-	// The pinned device was renamed and another node took its old name: the
-	// pin follows the device, not the name.
-	peers[adminIP] = fakePeer{login: "alice@github", displayName: "Alice", node: "old-laptop"}
-	peers[otherNodeIP] = fakePeer{login: "alice@github", displayName: "Alice", node: "laptop"}
-	ts2 := newFakeTailscaled(t, peers)
-	e, _ = testEngine(newTestGuard(t, Config{TailscaleSocket: ts2.socket, AdminNodes: []string{"id:nold-laptopCNTRL"}}))
-	assertDenied(t, do(e, otherNodeIP+":1", "/v8/management/config", nil), "not_admin_node")
-	if rec := do(e, adminIP+":1", "/v8/management/config", nil); rec.Code != http.StatusOK {
-		t.Fatalf("renamed pinned node admin status = %d, want 200", rec.Code)
-	}
-	e, _ = testEngine(g)
-
-	// IDs are case-sensitive and kept as written.
-	if err := g.SetAdminNodes([]string{"ID:" + strings.ToUpper(laptopID)}); err != nil {
-		t.Fatal(err)
-	}
-	if got := g.AdminNodes(); len(got) != 1 || got[0] != "id:"+strings.ToUpper(laptopID) {
-		t.Fatalf("AdminNodes = %v", got)
-	}
-	assertDenied(t, do(e, adminIP+":1", "/v8/management/config", nil), "not_admin_node")
-	if !g.AdminNodesInclude([]string{"id:" + laptopID}, Identity{Node: "renamed", NodeID: laptopID}) {
-		t.Fatal("AdminNodesInclude ignores the stable ID")
-	}
-	if err := g.SetAdminNodes([]string{"id:"}); err == nil {
-		t.Fatal("SetAdminNodes accepted an empty id")
-	}
-}
-
-// admin-nodes matches only the control-assigned name. A whois without one
-// (ComputedName comes from the device's own hostname) matches nothing.
-func TestAdminNodesIgnoreComputedName(t *testing.T) {
-	peers := defaultPeers()
-	peers[adminIP] = fakePeer{login: "alice@github", node: "laptop", noName: true}
-	ts := newFakeTailscaled(t, peers)
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}}))
-	if rec := do(e, adminIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
-		t.Fatalf("proxy status = %d, want 200", rec.Code)
-	}
-	assertDenied(t, do(e, adminIP+":40000", "/v8/management/config", nil), "not_admin_node")
-}
-
-// Every admitted caller may load the dashboard page; nobody else may.
-func TestDashboardShellOpenToAdmittedCallers(t *testing.T) {
+// Every caller with an identity may load the dashboard page; nobody else may.
+func TestDashboardShellOpenToIdentifiedCallers(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
 	e := gin.New()
-	e.Use(newTestGuard(t, Config{TailscaleSocket: ts.socket, TrustedCIDRs: []string{"192.168.0.88/32"}}).Middleware())
+	e.Use(newTestGuard(t, Config{TailscaleSocket: ts.socket, Addresses: []AddressGrant{{CIDR: "192.168.0.88/32"}}}).Middleware())
 	e.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "shell") })
 	e.HEAD("/", func(c *gin.Context) { c.Status(http.StatusOK) })
 	e.POST("/", func(c *gin.Context) { c.String(http.StatusOK, "post") })
-	for _, remote := range []string{adminIP + ":1", selfIP + ":1", "192.168.0.88:1", "127.0.0.1:1"} {
+	for _, remote := range []string{adminIP + ":1", otherNodeIP + ":1", outsiderIP + ":1", selfIP + ":1", "192.168.0.88:1", "127.0.0.1:1"} {
 		if rec := do(e, remote, "/", nil); rec.Code != http.StatusOK {
 			t.Fatalf("GET / from %s = %d, want 200", remote, rec.Code)
 		}
@@ -545,8 +585,9 @@ func TestDashboardShellOpenToAdmittedCallers(t *testing.T) {
 			t.Fatalf("HEAD / from %s = %d, want 200", remote, rec.Code)
 		}
 	}
-	assertDenied(t, doMethod(e, http.MethodPost, adminIP+":1", "/", nil), "not_admin_node")
-	for _, remote := range []string{outsiderIP + ":1", strayIP + ":1", "203.0.113.9:1"} {
+	assertDenied(t, doMethod(e, http.MethodPost, otherNodeIP+":1", "/", nil), "not_admin")
+	assertDenied(t, doMethod(e, http.MethodPost, outsiderIP+":1", "/", nil), "not_admin")
+	for _, remote := range []string{strayIP + ":1", "203.0.113.9:1"} {
 		assertForbidden(t, do(e, remote, "/", nil))
 	}
 }
@@ -560,7 +601,7 @@ func TestDashboardAssetsFollowThePage(t *testing.T) {
 	crossSite := map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "script"}
 	rebound := map[string]string{"Host": "rebind.evil.example"}
 	for mode, cfg := range map[string]Config{
-		"enabled":  {TailscaleSocket: ts.socket, TrustedCIDRs: []string{"192.168.0.88/32"}},
+		"enabled":  {TailscaleSocket: ts.socket, Addresses: []AddressGrant{{CIDR: "192.168.0.88/32"}}},
 		"disabled": {Enabled: &off},
 	} {
 		t.Run(mode, func(t *testing.T) {
@@ -587,9 +628,9 @@ func TestDashboardAssetsFollowThePage(t *testing.T) {
 					}
 				}
 			}
-			// Loopback, the admin node, the server's own node, and the trusted CIDR when
-			// enabled; loopback alone when disabled.
-			if want := map[string]int{"enabled": 4, "disabled": 1}[mode]; admitted != want {
+			// Loopback, the admin device, the server's own node, the address,
+			// and the unlisted device when enabled; loopback alone when disabled.
+			if want := map[string]int{"enabled": 5, "disabled": 1}[mode]; admitted != want {
 				t.Errorf("%d callers loaded the page, want %d", admitted, want)
 			}
 		})
@@ -599,7 +640,7 @@ func TestDashboardAssetsFollowThePage(t *testing.T) {
 // GETs that change state need RequestHeader from every caller, loopback too.
 func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
 	e := gin.New()
 	e.Use(g.Middleware())
 	ran := 0
@@ -627,6 +668,7 @@ func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 		"/v0/resource/plugins/claude-keep-rolling/status",
 		"/v0/management/oauth-callback",
 		"/taproot/api/v1/settings",
+		"/taproot/api/v1/access/devices",
 	}
 	for _, path := range append(slices.Clone(stateful), readOnly...) {
 		e.GET(path, handler)
@@ -647,8 +689,8 @@ func TestSideEffectGETsNeedRequestHeader(t *testing.T) {
 		if rec := do(e, "127.0.0.1:1", path, map[string]string{RequestHeader: "1"}); rec.Code != http.StatusOK {
 			t.Fatalf("loopback %s with header = %d, want 200", path, rec.Code)
 		}
-		// An unlisted node is told about admin-nodes first.
-		assertDenied(t, do(e, otherNodeIP+":1", path, nil), "not_admin_node")
+		// A device without Admin is told about Admin first.
+		assertDenied(t, do(e, otherNodeIP+":1", path, nil), "not_admin")
 	}
 	for _, path := range readOnly {
 		if rec := do(e, adminIP+":1", path, nil); rec.Code != http.StatusOK {
@@ -679,7 +721,7 @@ func TestRESPFilterAdmitsLoopbackOnly(t *testing.T) {
 
 func TestBrowserChecks(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, ExtraHosts: []string{"proxy.home.arpa"}, AdminNodes: []string{"laptop"}}))
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, ExtraHosts: []string{"proxy.home.arpa"}}))
 	admin := adminIP + ":40000"
 	for _, tc := range []struct {
 		name    string
@@ -745,6 +787,7 @@ func TestClassify(t *testing.T) {
 		"/v0/management/auth-files":        surfaceAdmin,
 		"/v8/management/oauth/callback":    surfaceAdmin,
 		"/taproot/api/v1/me":               surfaceAdmin,
+		"/taproot/api/v1/access/devices":   surfaceAdmin,
 		"/taproot":                         surfaceAdmin,
 		"/v0/resource/plugins/x/index.htm": surfaceAdmin,
 		"/assets/index-abc.js":             surfaceAdmin,
@@ -794,50 +837,63 @@ func TestWhoisCacheExpires(t *testing.T) {
 	if n := ts.callCount(adminIP); n != 1 {
 		t.Fatalf("whois calls at 59s = %d, want 1", n)
 	}
-	// The address now belongs to someone else; after the TTL the guard sees it.
+	// The address now belongs to another device; after the TTL the guard sees it.
 	ts.setPeer(adminIP, fakePeer{login: "bob@example.org", node: "bob-pc"})
 	now = now.Add(time.Second)
-	assertForbidden(t, do(e, adminIP+":40000", "/v1/models", nil))
+	assertDenied(t, do(e, adminIP+":40000", "/v1/models", nil), "no_proxy")
 	if n := ts.callCount(adminIP); n != 2 {
 		t.Fatalf("whois calls after TTL = %d, want 2", n)
 	}
 }
 
-func TestSetAllowLoginsAppliesImmediately(t *testing.T) {
+func TestSetGrantsAppliesImmediately(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
 	e, _ := testEngine(g)
-	assertForbidden(t, do(e, outsiderIP+":40000", "/v1/models", nil))
+	assertDenied(t, do(e, outsiderIP+":40000", "/v1/models", nil), "no_proxy")
 
-	if err := g.SetAllowLogins([]string{"alice@github", " Bob@Example.org "}); err != nil {
-		t.Fatalf("SetAllowLogins: %v", err)
+	with := Grants{Devices: append(slices.Clone(defaultDevices), DeviceGrant{ID: bobID, Name: " bob-pc ", Proxy: true})}
+	if err := g.SetGrants(with); err != nil {
+		t.Fatalf("SetGrants: %v", err)
 	}
 	if rec := do(e, outsiderIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
-		t.Fatalf("after allow status = %d, want 200", rec.Code)
+		t.Fatalf("after grant status = %d, want 200", rec.Code)
 	}
-	if got := g.AllowLogins(); strings.Join(got, ",") != "alice@github,bob@example.org" {
-		t.Fatalf("AllowLogins = %v", got)
+	if got := g.Grants().Devices; len(got) != 3 || got[2] != (DeviceGrant{ID: bobID, Name: "bob-pc", Proxy: true}) {
+		t.Fatalf("Devices = %+v", got)
 	}
 
-	if err := g.SetAllowLogins([]string{"alice@github"}); err != nil {
-		t.Fatalf("SetAllowLogins: %v", err)
+	// A device with neither permission is dropped from the list.
+	if err := g.SetGrants(Grants{Devices: append(slices.Clone(defaultDevices), DeviceGrant{ID: bobID})}); err != nil {
+		t.Fatalf("SetGrants: %v", err)
 	}
-	assertForbidden(t, do(e, outsiderIP+":40000", "/v1/models", nil))
+	assertDenied(t, do(e, outsiderIP+":40000", "/v1/models", nil), "no_proxy")
 	if n := ts.callCount(outsiderIP); n != 1 {
 		t.Fatalf("whois calls = %d, want 1 (identity cached, decision not)", n)
 	}
+	if got := g.Grants().Devices; !slices.Equal(got, defaultDevices) {
+		t.Fatalf("Devices = %+v, want %+v", got, defaultDevices)
+	}
 
-	for _, bad := range [][]string{nil, {}, {"  "}, {"alice@github", ""}} {
-		if err := g.SetAllowLogins(bad); err == nil {
-			t.Fatalf("SetAllowLogins(%q) = nil, want error", bad)
+	for name, bad := range map[string]Grants{
+		"blank id":      {Devices: []DeviceGrant{{ID: "  ", Proxy: true}}},
+		"id with space": {Devices: []DeviceGrant{{ID: "n1 2", Proxy: true}}},
+		"id with colon": {Devices: []DeviceGrant{{ID: "id:n1", Proxy: true}}},
+		"duplicate id":  {Devices: []DeviceGrant{{ID: laptopID, Proxy: true}, {ID: laptopID, Admin: true}}},
+		"bad cidr":      {Addresses: []AddressGrant{{CIDR: "10.0.0.0/33"}}},
+		"not an addr":   {Addresses: []AddressGrant{{CIDR: "laptop"}}},
+		"duplicate":     {Addresses: []AddressGrant{{CIDR: "10.0.0.1"}, {CIDR: "10.0.0.1/32"}}},
+	} {
+		if err := g.SetGrants(bad); err == nil {
+			t.Fatalf("SetGrants(%s) = nil, want error", name)
 		}
 	}
-	if got := g.AllowLogins(); len(got) != 1 || got[0] != "alice@github" {
-		t.Fatalf("rejected update changed the list: %v", got)
+	if got := g.Grants().Devices; !slices.Equal(got, defaultDevices) {
+		t.Fatalf("rejected update changed the list: %+v", got)
 	}
-	g.AllowLogins()[0] = "mutated"
-	if got := g.AllowLogins(); got[0] != "alice@github" {
-		t.Fatalf("AllowLogins exposes internal state: %v", got)
+	g.Grants().Devices[0].Admin = false
+	if got := g.Grants().Devices; !got[0].Admin {
+		t.Fatalf("Grants exposes internal state: %+v", got)
 	}
 }
 
@@ -883,7 +939,7 @@ func TestManagementSecretGeneration(t *testing.T) {
 	}
 
 	t.Setenv(managementEnv, "operator-chosen")
-	kept, err := New(Config{AllowLogins: []string{testLogin}})
+	kept, err := New(Config{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -921,7 +977,7 @@ func TestDisabledGuardKeepsAdminSurfaceLoopbackOnly(t *testing.T) {
 	off := false
 	e, got := testEngine(newTestGuard(t, Config{Enabled: &off}))
 	for _, remote := range []string{"203.0.113.9:5000", adminIP + ":40000", selfIP + ":40000", "192.168.10.44:1"} {
-		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me"} {
+		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me", "/taproot/api/v1/access/devices"} {
 			got.authorization = "unset"
 			assertForbidden(t, do(e, remote, path, map[string]string{"Authorization": "Bearer mine"}))
 			if got.authorization != "unset" {
@@ -985,29 +1041,46 @@ func TestConfigParsing(t *testing.T) {
 	raw := `
 access:
   enabled: true
-  allow-logins: ["alice@github", "someone@example.com"]
-  trusted-cidrs: ["10.88.0.0/16"]
+  devices:
+    - id: nQ7v2xK8CNTRL
+      name: alice-desktop
+      proxy: true
+      admin: true
+    - {id: nH3m9pL2CNTRL, admin: true}
+  addresses:
+    - cidr: 192.0.2.20/32
+      note: Agents on the server host
   tailscale-socket: /run/ts.sock
   cache-ttl: 30s
 `
-	if err := yaml.Unmarshal([]byte(raw), &cfg); err != nil {
+	dec := yaml.NewDecoder(strings.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
 		t.Fatalf("yaml: %v", err)
 	}
 	a := cfg.Access
-	if a.Enabled == nil || !*a.Enabled || len(a.AllowLogins) != 2 || a.TrustedCIDRs[0] != "10.88.0.0/16" || a.TailscaleSocket != "/run/ts.sock" || a.CacheTTL != 30*time.Second {
+	wantDevices := []DeviceGrant{{ID: "nQ7v2xK8CNTRL", Name: "alice-desktop", Proxy: true, Admin: true}, {ID: "nH3m9pL2CNTRL", Admin: true}}
+	if a.Enabled == nil || !*a.Enabled || !slices.Equal(a.Devices, wantDevices) || a.Addresses[0] != (AddressGrant{CIDR: "192.0.2.20/32", Note: "Agents on the server host"}) ||
+		a.TailscaleSocket != "/run/ts.sock" || a.CacheTTL != 30*time.Second {
 		t.Fatalf("parsed %+v", a)
 	}
 
-	g := newTestGuard(t, Config{AllowLogins: []string{" Someone@Example.com "}})
-	if !g.enabled || g.ttl != time.Minute || strings.Join(g.AllowLogins(), ",") != "someone@example.com" {
-		t.Fatalf("defaults: enabled=%v ttl=%s allow=%v", g.enabled, g.ttl, g.AllowLogins())
+	// A device entry is strict too.
+	dec = yaml.NewDecoder(strings.NewReader("access:\n  devices:\n    - {id: n1, proxy: true, login: alice@github}\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err == nil || !strings.Contains(err.Error(), "login") {
+		t.Fatalf("unknown device key: %v", err)
 	}
 
-	logins := []string{testLogin}
+	g := newTestGuard(t, Config{})
+	if !g.enabled || g.ttl != time.Minute {
+		t.Fatalf("defaults: enabled=%v ttl=%s", g.enabled, g.ttl)
+	}
+
 	for name, bad := range map[string]Config{
-		"bad cidr":     {AllowLogins: logins, TrustedCIDRs: []string{"10.0.0.0/33"}},
-		"negative ttl": {AllowLogins: logins, CacheTTL: -time.Second},
-		"blank login":  {AllowLogins: []string{" "}},
+		"bad cidr":     {Addresses: []AddressGrant{{CIDR: "10.0.0.0/33"}}},
+		"negative ttl": {CacheTTL: -time.Second},
+		"blank id":     {Devices: []DeviceGrant{{ID: " ", Proxy: true}}},
 	} {
 		t.Setenv(managementEnv, "x")
 		if _, err := New(bad); err == nil {
@@ -1016,31 +1089,42 @@ access:
 	}
 }
 
-// An enabled guard has no built-in login: without allow-logins it refuses to
-// start rather than admit someone the operator never named.
-func TestEnabledGuardRequiresAllowLogins(t *testing.T) {
-	on := true
-	for name, cfg := range map[string]Config{
-		"absent":          {},
-		"empty":           {AllowLogins: []string{}},
-		"absent, enabled": {Enabled: &on},
+// The keys from before per-device permissions name their replacement.
+func TestRemovedKeysNameTheirReplacement(t *testing.T) {
+	for key, want := range map[string]string{
+		"allow-logins":  "access.devices",
+		"admin-nodes":   "admin: true",
+		"trusted-cidrs": "access.addresses",
 	} {
-		t.Setenv(managementEnv, "x")
-		g, err := New(cfg)
-		if err == nil || !strings.Contains(err.Error(), "access.allow-logins is empty") {
-			t.Fatalf("%s: New = %v, %v; want the allow-logins error", name, g, err)
+		err := RemovedKey(key)
+		if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "access."+key) {
+			t.Errorf("RemovedKey(%s) = %v, want a message naming %s", key, err, want)
 		}
 	}
-	off := false
-	t.Setenv(managementEnv, "x")
-	if _, err := New(Config{Enabled: &off}); err != nil {
-		t.Fatalf("disabled guard without allow-logins: %v", err)
+	for _, key := range []string{"devices", "addresses", "enabled", "extra-hosts"} {
+		if err := RemovedKey(key); err != nil {
+			t.Errorf("RemovedKey(%s) = %v", key, err)
+		}
 	}
 }
 
-func TestConcurrentRequestsAndAllowlistUpdates(t *testing.T) {
+// An enabled guard starts with no devices listed: no tailnet device gets in,
+// and loopback is still an admin.
+func TestEnabledGuardStartsWithoutDevices(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}})
+	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: []DeviceGrant{}}))
+	for _, remote := range []string{adminIP, otherNodeIP, outsiderIP} {
+		assertDenied(t, do(e, remote+":1", "/v1/models", nil), "no_proxy")
+		assertDenied(t, do(e, remote+":1", "/v8/management/config", nil), "not_admin")
+	}
+	if got := me(t, e, "127.0.0.1:1", nil); !got.Admin {
+		t.Fatalf("loopback /me = %+v, want admin", got)
+	}
+}
+
+func TestConcurrentRequestsAndGrantUpdates(t *testing.T) {
+	ts := newFakeTailscaled(t, defaultPeers())
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
 	e, _ := testEngine(g)
 	var wg sync.WaitGroup
 	for i := range 16 {
@@ -1049,15 +1133,15 @@ func TestConcurrentRequestsAndAllowlistUpdates(t *testing.T) {
 			defer wg.Done()
 			for range 20 {
 				if rec := do(e, adminIP+":40000", "/taproot/api/v1/me", nil); rec.Code != http.StatusOK {
-					t.Errorf("allowlisted caller got %d", rec.Code)
+					t.Errorf("granted caller got %d", rec.Code)
 					return
 				}
-				logins := []string{"alice@github"}
+				devices := slices.Clone(defaultDevices)
 				if i%2 == 0 {
-					logins = append(logins, "bob@example.org")
+					devices = append(devices, DeviceGrant{ID: bobID, Proxy: true})
 				}
-				if err := g.SetAllowLogins(logins); err != nil {
-					t.Errorf("SetAllowLogins: %v", err)
+				if err := g.SetGrants(Grants{Devices: devices}); err != nil {
+					t.Errorf("SetGrants: %v", err)
 					return
 				}
 			}

@@ -38,15 +38,18 @@ The guard runs before every route and looks only at the connection's source addr
 | Caller | Proxy (`/v1/...`) | Dashboard and management API |
 | --- | --- | --- |
 | Loopback inside the container | yes | yes |
-| A login in `access.allow-logins` on a device in `access.admin-nodes` | yes | yes |
-| A login in `access.allow-logins` on any other device | yes | no |
+| A device with `proxy: true` in `access.devices` | yes | no |
+| A device with `admin: true` in `access.devices` | no | yes |
 | The server's own Tailscale node | yes | no |
-| An address in `access.trusted-cidrs` | yes | no |
+| An address in `access.addresses` | yes | no |
+| Any other device, including a new one | no | no |
 | Anyone else, including whois failures | no | no |
 
-For a tailnet address, the guard asks `tailscaled` who the caller is through its LocalAPI socket, and caches the answer for one minute. For admitted callers, the guard adds the management key to management requests inside the process. The key never reaches a browser. `/healthz` is open to every caller.
+Access is per device. Each device has two switches, set on the dashboard's **Access** page or in `access.devices`: **Proxy** sends model requests, and **Admin** opens the dashboard and the management API. A device with both is on both rows above. A device that joins the tailnet starts with neither. Permissions belong to the device's Tailscale stable ID, which Tailscale never reuses, so a device that takes an old device's name gets nothing. A device that leaves the tailnet is forgotten 24 hours later.
 
-The dashboard page itself loads for every admitted caller, because it holds no data. A device outside `admin-nodes` sees why the API refuses it, with the device name to add.
+For a tailnet address, the guard asks `tailscaled` which device the caller is through its LocalAPI socket, and caches the answer for one minute. For admitted callers, the guard adds the management key to management requests inside the process. The key never reaches a browser. `/healthz` is open to every caller.
+
+The dashboard page itself loads for every device on the tailnet, because it holds no data. A device without Admin sees its name, owner, and stable ID, and which switch to turn on. A proxy request from a device without Proxy gets a 403 that names the device and says to turn on Proxy on the Access page.
 
 The guard also refuses browser requests from other sites: a `Host` that is not one of the server's names, a cross-origin `Origin`, and a state-changing `GET` without the `X-Taproot-Request: 1` header. Command-line clients send none of these headers and are not affected. To reach the server under another name, add it to `access.extra-hosts`.
 
@@ -58,9 +61,8 @@ Taproot stores OAuth refresh tokens for your accounts, and the request logs hold
 - **Publish the port on the host's Tailscale address only.** Never publish on `0.0.0.0` or `127.0.0.1`. A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
 - **Check the result after every deployment change.** Run the checks in [Check the deployment](#4-check-the-deployment).
 - **Do not set `access.enabled: false`.** It turns off every check on the proxy, so anyone who reaches the port can spend your accounts' quota without a login. The dashboard and the management and taproot APIs then answer loopback callers only: processes inside the container, or, when taproot runs outside a container or with host networking, every process on the host, including its browsers. They still refuse browser requests from other sites, but nothing checks who calls the proxy.
-- **List every login in `allow-logins`.** Taproot has no built-in login and refuses to start while the list is empty. It also refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
-- **Pin admin devices by stable node ID.** A MagicDNS name can be claimed by another device of the same login after the original is renamed or deleted. An ID is never reused.
-- **Keep `trusted-cidrs` to single addresses** (`/32`). Every host in a wider range reaches the proxy without a login.
+- **Give Admin only to devices you use the dashboard from.** Admin reaches every OAuth token and every stored prompt. A server or router of yours that only runs agents needs Proxy at most. Taproot refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
+- **Keep `access.addresses` to single addresses** (`/32`). Every host in a wider range reaches the proxy without Tailscale.
 - **Home mode and the TUI's embedded server are refused.** CLIProxyAPI's Home mode (`-home-jwt`) and `--tui --standalone` would start the server without taproot's guard, so taproot exits with an error instead. `--tui` alone, connected to a running server, still works.
 
 ## Quick start
@@ -96,15 +98,16 @@ cp examples/taproot/config.yaml examples/taproot/taproot.yaml data/
 
 Edit `data/taproot.yaml`:
 
-1. Put your Tailscale login in `access.allow-logins`. `tailscale whois <your-device-ip>` shows it.
-2. Put the stable ID of each device that may use the dashboard in `access.admin-nodes`, as `id:<ID>`. The `ID` field of `Self` in `tailscale status --json`, run on that device, is its stable ID.
+1. Under `access.devices`, give the device you will open the dashboard from `proxy: true` and `admin: true`, by its stable ID. The `ID` field of `Self` in `tailscale status --json`, run on that device, is its stable ID.
+2. Turn on every other device from the dashboard's **Access** page once taproot runs.
 
 ```yaml
 access:
-  allow-logins:
-    - alice@example.com
-  admin-nodes:
-    - id:nEXAMPLE1CNTRL
+  devices:
+    - id: nEXAMPLE1CNTRL
+      name: laptop
+      proxy: true
+      admin: true
 ```
 
 Mount the directory, not the single files. Restoring a backup replaces the files by rename, which fails on a single-file mount.
@@ -142,8 +145,8 @@ The data directory then holds:
 
 Run each check, and stop if any result differs.
 
-1. From a device in `admin-nodes`, open `http://<server>:8317/taproot/api/v1/me`. It must show `"via":"tailnet"` and `"admin":true`. If it shows `"via":"loopback"`, something rewrites caller addresses and every caller is an admin.
-2. If you have a device of the same login that is not in `admin-nodes`, the same URL must return 403 there, with the code `not_admin_node`.
+1. From a device with Admin, open `http://<server>:8317/taproot/api/v1/me`. It must show `"via":"tailnet"` and `"admin":true`. If it shows `"via":"loopback"`, something rewrites caller addresses and every caller is an admin.
+2. From a device without Admin, the same URL must return 403, with the code `not_admin`.
 3. On the server host, `curl http://$TS_IP:8317/taproot/api/v1/me` must return 403.
 
 `<server>` is the host's MagicDNS name or Tailscale address.
@@ -190,7 +193,8 @@ The dashboard is served at `/` on the proxy port. It has these sections:
 - **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
 - **Request Logs:** search and view stored requests. The application log is a tab here.
 - **Backups:** create, download, and restore backups.
-- **Settings:** the access lists, retention, backup schedule, poller interval, and Discord alerts.
+- **Access:** every device on the tailnet, grouped by owner, with its Proxy and Admin switches, and the addresses that reach the proxy without Tailscale.
+- **Settings:** retention, backup schedule, poller interval, and Discord alerts.
 - **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins.
 
 ![The Usage overview: 30 days of cost, requests, tokens, cache hits, and latency](docs/screenshots/usage-overview.png)
@@ -205,19 +209,18 @@ All screenshots use synthetic demo data from `internal/taproot/demo` (see [CONTR
 | [<img src="docs/screenshots/usage-overview.png" width="420" alt="Usage overview">](docs/screenshots/usage-overview.png)<br>**Usage:** cost, tokens, cache hits, and latency | [<img src="docs/screenshots/usage-devices.png" width="420" alt="Usage by device">](docs/screenshots/usage-devices.png)<br>**Devices:** usage per tailnet device and the cache TTL check |
 | [<img src="docs/screenshots/usage-sessions.png" width="420" alt="Sessions">](docs/screenshots/usage-sessions.png)<br>**Sessions:** session affinity and account switches | [<img src="docs/screenshots/request-logs.png" width="420" alt="Request logs">](docs/screenshots/request-logs.png)<br>**Request Logs:** every proxied request, compressed and searchable |
 | [<img src="docs/screenshots/request-log-detail.png" width="420" alt="Request log detail">](docs/screenshots/request-log-detail.png)<br>**Request detail:** headers with credentials redacted, and the body | [<img src="docs/screenshots/routing.png" width="420" alt="Routing">](docs/screenshots/routing.png)<br>**Routing:** soonest-reset-first and session affinity |
-| [<img src="docs/screenshots/backups.png" width="420" alt="Backups">](docs/screenshots/backups.png)<br>**Backups:** scheduled and manual snapshots | [<img src="docs/screenshots/settings.png" width="420" alt="Settings">](docs/screenshots/settings.png)<br>**Settings:** access lists, retention, and backup schedule |
+| [<img src="docs/screenshots/backups.png" width="420" alt="Backups">](docs/screenshots/backups.png)<br>**Backups:** scheduled and manual snapshots | [<img src="docs/screenshots/settings.png" width="420" alt="Settings">](docs/screenshots/settings.png)<br>**Settings:** retention and backup schedule |
 | [<img src="docs/screenshots/accounts-light.png" width="420" alt="Accounts, light theme">](docs/screenshots/accounts-light.png)<br>**Light theme** | |
 
 ## Configuration reference
 
-Set `access.allow-logins`. Every other key in `taproot.yaml` is optional. An unknown key stops the server at startup. A relative `data-dir` resolves against the directory of `config.yaml`.
+Every key in `taproot.yaml` is optional, but without a device with `admin: true` only loopback reaches the dashboard. An unknown key stops the server at startup, and so do the removed `access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs`, with a message naming what replaces them. A relative `data-dir` resolves against the directory of `config.yaml`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `data-dir` | `taproot` | Database, request logs, and backups. |
-| `access.allow-logins` | required | Tailscale logins that reach the proxy. Taproot refuses to start without one. |
-| `access.admin-nodes` | empty | Devices that reach the dashboard and management API: `id:<StableID>` or a MagicDNS name. Empty means no tailnet device. |
-| `access.trusted-cidrs` | empty | Addresses that reach the proxy without a login. |
+| `access.devices` | empty | Each device's permissions: `id` (its stable ID), `name` (a label taproot keeps in step with the tailnet), `proxy`, and `admin`. A device that is not listed has neither. |
+| `access.addresses` | empty | Addresses outside Tailscale that reach the proxy only: `cidr` and an optional `note`. |
 | `access.extra-hosts` | empty | More `Host` names the server answers to. |
 | `access.tailscale-socket` | `/var/run/tailscale/tailscaled.sock` | The `tailscaled` LocalAPI socket. |
 | `access.cache-ttl` | `1m` | How long a whois answer is cached. |

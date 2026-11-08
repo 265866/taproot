@@ -11,7 +11,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/access"
@@ -24,20 +26,25 @@ import (
 func main() {
 	dir := flag.String("dir", "", "empty or missing directory to write the demo config and data into (required)")
 	port := flag.Int("port", 8399, "loopback port the demo server listens on")
-	tailscaled := flag.String("tailscaled", "", "instead of seeding, serve a stand-in tailscaled on this unix socket until stopped")
+	serve := flag.Bool("serve-tailnet", false, "instead of seeding, serve the fake tailnet on the socket in -dir until interrupted")
 	flag.Parse()
+	if *dir == "" {
+		fmt.Fprintln(os.Stderr, "usage: go run ./internal/taproot/demo -dir <empty directory> [-port 8399] [-serve-tailnet]")
+		os.Exit(2)
+	}
 	log.SetLevel(log.WarnLevel)
-	if *tailscaled != "" {
-		if err := runTailscaled(*tailscaled); err != nil {
-			fmt.Fprintln(os.Stderr, "taproot demo:", err)
+	if *serve {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		ln, err := listenTailnet(ctx, tailnetSocket(*dir))
+		if err == nil {
+			err = serveTailnet(ctx, ln, time.Now())
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "taproot demo tailnet:", err)
 			os.Exit(1)
 		}
 		return
-	}
-	if *dir == "" {
-		fmt.Fprintln(os.Stderr, "usage: go run ./internal/taproot/demo -dir <empty directory> [-port 8399]")
-		fmt.Fprintln(os.Stderr, "       go run ./internal/taproot/demo -tailscaled <socket>")
-		os.Exit(2)
 	}
 	summary, err := seed(context.Background(), *dir, *port, time.Now())
 	if err != nil {

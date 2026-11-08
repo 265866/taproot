@@ -12,6 +12,8 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,7 +58,7 @@ func newLocalClient(socketPath string) *localClient {
 		Transport: &http.Transport{
 			// On Windows there is no tailscaled socket at this path, so the dial
 			// fails, every tailnet lookup errors, and only loopback and
-			// trusted-cidrs callers are admitted.
+			// access.addresses callers are admitted.
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return dialer.DialContext(ctx, "unix", socketPath)
 			},
@@ -159,6 +161,88 @@ type statusResponse struct {
 		DNSName      string
 		TailscaleIPs []string
 	}
+}
+
+// TailnetDevice is one device from tailscaled's status list.
+type TailnetDevice struct {
+	// ID is the stable node ID.
+	ID string
+	// Name is the first label of the MagicDNS name, or the device's hostname
+	// when it has none.
+	Name string
+	// DNSName is the MagicDNS name without the trailing dot.
+	DNSName string
+	// Login is the owner's login, or "" for a tagged device.
+	Login string
+	Tags  []string
+	OS    string
+	// Created is when the device joined the tailnet, or zero when unknown.
+	Created time.Time
+}
+
+// Tailnet is the server's own node and every peer tailscaled lists.
+type Tailnet struct {
+	Self  TailnetDevice
+	Peers []TailnetDevice
+}
+
+type peerStatus struct {
+	ID       string
+	HostName string
+	DNSName  string
+	OS       string
+	UserID   int64
+	Tags     []string
+	Created  string
+}
+
+type tailnetStatus struct {
+	BackendState string
+	Self         *peerStatus
+	Peer         map[string]*peerStatus
+	User         map[string]struct{ LoginName string }
+}
+
+// tailnet returns the server's node and its peers from GET
+// /localapi/v0/status?peers=true. A tailscaled that is not running is an
+// error, because its peer list is empty or stale.
+func (l *localClient) tailnet(ctx context.Context) (Tailnet, error) {
+	body, err := l.get(ctx, "/localapi/v0/status?peers=true")
+	if err != nil {
+		return Tailnet{}, fmt.Errorf("tailscale status: %w", err)
+	}
+	var parsed tailnetStatus
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return Tailnet{}, fmt.Errorf("decode tailscale status: %w", err)
+	}
+	if parsed.BackendState != "Running" {
+		return Tailnet{}, fmt.Errorf("tailscale status: tailscaled is %q, not Running", parsed.BackendState)
+	}
+	if parsed.Self == nil || parsed.Self.ID == "" {
+		return Tailnet{}, errors.New("tailscale status: no self node")
+	}
+	device := func(p *peerStatus) TailnetDevice {
+		d := TailnetDevice{ID: p.ID, DNSName: strings.ToLower(strings.TrimSuffix(p.DNSName, ".")), OS: p.OS, Tags: p.Tags}
+		d.Name, _, _ = strings.Cut(d.DNSName, ".")
+		if d.Name == "" {
+			d.Name = p.HostName
+		}
+		if len(p.Tags) == 0 {
+			d.Login = parsed.User[strconv.FormatInt(p.UserID, 10)].LoginName
+		}
+		if created, err := time.Parse(time.RFC3339Nano, p.Created); err == nil {
+			d.Created = created
+		}
+		return d
+	}
+	tn := Tailnet{Self: device(parsed.Self)}
+	for _, p := range parsed.Peer {
+		if p != nil && p.ID != "" {
+			tn.Peers = append(tn.Peers, device(p))
+		}
+	}
+	slices.SortFunc(tn.Peers, func(a, b TailnetDevice) int { return strings.Compare(a.ID, b.ID) })
+	return tn, nil
 }
 
 // status returns the server's own node from GET /localapi/v0/status.

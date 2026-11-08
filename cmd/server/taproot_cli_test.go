@@ -119,7 +119,7 @@ func TestFatalStartupErrorsExitNonzero(t *testing.T) {
 		{
 			name:    "tailscaled socket missing",
 			config:  "port: 18397\n",
-			taproot: "access:\n  allow-logins: [alice@github]\n  tailscale-socket: SOCKET\n",
+			taproot: "access:\n  tailscale-socket: SOCKET\n",
 			want: func(dir string) string {
 				return "tailscaled socket " + filepath.Join(dir, "no-tailscaled.sock") + " does not exist"
 			},

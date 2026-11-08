@@ -91,7 +91,7 @@ func TestDeviceNames(t *testing.T) {
 		}
 	}
 
-	// Stored names: trusted-cidrs devices take the current name, whatever
+	// Stored names: access.addresses devices take the current name, whatever
 	// was stored; other devices keep theirs.
 	for _, tc := range []struct{ id, stored, want string }{
 		{"cidr:192.168.0.88", "192.168.0.88", "server (via 192.168.0.88)"},
@@ -170,19 +170,19 @@ func TestOwnAddressesRefreshAndSurviveFailures(t *testing.T) {
 // model. Own addresses only change a device's name.
 func TestOwnAddressNamingLeavesAccessUnchanged(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	cfg := Config{TailscaleSocket: ts.socket, AdminNodes: []string{"laptop"}, TrustedCIDRs: []string{"192.168.0.88/32"}}
+	cfg := Config{TailscaleSocket: ts.socket, Addresses: []AddressGrant{{CIDR: "192.168.0.88/32"}}}
 	callers := []struct {
 		name, remote string
 		proxy, admin int
 	}{
 		{"loopback", "127.0.0.1:1", 200, 200},
-		{"trusted own LAN address", "192.168.0.88:40000", 200, 403},
-		{"own address outside trusted-cidrs", "10.0.2.15:40000", 403, 403},
+		{"listed own LAN address", "192.168.0.88:40000", 200, 403},
+		{"own address outside access.addresses", "10.0.2.15:40000", 403, 403},
 		{"other LAN host", "192.168.0.20:40000", 403, 403},
-		{"admin node", adminIP + ":40000", 200, 200},
+		{"admin device", adminIP + ":40000", 200, 200},
 		{"server's own node", selfIP + ":40000", 200, 403},
-		{"unlisted node", otherNodeIP + ":40000", 200, 403},
-		{"login not allowed", outsiderIP + ":40000", 403, 403},
+		{"proxy-only device", otherNodeIP + ":40000", 200, 403},
+		{"unlisted device", outsiderIP + ":40000", 403, 403},
 		{"unknown tailnet address", strayIP + ":40000", 403, 403},
 		{"internet", "203.0.113.9:5000", 403, 403},
 	}
@@ -212,9 +212,9 @@ func TestOwnAddressNamingLeavesAccessUnchanged(t *testing.T) {
 			}
 		}
 		if len(own) > 0 {
-			// The naming did look: the trusted own address was named after the server.
+			// The naming did look: the listed own address was named after the server.
 			if name := g.DeviceName("cidr:192.168.0.88", "192.168.0.88"); name != "server (via 192.168.0.88)" {
-				t.Errorf("%s: trusted own address named %q", label, name)
+				t.Errorf("%s: listed own address named %q", label, name)
 			}
 		}
 	}

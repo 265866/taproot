@@ -13,6 +13,7 @@ import (
 
 	"github.com/265866/taproot/internal/api"
 	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/taproot/access"
 	sdkaccess "github.com/265866/taproot/sdk/access"
 	"github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
@@ -23,11 +24,13 @@ const (
 	tailnet = "tailnet-0000.ts.net"
 	selfIP  = "100.64.0.1"
 	adminIP = "100.64.0.2"
-	// worker is another node of the same login that is not in admin-nodes.
+	// worker has Proxy but not Admin.
 	workerIP = "100.101.1.2"
-	lanIP    = "192.168.0.88"
-	login    = "alice@github"
-	host     = "server:8317"
+	// newIP is a device nobody gave a permission.
+	newIP = "100.64.0.21"
+	lanIP = "192.168.0.88"
+	login = "alice@github"
+	host  = "server:8317"
 	// Fake token values; the test checks they never leave the server cross-origin.
 	refreshToken = "sk-ant-ort-TESTONLY"
 )
@@ -46,7 +49,7 @@ func fakeLocalAPI(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes := map[string]string{selfIP: "server", adminIP: "desktop", workerIP: "worker"}
+	nodes := map[string]string{selfIP: "server", adminIP: "desktop", workerIP: "worker", newIP: "new-laptop"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/localapi/v0/whois", func(w http.ResponseWriter, r *http.Request) {
 		node, ok := nodes[r.FormValue("addr")]
@@ -59,10 +62,24 @@ func fakeLocalAPI(t *testing.T) string {
 			"UserProfile": map[string]any{"LoginName": "alice@github", "DisplayName": "Alice"},
 		})
 	})
-	mux.HandleFunc("/localapi/v0/status", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"Self": map[string]any{
-			"ID": "nserverCNTRL", "DNSName": "server." + tailnet + ".", "TailscaleIPs": []string{selfIP, "fd7a:115c:a1e0::1"},
-		}})
+	mux.HandleFunc("/localapi/v0/status", func(w http.ResponseWriter, r *http.Request) {
+		status := map[string]any{"BackendState": "Running", "Self": map[string]any{
+			"ID": "nserverCNTRL", "DNSName": "server." + tailnet + ".", "TailscaleIPs": []string{selfIP, "fd7a:115c:a1e0::1"}, "OS": "linux", "UserID": 1,
+		}}
+		if r.FormValue("peers") == "true" {
+			peers := map[string]any{}
+			for addr, node := range nodes {
+				if node != "server" {
+					peers["nodekey:"+node] = map[string]any{
+						"ID": "n" + node + "CNTRL", "DNSName": node + "." + tailnet + ".", "HostName": node, "OS": "linux", "UserID": 1,
+						"TailscaleIPs": []string{addr}, "Created": "2026-01-02T03:04:05Z",
+					}
+				}
+			}
+			status["Peer"] = peers
+			status["User"] = map[string]any{"1": map[string]any{"LoginName": login}}
+		}
+		_ = json.NewEncoder(w).Encode(status)
 	})
 	srv := &http.Server{Handler: mux}
 	go func() { _ = srv.Serve(ln) }()
@@ -76,11 +93,24 @@ type fixture struct {
 	auths       *auth.Manager
 }
 
+// accessYAML is the access section of the test tailnet: desktop has both
+// permissions, worker has Proxy, and addresses reach the proxy.
+func accessYAML(socket string, addresses ...string) string {
+	tp := "access:\n  devices:\n" +
+		"    - {id: ndesktopCNTRL, name: desktop, proxy: true, admin: true}\n" +
+		"    - {id: nworkerCNTRL, name: worker, proxy: true}\n" +
+		"  tailscale-socket: " + filepath.ToSlash(socket) + "\n  addresses:\n"
+	for _, addr := range addresses {
+		tp += "    - cidr: " + addr + "/32\n"
+	}
+	return tp
+}
+
 // newServer builds the real server the way cmd/server does: taproot.Setup
 // first, then api.NewServer with its options.
 func newServer(t *testing.T) fixture {
 	t.Helper()
-	tp := "access:\n  allow-logins: [\"" + login + "\"]\n  admin-nodes: [desktop]\n  tailscale-socket: " + filepath.ToSlash(fakeLocalAPI(t)) + "\n  trusted-cidrs: [\"" + lanIP + "/32\"]\nbackups:\n  daily-at: \"off\"\n"
+	tp := accessYAML(fakeLocalAPI(t), lanIP) + "backups:\n  daily-at: \"off\"\n"
 	f, err := setupServer(t, tp)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
@@ -168,7 +198,7 @@ func guardCode(rec *httptest.ResponseRecorder) string {
 		return ""
 	}
 	switch body.Error.Code {
-	case "forbidden", "not_admin_node", "request_header_required":
+	case "forbidden", "no_proxy", "not_admin", "request_header_required":
 		return body.Error.Code
 	}
 	return ""
@@ -217,7 +247,8 @@ func TestCrossOriginBrowserRequestsAreRefused(t *testing.T) {
 		{"settings preflight", req{method: http.MethodOptions, path: "/taproot/api/v1/settings", headers: map[string]string{
 			"Origin": "http://evil.example", "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type",
 		}}},
-		{"allowlist edit", req{method: http.MethodPut, path: "/taproot/api/v1/settings", headers: textPlain, body: `{"access":{"allowLogins":["alice@github","bob@example.org"]}}`}},
+		{"access edit", req{method: http.MethodPut, path: "/taproot/api/v1/settings", headers: textPlain, body: `{"access":{"devices":[{"id":"nworkerCNTRL","proxy":true,"admin":true}]}}`}},
+		{"device list", req{path: "/taproot/api/v1/access/devices", headers: crossSite}},
 		{"backup create", req{method: http.MethodPost, path: "/taproot/api/v1/backups", headers: textPlain}},
 		{"backup restore", req{method: http.MethodPost, path: "/taproot/api/v1/backups/20261102T000000Z/restore", headers: textPlain}},
 		{"v8 config", req{path: "/v8/management/config", headers: crossSite}},
@@ -271,7 +302,8 @@ func TestSameOriginDashboardWorks(t *testing.T) {
 		{path: "/taproot/api/v1/settings"},
 		{path: "/v8/management/config"},
 		{path: "/v0/management/auth-files/download?name=claude-x.json"},
-		{method: http.MethodPut, path: "/taproot/api/v1/settings", body: `{"access":{"allowLogins":["alice@github"]}}`},
+		{path: "/taproot/api/v1/access/devices"},
+		{method: http.MethodPut, path: "/taproot/api/v1/settings", body: `{"access":{"devices":[{"id":"ndesktopCNTRL","name":"desktop","proxy":true,"admin":true},{"id":"nworkerCNTRL","name":"worker","proxy":true}]}}`},
 	} {
 		r.remote = adminIP
 		r.headers = sameOrigin
@@ -305,10 +337,10 @@ func TestSurfaces(t *testing.T) {
 		// Every process and container on the server host connects from its own node.
 		{"server's own node", selfIP, selfIP + ":8317", false},
 		// Host-local callers using a 127.0.1.1 publish arrive from the LAN address.
-		{"trusted cidr", lanIP, "127.0.1.1:8317", false},
-		{"node in admin-nodes", adminIP, host, true},
-		// Security recheck F1: another node of the allowed login is not an admin.
-		{"allowlisted node outside admin-nodes", workerIP, host, false},
+		{"address in access.addresses", lanIP, "127.0.1.1:8317", false},
+		{"device with Admin", adminIP, host, true},
+		// Security recheck F1: another device of the same login is not an admin.
+		{"device with Proxy only", workerIP, host, false},
 		{"loopback", "127.0.0.1", "localhost:8317", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -326,7 +358,7 @@ func TestSurfaces(t *testing.T) {
 					t.Errorf("admin %s = %d, want the guard's 403", path, rec.Code)
 				}
 			}
-			// The dashboard page is static, and every admitted caller may load it.
+			// The dashboard page is static, and every identified caller may load it.
 			if rec := f.do(req{remote: tc.remote, host: tc.host, path: "/"}); rec.Code != http.StatusOK {
 				t.Errorf("GET / = %d, want 200", rec.Code)
 			}
@@ -342,61 +374,140 @@ func TestSurfaces(t *testing.T) {
 	}
 }
 
-// Security recheck F1: a node of the allowed login that is not in admin-nodes
-// gets no tokens, and its 403 names the node to add.
-func TestNodeOutsideAdminNodesIsTold(t *testing.T) {
+// Security recheck F1: a device without Admin gets no tokens, and its 403
+// names the device and the switch to turn on.
+func TestDeviceWithoutAdminIsTold(t *testing.T) {
 	f := newServer(t)
 	sameOrigin := map[string]string{"Origin": "http://" + host}
 	rec := f.do(req{remote: workerIP, path: "/v0/management/auth-files/download?name=claude-x.json", headers: sameOrigin})
-	if guardCode(rec) != "not_admin_node" || strings.Contains(rec.Body.String(), refreshToken) {
+	if guardCode(rec) != "not_admin" || strings.Contains(rec.Body.String(), refreshToken) {
 		t.Fatalf("token download from worker = %d %s", rec.Code, rec.Body)
 	}
 	var body struct {
-		Error struct{ Node, Message string }
+		Error struct{ Node, NodeID, Login, Message string }
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error.Node != "worker."+tailnet || !strings.Contains(body.Error.Message, "access.admin-nodes") {
-		t.Fatalf("not_admin_node body = %s", rec.Body)
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error.Node != "worker" || body.Error.NodeID != "nworkerCNTRL" ||
+		body.Error.Login != login || !strings.Contains(body.Error.Message, "Admin") || !strings.Contains(body.Error.Message, "Access page") {
+		t.Fatalf("not_admin body = %s", rec.Body)
 	}
 	if rec := f.do(req{remote: workerIP, method: http.MethodPost, path: "/v1/messages", body: `{}`}); isGuardDenial(rec) {
 		t.Fatalf("worker proxy request denied: %s", rec.Body)
 	}
 }
 
-// admin-nodes is editable through settings, refuses to drop the caller's own
-// device, and is written to taproot.yaml.
-func TestAdminNodesEditableThroughSettings(t *testing.T) {
+// The device list is editable through settings, refuses to take the
+// caller's own Admin, and is written to taproot.yaml.
+func TestDevicesEditableThroughSettings(t *testing.T) {
 	f := newServer(t)
 	sameOrigin := map[string]string{"Origin": "http://" + host, "Content-Type": "application/json"}
-	rec := f.do(req{remote: adminIP, method: http.MethodPut, path: "/taproot/api/v1/settings", headers: sameOrigin, body: `{"access":{"adminNodes":["worker"]}}`})
+	put := func(remote, body string) *httptest.ResponseRecorder {
+		r := req{remote: remote, method: http.MethodPut, path: "/taproot/api/v1/settings", headers: sameOrigin, body: body}
+		if remote == "127.0.0.1" {
+			r.host, r.headers = "localhost:8317", map[string]string{"Content-Type": "application/json"}
+		}
+		return f.do(r)
+	}
+	rec := put(adminIP, `{"access":{"devices":[{"id":"ndesktopCNTRL","proxy":true},{"id":"nworkerCNTRL","proxy":true,"admin":true}]}}`)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "would_lock_out") {
-		t.Fatalf("dropping own node = %d %s, want 409 would_lock_out", rec.Code, rec.Body)
+		t.Fatalf("dropping own Admin = %d %s, want 409 would_lock_out", rec.Code, rec.Body)
 	}
-	rec = f.do(req{remote: adminIP, method: http.MethodPut, path: "/taproot/api/v1/settings", headers: sameOrigin, body: `{"access":{"adminNodes":["desktop","Worker.` + tailnet + `."]}}`})
+	rec = put(adminIP, `{"access":{"devices":[{"id":"ndesktopCNTRL","name":"desktop","proxy":true,"admin":true},{"id":"nworkerCNTRL","name":"worker","proxy":true,"admin":true}]}}`)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("adding worker = %d %s", rec.Code, rec.Body)
-	}
-	var got struct{ Access struct{ AdminNodes []string } }
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || strings.Join(got.Access.AdminNodes, ",") != "desktop,worker."+tailnet {
-		t.Fatalf("settings adminNodes = %s", rec.Body)
+		t.Fatalf("giving worker Admin = %d %s", rec.Code, rec.Body)
 	}
 	if rec := f.do(req{remote: workerIP, path: "/v8/management/config", headers: sameOrigin}); rec.Code != http.StatusOK {
-		t.Fatalf("worker after listing = %d %s", rec.Code, rec.Body)
+		t.Fatalf("worker with Admin = %d %s", rec.Code, rec.Body)
 	}
 	written, err := os.ReadFile(f.taprootYAML)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tp, err := LoadConfig(f.taprootYAML)
-	if err != nil || strings.Join(tp.Access.AdminNodes, ",") != "desktop,worker."+tailnet {
-		t.Fatalf("taproot.yaml admin-nodes = %v (%v):\n%s", tp.Access.AdminNodes, err, written)
+	if err != nil || len(tp.Access.Devices) != 2 || !tp.Access.Devices[1].Admin || tp.Access.Devices[1].ID != "nworkerCNTRL" {
+		t.Fatalf("taproot.yaml devices = %+v (%v):\n%s", tp.Access.Devices, err, written)
 	}
 	// Loopback may clear the list; it stays an admin itself.
-	rec = f.do(req{remote: "127.0.0.1", host: "localhost:8317", method: http.MethodPut, path: "/taproot/api/v1/settings", headers: map[string]string{"Content-Type": "application/json"}, body: `{"access":{"adminNodes":[]}}`})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("loopback clearing admin-nodes = %d %s", rec.Code, rec.Body)
+	if rec := put("127.0.0.1", `{"access":{"devices":[]}}`); rec.Code != http.StatusOK {
+		t.Fatalf("loopback clearing devices = %d %s", rec.Code, rec.Body)
 	}
-	if rec := f.do(req{remote: adminIP, path: "/v8/management/config", headers: sameOrigin}); guardCode(rec) != "not_admin_node" {
+	if rec := f.do(req{remote: adminIP, path: "/v8/management/config", headers: sameOrigin}); guardCode(rec) != "not_admin" {
 		t.Fatalf("admin after clearing = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A new device is refused on both surfaces until a switch is on, and each
+// switch opens only its own surface.
+func TestNewDeviceRefusedUntilSwitchOn(t *testing.T) {
+	f := newServer(t)
+	sameOrigin := map[string]string{"Origin": "http://" + host}
+	proxy := func() *httptest.ResponseRecorder {
+		return f.do(req{remote: newIP, method: http.MethodPost, path: "/v1/messages", body: `{}`, headers: map[string]string{"Anthropic-Version": "2023-06-01"}})
+	}
+	admin := func() *httptest.ResponseRecorder {
+		return f.do(req{remote: newIP, path: "/v0/management/auth-files/download?name=claude-x.json", headers: sameOrigin})
+	}
+	if rec := proxy(); guardCode(rec) != "no_proxy" || !strings.Contains(rec.Body.String(), "new-laptop") || !strings.Contains(rec.Body.String(), "Turn on Proxy") {
+		t.Fatalf("new device proxy = %d %s, want no_proxy naming it", rec.Code, rec.Body)
+	}
+	if rec := admin(); guardCode(rec) != "not_admin" || strings.Contains(rec.Body.String(), refreshToken) {
+		t.Fatalf("new device admin = %d %s, want not_admin", rec.Code, rec.Body)
+	}
+	if rec := f.do(req{remote: newIP, path: "/"}); rec.Code != http.StatusOK {
+		t.Fatalf("new device dashboard page = %d, want the static page", rec.Code)
+	}
+
+	devices := `{"id":"ndesktopCNTRL","name":"desktop","proxy":true,"admin":true},{"id":"nworkerCNTRL","name":"worker","proxy":true}`
+	settings := func(extra string) {
+		t.Helper()
+		rec := f.do(req{remote: adminIP, method: http.MethodPut, path: "/taproot/api/v1/settings", headers: map[string]string{"Origin": "http://" + host, "Content-Type": "application/json"},
+			body: `{"access":{"devices":[` + devices + extra + `]}}`})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("PUT /settings = %d %s", rec.Code, rec.Body)
+		}
+	}
+	settings(`,{"id":"nnew-laptopCNTRL","name":"new-laptop","proxy":true}`)
+	if rec := proxy(); isGuardDenial(rec) {
+		t.Fatalf("new device with Proxy denied: %s", rec.Body)
+	}
+	if rec := admin(); guardCode(rec) != "not_admin" {
+		t.Fatalf("new device with Proxy only, admin = %d %s", rec.Code, rec.Body)
+	}
+	settings(`,{"id":"nnew-laptopCNTRL","name":"new-laptop","admin":true}`)
+	if rec := admin(); isGuardDenial(rec) {
+		t.Fatalf("new device with Admin denied: %s", rec.Body)
+	}
+	if rec := proxy(); guardCode(rec) != "no_proxy" {
+		t.Fatalf("new device with Admin only, proxy = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// The Access page's list joins tailscaled's peers with access.devices.
+func TestAccessDevicesEndpoint(t *testing.T) {
+	f := newServer(t)
+	rec := f.do(req{remote: adminIP, path: "/taproot/api/v1/access/devices", headers: map[string]string{"Origin": "http://" + host}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /access/devices = %d %s", rec.Code, rec.Body)
+	}
+	var got struct {
+		Enabled bool
+		Devices []struct {
+			ID, Name, Login string
+			Server          bool
+			Proxy, Admin    bool
+		}
+		Addresses []struct{ CIDR string }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.Enabled || len(got.Devices) != 4 || len(got.Addresses) != 1 || got.Addresses[0].CIDR != lanIP+"/32" {
+		t.Fatalf("devices = %s", rec.Body)
+	}
+	want := map[string][2]bool{"nserverCNTRL": {true, false}, "ndesktopCNTRL": {true, true}, "nworkerCNTRL": {true, false}, "nnew-laptopCNTRL": {false, false}}
+	for _, d := range got.Devices {
+		if p, ok := want[d.ID]; !ok || d.Proxy != p[0] || d.Admin != p[1] || d.Login != login || d.Server != (d.ID == "nserverCNTRL") {
+			t.Errorf("device %+v", d)
+		}
+	}
+	if rec := f.do(req{remote: workerIP, path: "/taproot/api/v1/access/devices"}); guardCode(rec) != "not_admin" {
+		t.Fatalf("device list from a device without Admin = %d %s", rec.Code, rec.Body)
 	}
 }
 
@@ -537,7 +648,8 @@ func TestCheckServerMode(t *testing.T) {
 func TestSetupRefusesUnknownKeys(t *testing.T) {
 	for key, tp := range map[string]string{
 		"allow-login": "access:\n  allow-login: [" + login + "]\n",
-		"backup":      "access:\n  allow-logins: [" + login + "]\nbackup:\n  keep: 3\n",
+		"backup":      "access:\n  devices: []\nbackup:\n  keep: 3\n",
+		"login":       "access:\n  devices:\n    - {id: n1, proxy: true, login: alice@github}\n",
 	} {
 		_, err := setupServer(t, tp)
 		if err == nil || !strings.Contains(err.Error(), "field "+key+" not found") || !strings.Contains(err.Error(), "taproot.yaml") {
@@ -546,15 +658,35 @@ func TestSetupRefusesUnknownKeys(t *testing.T) {
 	}
 }
 
-// The guard has no built-in login, so without allow-logins it refuses to start.
-func TestSetupRefusesEmptyAllowLogins(t *testing.T) {
-	for name, tp := range map[string]string{
-		"no access section": "backups:\n  daily-at: \"off\"\n",
-		"empty list":        "access:\n  allow-logins: []\n",
+// The access keys from before per-device permissions stop startup with a
+// message that names what replaces them; there is no migration.
+func TestSetupRefusesRemovedAccessKeys(t *testing.T) {
+	for key, want := range map[string]string{
+		"allow-logins":  "access.devices",
+		"admin-nodes":   "admin: true",
+		"trusted-cidrs": "access.addresses",
 	} {
-		_, err := setupServer(t, tp)
-		if err == nil || !strings.Contains(err.Error(), "access.allow-logins is empty") || !strings.Contains(err.Error(), "taproot.yaml") {
-			t.Errorf("%s: Setup = %v, want the allow-logins error naming taproot.yaml", name, err)
+		_, err := setupServer(t, "access:\n  "+key+": []\n  devices: []\n")
+		if err == nil || !strings.Contains(err.Error(), "access."+key+" was removed") || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "taproot.yaml") {
+			t.Errorf("Setup with %s = %v, want an error naming %s and taproot.yaml", key, err, want)
+		}
+	}
+}
+
+// A fresh install with no devices listed starts once tailscaled's socket is
+// reachable; only loopback is an admin.
+func TestSetupStartsWithoutDevices(t *testing.T) {
+	socket := filepath.ToSlash(fakeLocalAPI(t))
+	for name, tp := range map[string]string{
+		"no devices key": "access:\n  tailscale-socket: " + socket + "\nbackups:\n  daily-at: \"off\"\n",
+		"empty list":     "access:\n  devices: []\n  tailscale-socket: " + socket + "\nbackups:\n  daily-at: \"off\"\n",
+	} {
+		f, err := setupServer(t, tp)
+		if err != nil {
+			t.Fatalf("%s: Setup = %v", name, err)
+		}
+		if rec := f.do(req{remote: "127.0.0.1", host: "localhost:8317", path: "/taproot/api/v1/me"}); rec.Code != http.StatusOK {
+			t.Errorf("%s: loopback /me = %d", name, rec.Code)
 		}
 	}
 }
@@ -564,7 +696,7 @@ func TestSetupRefusesEmptyAllowLogins(t *testing.T) {
 func TestSettingsOutputLoadsStrictly(t *testing.T) {
 	f := newServer(t)
 	body := `{
-		"access": {"allowLogins": ["` + login + `", "someone@example.com"], "adminNodes": ["id:nExample1CNTRL", "laptop"]},
+		"access": {"devices": [{"id": "nExample1CNTRL", "name": "laptop", "proxy": true, "admin": true}, {"id": "nExample2CNTRL", "proxy": true}], "addresses": [{"cidr": "192.0.2.10", "note": "agents: on the host"}]},
 		"requestLogs": {"maxDays": -1, "maxBytes": -1, "excludePaths": ["HEAD /api/*"], "keepUnrouted404": true},
 		"backups": {"dailyAt": "04:30", "keep": 3},
 		"ingest": {"pollInterval": "5m"},
@@ -582,7 +714,9 @@ func TestSettingsOutputLoadsStrictly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig of the settings output: %v\n%s", err, written)
 	}
-	if strings.Join(tp.Access.AllowLogins, ",") != login+",someone@example.com" || strings.Join(tp.Access.AdminNodes, ",") != "id:nExample1CNTRL,laptop" ||
+	if len(tp.Access.Devices) != 2 || tp.Access.Devices[0] != (access.DeviceGrant{ID: "nExample1CNTRL", Name: "laptop", Proxy: true, Admin: true}) ||
+		tp.Access.Devices[1] != (access.DeviceGrant{ID: "nExample2CNTRL", Proxy: true}) ||
+		len(tp.Access.Addresses) != 1 || tp.Access.Addresses[0] != (access.AddressGrant{CIDR: "192.0.2.10/32", Note: "agents: on the host"}) ||
 		tp.RequestLogs.MaxDays != -1 || tp.RequestLogs.MaxBytes != -1 || !tp.RequestLogs.KeepUnrouted404 || len(tp.RequestLogs.ExcludePaths) != 1 ||
 		tp.Backups.DailyAt != "04:30" || tp.Backups.Keep != 3 || tp.Ingest.PollInterval != "5m" ||
 		tp.Alerts.DiscordWebhook == "" || tp.Alerts.Enabled == nil || *tp.Alerts.Enabled {
@@ -596,13 +730,18 @@ func TestDeployedConfigShapesLoad(t *testing.T) {
 	dir := t.TempDir()
 	deployed := filepath.Join(dir, "taproot.yaml")
 	raw := `access:
-  allow-logins:
-    - alice@github
-  admin-nodes:
-    - id:nExample1CNTRL
-    - id:nExample2CNTRL
-  trusted-cidrs:
-    - 192.0.2.10/32
+  devices:
+    - id: nExample1CNTRL
+      name: laptop
+      proxy: true
+      admin: true
+    - id: nExample2CNTRL
+      name: phone
+      proxy: false
+      admin: true
+  addresses:
+    - cidr: 192.0.2.10/32
+      note: agents on the server host
   tailscale-socket: /var/run/tailscale/tailscaled.sock
 backups:
   daily-at: "03:13"
@@ -615,11 +754,11 @@ request-logs:
 		t.Fatal(err)
 	}
 	tp, err := LoadConfig(deployed)
-	if err != nil || len(tp.Access.AdminNodes) != 2 || tp.RequestLogs.MaxDays != -1 || tp.RequestLogs.MaxBytes != -1 {
+	if err != nil || len(tp.Access.Devices) != 2 || len(tp.Access.Addresses) != 1 || tp.RequestLogs.MaxDays != -1 || tp.RequestLogs.MaxBytes != -1 {
 		t.Fatalf("LoadConfig = %+v, %v", tp, err)
 	}
 	example, err := LoadConfig(filepath.Join("..", "..", "examples", "taproot", "taproot.yaml"))
-	if err != nil || len(example.Access.AllowLogins) == 0 {
+	if err != nil || len(example.Access.Devices) == 0 {
 		t.Fatalf("examples/taproot/taproot.yaml = %+v, %v", example, err)
 	}
 	empty := filepath.Join(dir, "empty.yaml")

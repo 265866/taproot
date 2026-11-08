@@ -10,18 +10,18 @@ import (
 )
 
 // TestLiveTailscaled runs against a real tailscaled. It is skipped unless
-// TAPROOT_LIVE_TAILSCALE_SOCKET names the socket, TAPROOT_LIVE_ALLOW_LOGINS
-// lists the allowed logins (comma-separated), and TAPROOT_LIVE_WHOIS lists
-// expectations as "ip=login=surface,...", where surface is admin, proxy, or
-// none (denied everywhere); an empty login expects no such peer.
-// TAPROOT_LIVE_ADMIN_NODES optionally lists admin-nodes entries. Build it for
-// a host with `GOOS=linux go test -c ./internal/taproot/access`.
+// TAPROOT_LIVE_TAILSCALE_SOCKET names the socket, TAPROOT_LIVE_DEVICES lists
+// the access.devices grants as "stableID=proxy|admin|both,...", and
+// TAPROOT_LIVE_WHOIS lists expectations as "ip=login=surface,...", where
+// surface is admin, proxy, or none (denied everywhere); an empty login
+// expects no such peer. Build it for a host with
+// `GOOS=linux go test -c ./internal/taproot/access`.
 func TestLiveTailscaled(t *testing.T) {
 	socket := os.Getenv("TAPROOT_LIVE_TAILSCALE_SOCKET")
 	cases := os.Getenv("TAPROOT_LIVE_WHOIS")
-	logins := os.Getenv("TAPROOT_LIVE_ALLOW_LOGINS")
-	if socket == "" || cases == "" || logins == "" {
-		t.Skip("TAPROOT_LIVE_TAILSCALE_SOCKET, TAPROOT_LIVE_ALLOW_LOGINS, and TAPROOT_LIVE_WHOIS not set")
+	devices := os.Getenv("TAPROOT_LIVE_DEVICES")
+	if socket == "" || cases == "" || devices == "" {
+		t.Skip("TAPROOT_LIVE_TAILSCALE_SOCKET, TAPROOT_LIVE_DEVICES, and TAPROOT_LIVE_WHOIS not set")
 	}
 	client := newLocalClient(socket)
 	self, err := client.status(context.Background())
@@ -29,10 +29,16 @@ func TestLiveTailscaled(t *testing.T) {
 		t.Fatalf("status: %v", err)
 	}
 	t.Logf("self: id=%s dns=%s ips=%v", self.StableID, self.DNSName, self.IPs)
+	tn, err := client.tailnet(context.Background())
+	if err != nil {
+		t.Fatalf("status?peers=true: %v", err)
+	}
+	t.Logf("tailnet: self %s, %d peers", tn.Self.ID, len(tn.Peers))
 
-	cfg := Config{TailscaleSocket: socket, AllowLogins: strings.Split(logins, ",")}
-	if nodes := os.Getenv("TAPROOT_LIVE_ADMIN_NODES"); nodes != "" {
-		cfg.AdminNodes = strings.Split(nodes, ",")
+	cfg := Config{TailscaleSocket: socket, Devices: []DeviceGrant{}}
+	for _, entry := range strings.Split(devices, ",") {
+		id, perms, _ := strings.Cut(strings.TrimSpace(entry), "=")
+		cfg.Devices = append(cfg.Devices, DeviceGrant{ID: id, Proxy: perms == "proxy" || perms == "both", Admin: perms == "admin" || perms == "both"})
 	}
 	g := newTestGuard(t, cfg)
 	e, _ := testEngine(g)
@@ -66,7 +72,7 @@ func TestLiveTailscaled(t *testing.T) {
 			}
 			t.Logf("ip=%s login=%q node=%q stableID=%s proxy=%v admin=%v", ip, p.Login, p.Node, p.StableID, proxy, admin)
 			if got != wantSurface {
-				t.Fatalf("surface = %s, want %s under TAPROOT_LIVE_ALLOW_LOGINS", got, wantSurface)
+				t.Fatalf("surface = %s, want %s under TAPROOT_LIVE_DEVICES", got, wantSurface)
 			}
 		})
 	}
