@@ -27,7 +27,7 @@ const (
 	// long 429 sequence cannot hold the queue for minutes.
 	maxSendWait = time.Minute
 	// sendTimeout bounds one webhook POST. Alerts are outbound notices, not
-	// proxied traffic, so AGENTS.md's no-timeout rule does not apply.
+	// proxied traffic, so CONTRIBUTING.md's no-timeout rule does not apply.
 	sendTimeout = 15 * time.Second
 	maxBodyRead = 64 << 10
 )

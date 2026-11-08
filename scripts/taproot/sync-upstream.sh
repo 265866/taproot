@@ -165,7 +165,7 @@ upstream="$(git rev-parse --verify --quiet "$target^{commit}")" || {
 
 previous="$(git log -1 --format=%H --grep="^$trailer: " HEAD)"
 if [[ -z "$previous" ]]; then
-	printf 'HEAD has no rewritten upstream snapshot (a commit with a %s: trailer); see "Upstream boundary" in internal/taproot/PLAN.md\n' "$trailer" >&2
+	printf 'HEAD has no rewritten upstream snapshot (a commit with a %s: trailer); see "Upstream boundary" in internal/taproot/DESIGN.md\n' "$trailer" >&2
 	exit 1
 fi
 merged="$(git log -1 --format="%(trailers:key=$trailer,valueonly)" "$previous" | tr -d '[:space:]')"

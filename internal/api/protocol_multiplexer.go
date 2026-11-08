@@ -22,7 +22,7 @@ const (
 
 // respConnectionFilter decides by remote address whether a Redis-protocol
 // connection on the shared port is served. Taproot (the fork) sets it; see
-// internal/taproot/PLAN.md, "Upstream boundary".
+// internal/taproot/DESIGN.md, "Upstream boundary".
 var respConnectionFilter atomic.Pointer[func(net.Addr) bool]
 
 // SetRESPConnectionFilter installs a filter for Redis-protocol connections on
