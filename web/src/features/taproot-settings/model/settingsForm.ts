@@ -126,6 +126,8 @@ export function formatSize(bytes: number): string {
 }
 
 export interface RetentionForm {
+  recording: Recording;
+  /** False means "Keep forever". */
   daysLimited: boolean;
   days: string;
   sizeLimited: boolean;
@@ -139,8 +141,18 @@ export interface RetentionForm {
   keepUnrouted404: boolean;
 }
 
-export function retentionForm(settings: TaprootSettings['requestLogs']): RetentionForm {
+/**
+ * Upstream's `observability.logs.request-log` in config.yaml, the only switch that stops
+ * recording. `null` when config.yaml could not be read; the card then leaves it alone.
+ */
+export type Recording = boolean | null;
+
+export function retentionForm(
+  settings: TaprootSettings['requestLogs'],
+  recording: Recording
+): RetentionForm {
   return {
+    recording,
     daysLimited: settings.maxDays > 0,
     days: settings.maxDays > 0 ? String(settings.maxDays) : '14',
     sizeLimited: settings.maxBytes > 0,
@@ -156,9 +168,36 @@ const EXCLUDE = /^(?:[A-Za-z]+\s+)?\/\S*$/;
 const MAX_DAYS = 3650;
 const MIN_BYTES = 1024 ** 2;
 
-export function retentionUpdate(
-  form: RetentionForm
-): Validation<NonNullable<TaprootSettingsUpdate['requestLogs']>> {
+/** The request-logs card saves to two places: taproot.yaml and upstream's config.yaml. */
+export interface RetentionUpdate {
+  requestLogs: NonNullable<TaprootSettingsUpdate['requestLogs']>;
+  recording: Recording;
+}
+
+/**
+ * Saves taproot.yaml first, so a refused update changes nothing, then writes request-log only
+ * when it differs from the saved state.
+ */
+export async function saveRetention(
+  update: RetentionUpdate,
+  saved: Recording,
+  write: {
+    requestLogs: (update: RetentionUpdate['requestLogs']) => Promise<void>;
+    recording: (enabled: boolean) => Promise<void>;
+  }
+): Promise<void> {
+  await write.requestLogs(update.requestLogs);
+  if (update.recording !== null && update.recording !== saved) {
+    await write.recording(update.recording);
+  }
+}
+
+/** Whether neither limit ever deletes a stored log. */
+export function keepsForever(form: Pick<RetentionForm, 'daysLimited' | 'sizeLimited'>): boolean {
+  return !form.daysLimited && !form.sizeLimited;
+}
+
+export function retentionUpdate(form: RetentionForm): Validation<RetentionUpdate> {
   let maxDays = -1;
   if (form.daysLimited) {
     const days = Number(form.days.trim());
@@ -183,7 +222,10 @@ export function retentionUpdate(
   }
   return {
     ok: true,
-    update: { maxDays, maxBytes, excludePaths, keepUnrouted404: form.keepUnrouted404 },
+    update: {
+      requestLogs: { maxDays, maxBytes, excludePaths, keepUnrouted404: form.keepUnrouted404 },
+      recording: form.recording,
+    },
   };
 }
 

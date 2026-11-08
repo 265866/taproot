@@ -12,8 +12,10 @@ import {
   type TaprootSettings,
   type TaprootSettingsUpdate,
 } from '@/services/api/taproot';
-import { useNotificationStore } from '@/stores';
+import { configApi } from '@/services/api/config';
+import { useConfigStore, useNotificationStore } from '@/stores';
 import { getErrorMessage } from '@/utils/helpers';
+import { formatBytes } from '@/features/taproot-logs/model/format';
 import {
   accessUpdate,
   adminNodesUpdate,
@@ -26,9 +28,12 @@ import {
   ownLogin,
   ownNode,
   ownNodeId,
+  keepsForever,
   retentionForm,
   retentionUpdate,
+  saveRetention,
   type BackupsForm,
+  type Recording,
   type RetentionForm,
   type Validation,
 } from './model/settingsForm';
@@ -42,17 +47,30 @@ export function TaprootSettingsPage() {
   const [settings, setSettings] = useState<TaprootSettings | null>(null);
   const [me, setMe] = useState<TaprootMe | null>(null);
   const [error, setError] = useState('');
+  const [diskBytes, setDiskBytes] = useState<number | null>(null);
+  const config = useConfigStore((state) => state.config);
+  const fetchConfig = useConfigStore((state) => state.fetchConfig);
+  const updateConfigValue = useConfigStore((state) => state.updateConfigValue);
+  const recording: Recording = config ? (config.requestLog ?? false) : null;
 
   const load = useCallback(async () => {
     try {
-      const [next, who] = await Promise.all([taprootApi.settings(), taprootApi.me()]);
+      // config.yaml and the stats only add to the request-logs card, so their failures are
+      // shown there rather than failing the page.
+      const [next, who, stats] = await Promise.all([
+        taprootApi.settings(),
+        taprootApi.me(),
+        taprootApi.requestLogStats().catch(() => null),
+        fetchConfig(true).catch(() => null),
+      ]);
       setSettings(next);
       setMe(who);
+      setDiskBytes(stats?.bytesOnDisk ?? null);
       setError('');
     } catch (err: unknown) {
       setError(getErrorMessage(err));
     }
-  }, []);
+  }, [fetchConfig]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -61,6 +79,14 @@ export function TaprootSettingsPage() {
   const save: Save = useCallback(async (update) => {
     setSettings(await taprootApi.putSettings(update));
   }, []);
+
+  const saveRecording = useCallback(
+    async (enabled: boolean) => {
+      await configApi.updateRequestLog(enabled);
+      updateConfigValue('request-log', enabled);
+    },
+    [updateConfigValue]
+  );
 
   return (
     <div className={styles.page}>
@@ -82,7 +108,13 @@ export function TaprootSettingsPage() {
         <div className={styles.sections}>
           <AccessSection settings={settings.access} me={me} save={save} />
           <AdminNodesSection settings={settings.access} me={me} save={save} />
-          <RetentionSection settings={settings.requestLogs} save={save} />
+          <RetentionSection
+            settings={settings.requestLogs}
+            recording={recording}
+            diskBytes={diskBytes}
+            save={save}
+            saveRecording={saveRecording}
+          />
           <BackupsSection settings={settings.backups} zone={settings.info} save={save} />
           <IngestSection settings={settings.ingest} save={save} />
           {settings.alerts && <AlertsSection settings={settings.alerts} save={save} />}
@@ -413,18 +445,26 @@ function AdminNodesSection({
   );
 }
 
-function RetentionSection({
+export function RetentionSection({
   settings,
+  recording,
+  diskBytes,
   save,
+  saveRecording,
 }: {
   settings: TaprootSettings['requestLogs'];
+  recording: Recording;
+  /** The request-log store's current size, or null when the stats could not be read. */
+  diskBytes: number | null;
   save: Save;
+  saveRecording: (enabled: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const ids = { days: useId(), size: useId(), exclude: useId() };
-  const [form, setForm, dirty, reset] = useDraft<RetentionForm>(retentionForm(settings));
+  const [form, setForm, dirty, reset] = useDraft<RetentionForm>(retentionForm(settings, recording));
   const set = <K extends keyof RetentionForm>(key: K, value: RetentionForm[K]) =>
     setForm({ ...form, [key]: value });
+  const forever = keepsForever(form);
 
   return (
     <SectionForm
@@ -433,16 +473,37 @@ function RetentionSection({
       description={t('taproot_settings.retention.description')}
       dirty={dirty}
       validate={() => retentionUpdate(form)}
-      save={(update) => save({ requestLogs: update })}
+      save={(update) =>
+        saveRetention(update, recording, {
+          requestLogs: (requestLogs) => save({ requestLogs }),
+          recording: saveRecording,
+        })
+      }
       onReset={reset}
     >
-      <div className={styles.row}>
-        <ToggleSwitch
-          checked={form.daysLimited}
+      <ToggleSwitch
+        checked={form.recording ?? false}
+        onChange={(value) => set('recording', value)}
+        label={t('taproot_settings.retention.record')}
+        disabled={form.recording === null}
+      />
+      {form.recording === null ? (
+        <p className={styles.hint}>{t('taproot_settings.retention.record_unknown')}</p>
+      ) : form.recording ? (
+        <p className={styles.hint}>{t('taproot_settings.retention.record_hint')}</p>
+      ) : (
+        <p className={styles.notice}>{t('taproot_settings.retention.record_off')}</p>
+      )}
+      <div className={styles.limits} data-dimmed={form.recording === false ? '' : undefined}>
+        <LimitChoice
+          legend={t('taproot_settings.retention.age_legend')}
+          limited={form.daysLimited}
           onChange={(value) => set('daysLimited', value)}
-          label={t('taproot_settings.retention.days_limited')}
-        />
-        <label htmlFor={ids.days} className={styles.inline}>
+          limitLabel={t('taproot_settings.retention.delete_after')}
+        >
+          <label htmlFor={ids.days} className={styles.srOnly}>
+            {t('taproot_settings.retention.days_label')}
+          </label>
           <input
             id={ids.days}
             className={`input ${styles.short}`}
@@ -452,16 +513,16 @@ function RetentionSection({
             disabled={!form.daysLimited}
           />
           <span>{t('taproot_settings.retention.days_unit')}</span>
-        </label>
-      </div>
-      <div className={styles.row}>
-        <ToggleSwitch
-          checked={form.sizeLimited}
+        </LimitChoice>
+        <LimitChoice
+          legend={t('taproot_settings.retention.size_legend')}
+          limited={form.sizeLimited}
           onChange={(value) => set('sizeLimited', value)}
-          label={t('taproot_settings.retention.size_limited')}
-        />
-        <label htmlFor={ids.size} className={styles.inline}>
-          <span className={styles.srOnly}>{t('taproot_settings.retention.size_label')}</span>
+          limitLabel={t('taproot_settings.retention.cap_at')}
+        >
+          <label htmlFor={ids.size} className={styles.srOnly}>
+            {t('taproot_settings.retention.size_label')}
+          </label>
           <input
             id={ids.size}
             className={`input ${styles.short}`}
@@ -470,8 +531,16 @@ function RetentionSection({
             disabled={!form.sizeLimited}
             spellCheck={false}
           />
-        </label>
+        </LimitChoice>
+        {!forever && <p className={styles.hint}>{t('taproot_settings.retention.limits_hint')}</p>}
       </div>
+      {forever && (
+        <p className={styles.summary}>
+          {t('taproot_settings.retention.keeps_all')}
+          {diskBytes !== null &&
+            ` ${t('taproot_settings.retention.disk_use', { size: formatBytes(diskBytes) })}`}
+        </p>
+      )}
       <label htmlFor={ids.exclude} className={styles.label}>
         {t('taproot_settings.retention.exclude_label')}
       </label>
@@ -491,6 +560,40 @@ function RetentionSection({
         label={t('taproot_settings.retention.keep_404')}
       />
     </SectionForm>
+  );
+}
+
+/** "Keep forever" or a limit, with the limit's own field after its option. */
+function LimitChoice({
+  legend,
+  limited,
+  onChange,
+  limitLabel,
+  children,
+}: {
+  legend: string;
+  limited: boolean;
+  onChange: (limited: boolean) => void;
+  limitLabel: string;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const name = useId();
+  return (
+    <fieldset className={styles.choice}>
+      <legend className={styles.label}>{legend}</legend>
+      <label className={styles.inline}>
+        <input type="radio" name={name} checked={!limited} onChange={() => onChange(false)} />
+        <span>{t('taproot_settings.retention.keep_forever')}</span>
+      </label>
+      <div className={styles.inline}>
+        <label className={styles.inline}>
+          <input type="radio" name={name} checked={limited} onChange={() => onChange(true)} />
+          <span>{limitLabel}</span>
+        </label>
+        {children}
+      </div>
+    </fieldset>
   );
 }
 
