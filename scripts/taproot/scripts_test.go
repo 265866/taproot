@@ -14,6 +14,15 @@ import (
 
 const oldPath = "github.com/router-for-me/CLIProxyAPI/v8"
 
+// gitLocationVars are the variables git reads to find a repository, its
+// index, objects, or per-command configuration.
+var gitLocationVars = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+	"GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+}
+
 func scriptPath(t *testing.T, name string) string {
 	t.Helper()
 	path, err := filepath.Abs(name)
@@ -40,8 +49,16 @@ func newRepo(t *testing.T) *repo {
 	return r
 }
 
+// env is the caller's environment without the variables that point git at
+// another repository. Git sets GIT_DIR and GIT_INDEX_FILE for hooks and for
+// `git rebase -x`, and a fixture command run with them would act on that
+// repository.
 func (r *repo) env() []string {
-	return append(os.Environ(),
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		name, _, _ := strings.Cut(kv, "=")
+		return slices.Contains(gitLocationVars, name)
+	})
+	return append(env,
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=alice",

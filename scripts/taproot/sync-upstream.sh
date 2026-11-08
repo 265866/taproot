@@ -12,7 +12,8 @@
 # previous snapshot. A file taproot deleted that upstream changed stays
 # deleted. Every other conflict, and every new upstream file of a kind taproot
 # deletes (such as a new docs/*.md guide), stops the merge for a person to
-# decide. The checks are the ones CI runs.
+# decide. The checks cover CI's go and web jobs, plus gofmt and go test on
+# every package.
 #
 #   scripts/taproot/sync-upstream.sh               fetch, merge, check
 #   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits, conflicts, and new files to decide on;
@@ -97,7 +98,8 @@ classify_conflicts() {
 		}' | sort
 }
 
-# The checks of .github/workflows/ci.yml that an upstream merge can break.
+# The checks an upstream merge can break: CI's go and web jobs, plus gofmt
+# and go test on every package rather than CI's list.
 run_checks() {
 	check "gofmt" gofmt_clean
 	check "go build ./..." go build ./...
