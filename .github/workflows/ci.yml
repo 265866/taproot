@@ -25,6 +25,34 @@ jobs:
       - run: go vet ./...
       - run: go test ./internal/taproot/... ./internal/api/... ./sdk/cliproxy/... ./cmd/...
 
+  # The request-log codec library: Rust checks, then the Go package built with
+  # the taproot_codecs tag against it. The go job above covers the stub build.
+  codec:
+    runs-on: ubuntu-latest
+    env:
+      # Matches RUST_VERSION in Containerfile.taproot.
+      RUST_VERSION: "1.99"
+    defaults:
+      run:
+        working-directory: internal/taproot/reqlog/codec/native
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Rust version matches the image
+        run: grep -qx "ARG RUST_VERSION=$RUST_VERSION" "$GITHUB_WORKSPACE/Containerfile.taproot"
+      - run: rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy && rustup default "$RUST_VERSION"
+      - run: cargo fmt --check
+      - run: cargo clippy --release --locked --all-targets -- -D warnings
+      - run: cargo build --release --locked
+      - run: go vet -tags taproot_codecs ./...
+        working-directory: internal/taproot/reqlog/codec
+      - run: go test -race -tags taproot_codecs ./...
+        working-directory: internal/taproot/reqlog/codec
+
   web:
     runs-on: ubuntu-latest
     defaults:

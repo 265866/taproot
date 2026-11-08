@@ -59,3 +59,6 @@ bin
 .bmad
 _bmad
 _bmad-output
+
+# Host build output of the native codec library; the image builds its own.
+internal/taproot/reqlog/codec/native/target
