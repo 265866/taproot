@@ -17,6 +17,10 @@ fork_owned='^(internal/taproot/|web/|scripts/taproot/|examples/taproot/|docs/|\.
 
 rev="${1:-HEAD}"
 cd "$(git rev-parse --show-toplevel)"
+git rev-parse --verify --quiet "$rev^{commit}" >/dev/null || {
+	printf '%s is not a commit\n' "$rev" >&2
+	exit 1
+}
 snapshot="$(latest_snapshot "$rev")" || {
 	printf '%s has no rewritten upstream snapshot (a commit with a %s: trailer naming its first parent)\n' "$rev" "$upstream_trailer" >&2
 	exit 1
@@ -45,8 +49,11 @@ documented() {
 		if [[ "$name" == */ ]]; then
 			[[ "$path" == "$name"* ]] && return 0
 		elif [[ "$name" == *[*?]* ]]; then
+			# In [[ == ]], * also matches /, so a glob without ** must also
+			# have as many / as the path: logo/*.svg skips logo/sub/x.svg.
 			# shellcheck disable=SC2053 # $name is a glob.
-			[[ "$path" == $name ]] && return 0
+			[[ "$path" == $name ]] || continue
+			[[ "$name" == *'**'* || "${path//[^\/]/}" == "${name//[^\/]/}" ]] && return 0
 		fi
 	done
 	return 1
