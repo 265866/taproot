@@ -13,6 +13,63 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Loading the dashboard stores nothing: upstream's middleware skips GETs, and
+// the excluder drops HEADs of the page and its chunks. Logging runs before the
+// guard and the dashboard middleware, so it sees these requests in production.
+func TestDashboardFetchesAreNotRecorded(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	lg.SetEnabled(true)
+
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		logging.SetGinRequestID(c, c.GetHeader("X-Test-Id"))
+		c.Next()
+	})
+	engine.Use(middleware.RequestLoggingMiddleware(lg))
+	static := func(c *gin.Context) { c.String(http.StatusOK, "console.log('taproot')") }
+	for _, path := range []string{"/", "/assets/index-abc.js", "/v1/models"} {
+		engine.GET(path, static)
+		engine.HEAD(path, static)
+	}
+	srv := httptest.NewServer(engine)
+	defer srv.Close()
+
+	ids := map[string]bool{}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, path := range []string{"/", "/assets/index-abc.js", "/v1/models"} {
+			id := method + " " + path
+			req, err := http.NewRequest(method, srv.URL+path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("X-Test-Id", id)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("%s = %d", id, resp.StatusCode)
+			}
+			// A HEAD of a proxy route shows records are being written.
+			ids[id] = id == "HEAD /v1/models"
+		}
+	}
+	h.flush()
+	for id, want := range ids {
+		_, err := h.logs.Get(context.Background(), id)
+		if want && err != nil {
+			t.Errorf("%s should be stored: %v", id, err)
+		}
+		if !want && err == nil {
+			t.Errorf("%s was stored", id)
+		}
+	}
+}
+
 // TestThroughUpstreamMiddleware runs real HTTP requests through upstream's
 // request logging middleware with taproot's logger installed, the same way
 // the server wires the factory's logger.

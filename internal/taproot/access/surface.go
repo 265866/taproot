@@ -34,6 +34,9 @@ var adminPrefixes = []string{
 	// Plugin pages and assets, served from upstream's NoRoute. The dashboard
 	// frames them same-origin.
 	"/v0/resource/plugins",
+	// The dashboard's chunks. They hold no data, but they follow the page's
+	// access (isDashboardShell), so they answer exactly the callers "/" does.
+	"/assets",
 }
 
 // adminPaths are single admin routes. The OAuth callbacks write the code for
@@ -102,11 +105,12 @@ func sideEffectGET(r *http.Request) bool {
 		(strings.Contains(path, "/management/plugins/") && strings.HasSuffix(path, "/quota"))
 }
 
-// isDashboardShell is the dashboard page itself. Every admitted caller may
-// load it: it is static and holds no data, and it is how a device that is
-// not in admin-nodes learns why the API refuses it.
+// isDashboardShell is the dashboard page and its chunks under /assets/. Every
+// admitted caller may load them: they are static and hold no data, and they
+// are how a device that is not in admin-nodes learns why the API refuses it.
 func isDashboardShell(r *http.Request) bool {
-	return r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead)
+	return (r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/assets/")) &&
+		(r.Method == http.MethodGet || r.Method == http.MethodHead)
 }
 
 // classify matches on URL.Path, the same value gin routes on.

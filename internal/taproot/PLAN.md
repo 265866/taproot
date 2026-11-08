@@ -100,7 +100,7 @@ Each module owns its tables and registers migrations with `store.Register`, so n
 The guard splits the server into two surfaces. The package comment in `internal/taproot/access/access.go` is the code-side copy of this section.
 
 - **Admin surface.** Everything that reads or changes credentials, settings, backups, or plugins:
-  - the dashboard (`GET`/`HEAD /`), except that the static page itself loads for every admitted caller (see the note under the table)
+  - the dashboard (`GET`/`HEAD /` and its chunks under `/assets/`), except that the static page and chunks load for every admitted caller (see the note under the table)
   - `/v0/management/**` and `/v8/management/**`, including the plugin management routes upstream serves from `NoRoute`
   - `/taproot/**`
   - plugin pages and assets under `/v0/resource/plugins/**` (the dashboard frames them same-origin)
@@ -118,7 +118,7 @@ The guard splits the server into two surfaces. The package comment in `internal/
   | Allowlisted login on a node outside `admin-nodes` (another server or a router of the same login) | yes | no |
   | Anyone else | no | no |
 
-  - **The dashboard page is open to every admitted caller.** `GET`/`HEAD /` returns the static single-file build, which holds no data. A device outside `admin-nodes` can therefore load it, and the connection gate shows why the API refuses it. Every request for data is still admin-only.
+  - **The dashboard page is open to every admitted caller.** `GET`/`HEAD /` returns the static build, which holds no data, and `GET`/`HEAD /assets/*` its chunks, which follow the page: the same callers reach both, in both guard modes, so with `access.enabled: false` they stay loopback-only like the page. A device outside `admin-nodes` can therefore load it, and the connection gate shows why the API refuses it. Every request for data is still admin-only.
 
   - **The server's own node is proxy-only.** Under rootless Podman, containers and local users on the server host reach the published `100.64.0.1:8317` with that source address (measured through pasta). Agents running on the server need the proxy, so the node keeps it, but none of those processes gets credentials or settings.
   - **The server's own node skips `allow-logins`.** whois reports the owner's login, such as `alice@github`, for an untagged node, and a placeholder for a tagged node, which has no user login. Checking it would lock a tagged host out of its own Tailscale publish. Skipping the check gives a tagged server what an untagged one already had: every process on the host reaches the proxy through its node, and no more. That includes anything on the host that forwards to the Tailscale publish, such as `tailscale serve` or `funnel` pointed at port 8317, so do not point those at taproot. When whois answers, the event records the login it reports.
@@ -183,7 +183,7 @@ The guard splits the server into two surfaces. The package comment in `internal/
   - SQLite holds `reqlog_records` (one row per record, with offsets into the uncompressed segment stream), `reqlog_segments`, `reqlog_blobs`, and `reqlog_packs`.
   - Viewing a record decompresses its segment up to the record, then decodes its blobs in parallel through a 256 MiB cache. The target is under 3 seconds for any record.
   - Measured on the full production corpus before the format was accepted: all 203,341 records converted and every one rebuilt byte for byte (SHA-256 against the original text), stored in 3.55 GB against 105 GB before (29.6x): 0.95 GB of segments for 189 GB of residual text, and 2.6 GB of blobs (JPEG 2.27 GB to 1.73 GB with Lepton, PNG 0.40 GB to 0.26 GB with preflate, 0.45 GB of incompressible signatures). The detail view of the largest records (about 85 MB of JSON each) answered in 0.56 to 0.76 s.
-- **Retention.** By days and total bytes, plus a path exclusion list (default excludes 404s on unknown routes, such as `HEAD /api/hello`).
+- **Retention.** By days and total bytes, plus a path exclusion list (default excludes 404s on unknown routes, such as `HEAD /api/hello`, and the dashboard's static files).
 - **Budget.** Compressed storage at or below 1 GB a day at the first deployment's traffic, measured on a real sample before the format is accepted.
 - **Application logs.** These stay upstream's `/v8/management/observability/logs`.
 

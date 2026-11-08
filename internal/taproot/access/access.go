@@ -4,10 +4,11 @@
 // # Security model
 //
 // The server has two surfaces. The admin surface reads or changes
-// credentials, settings, backups, and plugins: the dashboard (GET and HEAD /),
-// /v0/management/**, /v8/management/**, /taproot/**, plugin pages and assets
-// under /v0/resource/plugins/**, the OAuth callbacks on the main port, and
-// the /v1/ws provider gateway. Everything else is the proxy surface.
+// credentials, settings, backups, and plugins: the dashboard (GET and HEAD /
+// and its chunks under /assets/), /v0/management/**, /v8/management/**,
+// /taproot/**, plugin pages and assets under /v0/resource/plugins/**, the
+// OAuth callbacks on the main port, and the /v1/ws provider gateway.
+// Everything else is the proxy surface.
 //
 // Callers are identified by the connection's source address only:
 //
@@ -27,8 +28,8 @@
 //     its node is listed in admin-nodes. With admin-nodes empty, no tailnet
 //     caller is an admin.
 //
-// Every admitted caller may load the dashboard page itself, which is static,
-// so a device outside admin-nodes sees why the API refuses it.
+// Every admitted caller may load the dashboard page and its chunks, which are
+// static, so a device outside admin-nodes sees why the API refuses it.
 //
 // The server's own node comes from tailscaled's LocalAPI status. Until it has
 // been read once, tailnet callers get no admin access, only local host names
