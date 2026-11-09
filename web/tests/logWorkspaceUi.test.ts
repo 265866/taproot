@@ -8,7 +8,9 @@ const styles = readSource('src/features/taproot-logs/appLogs/AppLogsPanel.module
 const layout = readSource('src/styles/layout.scss');
 
 // Structural guards complement the browser viewport/interaction checks. They do not
-// assert browser layout: the important contract is a single flexible scrolling viewer.
+// assert browser layout. The contract: the log viewer is the one element that scrolls the
+// log lines, it takes the space left on desktop, and on phones, where the page scrolls, it
+// gets a viewport-sized height of its own.
 describe('log workspace layout contract', () => {
   test('viewer uses remaining space instead of resolution-specific height budgets', () => {
     const panel = styles.match(/\.logPanel \{([^}]+)\}/)?.[1] ?? '';

@@ -4,7 +4,6 @@
   background: var(--bg-primary);
   overflow: hidden;
   overflow-x: auto;
-  container: request-log-table / inline-size;
 }
 
 .table {
@@ -152,9 +151,9 @@
   font-size: 12px;
 }
 
-// A narrow table, on a phone or beside the sidebar on a tablet, cannot fit eight columns: each
-// row becomes a small card, and cells label themselves.
-@container request-log-table (max-width: 760px) {
+// Below tablet landscape width, eight columns do not fit beside the sidebar: each row becomes a
+// small card, and cells label themselves.
+@media (max-width: #{$breakpoint-tablet - 1}) {
   .table {
     thead {
       display: none;

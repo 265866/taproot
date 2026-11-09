@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useReducer, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
@@ -43,7 +43,7 @@ import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
 import { HTTP_METHODS, STATUS_GROUPS, type LogState } from './model/logTypes';
 import { createLogRequestGuard } from './model/logRequests';
 import { errorLogViewerReducer } from './model/errorLogViewer';
-import { shouldExitLogFullscreen } from './model/logFullscreen';
+import { createFullscreenScrollLock, shouldExitLogFullscreen } from './model/logFullscreen';
 import { useLogFilters } from './hooks/useLogFilters';
 import { isNearBottom, useLogScroller } from './hooks/useLogScroller';
 import styles from './AppLogsPanel.module.scss';
@@ -84,6 +84,18 @@ export function AppLogsPanel() {
   });
   const selectedErrorLog = errorLogViewer.status === 'closed' ? null : errorLogViewer.item;
   const [fullscreenLogs, setFullscreenLogs] = useState(false);
+  const [fullscreenScrollLock] = useState(() =>
+    createFullscreenScrollLock(lockScroll, unlockScroll)
+  );
+  // Declared before the fullscreen effect, so on unmount its cleanup runs first and the release
+  // below knows the page is leaving (for example a system back gesture while fullscreen).
+  const leavingRef = useRef(false);
+  useEffect(() => {
+    leavingRef.current = false;
+    return () => {
+      leavingRef.current = true;
+    };
+  }, []);
 
   const [requests] = useState(() => ({
     session: createLogRequestGuard(),
@@ -366,7 +378,7 @@ export function AppLogsPanel() {
   useEffect(() => {
     if (!fullscreenLogs) return;
 
-    lockScroll();
+    fullscreenScrollLock.acquire();
 
     const handleEscape = (event: KeyboardEvent) => {
       if (!shouldExitLogFullscreen(event, !!document.querySelector('.modal-overlay'))) return;
@@ -377,9 +389,9 @@ export function AppLogsPanel() {
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      unlockScroll();
+      fullscreenScrollLock.release(!leavingRef.current);
     };
-  }, [fullscreenLogs]);
+  }, [fullscreenLogs, fullscreenScrollLock]);
 
   return (
     <div className={styles.container}>
@@ -734,7 +746,7 @@ export function AppLogsPanel() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => setFullscreenLogs((prev) => !prev)}
+                  onClick={() => fullscreenScrollLock.set(!fullscreenLogs, setFullscreenLogs)}
                   className={styles.actionButton}
                   aria-pressed={fullscreenLogs}
                   aria-label={
