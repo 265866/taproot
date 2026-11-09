@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`.
+Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, release-please writes each release's section from the Conventional Commit messages merged since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
 ## Unreleased
 
