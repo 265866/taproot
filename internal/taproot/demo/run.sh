@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Seeds a demo data directory, runs the real taproot server against it on
-# loopback, and optionally captures the README screenshots. Nothing reaches a
-# provider: config.yaml sends every outbound request to a dead loopback proxy,
-# and this script points the proxy variables and usage-refresh overrides there too.
+# loopback, and optionally captures the documentation screenshots. Nothing
+# reaches a provider: config.yaml sends every outbound request to a dead
+# loopback proxy, and this script points the proxy variables and usage-refresh
+# overrides there too.
 # A fake tailscaled, served by the demo command, gives the Access page a tailnet.
 #
 #   internal/taproot/demo/run.sh              seed and serve until Ctrl-C
@@ -10,7 +11,8 @@
 #
 # Options: --port N (default 8399), --dir DIR (an empty or missing directory
 # for the demo data; default a new temporary directory, deleted on exit),
-# --deny a,b (extra strings the capture must not find on any page).
+# --deny a,b (extra strings the capture must not find on any page),
+# --chrome PATH (the browser the capture drives; default the installed Chrome).
 #
 # Build the dashboard first (bash scripts/taproot/build-web.sh); without it
 # the server embeds a placeholder page.
@@ -20,13 +22,15 @@ port=8399
 dir=""
 deny=""
 capture=false
+chrome=""
 while (($#)); do
 	case "$1" in
 	--port) port="$2"; shift 2 ;;
 	--dir) dir="$2"; shift 2 ;;
 	--deny) deny="$2"; shift 2 ;;
+	--chrome) chrome="$2"; shift 2 ;;
 	--capture) capture=true; shift ;;
-	*) sed -n '2,16p' "$0" >&2; exit 2 ;;
+	*) sed -n '2,18p' "$0" >&2; exit 2 ;;
 	esac
 done
 
@@ -89,4 +93,4 @@ fi
 # playwright-core drives the installed Chrome; it is installed here and removed on exit.
 (cd "$work" && echo '{"private":true}' >package.json && bun add --silent playwright-core@1.64.1)
 bun "$root/internal/taproot/demo/capture.ts" --url "$url" --out "$root/docs/screenshots" \
-	--playwright "$work/node_modules/playwright-core" --deny "$deny"
+	--playwright "$work/node_modules/playwright-core" --deny "$deny" ${chrome:+--chrome "$chrome"}
