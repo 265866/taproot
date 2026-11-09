@@ -64,6 +64,13 @@ async function waitForAccounts(expected: number) {
 }
 
 await waitForAccounts(5);
+
+// run.sh sets TZ=Etc/UTC, but Go on Windows reads the zone from the system, not TZ, so the
+// server could label host-zone times as UTC. Refuse rather than capture the host's zone.
+const { info } = await api<{ info: { utcOffsetSeconds: number } }>('/settings');
+if (info.utcOffsetSeconds !== 0) {
+  throw new Error(`the server's clock is ${info.utcOffsetSeconds}s from UTC; set the host zone to UTC to capture`);
+}
 const { logs } = await api<{ logs: { requestId: string; status: number; model: string }[] }>(
   '/request-logs?limit=20'
 );
@@ -183,6 +190,7 @@ try {
         ...size.options(shot),
         colorScheme: theme,
         reducedMotion: 'reduce',
+        timezoneId: 'Etc/UTC',
       });
       await context.addInitScript((t) => {
         localStorage.setItem('cli-proxy-theme', JSON.stringify({ state: { theme: t }, version: 0 }));

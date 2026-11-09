@@ -33,7 +33,7 @@ These keys from 0.1.0 were removed. Replace them with `access.devices` and `acce
 
 ## Claude Code says "Please run /login"
 
-The device has no Proxy permission yet, and its request waits on the Access page. Do not run `/login`. Open `http://<server>:8317/` in a browser on that device and request access, or allow the device on the Access page. See [Allow a new device](access.md#allow-a-new-device).
+The device has no Proxy permission yet, and its request may wait on the Access page. Do not run `/login`. Open `http://<server>:8317/` in a browser on that device and request access, or allow the device on the Access page. See [Allow a new device](access.md#allow-a-new-device).
 
 ## A device is named `device-of-shared-to-user` or "\<owner\>'s device"
 

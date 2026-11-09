@@ -13,7 +13,7 @@ Every tailnet device has two permissions:
 
 New devices start with neither. The server's own node always has Proxy and never Admin. Permissions belong to the device's Tailscale stable ID, so a device that takes another device's name gets nothing.
 
-Addresses outside Tailscale, listed under **Addresses** (`access.addresses` in `taproot.yaml`), get Proxy only. Add single addresses (`/32`) only, because every host in a wider range reaches the proxy.
+Addresses outside Tailscale, listed under **Addresses without Tailscale** (`access.addresses` in `taproot.yaml`), get Proxy only. Add single addresses (`/32`) only, because every host in a wider range reaches the proxy.
 
 ## The Access page
 
@@ -25,7 +25,7 @@ The page lists devices in these groups:
 - Other people with devices you allowed, one group each.
 - A folded line for every other device that can reach the server but has no access.
 - **Removed:** devices no longer on the tailnet. Taproot forgets them after 24 hours; select **Forget** to remove one sooner.
-- **Addresses:** callers outside Tailscale.
+- **Addresses without Tailscale:** callers outside Tailscale.
 
 To rename a device, select the pencil next to its name, then **Save**. Only a device with Proxy or Admin keeps a name. Taproot stores it as `label` in `taproot.yaml`, and a rename in Tailscale does not change it.
 
@@ -36,7 +36,7 @@ A device without permission becomes a request when it tries taproot.
 - From a browser on that device, open `http://<server>:8317/`, name the device, and select **Request access**.
 - From Claude Code or Codex, the refused request creates the request itself. The error tells the person to open taproot's address in a browser on that device. Do not run `/login`.
 
-On the Access page, allow the request with Proxy, Admin, or both, and a name, or deny it. **Allow** starts with Proxy on. After you allow a device, its later refusals stay quiet; it can still ask again from its browser, for example with **Request dashboard access** when it has Proxy but not Admin. If you set up [Discord alerts](configuration.md#taprootyaml), taproot sends an alert for each new request.
+On the Access page, allow the request with Proxy, Admin, or both, and a name, or deny it; a denied device comes back as a new request the next time it tries. **Allow** starts with Proxy on. After you allow a device, its later refusals stay quiet; it can still ask again from its browser, for example with **Request dashboard access** when it has Proxy but not Admin. If you set up [Discord alerts](configuration.md#taprootyaml), taproot sends an alert for each new request.
 
 ## Allow a device from another tailnet
 
