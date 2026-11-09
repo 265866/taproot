@@ -1,10 +1,11 @@
 /**
- * The Access page's model: grouping tailnet devices by owner, the draft of switch changes, and
- * its conversion to a `PUT /settings` access section. The server checks every rule again.
+ * The Access page's model: sorting devices into sections, the draft of switch changes, and its
+ * conversion to a `PUT /settings` access section. The server checks every rule again.
  */
 import type {
   AccessDevice,
   AccessDevices,
+  AccessRequest,
   AddressGrant,
   DeviceGrant,
   TaprootMe,
@@ -29,25 +30,58 @@ export function draftFrom(data: AccessDevices): AccessDraft {
   return { devices, forget: [], addresses: data.addresses.map((a) => ({ ...a })) };
 }
 
+const addressKey = (a: AddressGrant) => `${a.cidr}\n${a.note}`;
+const sameAddresses = (a: AddressGrant[], b: AddressGrant[]) =>
+  a.length === b.length && a.every((x, i) => addressKey(x) === addressKey(b[i]));
+
+/**
+ * Carries the unsaved changes in `draft`, made against `before`, over to freshly loaded `after`,
+ * so saving one request does not throw away switches the person was still editing.
+ */
+export function rebaseDraft(
+  before: AccessDevices,
+  draft: AccessDraft,
+  after: AccessDevices
+): AccessDraft {
+  const next = draftFrom(after);
+  const saved = new Map(before.devices.map((d) => [d.id, d]));
+  for (const [id, p] of Object.entries(draft.devices)) {
+    const old = saved.get(id);
+    if (old && (old.proxy !== p.proxy || old.admin !== p.admin) && id in next.devices) {
+      next.devices[id] = { ...p };
+    }
+  }
+  next.forget = draft.forget.filter((id) => after.devices.some((d) => d.id === id));
+  if (!sameAddresses(draft.addresses, before.addresses)) next.addresses = draft.addresses;
+  return next;
+}
+
 /** The device the dashboard is open on, when it came through the tailnet. */
 export function ownDeviceId(me: TaprootMe | null): string | null {
   return me?.via === 'tailnet' && me.nodeId ? me.nodeId : null;
 }
 
 /** Why a switch cannot be changed, or null when it can. */
-export type SwitchLock = 'server_always' | 'server_never' | 'needed_by_you' | null;
+export type SwitchLock = 'server_always' | 'server_never' | 'needed_by_you' | 'from_request' | null;
 
 export function proxyLock(device: AccessDevice): SwitchLock {
   return device.server ? 'server_always' : null;
 }
 
+/**
+ * The server never has Admin, your own device keeps it, and a device outside the tailnet gets it
+ * only through its own request's Allow form, unless it already has it.
+ */
 export function adminLock(device: AccessDevice, me: TaprootMe | null): SwitchLock {
   if (device.server) return 'server_never';
   if (device.id === ownDeviceId(me)) return 'needed_by_you';
+  if (device.outside && !device.admin) return 'from_request';
   return null;
 }
 
-const NEW_FOR_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const NEW_FOR_MS = 7 * DAY_MS;
+const IDLE_AFTER_MS = 30 * DAY_MS;
 
 /** A device that joined in the last 7 days and has no permission yet. */
 export function isNew(device: AccessDevice, now: number): boolean {
@@ -58,23 +92,36 @@ export function isNew(device: AccessDevice, now: number): boolean {
   return Number.isFinite(created) && now - created < NEW_FOR_MS && created <= now + 60_000;
 }
 
-export type GroupKind = 'owner' | 'tagged' | 'gone';
-
-export interface DeviceGroup {
-  kind: GroupKind;
-  /** The owner's login for an owner group. */
-  login: string;
-  /** True for the group of the login the dashboard is open as. */
-  own: boolean;
-  devices: AccessDevice[];
+/** Offline and last seen more than 30 days ago. */
+export function isIdle(device: AccessDevice, now: number): boolean {
+  if (device.online || !device.lastSeen) return false;
+  const seen = Date.parse(device.lastSeen);
+  return Number.isFinite(seen) && now - seen > IDLE_AFTER_MS;
 }
 
-const byName = (a: AccessDevice, b: AccessDevice) =>
-  a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+/**
+ * How a row names a device: the owner's label, else the Tailscale name, else (when Tailscale
+ * hides it) the owner and 4 characters of the stable ID, for the caller to phrase.
+ */
+export type DeviceName =
+  { kind: 'named'; name: string } | { kind: 'unnamed'; owner: string; suffix: string };
 
-/** The words a search matches for a device. */
+export function deviceName(
+  device: Pick<AccessDevice, 'label' | 'name' | 'ownerName' | 'login' | 'id'>
+): DeviceName {
+  const name = device.label.trim() || device.name.trim();
+  if (name) return { kind: 'named', name };
+  return {
+    kind: 'unnamed',
+    owner: device.ownerName.trim() || device.login.trim(),
+    // Every stable ID ends in CNTRL, so the characters before it tell devices apart.
+    suffix: device.id.replace(/CNTRL$/, '').slice(-4),
+  };
+}
+
+/** The words a search matches for a device: names, owner, ID, and tags, not OS or MagicDNS. */
 function deviceText(d: AccessDevice): string {
-  return [d.name, d.dnsName, d.id, d.login, d.os, ...d.tags].join(' ').toLowerCase();
+  return [d.label, d.name, d.login, d.ownerName, d.id, ...d.tags].join(' ').toLowerCase();
 }
 
 export function matchesQuery(text: string, query: string): boolean {
@@ -82,38 +129,97 @@ export function matchesQuery(text: string, query: string): boolean {
   return !q || q.split(/\s+/).every((word) => text.toLowerCase().includes(word));
 }
 
-/**
- * Groups devices by owner under plain headers: the viewer's own login first, then the others by
- * login, then tagged devices, then devices no longer on the tailnet. Empty groups are left out.
- */
-export function groupDevices(data: AccessDevices, me: TaprootMe | null, query = ''): DeviceGroup[] {
-  const ownLogin = me?.via === 'tailnet' ? me.login.toLowerCase() : '';
-  const owners = new Map<string, AccessDevice[]>();
-  const tagged: AccessDevice[] = [];
-  const gone: AccessDevice[] = [];
-  for (const d of data.devices) {
-    if (!matchesQuery(deviceText(d), query)) continue;
-    if (!d.onTailnet) gone.push(d);
-    else if (d.tags.length > 0 || !d.login) tagged.push(d);
-    else owners.set(d.login, [...(owners.get(d.login) ?? []), d]);
-  }
-  const logins = [...owners.keys()].sort((a, b) => {
-    const own = Number(b.toLowerCase() === ownLogin) - Number(a.toLowerCase() === ownLogin);
-    return own || a.localeCompare(b);
-  });
-  const groups: DeviceGroup[] = logins.map((login) => ({
-    kind: 'owner',
-    login,
-    own: login.toLowerCase() === ownLogin,
-    devices: (owners.get(login) ?? []).sort(byName),
-  }));
-  if (tagged.length)
-    groups.push({ kind: 'tagged', login: '', own: false, devices: tagged.sort(byName) });
-  if (gone.length) groups.push({ kind: 'gone', login: '', own: false, devices: gone.sort(byName) });
-  return groups;
+export type SectionKind = 'yours' | 'servers' | 'person' | 'removed';
+
+export interface DeviceSection {
+  kind: SectionKind;
+  /** The owner's login for a person section. */
+  login: string;
+  /** The owner's display name for a person section, or empty. */
+  ownerName: string;
+  /** A person section whose devices are outside the server's tailnet. */
+  outside: boolean;
+  devices: AccessDevice[];
 }
 
-const addressKey = (a: AddressGrant) => `${a.cidr}\n${a.note}`;
+export interface AccessLayout {
+  /** Yours, Servers, then one section per other person with a granted device. */
+  sections: DeviceSection[];
+  /** Devices without access that the page folds into one line. */
+  folded: AccessDevice[];
+  /** Granted devices no longer on the tailnet. */
+  removed: DeviceSection | null;
+}
+
+const sortKey = (d: AccessDevice) => {
+  const name = deviceName(d);
+  return (name.kind === 'named' ? name.name : `${name.owner} ${name.suffix}`).toLowerCase();
+};
+const byName = (a: AccessDevice, b: AccessDevice) =>
+  sortKey(a).localeCompare(sortKey(b)) || a.id.localeCompare(b.id);
+
+/**
+ * Sorts devices into the page's sections. Your logins are the viewer's and those of devices in
+ * the tailnet that have Admin. Yours lists their devices, Servers the tagged ones and this
+ * server, and each other login with a granted device gets a section of its granted devices.
+ * Every remaining device without access (a sharee's, another person's, or one idle for over 30
+ * days) is folded. Grouping follows the saved grants, so rows do not jump while switches change.
+ */
+export function layoutDevices(
+  data: AccessDevices,
+  me: TaprootMe | null,
+  query = '',
+  now = Date.now()
+): AccessLayout {
+  const mine = new Set<string>();
+  if (me?.via === 'tailnet' && me.login) mine.add(me.login.toLowerCase());
+  for (const d of data.devices) {
+    if (d.onTailnet && d.admin && !d.outside && d.login) mine.add(d.login.toLowerCase());
+  }
+  const yours: AccessDevice[] = [];
+  const servers: AccessDevice[] = [];
+  const people = new Map<string, AccessDevice[]>();
+  const folded: AccessDevice[] = [];
+  const removed: AccessDevice[] = [];
+  for (const d of data.devices) {
+    if (!matchesQuery(deviceText(d), query)) continue;
+    if (!d.onTailnet) {
+      removed.push(d);
+      continue;
+    }
+    const granted = d.server || d.proxy || d.admin;
+    const own = mine.has(d.login.toLowerCase());
+    if (!granted && (d.outside || isIdle(d, now) || (d.login && !own))) folded.push(d);
+    else if (d.server || d.tags.length > 0 || !d.login) servers.push(d);
+    else if (own) yours.push(d);
+    else people.set(d.login, [...(people.get(d.login) ?? []), d]);
+  }
+  const section = (kind: SectionKind, devices: AccessDevice[]): DeviceSection => ({
+    kind,
+    login: '',
+    ownerName: '',
+    outside: false,
+    devices: devices.sort(byName),
+  });
+  const sections: DeviceSection[] = [];
+  if (yours.length) sections.push(section('yours', yours));
+  if (servers.length) sections.push(section('servers', servers));
+  for (const login of [...people.keys()].sort((a, b) => a.localeCompare(b))) {
+    const devices = (people.get(login) ?? []).sort(byName);
+    sections.push({
+      kind: 'person',
+      login,
+      ownerName: devices.find((d) => d.ownerName)?.ownerName ?? '',
+      outside: devices.some((d) => d.outside),
+      devices,
+    });
+  }
+  return {
+    sections,
+    folded: folded.sort(byName),
+    removed: removed.length ? section('removed', removed) : null,
+  };
+}
 
 /** How many rows the draft changes: switches, forgotten devices, and added or removed addresses. */
 export function changeCount(data: AccessDevices, draft: AccessDraft): number {
@@ -131,10 +237,18 @@ export function changeCount(data: AccessDevices, draft: AccessDraft): number {
 
 export type Validation<T> = { ok: true; update: T } | { ok: false; error: string; detail?: string };
 
+const grantOf = (d: AccessDevice, p: Permissions): DeviceGrant => ({
+  id: d.id,
+  name: d.name,
+  label: d.label,
+  proxy: p.proxy,
+  admin: p.admin,
+});
+
 /**
  * The access section to save: every device with a permission, in the server's order, and the
  * addresses. The server's own node is left out, since it always has Proxy and never Admin, and
- * a forgotten device is dropped.
+ * a forgotten device is dropped. Labels go back unchanged.
  */
 export function accessUpdate(
   data: AccessDevices,
@@ -145,12 +259,56 @@ export function accessUpdate(
   for (const d of data.devices) {
     if (d.server || draft.forget.includes(d.id)) continue;
     const p = draft.devices[d.id] ?? { proxy: d.proxy, admin: d.admin };
-    if (p.proxy || p.admin)
-      devices.push({ id: d.id, name: d.name, proxy: p.proxy, admin: p.admin });
+    if (p.proxy || p.admin) devices.push(grantOf(d, p));
   }
   const own = ownDeviceId(me);
   if (own && !devices.some((d) => d.id === own && d.admin)) return { ok: false, error: 'lockout' };
   return { ok: true, update: { devices, addresses: draft.addresses } };
+}
+
+export interface AllowForm extends Permissions {
+  /** The label to save; empty for none. */
+  name: string;
+}
+
+/** The Allow form's starting values: the name the device gave, Proxy on, Admin off. */
+export function allowDefaults(request: AccessRequest): AllowForm {
+  return { name: request.name, proxy: true, admin: false };
+}
+
+/** Labels are limited to 64 characters, counted the way the server counts them. */
+export const MAX_LABEL_LENGTH = 64;
+
+/**
+ * The device list that allows one request: the saved grants, with the requesting device's entry
+ * added or replaced. Unsaved switch changes are not part of it. A name equal to the Tailscale
+ * name is not saved as a label.
+ */
+export function allowUpdate(
+  data: AccessDevices,
+  request: AccessRequest,
+  form: AllowForm
+): Validation<{ devices: DeviceGrant[] }> {
+  if (!form.proxy && !form.admin) return { ok: false, error: 'allow_nothing' };
+  const label = form.name.trim();
+  if ([...label].length > MAX_LABEL_LENGTH) {
+    return { ok: false, error: 'label_too_long', detail: String(MAX_LABEL_LENGTH) };
+  }
+  const device = data.devices.find((d) => d.id === request.nodeId);
+  const devices: DeviceGrant[] = [];
+  for (const d of data.devices) {
+    if (d.server || d.id === request.nodeId || !(d.proxy || d.admin)) continue;
+    devices.push(grantOf(d, d));
+  }
+  const name = device?.name ?? '';
+  devices.push({
+    id: request.nodeId,
+    name,
+    label: label === name ? '' : label,
+    proxy: form.proxy,
+    admin: form.admin,
+  });
+  return { ok: true, update: { devices } };
 }
 
 /** An IPv4 or IPv6 address, optionally with a prefix length. The server parses it exactly. */

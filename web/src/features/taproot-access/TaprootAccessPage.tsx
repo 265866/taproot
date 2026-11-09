@@ -3,12 +3,14 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
+import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconCopy, IconPlus, IconSearch } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
@@ -17,6 +19,7 @@ import {
   taprootApi,
   type AccessDevice,
   type AccessDevices,
+  type AccessRequest,
   type AddressGrant,
   type TaprootMe,
 } from '@/services/api/taproot';
@@ -26,19 +29,28 @@ import { getErrorMessage } from '@/utils/helpers';
 import {
   accessUpdate,
   adminLock,
+  allowDefaults,
+  allowUpdate,
   changeCount,
+  deviceName,
   draftFrom,
-  groupDevices,
   isNew,
+  layoutDevices,
   matchesQuery,
   newAddress,
   ownDeviceId,
   proxyLock,
+  rebaseDraft,
   type AccessDraft,
-  type DeviceGroup,
+  type AllowForm,
+  type DeviceName,
+  type DeviceSection,
   type SwitchLock,
 } from './model/accessModel';
 import styles from './TaprootAccessPage.module.scss';
+
+type Translate = ReturnType<typeof useTranslation>['t'];
+type SetDraft = (update: (draft: AccessDraft | null) => AccessDraft | null) => void;
 
 export function TaprootAccessPage() {
   const { t } = useTranslation();
@@ -53,17 +65,22 @@ export function TaprootAccessPage() {
   const [saving, setSaving] = useState(false);
   // Relative times and New badges are as of the last load.
   const [now, setNow] = useState(() => Date.now());
-  const searchId = useId();
+  const dataRef = useRef<AccessDevices | null>(null);
 
-  const load = useCallback(async () => {
+  /** Loads the page. With keepDraft, unsaved switches survive the reload. */
+  const load = useCallback(async (keepDraft = false) => {
     try {
       const [devices, who] = await Promise.all([taprootApi.accessDevices(), taprootApi.me()]);
+      const before = dataRef.current;
+      dataRef.current = devices;
       setData(devices);
       setMe(who);
       setNow(Date.now());
-      setDraft(draftFrom(devices));
+      setDraft((current) =>
+        keepDraft && before && current ? rebaseDraft(before, current, devices) : draftFrom(devices)
+      );
       setLoadError('');
-      setSaveError('');
+      if (!keepDraft) setSaveError('');
     } catch (err: unknown) {
       setLoadError(getErrorMessage(err));
     }
@@ -72,9 +89,6 @@ export function TaprootAccessPage() {
     void load();
   }, [load]);
   useHeaderRefresh(load);
-
-  const groups = useMemo(() => (data ? groupDevices(data, me, query) : []), [data, me, query]);
-  const changes = data && draft ? changeCount(data, draft) : 0;
 
   const save = async () => {
     if (!data || !draft) return;
@@ -96,13 +110,123 @@ export function TaprootAccessPage() {
     }
   };
 
+  /** Saves one request's grant; returns the message to show in its form, or null. */
+  const allow = async (request: AccessRequest, form: AllowForm): Promise<string | null> => {
+    if (!data) return null;
+    const result = allowUpdate(data, request, form);
+    if (!result.ok) {
+      return t(`taproot_access.errors.${result.error}`, { detail: result.detail ?? '' });
+    }
+    try {
+      await taprootApi.putSettings({ access: result.update });
+    } catch (err: unknown) {
+      return getErrorMessage(err);
+    }
+    showNotification(t('taproot_access.allowed'), 'success');
+    await load(true);
+    return null;
+  };
+
+  const deny = async (request: AccessRequest) => {
+    try {
+      await taprootApi.dismissRequest(request.nodeId);
+      showNotification(t('taproot_access.denied'), 'success');
+      await load(true);
+    } catch (err: unknown) {
+      showNotification(getErrorMessage(err), 'error');
+    }
+  };
+
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <div>
-          <h1 className={styles.title}>{t('taproot_access.title')}</h1>
-          <p className={styles.description}>{t('taproot_access.description')}</p>
+      {loadError && (
+        <div className="error-box" role="alert">
+          {mask(t('taproot_access.load_failed', { message: loadError }))}
         </div>
+      )}
+      {!data && !loadError && (
+        <>
+          <h1 className={styles.title}>{t('taproot_access.title')}</h1>
+          <div className={styles.loading} role="status">
+            {t('taproot_access.loading')}
+          </div>
+        </>
+      )}
+      {data && draft && (
+        <AccessView
+          data={data}
+          me={me}
+          draft={draft}
+          setDraft={setDraft}
+          query={query}
+          setQuery={setQuery}
+          now={now}
+          saving={saving}
+          saveError={saveError}
+          onSave={() => void save()}
+          onReset={() => {
+            setDraft(draftFrom(data));
+            setSaveError('');
+          }}
+          onAllow={allow}
+          onDeny={(request) => void deny(request)}
+        />
+      )}
+    </div>
+  );
+}
+
+export interface AccessViewProps {
+  data: AccessDevices;
+  me: TaprootMe | null;
+  draft: AccessDraft;
+  setDraft: SetDraft;
+  query: string;
+  setQuery: (query: string) => void;
+  now: number;
+  saving: boolean;
+  saveError: string;
+  onSave: () => void;
+  onReset: () => void;
+  onAllow: (request: AccessRequest, form: AllowForm) => Promise<string | null>;
+  onDeny: (request: AccessRequest) => void;
+  /** Starts with the folded devices shown, for tests. */
+  initiallyUnfolded?: boolean;
+}
+
+/** The loaded page: requests, the device table, and the save bar. */
+export function AccessView({
+  data,
+  me,
+  draft,
+  setDraft,
+  query,
+  setQuery,
+  now,
+  saving,
+  saveError,
+  onSave,
+  onReset,
+  onAllow,
+  onDeny,
+  initiallyUnfolded = false,
+}: AccessViewProps) {
+  const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const searchId = useId();
+  const [unfolded, setUnfolded] = useState(initiallyUnfolded);
+  const layout = useMemo(() => layoutDevices(data, me, query, now), [data, me, query, now]);
+  const changes = changeCount(data, draft);
+  const searching = query.trim() !== '';
+  const showFolded = unfolded || searching;
+  const nothingMatches =
+    searching && layout.sections.length === 0 && layout.folded.length === 0 && !layout.removed;
+  const rowProps = { draft, setDraft, me, now };
+
+  return (
+    <>
+      <header className={styles.header}>
+        <h1 className={styles.title}>{t('taproot_access.title')}</h1>
         <label className={styles.search} htmlFor={searchId}>
           <IconSearch size={16} />
           <span className={styles.srOnly}>{t('taproot_access.search_label')}</span>
@@ -118,161 +242,293 @@ export function TaprootAccessPage() {
           />
         </label>
       </header>
-      <p className={styles.legend}>
-        <span>
-          <strong>{t('taproot_access.proxy')}</strong> {t('taproot_access.proxy_hint')}
-        </span>
-        <span>
-          <strong>{t('taproot_access.admin')}</strong> {t('taproot_access.admin_hint')}
-        </span>
-      </p>
 
-      {loadError && (
-        <div className="error-box" role="alert">
-          {mask(t('taproot_access.load_failed', { message: loadError }))}
-        </div>
-      )}
-      {!data && !loadError && (
-        <div className={styles.loading} role="status">
-          {t('taproot_access.loading')}
-        </div>
-      )}
-      {data && !data.enabled && (
+      {!data.enabled && (
         <div className="status-badge warning" role="status">
           {t('taproot_access.disabled')}
         </div>
       )}
-      {data?.tailnetError && (
+      {data.tailnetError && (
         <div className="status-badge warning" role="status">
           {mask(t('taproot_access.tailnet_error', { message: data.tailnetError }))}
         </div>
       )}
 
-      {data && draft && (
-        <>
-          <div className={styles.table} role="table" aria-label={t('taproot_access.title')}>
-            <div className={`${styles.row} ${styles.head}`} role="row">
-              <span role="columnheader">{t('taproot_access.column_device')}</span>
-              <span role="columnheader" className={styles.id}>
-                {t('taproot_access.column_id')}
-              </span>
-              <span role="columnheader">{t('taproot_access.proxy')}</span>
-              <span role="columnheader">{t('taproot_access.admin')}</span>
-            </div>
-            {groups.map((group) => (
-              <Group
-                key={group.kind + group.login}
-                group={group}
-                data={data}
-                draft={draft}
-                setDraft={setDraft}
-                me={me}
-                now={now}
-              />
-            ))}
-            {groups.length === 0 && query.trim() && (
-              <p className={styles.empty}>
-                {t('taproot_access.no_match', { query: query.trim() })}
-              </p>
-            )}
-            <Addresses saved={data.addresses} draft={draft} setDraft={setDraft} query={query} />
-          </div>
+      {data.requests.length > 0 && (
+        <section className={styles.requests} aria-label={t('taproot_access.requests')}>
+          <h2 className={styles.requestsTitle}>{t('taproot_access.requests')}</h2>
+          {data.requests.map((request) => (
+            <RequestRow
+              key={request.nodeId}
+              request={request}
+              now={now}
+              disabled={!data.enabled}
+              onAllow={onAllow}
+              onDeny={onDeny}
+            />
+          ))}
+        </section>
+      )}
 
-          {saveError && (
-            <div className="error-box" role="alert">
-              {mask(saveError)}
+      <div className={styles.table} role="table" aria-label={t('taproot_access.title')}>
+        <div className={`${styles.row} ${styles.head}`} role="row">
+          <span role="columnheader">{t('taproot_access.column_device')}</span>
+          <span role="columnheader" className={styles.id}>
+            {t('taproot_access.column_id')}
+          </span>
+          <span role="columnheader">{t('taproot_access.proxy')}</span>
+          <span role="columnheader">{t('taproot_access.admin')}</span>
+        </div>
+        {layout.sections.map((section) => (
+          <Section key={section.kind + section.login} section={section} {...rowProps} />
+        ))}
+        {layout.folded.length > 0 && (
+          <div className={styles.group} role="rowgroup">
+            <div className={styles.foldRow} role="row">
+              <span role="cell">
+                <button
+                  type="button"
+                  className={styles.foldButton}
+                  aria-expanded={showFolded}
+                  onClick={() => setUnfolded((open) => !open)}
+                >
+                  <span>{t('taproot_access.folded', { count: layout.folded.length })}</span>
+                  <span className={styles.foldAction}>
+                    {showFolded ? t('taproot_access.hide') : t('taproot_access.show')}
+                  </span>
+                </button>
+              </span>
             </div>
-          )}
-          <div className={styles.saveBar} role="region" aria-label={t('taproot_access.save')}>
-            <span>
-              {changes === 0
-                ? t('taproot_access.unsaved_none')
-                : t('taproot_access.unsaved', { count: changes })}
-            </span>
-            <div className={styles.saveActions}>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={changes === 0 || saving}
-                onClick={() => {
-                  setDraft(draftFrom(data));
-                  setSaveError('');
-                }}
-              >
-                {t('taproot_access.reset')}
-              </Button>
-              <Button
-                size="sm"
-                loading={saving}
-                disabled={changes === 0 || !data.enabled}
-                onClick={() => void save()}
-              >
-                {t('taproot_access.save')}
-              </Button>
-            </div>
+            {showFolded &&
+              layout.folded.map((device) => (
+                <DeviceRow key={device.id} device={device} {...rowProps} />
+              ))}
           </div>
-        </>
+        )}
+        {layout.removed && <Section section={layout.removed} {...rowProps} />}
+        {nothingMatches && (
+          <p className={styles.empty}>{t('taproot_access.no_match', { query: query.trim() })}</p>
+        )}
+        <Addresses saved={data.addresses} draft={draft} setDraft={setDraft} query={query} />
+      </div>
+
+      {saveError && (
+        <div className="error-box" role="alert">
+          {mask(saveError)}
+        </div>
+      )}
+      {changes > 0 && (
+        <div className={styles.saveBar} role="region" aria-label={t('taproot_access.save')}>
+          <span>{t('taproot_access.unsaved', { count: changes })}</span>
+          <div className={styles.saveActions}>
+            <Button variant="ghost" size="sm" disabled={saving} onClick={onReset}>
+              {t('taproot_access.reset')}
+            </Button>
+            <Button size="sm" loading={saving} disabled={!data.enabled} onClick={onSave}>
+              {t('taproot_access.save')}
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A device's name as the page shows it. */
+function nameText(name: DeviceName, t: Translate): string {
+  if (name.kind === 'named') return name.name;
+  return name.owner
+    ? t('taproot_access.unnamed', { owner: name.owner, suffix: name.suffix })
+    : t('taproot_access.unnamed_no_owner', { suffix: name.suffix });
+}
+
+function relativeTime(iso: string | null, now: number): string {
+  const at = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(at)) return '';
+  const seconds = Math.round((at - now) / 1000);
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['day', 86_400],
+    ['hour', 3_600],
+    ['minute', 60],
+  ];
+  const format = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
+  }
+  return format.format(seconds, 'second');
+}
+
+function RequestRow({
+  request,
+  now,
+  disabled,
+  onAllow,
+  onDeny,
+}: {
+  request: AccessRequest;
+  now: number;
+  disabled: boolean;
+  onAllow: AccessViewProps['onAllow'];
+  onDeny: AccessViewProps['onDeny'];
+}) {
+  const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const nameId = useId();
+  const [form, setForm] = useState<AllowForm | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const name = nameText(
+    deviceName({
+      label: '',
+      name: request.name,
+      ownerName: request.ownerName,
+      login: request.login,
+      id: request.nodeId,
+    }),
+    t
+  );
+  const meta = [
+    request.login,
+    request.client,
+    relativeTime(request.lastSeen, now),
+    t('taproot_access.request_count', { count: request.count }),
+  ].filter(Boolean);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!form) return;
+    setPending(true);
+    const failure = await onAllow(request, form);
+    setPending(false);
+    if (failure) setError(failure);
+  };
+
+  return (
+    <div className={styles.request}>
+      <div className={styles.requestHead}>
+        <span className={styles.device}>
+          <span className={styles.name}>
+            {name}
+            {request.outside && (
+              <span className={styles.badge}>{t('taproot_access.other_tailnet')}</span>
+            )}
+          </span>
+          <span className={styles.details}>{meta.join(' · ')}</span>
+        </span>
+        {!form && (
+          <span className={styles.requestActions}>
+            <Button
+              size="sm"
+              disabled={disabled}
+              aria-label={t('taproot_access.allow_label', { name })}
+              onClick={() => setForm(allowDefaults(request))}
+            >
+              {t('taproot_access.allow')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled}
+              aria-label={t('taproot_access.deny_label', { name })}
+              onClick={() => onDeny(request)}
+            >
+              {t('taproot_access.deny')}
+            </Button>
+          </span>
+        )}
+      </div>
+      {form && (
+        <form className={styles.allowForm} onSubmit={(event) => void submit(event)}>
+          <label htmlFor={nameId} className={styles.srOnly}>
+            {t('taproot_access.name_label')}
+          </label>
+          <input
+            id={nameId}
+            className="input"
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            placeholder={t('taproot_access.name_label')}
+            autoComplete="off"
+            maxLength={64}
+            autoFocus
+          />
+          <SelectionCheckbox
+            checked={form.proxy}
+            onChange={(proxy) => setForm({ ...form, proxy })}
+            label={t('taproot_access.proxy')}
+          />
+          <SelectionCheckbox
+            checked={form.admin}
+            onChange={(admin) => setForm({ ...form, admin })}
+            label={t('taproot_access.admin')}
+          />
+          <Button type="submit" size="sm" loading={pending} disabled={!form.proxy && !form.admin}>
+            {t('taproot_access.allow')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setForm(null);
+              setError('');
+            }}
+          >
+            {t('taproot_access.cancel')}
+          </Button>
+          {error && (
+            <p className={styles.formError} role="alert">
+              {mask(error)}
+            </p>
+          )}
+        </form>
       )}
     </div>
   );
 }
-
-type SetDraft = (update: (draft: AccessDraft | null) => AccessDraft | null) => void;
 
 function GroupHeader({ title, badge, hint }: { title: string; badge?: string; hint?: string }) {
   return (
     <div className={styles.groupHeader} role="row">
       <span role="rowheader">
         <strong>{title}</strong>
-        {badge && <span className={styles.badge}>{badge}</span>}
         {hint && <span className={styles.groupHint}>{hint}</span>}
+        {badge && <span className={styles.badge}>{badge}</span>}
       </span>
     </div>
   );
 }
 
-function Group({
-  group,
-  data,
-  draft,
-  setDraft,
-  me,
-  now,
-}: {
-  group: DeviceGroup;
-  data: AccessDevices;
+interface RowProps {
   draft: AccessDraft;
   setDraft: SetDraft;
   me: TaprootMe | null;
   now: number;
-}) {
+}
+
+function Section({ section, ...rowProps }: RowProps & { section: DeviceSection }) {
   const { t } = useTranslation();
-  const header =
-    group.kind === 'owner' ? (
-      <GroupHeader title={group.login} badge={group.own ? t('taproot_access.you') : undefined} />
-    ) : group.kind === 'tagged' ? (
-      <GroupHeader title={t('taproot_access.tagged')} hint={t('taproot_access.tagged_hint')} />
-    ) : (
+  let header: ReactNode;
+  if (section.kind === 'person') {
+    const named = section.ownerName && section.ownerName !== section.login;
+    header = (
       <GroupHeader
-        title={t('taproot_access.gone')}
-        hint={t('taproot_access.gone_hint', { hours: data.forgetAfterHours })}
+        title={named ? section.ownerName : section.login}
+        hint={named ? section.login : undefined}
+        badge={section.outside ? t('taproot_access.other_tailnet') : undefined}
       />
     );
+  } else {
+    header = <GroupHeader title={t(`taproot_access.${section.kind}`)} />;
+  }
   return (
     <div className={styles.group} role="rowgroup">
       {header}
-      {group.devices.map((device) =>
-        group.kind === 'gone' ? (
-          <GoneRow key={device.id} device={device} draft={draft} setDraft={setDraft} now={now} />
+      {section.devices.map((device) =>
+        section.kind === 'removed' ? (
+          <GoneRow key={device.id} device={device} {...rowProps} />
         ) : (
-          <DeviceRow
-            key={device.id}
-            device={device}
-            draft={draft}
-            setDraft={setDraft}
-            me={me}
-            now={now}
-          />
+          <DeviceRow key={device.id} device={device} {...rowProps} />
         )
       )}
     </div>
@@ -317,14 +573,7 @@ function Switch({
   onChange: (value: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const note =
-    lock === 'server_always'
-      ? t('taproot_access.always')
-      : lock === 'server_never'
-        ? t('taproot_access.never')
-        : lock === 'needed_by_you'
-          ? t('taproot_access.needed_by_you')
-          : '';
+  const note = lock ? t(`taproot_access.${LOCK_NOTES[lock]}`) : '';
   return (
     <span className={styles.switch} role="cell">
       <ToggleSwitch
@@ -338,21 +587,12 @@ function Switch({
   );
 }
 
-function relativeTime(iso: string | null, now: number): string {
-  const at = iso ? Date.parse(iso) : NaN;
-  if (!Number.isFinite(at)) return '';
-  const seconds = Math.round((at - now) / 1000);
-  const units: [Intl.RelativeTimeFormatUnit, number][] = [
-    ['day', 86_400],
-    ['hour', 3_600],
-    ['minute', 60],
-  ];
-  const format = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  for (const [unit, size] of units) {
-    if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
-  }
-  return format.format(seconds, 'second');
-}
+const LOCK_NOTES: Record<NonNullable<SwitchLock>, string> = {
+  server_always: 'always',
+  server_never: 'never',
+  needed_by_you: 'needed_by_you',
+  from_request: 'from_request',
+};
 
 const OS_NAMES: Record<string, string> = {
   linux: 'Linux',
@@ -366,90 +606,76 @@ const OS_NAMES: Record<string, string> = {
   tvos: 'tvOS',
 };
 
-function DeviceRow({
-  device,
-  draft,
-  setDraft,
-  me,
-  now,
-}: {
-  device: AccessDevice;
-  draft: AccessDraft;
-  setDraft: SetDraft;
-  me: TaprootMe | null;
-  now: number;
-}) {
+/** The name's tooltip: the Tailscale name under a label, the OS, and the full MagicDNS name. */
+function nameTitle(device: AccessDevice): string {
+  return [
+    device.label && device.name !== device.label ? device.name : '',
+    OS_NAMES[device.os.toLowerCase()] ?? device.os,
+    device.dnsName,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function DeviceRow({ device, draft, setDraft, me, now }: RowProps & { device: AccessDevice }) {
   const { t } = useTranslation();
   const fresh = isNew(device, now);
   const own = device.id === ownDeviceId(me);
+  const name = nameText(deviceName(device), t);
   const p = device.server
     ? { proxy: true, admin: false }
     : (draft.devices[device.id] ?? { proxy: device.proxy, admin: device.admin });
   const set = (key: 'proxy' | 'admin', value: boolean) =>
     setDraft((d) => d && { ...d, devices: { ...d.devices, [device.id]: { ...p, [key]: value } } });
-  const details = [
-    OS_NAMES[device.os.toLowerCase()] ?? device.os,
-    fresh ? t('taproot_access.joined', { when: relativeTime(device.created, now) }) : '',
-    device.tags.join(' '),
-    device.dnsName,
-  ].filter(Boolean);
+  const presence = device.online
+    ? t('taproot_access.online')
+    : device.lastSeen
+      ? t('taproot_access.last_seen', { when: relativeTime(device.lastSeen, now) })
+      : '';
+  const title = nameTitle(device);
   return (
     <div className={`${styles.row} ${fresh ? styles.fresh : ''}`} role="row">
       <span className={styles.device} role="cell">
-        <span className={styles.name}>
-          {device.name}
+        <span className={styles.name} title={title || undefined}>
+          {name}
           {own && <span className={styles.badge}>{t('taproot_access.this_device')}</span>}
           {device.server && <span className={styles.badge}>{t('taproot_access.this_server')}</span>}
           {fresh && (
             <span className={`${styles.badge} ${styles.newBadge}`}>{t('taproot_access.new')}</span>
           )}
         </span>
-        <span className={styles.details}>{details.join(' · ')}</span>
+        {presence && <span className={styles.details}>{presence}</span>}
       </span>
-      <CopyId id={device.id} name={device.name} />
+      <CopyId id={device.id} name={name} />
       <Switch
         checked={p.proxy}
         lock={proxyLock(device)}
-        label={t('taproot_access.proxy_label', { name: device.name })}
+        label={t('taproot_access.proxy_label', { name })}
         onChange={(value) => set('proxy', value)}
       />
       <Switch
         checked={p.admin}
         lock={adminLock(device, me)}
-        label={t('taproot_access.admin_label', { name: device.name })}
+        label={t('taproot_access.admin_label', { name })}
         onChange={(value) => set('admin', value)}
       />
     </div>
   );
 }
 
-function GoneRow({
-  device,
-  draft,
-  setDraft,
-  now,
-}: {
-  device: AccessDevice;
-  draft: AccessDraft;
-  setDraft: SetDraft;
-  now: number;
-}) {
+function GoneRow({ device, draft, setDraft, now }: RowProps & { device: AccessDevice }) {
   const { t } = useTranslation();
   const forgetting = draft.forget.includes(device.id);
-  const had = [device.proxy && t('taproot_access.proxy'), device.admin && t('taproot_access.admin')]
-    .filter(Boolean)
-    .join(', ');
+  const name = device.label || device.name || device.id;
   const since = device.missingSince
     ? t('taproot_access.gone_since', { when: relativeTime(device.missingSince, now) })
     : t('taproot_access.gone_unknown');
   return (
     <div className={`${styles.row} ${styles.gone}`} role="row">
       <span className={styles.device} role="cell">
-        <span className={styles.name}>{device.name || device.id}</span>
+        <span className={styles.name}>{name}</span>
         <span className={styles.details}>
-          {forgetting
-            ? t('taproot_access.will_forget')
-            : [since, had && t('taproot_access.had', { what: had })].filter(Boolean).join(' · ')}
+          {forgetting ? t('taproot_access.will_forget') : since}
         </span>
       </span>
       <span className={styles.id} role="cell">
@@ -460,7 +686,7 @@ function GoneRow({
           variant="ghost"
           size="sm"
           aria-label={t(forgetting ? 'taproot_access.keep_label' : 'taproot_access.forget_label', {
-            name: device.name || device.id,
+            name,
           })}
           onClick={() =>
             setDraft(
@@ -588,10 +814,7 @@ function Addresses({
 
   return (
     <div className={styles.group} role="rowgroup">
-      <GroupHeader
-        title={t('taproot_access.addresses')}
-        hint={t('taproot_access.addresses_hint')}
-      />
+      <GroupHeader title={t('taproot_access.addresses')} />
       {shown.map((address) => (
         <div key={addressKey(address)} className={styles.row} role="row">
           <span className={styles.device} role="cell">

@@ -40,14 +40,16 @@ export const classifyConnectionError = (error: unknown): ConnectionFailure => {
 export const deniedDevice = (error: unknown): DeniedDevice | null => {
   const details = (error as { details?: unknown } | null)?.details;
   const body = isRecord(details) && isRecord(details.error) ? details.error : null;
-  if (!body || typeof body.node !== 'string' || !body.node.trim()) return null;
   const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  // A sharee's device has no name, but always an ID.
+  if (!body || (!text(body.node) && !text(body.nodeId))) return null;
   return {
-    node: body.node.trim(),
+    node: text(body.node),
     nodeId: text(body.nodeId),
     login: text(body.login),
     proxy: body.proxy === true,
     claimable: body.claimable === true,
+    requested: body.requested === true,
   };
 };
 
