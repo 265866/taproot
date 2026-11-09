@@ -221,13 +221,14 @@ podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current
 systemctl --user restart taproot
 ```
 
-To check the signature first, verify the digest you pulled rather than the tag, which can move between the pull and the check. Run `cosign verify` (cosign 3), or `gh attestation verify "oci://$ref" --repo 265866/taproot` for the build provenance, and tag only the verified digest:
+To check the signature first, verify the digest you pulled rather than the tag, which can move between the pull and the check. Run `cosign verify` (cosign 3), or `gh attestation verify "oci://$ref" --repo 265866/taproot --cert-identity-regex "$identity"` for the build provenance, and tag only the verified digest:
 
 ```sh
 podman pull ghcr.io/265866/taproot:0.2
 ref=$(podman image inspect --format '{{index .RepoDigests 0}}' ghcr.io/265866/taproot:0.2)
+identity='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v0\.2\.[0-9]+$'
 cosign verify "$ref" \
-  --certificate-identity-regexp '^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v0\.2\.[0-9]+$' \
+  --certificate-identity-regexp "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 podman tag "$ref" localhost/taproot:current
 ```
