@@ -6,7 +6,8 @@ name: release
 # release-please.yml calls it for the tags it creates. A tag pushed by a
 # person, such as a release candidate (taproot-v0.2.0-rc.1), starts it
 # directly, and it can be run by hand for an existing tag. Re-running it for
-# the same tag re-publishes that tag.
+# the same tag re-publishes that tag, but moves X.Y and latest only while no
+# newer release exists.
 #
 # The signatures and attestations name this file in this repository as their
 # signer (the Fulcio certificate's workflow URI), and the documented
@@ -53,6 +54,7 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      latest: ${{ steps.meta.outputs.latest }}
       image-tags: ${{ steps.meta.outputs.image-tags }}
       commit: ${{ steps.meta.outputs.commit }}
       build-date: ${{ steps.meta.outputs.build-date }}
@@ -69,10 +71,15 @@ jobs:
           ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
       # The build date is the commit's, so rebuilding a tag stamps the same one.
+      # The release notes are checked here, before anything is pushed.
       - id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           commit="$(git rev-parse HEAD)"
-          scripts/taproot/release-version.sh "$TAG" "$commit" | tee -a "$GITHUB_OUTPUT"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/taproot-v" --jq '.[].ref | ltrimstr("refs/tags/")' > "$RUNNER_TEMP/tags"
+          scripts/taproot/release-version.sh "$TAG" "$commit" "$RUNNER_TEMP/tags" | tee -a "$GITHUB_OUTPUT"
+          scripts/taproot/release-notes.sh "${TAG#taproot-v}" > /dev/null
           {
             echo "commit=$commit"
             echo "build-date=$(TZ=UTC0 git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd)"
@@ -267,6 +274,7 @@ jobs:
     env:
       VERSION: ${{ needs.meta.outputs.version }}
       PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+      LATEST: ${{ needs.meta.outputs.latest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -334,18 +342,32 @@ jobs:
           subject-path: dist/*.tar.gz
       # release-please creates its releases as drafts, and they are published
       # here once their files are uploaded. A tag pushed by a person has no
-      # release yet. Either way the notes are the tag's CHANGELOG.md section.
+      # release yet. Either way the notes are the tag's CHANGELOG.md section,
+      # and the oldest glibc the binaries run on, which the Debian base sets.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           BUNDLE: ${{ steps.attest-tarballs.outputs.bundle-path }}
         run: |
           cp "$BUNDLE" "dist/taproot-$VERSION.sigstore.json"
-          scripts/taproot/release-notes.sh "$VERSION" > "$RUNNER_TEMP/notes.md"
+          mkdir "$RUNNER_TEMP/bin"
+          for tarball in dist/*.tar.gz; do
+            tar -xzf "$tarball" -C "$RUNNER_TEMP/bin"
+          done
+          glibc="$(readelf -V "$RUNNER_TEMP"/bin/*/taproot | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
+          if [[ -z "$glibc" ]]; then
+            echo "::error::found no glibc version in the binaries"
+            exit 1
+          fi
+          {
+            scripts/taproot/release-notes.sh "$VERSION"
+            printf '\n### Binaries\n\nThe tarballs hold Linux binaries linked against glibc. They need glibc %s or later, and do not run on musl distributions such as Alpine. On other systems, run the image.\n' "${glibc#GLIBC_}"
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
           if [[ "$PRERELEASE" == true ]]; then
             flags=(--prerelease --latest=false)
           else
-            flags=(--prerelease=false --latest)
+            flags=(--prerelease=false "--latest=$LATEST")
           fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
