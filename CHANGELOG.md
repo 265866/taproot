@@ -2,17 +2,17 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
-## Unreleased
-
-### Changed
-
-- **Access is per device.** Each tailnet device has a Proxy and an Admin switch, set on the new **Access** page or in `access.devices` by stable ID, and a new device has neither. `access.addresses` replaces `access.trusted-cidrs`. `access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs` stop startup with a message naming their replacement, with no migration. A device that leaves the tailnet is removed from `taproot.yaml` 24 hours later. The server's own node keeps Proxy without an entry.
-
-### Fixed
-
-- The server's own Tailscale node reaches the proxy again after the node is tagged. A tagged node has no user login, so `allow-logins` refused it, and local clients that use the Tailscale address got 403.
-
 ## [0.2.0](https://github.com/265866/taproot/compare/taproot-v0.1.0...taproot-v0.2.0) (2026-11-09)
+
+### Breaking changes
+
+* **Access is per device.** Each tailnet device has a Proxy and an Admin switch, set on the new **Access** page or in `access.devices` by stable ID, and a new device has neither. `access.addresses` replaces `access.trusted-cidrs`. `access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs` stop startup with a message naming their replacement; there is no migration. A device that leaves the tailnet is removed from `taproot.yaml` 24 hours later, and the server's own node keeps Proxy without an entry.
+
+### Upgrading from 0.1.0
+
+* Rewrite the `access` block of `taproot.yaml` before you start 0.2.0: list each device that should keep access under `access.devices` with its stable ID (`tailscale status --json` shows it as `ID`), and move `trusted-cidrs` entries to `access.addresses`. See `examples/taproot/taproot.yaml`.
+* Data written by v0.1.0 is not carried forward; start from an empty data directory or keep running 0.1.0. See [docs/stability.md](docs/stability.md).
+* Release images are published at `ghcr.io/265866/taproot`, signed and attested; the README describes installing, verifying, and updating them.
 
 ### Added
 
