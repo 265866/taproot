@@ -27,7 +27,7 @@ The page lists devices in these groups:
 - **Removed:** devices no longer on the tailnet. Taproot forgets them after 24 hours; select **Forget** to remove one sooner.
 - **Addresses:** callers outside Tailscale.
 
-When you name a device on this page, taproot stores the name as `label` in `taproot.yaml`. A rename in Tailscale does not change it.
+To rename a device, select the pencil next to its name, then **Save**. Only a device with Proxy or Admin keeps a name. Taproot stores it as `label` in `taproot.yaml`, and a rename in Tailscale does not change it.
 
 ## Allow a new device
 
@@ -36,7 +36,7 @@ A device without permission becomes a request when it tries taproot.
 - From a browser on that device, open `http://<server>:8317/`, name the device, and select **Request access**.
 - From Claude Code or Codex, the refused request creates the request itself. The error tells the person to open taproot's address in a browser on that device. Do not run `/login`.
 
-On the Access page, allow the request with Proxy, Admin, or both, and a name, or deny it. If you set up [Discord alerts](configuration.md#taprootyaml), taproot sends an alert for each new request.
+On the Access page, allow the request with Proxy, Admin, or both, and a name, or deny it. **Allow** starts with Proxy on. After you allow a device, its later refusals stay quiet; it can still ask again from its browser, for example with **Request dashboard access** when it has Proxy but not Admin. If you set up [Discord alerts](configuration.md#taprootyaml), taproot sends an alert for each new request.
 
 ## Allow a device from another tailnet
 
