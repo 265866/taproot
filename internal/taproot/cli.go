@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/265866/taproot/internal/buildinfo"
+	log "github.com/sirupsen/logrus"
 )
 
 // hiddenFlags are upstream flags that do not apply to taproot. They stay
@@ -37,8 +38,9 @@ func VersionLine() string {
 // after upstream defines its flags and before flag.Parse. It replaces the help
 // text with taproot's and serves --version, which prints VersionLine and exits 0.
 // If upstream or a plugin defines its own version flag, --version is theirs.
-// Anything else that must run before upstream reads the config, such as
-// writing default config files on first run, belongs here.
+// When --config names a file that does not exist, it writes the default
+// config.yaml there and taproot.yaml beside it (see writeDefaultConfig), so a
+// first start needs no files; a failed write exits 1.
 func HandleArgs(args []string) {
 	handleArgs(flag.CommandLine, args, os.Stdout, os.Exit)
 }
@@ -49,42 +51,55 @@ func handleArgs(fs *flag.FlagSet, args []string, stdout io.Writer, exit func(int
 		fs.Bool("version", false, "Print the version and exit")
 	}
 	fs.Usage = func() { writeUsage(fs) }
-	if owned && len(args) > 1 && versionRequested(fs, args[1:]) {
-		_, _ = fmt.Fprintln(stdout, VersionLine())
-		exit(0)
+	if len(args) < 2 {
+		return
+	}
+	values, help := scanFlags(fs, args[1:])
+	if owned {
+		if requested, err := strconv.ParseBool(values["version"]); err == nil && requested {
+			_, _ = fmt.Fprintln(stdout, VersionLine())
+			exit(0)
+			return
+		}
+	}
+	if path := values["config"]; path != "" && !help {
+		if err := writeDefaultConfig(path); err != nil {
+			log.Errorf("taproot: write the default config files: %v", err)
+			exit(1)
+		}
 	}
 }
 
-// versionRequested reports whether flag.Parse would set -version, reading the
-// arguments the way the flag package does: it stops at "--", at the first
+// scanFlags returns the value of each flag that flag.Parse would set, reading
+// the arguments the way the flag package does: it stops at "--", at the first
 // argument that is not a flag, and at a flag that is not defined (flag.Parse
-// then fails or prints the help), and skips the value of a non-boolean flag.
-func versionRequested(fs *flag.FlagSet, args []string) bool {
-	requested := false
+// then fails, or prints the help for -h and -help, which help reports), and
+// skips the value of a non-boolean flag. A boolean flag without a value is
+// "true".
+func scanFlags(fs *flag.FlagSet, args []string) (values map[string]string, help bool) {
+	values = map[string]string{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if len(arg) < 2 || arg[0] != '-' || arg == "--" {
-			return requested
+			return values, false
 		}
 		name := strings.TrimPrefix(arg[1:], "-")
 		name, value, hasValue := strings.Cut(name, "=")
 		f := fs.Lookup(name)
 		if f == nil {
-			return requested
+			return values, name == "h" || name == "help"
 		}
-		if name == "version" {
-			requested = !hasValue
-			if hasValue {
-				parsed, err := strconv.ParseBool(value)
-				requested = err == nil && parsed
+		if !hasValue {
+			if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() {
+				value = "true"
+			} else if i+1 < len(args) {
+				i++
+				value = args[i]
 			}
-			continue
 		}
-		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); !hasValue && (!ok || !b.IsBoolFlag()) {
-			i++
-		}
+		values[name] = value
 	}
-	return requested
+	return values, false
 }
 
 func writeUsage(fs *flag.FlagSet) {

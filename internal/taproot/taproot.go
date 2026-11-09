@@ -27,6 +27,7 @@ import (
 	"github.com/265866/taproot/internal/util"
 	"github.com/265866/taproot/sdk/api/handlers"
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -196,6 +197,14 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot settings: %w", err)
 	}
+	code, err := guard.StartClaim()
+	if err != nil {
+		return nil, nil, fmt.Errorf("taproot access: %w", err)
+	}
+	if code != "" {
+		log.Warnf("taproot access: setup code %s. No device has Admin yet: open %s from the device that should become the first admin, and enter this code. It works once, and taproot makes a new one each time it starts until a device has Admin.",
+			access.FormatClaimCode(code), dashboardURL(cfg, guard.ServerDNSName(ctx)))
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	stop = func() {
@@ -231,4 +240,22 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		opts = append(opts, api.WithRequestLoggerFactory(factory))
 	}
 	return opts, stop, nil
+}
+
+// dashboardURL is where a tailnet device opens the dashboard: the server's
+// MagicDNS name and the port taproot listens on. A container that publishes
+// another port is reached on that port instead.
+func dashboardURL(cfg *config.Config, dnsName string) string {
+	scheme, host := "http", dnsName
+	if cfg.TLS.Enable {
+		scheme = "https"
+	}
+	if host == "" {
+		host = "<this server's tailnet name>"
+	}
+	port := cfg.Port
+	if port == 0 {
+		port = 8317
+	}
+	return fmt.Sprintf("%s://%s:%d/", scheme, host, port)
 }

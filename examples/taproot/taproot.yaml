@@ -9,7 +9,9 @@ access:
   # management API, which hold your OAuth tokens. A device that is not listed
   # has neither, and the server's own node always has Proxy and never Admin.
   # Taproot keeps each name in step with the tailnet, and forgets a device
-  # 24 hours after it leaves the tailnet.
+  # 24 hours after it leaves the tailnet. While no device has admin: true,
+  # taproot logs a setup code at each start, and the first tailnet device to
+  # enter it on the dashboard gets Proxy and Admin.
   devices:
     - id: nEXAMPLE1CNTRL
       name: laptop

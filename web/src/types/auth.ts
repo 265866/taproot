@@ -14,4 +14,6 @@ export interface DeniedDevice {
   login: string;
   /** Whether the device has Proxy. */
   proxy: boolean;
+  /** No device has Admin yet, so this one may claim the server with the setup code. */
+  claimable: boolean;
 }

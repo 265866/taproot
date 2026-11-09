@@ -35,6 +35,10 @@ type AccessControl interface {
 	ServerNodeID() string
 	ReadTailnet(context.Context) (access.Tailnet, error)
 	Reconcile(access.Tailnet) (access.Grants, []access.DeviceGrant, bool)
+	// Claimable, CheckClaimCode, and EndClaim are the one-time setup code.
+	Claimable() bool
+	CheckClaimCode(code string, now time.Time) error
+	EndClaim()
 }
 
 // RetentionSetter is the request log module's runtime retention.
@@ -143,6 +147,7 @@ func formatDuration(d time.Duration) string {
 func (s *Settings) Routes(r *gin.RouterGroup) {
 	r.GET("/settings", s.handleGet)
 	r.PUT("/settings", s.handlePut)
+	r.POST("/claim", s.handleClaim)
 }
 
 type accessView struct {
@@ -208,11 +213,7 @@ type view struct {
 
 // update is the PUT body. Absent sections and fields stay as they are.
 type update struct {
-	// Access replaces whole lists: devices with a permission, and addresses.
-	Access *struct {
-		Devices   *[]access.DeviceGrant  `json:"devices"`
-		Addresses *[]access.AddressGrant `json:"addresses"`
-	} `json:"access"`
+	Access      *accessUpdate `json:"access"`
 	RequestLogs *struct {
 		MaxDays         *int      `json:"maxDays"`
 		MaxBytes        *int64    `json:"maxBytes"`
@@ -231,6 +232,12 @@ type update struct {
 		DiscordWebhook *string `json:"discordWebhook"`
 		Enabled        *bool   `json:"enabled"`
 	} `json:"alerts"`
+}
+
+// accessUpdate replaces whole lists: devices with a permission, and addresses.
+type accessUpdate struct {
+	Devices   *[]access.DeviceGrant  `json:"devices"`
+	Addresses *[]access.AddressGrant `json:"addresses"`
 }
 
 func (s *Settings) current() view {
@@ -318,6 +325,9 @@ func (s *Settings) handlePut(c *gin.Context) {
 func (s *Settings) apply(u update, caller access.Identity) error {
 	var edits []yamlEdit
 	var undo []func()
+	// claimed is true when the new device list gives some device Admin, which
+	// uses up the setup code once the change is saved.
+	claimed := false
 	rollback := func() {
 		for i := len(undo) - 1; i >= 0; i-- {
 			undo[i]()
@@ -341,6 +351,7 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 		}
 		undo = append(undo, func() { s.restore("access", s.deps.Access.SetGrants(before)) })
 		edits = append(edits, accessEdits(before, s.deps.Access.Grants())...)
+		claimed = slices.ContainsFunc(s.deps.Access.Grants().Devices, func(d access.DeviceGrant) bool { return d.Admin })
 	}
 
 	if r := u.RequestLogs; r != nil {
@@ -451,6 +462,9 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 		}
 	}
 	s.configPoll = poll
+	if claimed {
+		s.deps.Access.EndClaim()
+	}
 	if newWebhook {
 		s.deps.Alerts.AnnounceWebhook()
 	}

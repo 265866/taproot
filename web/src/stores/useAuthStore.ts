@@ -47,6 +47,7 @@ export const deniedDevice = (error: unknown): DeniedDevice | null => {
     nodeId: text(body.nodeId),
     login: text(body.login),
     proxy: body.proxy === true,
+    claimable: body.claimable === true,
   };
 };
 

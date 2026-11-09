@@ -40,6 +40,8 @@ func TestVersionLine(t *testing.T) {
 }
 
 func TestHandleArgsVersion(t *testing.T) {
+	// "--config --version" names a missing config file, which HandleArgs creates.
+	t.Chdir(t.TempDir())
 	for _, tc := range []struct {
 		args string
 		want bool

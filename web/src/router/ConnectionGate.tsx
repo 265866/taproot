@@ -2,8 +2,10 @@ import { useEffect, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { taprootApi } from '@/services/api/taproot';
 import { useAuthStore } from '@/stores';
 import type { ConnectionFailure, ConnectionStatus, DeniedDevice } from '@/types';
+import { ClaimScreen } from './ClaimScreen';
 
 const NAME_SLOT = '\u0000';
 
@@ -28,6 +30,10 @@ interface ConnectionGateViewProps {
   /** The refused device, for a `not_admin` failure. */
   device?: DeniedDevice | null;
   onRetry: () => void;
+  /** Sends the setup code while the server is unclaimed. */
+  claim?: (code: string) => Promise<unknown>;
+  /** Runs after a successful claim. */
+  onClaimed?: () => void;
   children: ReactElement;
 }
 
@@ -36,11 +42,17 @@ export function ConnectionGateView({
   failure,
   device = null,
   onRetry,
+  claim = taprootApi.claim,
+  onClaimed = onRetry,
   children,
 }: ConnectionGateViewProps) {
   const { t } = useTranslation();
 
   if (status === 'connected') return children;
+
+  if (status === 'error' && failure === 'not_admin' && device?.claimable) {
+    return <ClaimScreen node={device.node} claim={claim} onClaimed={onClaimed} />;
+  }
 
   if (status === 'error') {
     const key = failure ?? 'unreachable';
@@ -106,6 +118,7 @@ export function ConnectionGate({ children }: { children: ReactElement }) {
       failure={failure}
       device={device}
       onRetry={() => void connect()}
+      onClaimed={() => window.location.reload()}
     >
       {children}
     </ConnectionGateView>

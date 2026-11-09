@@ -32,6 +32,11 @@
 // A tailnet device that is refused is told its own name, login, and ID, and
 // which switch to turn on; nobody else gets more than "forbidden".
 //
+// While no device has Admin, the server is unclaimed: Setup logs a one-time
+// setup code, and a tailnet device other than the server, without Admin, may
+// POST it to ClaimPath to become the first admin (see claim.go). That route
+// is the only admin route such a device reaches, and only while unclaimed.
+//
 // The server's own node comes from tailscaled's LocalAPI status. Until it has
 // been read once, tailnet callers get no admin access, only local host names
 // pass the Host check, and the server's own node is just another device.
@@ -233,6 +238,8 @@ type Guard struct {
 	requests requestDevices
 	// own names access.addresses devices only; admission never reads it.
 	own ownAddrs
+
+	claim setupClaim
 }
 
 // grantSet is Grants checked and indexed for admission.
@@ -308,7 +315,7 @@ func New(cfg Config) (*Guard, error) {
 	log.Infof("taproot access: guard enabled with %d devices (%d with Proxy, %d with Admin), %d addresses, %d extra hosts, tailscaled socket %s",
 		len(set.Devices), proxy, admin, len(set.Addresses), len(g.extraHosts), socket)
 	if admin == 0 {
-		log.Warn("taproot access: no device has Admin, so only loopback reaches the dashboard and the management API. Give a device admin: true under access.devices in taproot.yaml")
+		log.Warn("taproot access: no device has Admin, so only loopback reaches the dashboard and the management API until a tailnet device claims the server with the setup code logged at startup")
 	}
 	return g, nil
 }
@@ -463,11 +470,19 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 				denial = g.deviceDenial("no_proxy", id, "this device has no Proxy permission. Turn on Proxy for it on the Access page of taproot's dashboard")
 			}
 		case surf == surfaceAdmin && !id.Admin && !isDashboardShell(r):
+			if id.device && r.Method == http.MethodPost && path == ClaimPath && g.Claimable() {
+				// The settings module checks the code and the caller.
+				break
+			}
 			reason = id.notAdmin
 			if id.noAdminGrant {
 				denial = g.deviceDenial("not_admin", id, "this device has no Admin permission. On a device that has it, turn on Admin for this one on the Access page of taproot's dashboard")
 				// The connection gate words its advice by whether the device has Proxy.
 				denial["proxy"] = id.Proxy
+				// While unclaimed, the gate offers the setup code form instead.
+				if g.Claimable() {
+					denial["claimable"] = true
+				}
 			}
 		}
 		if reason == "" && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {

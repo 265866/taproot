@@ -59,7 +59,7 @@ Taproot stores OAuth refresh tokens for your accounts, and the request logs hold
 
 - **Do not put anything in front of taproot.** Loopback callers are admins. `tailscale serve`, `tailscale funnel`, a reverse proxy, or an SSH tunnel on the same host usually connects from loopback, so every caller it forwards becomes an admin.
 - **Publish the port on the host's Tailscale address only.** Never publish on `0.0.0.0` or `127.0.0.1`. A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
-- **Check the result after every deployment change.** Run the checks in [Check the deployment](#4-check-the-deployment).
+- **Check the result after every deployment change.** Run the checks in [Check the deployment](#5-check-the-deployment).
 - **Do not set `access.enabled: false`.** It turns off every check on the proxy, so anyone who reaches the port can spend your accounts' quota without a login. The dashboard and the management and taproot APIs then answer loopback callers only: processes inside the container, or, when taproot runs outside a container or with host networking, every process on the host, including its browsers. They still refuse browser requests from other sites, but nothing checks who calls the proxy.
 - **Give Admin only to devices you use the dashboard from.** Admin reaches every OAuth token and every stored prompt. A server or router of yours that only runs agents needs Proxy at most. Taproot refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
 - **Keep `access.addresses` to single addresses** (`/32`). Every host in a wider range reaches the proxy without Tailscale.
@@ -87,28 +87,15 @@ docker build -f Containerfile.taproot \
 
 Releases are tagged `taproot-vX.Y.Z`, and [CHANGELOG.md](CHANGELOG.md) lists what each one changed. [Stability and upgrades](docs/stability.md) says what a release can break and how to upgrade and roll back. Built from a release tag, the image reports that tag, such as `taproot-v0.1.0`, as its version; built from another commit, it reports the nearest release tag plus the commit. With Podman, run `podman build` with the same arguments.
 
-### 2. Write the configuration
-
-Taproot reads two files from one directory. `config.yaml` is CLIProxyAPI's configuration. `taproot.yaml` holds taproot's settings, kept apart from CLIProxyAPI's schema. CLIProxyAPI silently ignores keys it does not know in `config.yaml`, so a taproot setting placed there has no effect.
+### 2. Create the data directory
 
 ```sh
 mkdir -p data
-cp examples/taproot/config.yaml examples/taproot/taproot.yaml data/
 ```
 
-Edit `data/taproot.yaml`:
+Taproot reads two files from this directory. `config.yaml` is CLIProxyAPI's configuration. `taproot.yaml` holds taproot's settings, kept apart from CLIProxyAPI's schema. CLIProxyAPI silently ignores keys it does not know in `config.yaml`, so a taproot setting placed there has no effect.
 
-1. Under `access.devices`, give the device you will open the dashboard from `proxy: true` and `admin: true`, by its stable ID. The `ID` field of `Self` in `tailscale status --json`, run on that device, is its stable ID.
-2. Turn on every other device from the dashboard's **Access** page once taproot runs.
-
-```yaml
-access:
-  devices:
-    - id: nEXAMPLE1CNTRL
-      name: laptop
-      proxy: true
-      admin: true
-```
+You do not need to write either file. On the first start, when `data/config.yaml` does not exist, taproot writes it from [`examples/taproot/config.yaml`](examples/taproot/config.yaml), and writes a `taproot.yaml` with no devices beside it. It never replaces an existing file. To start from your own files instead, copy both examples into `data/` and edit them.
 
 Mount the directory, not the single files. Restoring a backup replaces the files by rename, which fails on a single-file mount.
 
@@ -135,13 +122,25 @@ The data directory then holds:
 
 | Path | Contents |
 | --- | --- |
-| `data/config.yaml`, `data/taproot.yaml` | Configuration |
+| `data/config.yaml`, `data/taproot.yaml` | Configuration, written on the first start |
 | `data/auths/` | OAuth credential files |
 | `data/taproot/taproot.db` | Usage, quota, and request-log index (SQLite) |
 | `data/taproot/request-logs/` | Compressed request logs |
 | `data/taproot/backups/` | Backup archives, mode 0600 |
 
-### 4. Check the deployment
+### 4. Claim the server
+
+While no device has Admin, taproot logs a setup code each time it starts:
+
+```sh
+docker logs taproot 2>&1 | grep 'setup code'
+```
+
+With Podman, run `podman logs taproot`; under the quadlet, `journalctl --user -u taproot`. Open the URL in that line, `http://<server>:8317/`, on the device you will manage taproot from, enter the code, and select **Claim this server**. That device gets Proxy and Admin, and the code stops working. Turn on your other devices on the dashboard's **Access** page.
+
+If you lose every admin device, remove the `admin: true` entries from `data/taproot.yaml` and restart taproot. It logs a new setup code.
+
+### 5. Check the deployment
 
 Run each check, and stop if any result differs.
 

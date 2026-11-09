@@ -96,6 +96,29 @@ describe('same-origin management connection', () => {
     });
   });
 
+  test('keeps whether the server is unclaimed, so the gate can offer the setup code', async () => {
+    status = 403;
+    const unclaimed = {
+      code: 'not_admin',
+      message: 'new-laptop (alice@github, ID nNEWLAP1CNTRL): this device has no Admin permission.',
+      node: 'new-laptop',
+      nodeId: 'nNEWLAP1CNTRL',
+      login: 'alice@github',
+      proxy: false,
+      claimable: true,
+    };
+    denial = { error: unclaimed };
+    expect(await connectTo()).toBe(false);
+    expect(useAuthStore.getState().connectionFailureDevice).toMatchObject({
+      node: 'new-laptop',
+      claimable: true,
+    });
+
+    denial = { error: { ...unclaimed, claimable: 'yes' } };
+    await connectTo();
+    expect(useAuthStore.getState().connectionFailureDevice?.claimable).toBe(false);
+  });
+
   test('the removed admin-nodes denial is not mistaken for the new one', async () => {
     status = 403;
     denial = { error: { code: 'not_admin_node', node: 'worker.tailnet-0000.ts.net' } };
@@ -207,6 +230,7 @@ describe('connection gate', () => {
       nodeId: 'nR9x3eM7CNTRL',
       login: 'alice@github',
       proxy: false,
+      claimable: false,
     };
     const html = render('error', 'not_admin', device);
     expect(html).toContain('This device can&#x27;t open taproot yet');
@@ -233,9 +257,44 @@ describe('connection gate', () => {
       nodeId: 'n1',
       login: '',
       proxy: false,
+      claimable: false,
     });
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img');
+
+    const claim = render('error', 'not_admin', {
+      node: '<img src=x onerror=alert(1)>',
+      nodeId: 'n1',
+      login: '',
+      proxy: false,
+      claimable: true,
+    });
+    expect(claim).not.toContain('<img');
+    expect(claim).toContain('<strong>&lt;img');
+  });
+
+  test('offers the setup code form instead of the no-access screen while unclaimed', () => {
+    const html = render('error', 'not_admin', {
+      node: 'alice-desktop',
+      nodeId: 'nDESKTOP1CNTRL',
+      login: 'alice@github',
+      proxy: false,
+      claimable: true,
+    });
+    expect(html).toContain('Set up taproot');
+    expect(html).toContain(
+      'This device, <strong>alice-desktop</strong>, will become the first admin'
+    );
+    expect(html).toMatch(/<input[^>]*placeholder="XXXX-XXXX"/);
+    expect(html).toContain('aria-label="Setup code"');
+    expect(html).toContain('<button class="btn btn-primary" disabled="" type="submit">');
+    expect(html).toContain('Claim this server');
+    expect(html).toContain('<code>podman logs taproot</code>');
+    expect(html).toContain('service log');
+    expect(html).toContain('&quot;setup code&quot;');
+    expect(html).not.toContain('Try again');
+    expect(html).not.toContain('can&#x27;t open taproot yet');
+    expect(html).not.toContain('dashboard-body');
   });
 
   test('names an unreachable server separately', () => {
