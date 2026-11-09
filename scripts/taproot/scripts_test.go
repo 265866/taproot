@@ -320,6 +320,7 @@ func TestCheckUpstreamBoundary(t *testing.T) {
 		"docs/guide.md":              "guide\n",
 		".github/workflows/ci.yml":   "on: push\n",
 		"nix/module.nix":             "{}\n",
+		"licenses/GPL-3.0.txt":       "GPL\n",
 		"CHANGELOG.md":               "log\n",
 		"Containerfile.taproot":      "FROM scratch\n",
 	})
