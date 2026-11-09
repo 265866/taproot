@@ -25,9 +25,8 @@ set -euo pipefail
 # Command substitutions keep set -e (bash 4.4 and later). The snapshot steps
 # also check their own status, for older shells.
 shopt -s inherit_errexit 2>/dev/null || true
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/taproot/upstream-lib.sh
-source "$script_dir/upstream-lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/upstream-lib.sh"
 
 remote=upstream
 branch=main
@@ -87,7 +86,7 @@ web_verify() {
 # nix_hashes refreshes the flake's nix/vendor-hash and web/bun.nix, which
 # follow go.sum and web/bun.lock, and fails when they were stale.
 nix_hashes() {
-	"$script_dir/nix-refresh.sh" || return 1
+	"$taproot_scripts/nix-refresh.sh" || return 1
 	if ! git diff --quiet -- nix/vendor-hash web/bun.nix; then
 		echo "Refreshed nix/vendor-hash and web/bun.nix; commit them."
 		return 1

@@ -18,6 +18,9 @@ rustPlatform.buildRustPackage {
       (root + "/Cargo.toml")
       (root + "/Cargo.lock")
       (root + "/src")
+      # The LGPL relinking steps in THIRD_PARTY_NOTICES.md put a patched cabac
+      # crate here, as the image build copies it.
+      (root + "/patches")
     ];
   };
 
@@ -33,7 +36,11 @@ rustPlatform.buildRustPackage {
   # cargoInstallHook copies libtaproot_codec.a to $out/lib.
   meta = {
     description = "Taproot's request-log blob codecs (Lepton JPEG, PNG recompression, zstd) as a static library";
-    license = lib.licenses.mit;
+    # MIT, plus the LGPL-3.0-or-later cabac crate built into the library.
+    license = with lib.licenses; [
+      mit
+      lgpl3Plus
+    ];
     platforms = lib.platforms.linux;
   };
 }

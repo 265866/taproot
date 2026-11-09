@@ -1,5 +1,6 @@
 # Evaluation-only check: the module refuses a listen address that is
-# loopback or a wildcard, and accepts a Tailscale address.
+# loopback or a wildcard, accepts a Tailscale address, and refuses empty
+# taprootSettings.
 {
   lib,
   pkgs,
@@ -7,8 +8,19 @@
   module,
 }:
 let
-  hostAllowed =
-    host:
+  adminSettings.access.devices = [
+    {
+      id = "nADMIN";
+      name = "laptop";
+      admin = true;
+    }
+  ];
+
+  # The messages of the assertions that fail for a host with these taproot
+  # options. Only failed assertions' messages are safe to read: some modules
+  # build a message from values that exist only when their assertion fails.
+  failedFor =
+    taproot:
     let
       inherit
         (nixosSystem {
@@ -16,8 +28,11 @@ let
           modules = [
             module
             {
-              services.taproot.enable = true;
-              services.taproot.settings.server.host = host;
+              services.taproot = {
+                enable = true;
+                taprootSettings = lib.mkDefault adminSettings;
+              }
+              // taproot;
               boot.isContainer = true;
               system.stateVersion = lib.trivial.release;
             }
@@ -25,16 +40,35 @@ let
         })
         config
         ;
-      # Only failed assertions' messages are safe to read: some modules build
-      # a message from values that exist only when their assertion fails.
-      failed = map (a: a.message) (lib.filter (a: !a.assertion) config.assertions);
+    in
+    map (a: a.message) (lib.filter (a: !a.assertion) config.assertions);
+
+  # Whether exactly the assertion whose message starts with prefix fails, or
+  # none does; any other failure stops the check.
+  refusedBy =
+    prefix: name: taproot:
+    let
+      failed = failedFor taproot;
     in
     if failed == [ ] then
-      true
-    else if lib.all (lib.hasPrefix "services.taproot.settings.server.host") failed then
       false
+    else if lib.all (lib.hasPrefix prefix) failed then
+      true
     else
-      throw "unexpected failed assertions for host \"${host}\": ${lib.concatStringsSep "; " failed}";
+      throw "unexpected failed assertions for ${name}: ${lib.concatStringsSep "; " failed}";
+
+  hostAllowed =
+    host:
+    !refusedBy "services.taproot.settings.server.host" ''host "${host}"'' {
+      settings.server.host = host;
+    };
+
+  settingsRefused =
+    name: settings:
+    refusedBy "services.taproot.taprootSettings" name {
+      settings.server.host = "100.64.0.1";
+      taprootSettings = settings;
+    };
 
   refused = [
     ""
@@ -50,11 +84,15 @@ let
     "100.64.0.1"
     "fd7a:115c:a1e0::1"
   ];
-  wrong = lib.filter hostAllowed refused ++ lib.filter (host: !hostAllowed host) accepted;
+  wrongHosts = lib.filter hostAllowed refused ++ lib.filter (host: !hostAllowed host) accepted;
+
+  wrongSettings =
+    lib.optional (!settingsRefused "empty taprootSettings" { }) "empty taprootSettings"
+    ++ lib.optional (settingsRefused "an admin device" adminSettings) "taprootSettings with an admin device";
 in
-if wrong == [ ] then
+if wrongHosts == [ ] && wrongSettings == [ ] then
   pkgs.runCommand "taproot-module-assertions" { } "touch $out"
 else
-  throw "services.taproot host assertion is wrong for: ${
-    lib.concatMapStringsSep ", " (h: ''"${h}"'') wrong
+  throw "services.taproot assertion is wrong for: ${
+    lib.concatStringsSep ", " (map (h: ''host "${h}"'') wrongHosts ++ wrongSettings)
   }"

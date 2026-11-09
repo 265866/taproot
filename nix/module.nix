@@ -134,7 +134,10 @@ in
         copied to `taproot.yaml` on the first start only, while that file
         does not exist. After that the dashboard owns the file, and changes
         here do not apply; edit the settings in the dashboard, or delete
-        taproot.yaml to seed it again. Leave it empty to write no file.
+        taproot.yaml to seed it again. Taproot does not start without that
+        file, and the unit denies loopback, so this option must grant at
+        least one device `admin: true` in `access.devices`; that device
+        manages access from the dashboard. Keep it set after the first start.
         examples/taproot/taproot.yaml in the repository shows the keys.
       '';
     };
@@ -185,6 +188,17 @@ in
       {
         assertion = !(lib.hasPrefix "/home/" cfg.dataDir || lib.hasPrefix "/root/" cfg.dataDir);
         message = "services.taproot.dataDir must be outside /home and /root, which the service cannot reach (ProtectHome).";
+      }
+      {
+        # Format-agnostic, like the listen-address assertion: taproot validates
+        # the access keys itself at startup.
+        assertion = cfg.taprootSettings != { };
+        message = ''
+          services.taproot.taprootSettings is empty. It seeds taproot.yaml on the first start, and taproot
+          does not start without that file. Grant at least one device admin = true in access.devices: the
+          unit denies loopback, so only an admin device reaches the dashboard. It is not copied again while
+          taproot.yaml exists.
+        '';
       }
     ];
 
@@ -256,13 +270,9 @@ in
 
       preStart = ''
         install -m 0600 ${configFile} ${cfg.dataDir}/config.yaml
-      ''
-      + lib.optionalString (cfg.taprootSettings != { }) ''
         if [ ! -e ${cfg.dataDir}/taproot.yaml ]; then
           install -m 0600 ${taprootFile} ${cfg.dataDir}/taproot.yaml
         fi
-      ''
-      + ''
         mkdir -p ${cfg.dataDir}/home ${cfg.dataDir}/cache
       '';
 
