@@ -41,6 +41,19 @@ func makeTestCodexRefreshJWT(planType, accountID string) string {
 	return header + "." + claims + "."
 }
 
+// answerCodexMockConnect accepts a hijacked CONNECT. It must run after
+// Hijack: with a 200 written before it, the client's first TLS byte can reach
+// the server's background read, which Hijack keeps in the reader these
+// proxies drop, so the tunnel loses it and the refresh fails with EOF.
+func answerCodexMockConnect(clientConn, destConn net.Conn) bool {
+	if _, errWrite := io.WriteString(clientConn, "HTTP/1.1 200 Connection established\r\n\r\n"); errWrite != nil {
+		_ = clientConn.Close()
+		_ = destConn.Close()
+		return false
+	}
+	return true
+}
+
 func startCodexMockOAuthServers(t *testing.T, idToken string) (proxyURL string, teardown func()) {
 	t.Helper()
 
@@ -63,7 +76,6 @@ func startCodexMockOAuthServers(t *testing.T, idToken string) (proxyURL string, 
 				http.Error(w, errDial.Error(), http.StatusServiceUnavailable)
 				return
 			}
-			w.WriteHeader(http.StatusOK)
 			hijacker, ok := w.(http.Hijacker)
 			if !ok {
 				_ = destConn.Close()
@@ -73,6 +85,9 @@ func startCodexMockOAuthServers(t *testing.T, idToken string) (proxyURL string, 
 			clientConn, _, errHijack := hijacker.Hijack()
 			if errHijack != nil {
 				_ = destConn.Close()
+				return
+			}
+			if !answerCodexMockConnect(clientConn, destConn) {
 				return
 			}
 			go func() {
@@ -345,7 +360,6 @@ func startDualCodexAndSIWCMockOAuthServer(t *testing.T, idToken string, failSIWC
 				http.Error(w, errDial.Error(), http.StatusServiceUnavailable)
 				return
 			}
-			w.WriteHeader(http.StatusOK)
 			hijacker, ok := w.(http.Hijacker)
 			if !ok {
 				_ = destConn.Close()
@@ -354,6 +368,9 @@ func startDualCodexAndSIWCMockOAuthServer(t *testing.T, idToken string, failSIWC
 			clientConn, _, errHijack := hijacker.Hijack()
 			if errHijack != nil {
 				_ = destConn.Close()
+				return
+			}
+			if !answerCodexMockConnect(clientConn, destConn) {
 				return
 			}
 			go func() {
