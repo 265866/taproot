@@ -290,13 +290,13 @@ func writeFileAtomic(path string, data []byte) (err error) {
 			_ = os.Remove(tmp.Name())
 		}
 	}()
-	if err := tmp.Chmod(0o600); err != nil {
+	if err = tmp.Chmod(0o600); err != nil {
 		return fmt.Errorf("chmod temp for %s: %w", base, err)
 	}
 	if _, err = tmp.Write(data); err != nil {
 		return fmt.Errorf("write temp for %s: %w", base, err)
 	}
-	if err := tmp.Sync(); err != nil {
+	if err = tmp.Sync(); err != nil {
 		return fmt.Errorf("sync temp for %s: %w", base, err)
 	}
 	if err = tmp.Close(); err != nil {

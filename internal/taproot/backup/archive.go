@@ -32,11 +32,16 @@ const (
 	journalDir    = ".codex-refresh"
 	journalPrefix = authPrefix + journalDir
 
-	maxManifestBytes = 1 << 20
 	// Config and auth files are read into memory on restore; this caps what a
 	// damaged archive can make the server allocate.
 	maxSmallFileBytes = 16 << 20
 )
+
+// maxManifestBytes caps the manifest a reader accepts, and writeArchive
+// refuses a larger one. Journal claims are never deleted, so the manifest grows
+// by about 400 bytes per Codex refresh (measured); 64 MiB holds about 160,000.
+// A variable so a test can lower it.
+var maxManifestBytes int64 = 64 << 20
 
 type manifest struct {
 	Version   int            `json:"version"`
@@ -114,6 +119,9 @@ func writeArchive(dest string, m *manifest, sources []source) (err error) {
 	manifestJSON, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode manifest: %w", err)
+	}
+	if int64(len(manifestJSON)) > maxManifestBytes {
+		return fmt.Errorf("manifest is %d bytes, over the %d-byte limit a restore reads", len(manifestJSON), maxManifestBytes)
 	}
 
 	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)

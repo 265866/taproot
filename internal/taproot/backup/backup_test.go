@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -510,6 +511,108 @@ func TestRestoreBackupWithoutJournal(t *testing.T) {
 	}
 	if _, err := os.Stat(f.journalPath(journalPending)); err != nil {
 		t.Errorf("live pending claim removed: %v", err)
+	}
+}
+
+// writeClaims adds n completed claims, each a directory with a receipt.
+func (f *fixture) writeClaims(t *testing.T, n int) {
+	t.Helper()
+	for i := range n {
+		key := fmt.Sprintf("%064x", i)
+		writeFile(t, f.journalPath(key, "receipt"), journalReceipt)
+	}
+}
+
+// Claims are never deleted, so a long-lived journal outgrows a small manifest
+// cap. 5000 claims made about a 2 MiB manifest, which the old 1 MiB cap
+// rejected on restore although the backup was reported as created.
+func TestManyRefreshClaimsRoundTrip(t *testing.T) {
+	const claims = 5000
+	f := newFixture(t, Config{})
+	f.writeClaims(t, claims)
+	e := f.create(t)
+	if want := len(origAuth) + 3 + claims; e.Files != want {
+		t.Fatalf("entry counts %d files, want %d", e.Files, want)
+	}
+	if got := f.list(t); len(got) != 1 || got[0].ID != e.ID {
+		t.Fatalf("list = %+v, want the new backup", got)
+	}
+	m, err := readManifest(filepath.Join(f.b.dir, e.ID+archiveExt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Files) != len(origAuth)+3+2*claims+1 {
+		t.Fatalf("manifest lists %d entries", len(m.Files))
+	}
+	if err := os.RemoveAll(f.journalPath()); err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(time.Hour)
+
+	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(f.journalPath())
+	if err != nil || len(entries) != claims {
+		t.Fatalf("restored %d claims, want %d: %v", len(entries), claims, err)
+	}
+}
+
+// writeArchive refuses a manifest the reader would reject, so no backup is
+// reported as created that cannot be listed or restored.
+func TestOversizedManifestRefusedAtWrite(t *testing.T) {
+	old := maxManifestBytes
+	maxManifestBytes = 4 << 10
+	t.Cleanup(func() { maxManifestBytes = old })
+	f := newFixture(t, Config{})
+	f.writeClaims(t, 50)
+
+	var apiErr apiError
+	if code, body := f.do(t, http.MethodPost, "/api/backups", &apiErr); code != http.StatusInternalServerError {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	if got := f.list(t); len(got) != 0 {
+		t.Errorf("refused backup listed: %+v", got)
+	}
+	entries, err := os.ReadDir(f.b.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), archiveExt) {
+			t.Errorf("refused backup left %s", entry.Name())
+		}
+	}
+}
+
+// Directories exist only inside the journal and carry no size, and the
+// journal root is never a file.
+func TestManifestRejectsMisplacedJournalEntries(t *testing.T) {
+	cases := map[string]func(m *manifest, members map[string][]byte) []string{
+		"journal root stored as file": func(m *manifest, members map[string][]byte) []string {
+			members[journalPrefix] = []byte("x")
+			m.Files = append(m.Files, manifestFile{Path: journalPrefix, Size: 1, SHA256: sha("x")})
+			return manifestOrder(m)
+		},
+		"journal directory with a size": func(m *manifest, members map[string][]byte) []string {
+			name := journalPrefix + "/" + journalPending
+			members[journalPrefix] = nil
+			members[name] = nil
+			m.Files = append(m.Files, manifestFile{Path: journalPrefix, Dir: true}, manifestFile{Path: name, Dir: true, Size: 1})
+			return manifestOrder(m)
+		},
+	}
+	for name, edit := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, Config{})
+			e := f.create(t)
+			path := filepath.Join(f.b.dir, e.ID+archiveExt)
+			rewriteArchive(t, path, edit)
+			_, err := readManifest(path)
+			if !errors.Is(err, errCorrupt) || !strings.Contains(err.Error(), "unexpected entry") {
+				t.Fatalf("readManifest error = %v, want an unexpected entry", err)
+			}
+		})
 	}
 }
 
