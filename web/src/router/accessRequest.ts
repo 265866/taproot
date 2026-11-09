@@ -1,6 +1,11 @@
 import { TaprootApiError } from '@/services/api/taproot';
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+// Two signatures, as in claimCode.ts: i18next 27's TFunction rejects an options argument that may
+// be undefined.
+type Translate = {
+  (key: string): string;
+  (key: string, options: Record<string, unknown>): string;
+};
 
 /** Sends the request and returns null on success, or the message to show. */
 export async function submitAccessRequest(
