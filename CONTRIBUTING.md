@@ -86,6 +86,35 @@ Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(t
 
 By contributing, you agree that your contribution is released under the [MIT License](LICENSE).
 
+## Releases
+
+[release-please](https://github.com/googleapis/release-please) prepares each release, and [`.github/workflows/release.yml`](.github/workflows/release.yml) builds and publishes it.
+
+- **The release PR.** On every push to `main`, release-please opens or updates a pull request titled `chore: release taproot X.Y.Z`. The PR sets the version in `.github/.release-please-manifest.json` and adds the release's section to `CHANGELOG.md`. The section lists the Conventional Commit subjects merged since the previous release: `feat` under Added, `fix` under Fixed, `perf` under Performance, and `revert` under Reverted. Other types are left out. A `!` after the type, or a `BREAKING CHANGE:` footer, also lists the change under breaking changes. Before 1.0, a breaking change or a `feat` raises the minor version, and anything else raises the patch version.
+- **Notes by hand.** Some changes need more than a commit subject, such as a renamed setting or an upgrade step. Write those notes under `## Unreleased` in `CHANGELOG.md`, in the same change. Before you merge the release PR, move them into the new release's section on the PR's branch, and delete the empty `## Unreleased` heading. release-please rewrites that branch whenever `main` moves, so make this edit last.
+- **Publishing.** Merging the release PR tags `taproot-vX.Y.Z` on the merge commit and creates a draft GitHub release. `release.yml` then builds `linux/amd64` and `linux/arm64` on native runners. It runs the codec tests on both, and each architecture decodes request-log bytes the other stored. It pushes `ghcr.io/265866/taproot` with the tags `X.Y.Z`, `X.Y`, `latest`, and `sha-<commit>`, an SBOM, build provenance, a GitHub attestation, and a keyless cosign signature. Last, it publishes the release with `taproot-X.Y.Z-linux-amd64.tar.gz`, `taproot-X.Y.Z-linux-arm64.tar.gz`, `SHA256SUMS`, and the tarballs' attestation, `taproot-X.Y.Z.sigstore.json`. The release notes are the version's `CHANGELOG.md` section.
+- **Release candidates.** To test a release before you merge its PR, push a tag with an `-rc.N` suffix on the commit to test. The tag runs the `release.yml` of that commit. A candidate's image gets only its version tag and its `sha-` tag, never `X.Y` or `latest`. Its GitHub release is a prerelease, with the `## Unreleased` section as its notes. Give each new candidate the next number rather than moving a tag.
+
+  ```sh
+  git tag taproot-v0.2.0-rc.1 <commit>
+  git push origin taproot-v0.2.0-rc.1
+  ```
+
+- **Re-running.** To rebuild and republish an existing tag, for example after a failed run, run the release workflow from the Actions tab with the tag.
+- **Repository settings.** release-please opens its PR with the workflow's `GITHUB_TOKEN`, which needs "Allow GitHub Actions to create and approve pull requests" under Settings, Actions, General. GitHub starts no workflow for a PR that token opens, so CI does not run on the release PR, which changes only `CHANGELOG.md` and the manifest.
+
+To check a published release:
+
+```sh
+gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot
+cosign verify ghcr.io/265866/taproot:0.2.0 \
+  --certificate-identity-regexp '^https://github.com/265866/taproot/.github/workflows/release.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh release download taproot-v0.2.0 --repo 265866/taproot
+sha256sum -c SHA256SUMS
+gh attestation verify taproot-0.2.0-linux-amd64.tar.gz --repo 265866/taproot
+```
+
 ## Demo data and screenshots
 
 `internal/taproot/demo` seeds a data directory with synthetic accounts, 30 days of usage, quota history, request logs, and backups, all written through taproot's own ingest, request-log, and backup code. It also serves a fake tailscaled with a small tailnet, so the Access page has devices. The README screenshots come from it.
