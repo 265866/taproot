@@ -421,14 +421,16 @@ func newGrantSet(in Grants) (*grantSet, error) {
 const MaxLabelRunes = 64
 
 // CleanLabel trims a device label or requested name and refuses one that is
-// too long or holds control characters.
+// too long or holds control or format characters. Format characters (Cf)
+// include bidi overrides and zero-width characters, which can make a name
+// read as another.
 func CleanLabel(raw string) (string, error) {
 	label := strings.TrimSpace(raw)
 	if utf8.RuneCountInString(label) > MaxLabelRunes {
 		return "", fmt.Errorf("longer than %d characters", MaxLabelRunes)
 	}
-	if !utf8.ValidString(label) || strings.ContainsFunc(label, unicode.IsControl) {
-		return "", errors.New("holds control characters")
+	if !utf8.ValidString(label) || strings.ContainsFunc(label, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
+		return "", errors.New("holds control or format characters")
 	}
 	return label, nil
 }
@@ -509,7 +511,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			reason = "device " + quoteHeader(id.Node) + " (" + id.NodeID + ") has no Proxy"
 			if id.device {
 				denial = g.noProxyDenial(r, id)
-				g.recordRefusal(r, id)
+				g.recordRefusal(r, id, AskProxy)
 			}
 		case surf == surfaceAdmin && !id.Admin && !isDashboardShell(r):
 			if id.device && r.Method == http.MethodPost && path == ClaimPath && g.Claimable() {
@@ -532,12 +534,13 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 				denial["proxy"] = id.Proxy
 				// Read before this refusal is recorded, so a first visit gets
 				// the gate's request form rather than its sent state.
-				denial["requested"] = g.hasOpenRequest(r.Context(), id.NodeID)
-				// While unclaimed, the gate offers the setup code form instead.
-				if g.Claimable() {
+				denial["requested"] = g.HasOpenRequest(r.Context(), id.NodeID)
+				// While unclaimed, the gate offers the setup code form instead,
+				// to a device that may claim the server.
+				if g.Claimable() && !id.Outside {
 					denial["claimable"] = true
 				}
-				g.recordRefusal(r, id)
+				g.recordRefusal(r, id, AskAdmin)
 			}
 		}
 		if reason == "" && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
@@ -781,6 +784,7 @@ func (g *Guard) Routes(r *gin.RouterGroup) {
 	r.GET("/access/devices", g.handleDevices)
 	r.POST("/access/request", g.handleRequest)
 	r.POST("/access/requests/:nodeId/dismiss", g.handleDismiss)
+	r.POST("/access/requests/:nodeId/allow", g.handleAllow)
 }
 
 type meResponse struct {

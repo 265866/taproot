@@ -50,6 +50,8 @@
     "not_admin_title": "This device can't open taproot yet",
     "not_admin_body_unnamed": "This device has no access to the dashboard. On a device that is already an admin, open Access and turn on Admin for it.",
     "request_title": "This device doesn't have access yet.",
+    "request_dashboard_title": "This device can use the proxy but not the dashboard.",
+    "request_dashboard_submit": "Request dashboard access",
     "request_name_label": "Name",
     "request_submit": "Request access",
     "request_sent": "Request sent. You'll have access once the server's admin allows it.",

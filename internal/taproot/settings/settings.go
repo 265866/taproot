@@ -39,11 +39,13 @@ type AccessControl interface {
 	Claimable() bool
 	CheckClaimCode(code string, now time.Time) error
 	EndClaim()
-	// HasOpenRequest and ResolveRequests are the access requests: a device
-	// outside the tailnet gets Admin only from one, and a saved grant
-	// closes the request of the device it was given to.
+	// HasOpenRequest, ResolveRequests, and PruneRequests are the access
+	// requests: a device outside the tailnet gets Admin only from one, a
+	// saved grant closes the request of the device it was given to, and the
+	// sweep prunes old ones.
 	HasOpenRequest(ctx context.Context, nodeID string) bool
 	ResolveRequests(ctx context.Context, before, after access.Grants)
+	PruneRequests(ctx context.Context, tn access.Tailnet)
 }
 
 // RetentionSetter is the request log module's runtime retention.
@@ -360,7 +362,9 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 			return badRequest("invalid_access", "%v", err)
 		}
 		after := s.deps.Access.Grants()
-		resolve = func() { s.deps.Access.ResolveRequests(ctx, before, after) }
+		// taproot.yaml is written by then, so a client that hung up must
+		// not leave the request open.
+		resolve = func() { s.deps.Access.ResolveRequests(context.WithoutCancel(ctx), before, after) }
 		undo = append(undo, func() { s.restore("access", s.deps.Access.SetGrants(before)) })
 		edits = append(edits, accessEdits(before, s.deps.Access.Grants())...)
 		claimed = slices.ContainsFunc(s.deps.Access.Grants().Devices, func(d access.DeviceGrant) bool { return d.Admin })
@@ -627,6 +631,7 @@ func (s *Settings) sweep(ctx context.Context) error {
 		log.Debugf("taproot access: read the tailnet: %v", err)
 		return nil
 	}
+	s.deps.Access.PruneRequests(ctx, tn)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next, forgotten, changed := s.deps.Access.Reconcile(tn)

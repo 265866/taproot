@@ -19,9 +19,10 @@ import (
 // under it, and keeping its entry would only clutter the list.
 const ForgetAfter = 24 * time.Hour
 
-// missingDevices records when each granted device was first missing from a
-// successful read that listed peers. It is in memory only, so a restart
-// starts every device's 24 hours over.
+// missingDevices records when each tracked device (a granted device, or the
+// device of a stored access request) was first missing from a successful
+// read that listed peers. It is in memory only, so a restart starts every
+// device's 24 hours over.
 type missingDevices struct {
 	mu    sync.Mutex
 	since map[string]time.Time
@@ -47,22 +48,32 @@ func (g *Guard) ReadTailnet(ctx context.Context) (Tailnet, error) {
 }
 
 func (g *Guard) observe(tn Tailnet, now time.Time) {
-	present := tn.ids()
 	set := g.grants.Load()
-	g.missing.mu.Lock()
-	defer g.missing.mu.Unlock()
-	next := map[string]time.Time{}
+	ids := make([]string, 0, len(set.Devices))
 	for _, d := range set.Devices {
-		if present[d.ID] {
+		ids = append(ids, d.ID)
+	}
+	g.missing.track(ids, tn.ids(), now)
+}
+
+// track records when each of ids was first missing from present, drops
+// every other ID, and returns a copy of the result.
+func (m *missingDevices) track(ids []string, present map[string]bool, now time.Time) map[string]time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	next := map[string]time.Time{}
+	for _, id := range ids {
+		if present[id] {
 			continue
 		}
-		if since, ok := g.missing.since[d.ID]; ok {
-			next[d.ID] = since
+		if since, ok := m.since[id]; ok {
+			next[id] = since
 		} else {
-			next[d.ID] = now
+			next[id] = now
 		}
 	}
-	g.missing.since = next
+	m.since = next
+	return maps.Clone(next)
 }
 
 func (g *Guard) missingSince(id string) (time.Time, bool) {
@@ -166,6 +177,9 @@ type requestView struct {
 	LastSeen  time.Time `json:"lastSeen"`
 	Count     int       `json:"count"`
 	Outside   bool      `json:"outside"`
+	// Asked is what the device was refused: "admin" for the dashboard,
+	// else "proxy".
+	Asked Ask `json:"asked"`
 }
 
 type devicesResponse struct {
@@ -259,7 +273,7 @@ func (g *Guard) requestViews(ctx context.Context, grants map[string]DeviceGrant,
 		}
 		v := requestView{
 			NodeID: a.NodeID, Login: a.Login, OwnerName: a.OwnerName, Name: cmp.Or(a.NameHint, a.Node), Client: a.Client,
-			FirstSeen: a.FirstSeen, LastSeen: a.LastSeen, Count: a.Count, Outside: a.Outside,
+			FirstSeen: a.FirstSeen, LastSeen: a.LastSeen, Count: a.Count, Outside: a.Outside, Asked: cmp.Or(a.Asked, AskProxy),
 		}
 		if d, ok := listed[a.NodeID]; ok {
 			v.Outside = d.Outside

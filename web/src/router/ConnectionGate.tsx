@@ -41,7 +41,8 @@ export function ConnectionGateView({
 
   if (status === 'connected') return children;
 
-  if (status === 'error' && failure === 'not_admin' && device?.claimable) {
+  // A device without a name is outside the tailnet and cannot claim.
+  if (status === 'error' && failure === 'not_admin' && device?.claimable && device.node) {
     return <ClaimScreen node={device.node} claim={claim} onClaimed={onClaimed} />;
   }
 
@@ -49,6 +50,7 @@ export function ConnectionGateView({
     return (
       <RequestAccessScreen
         requested={device.requested}
+        proxy={device.proxy}
         defaultName={defaultName ?? browserDeviceName()}
         request={requestAccess}
         onCheck={onRetry}

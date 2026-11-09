@@ -131,11 +131,11 @@ func requireEmptyDir(dir string) error {
 // from its browser.
 func seedRequest(ctx context.Context, db *store.DB, start time.Time) error {
 	requests := access.NewRequests(db, nil)
-	in := access.RequestInput{NodeID: danaPC.id, Login: danaLogin, OwnerName: displayNames[danaLogin], Outside: true, Client: "Claude Code"}
+	in := access.RequestInput{NodeID: danaPC.id, Login: danaLogin, OwnerName: displayNames[danaLogin], Outside: true, Client: "Claude Code", Asked: access.AskProxy}
 	if err := requests.Record(ctx, in, 6, start.Add(-25*time.Minute)); err != nil {
 		return fmt.Errorf("seed access request: %w", err)
 	}
-	in.NameHint = "Dana's PC"
+	in.NameHint, in.Asked, in.Self = "Dana's PC", access.AskAdmin, true
 	if err := requests.Record(ctx, in, 1, start.Add(-20*time.Minute)); err != nil {
 		return fmt.Errorf("seed access request: %w", err)
 	}

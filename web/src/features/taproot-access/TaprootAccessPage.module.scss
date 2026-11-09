@@ -1,3 +1,20 @@
+// A 40px hit area around a small control on touch screens, without changing how it looks.
+@mixin touch-target {
+  @media (pointer: coarse) {
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 40px);
+      height: max(100%, 40px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
 .page {
   display: flex;
   flex-direction: column;
@@ -144,6 +161,37 @@
   color: var(--text-primary);
   font-size: 15px;
   overflow-wrap: anywhere;
+}
+
+.rename {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  @include touch-target;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring);
+  }
+}
+
+.nameEdit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.nameInput {
+  width: min(100%, 260px);
+  height: 32px;
 }
 
 .details {
@@ -327,6 +375,7 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  @include touch-target;
 
   span {
     text-decoration: underline;

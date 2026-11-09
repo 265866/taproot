@@ -253,7 +253,7 @@ func (i *Ingest) flush(ctx context.Context) error {
 	}
 	allObs = append(allObs, obs...)
 
-	err := withImmediateTx(ctx, i.db.DB, func(c *sql.Conn) error {
+	err := store.WithImmediateTx(ctx, i.db.DB, func(c *sql.Conn) error {
 		if _, err := insertEvents(ctx, c, events); err != nil {
 			return err
 		}

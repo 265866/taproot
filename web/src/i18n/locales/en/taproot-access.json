@@ -40,6 +40,8 @@
     "from_request": "from a request",
     "proxy_label": "Proxy for {{name}}",
     "admin_label": "Admin for {{name}}",
+    "rename": "Rename {{name}}",
+    "name_for": "Name for {{name}}",
     "copy_id": "Copy the stable ID of {{name}}",
     "copied": "Copied {{id}}",
     "copy_failed": "Could not copy the ID",
@@ -52,6 +54,8 @@
     "deny_label": "Deny {{name}}",
     "name_label": "Name",
     "allowed": "Access allowed",
+    "allow_not_closed": "Access saved, but taproot could not confirm the request was closed: {{message}}",
+    "wants_dashboard": "wants dashboard",
     "denied": "Request denied",
     "addresses": "Addresses without Tailscale",
     "no_id": "No ID",
@@ -72,7 +76,8 @@
       "address_format": "Not an IP address or CIDR: {{detail}}",
       "address_duplicate": "{{detail}} is already listed.",
       "allow_nothing": "Turn on Proxy or Admin.",
-      "label_too_long": "Names are at most {{detail}} characters."
+      "label_too_long": "Names are at most {{detail}} characters.",
+      "label_invalid": "Names can't contain control or invisible formatting characters."
     }
   }
 }

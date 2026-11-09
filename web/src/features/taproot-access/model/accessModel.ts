@@ -17,17 +17,25 @@ export interface Permissions {
   admin: boolean;
 }
 
-/** The page's unsaved state: every device's switches, devices to forget, and the addresses. */
+/**
+ * The page's unsaved state: every device's switches and label, devices to forget, and the
+ * addresses.
+ */
 export interface AccessDraft {
   devices: Record<string, Permissions>;
+  labels: Record<string, string>;
   forget: string[];
   addresses: AddressGrant[];
 }
 
 export function draftFrom(data: AccessDevices): AccessDraft {
   const devices: Record<string, Permissions> = {};
-  for (const d of data.devices) devices[d.id] = { proxy: d.proxy, admin: d.admin };
-  return { devices, forget: [], addresses: data.addresses.map((a) => ({ ...a })) };
+  const labels: Record<string, string> = {};
+  for (const d of data.devices) {
+    devices[d.id] = { proxy: d.proxy, admin: d.admin };
+    labels[d.id] = d.label;
+  }
+  return { devices, labels, forget: [], addresses: data.addresses.map((a) => ({ ...a })) };
 }
 
 const addressKey = (a: AddressGrant) => `${a.cidr}\n${a.note}`;
@@ -51,9 +59,34 @@ export function rebaseDraft(
       next.devices[id] = { ...p };
     }
   }
+  for (const [id, label] of Object.entries(draft.labels)) {
+    const old = saved.get(id);
+    if (old && old.label !== label && id in next.labels) next.labels[id] = label;
+  }
   next.forget = draft.forget.filter((id) => after.devices.some((d) => d.id === id));
   if (!sameAddresses(draft.addresses, before.addresses)) next.addresses = draft.addresses;
   return next;
+}
+
+/** The switches the draft shows for a device. The server always has Proxy and never Admin. */
+export function draftPermissions(device: AccessDevice, draft: AccessDraft): Permissions {
+  if (device.server) return { proxy: true, admin: false };
+  return draft.devices[device.id] ?? { proxy: device.proxy, admin: device.admin };
+}
+
+/**
+ * Whether the row can be renamed: a label is saved only with a permission, so a device the
+ * draft gives none has no name to stage.
+ */
+export function canRename(device: AccessDevice, draft: AccessDraft): boolean {
+  if (device.server || draft.forget.includes(device.id)) return false;
+  const p = draftPermissions(device, draft);
+  return p.proxy || p.admin;
+}
+
+/** The label a row shows: the draft's when the device can keep one, else the saved one. */
+export function draftLabel(device: AccessDevice, draft: AccessDraft): string {
+  return canRename(device, draft) ? (draft.labels[device.id] ?? device.label) : device.label;
 }
 
 /** The device the dashboard is open on, when it came through the tailnet. */
@@ -221,12 +254,18 @@ export function layoutDevices(
   };
 }
 
-/** How many rows the draft changes: switches, forgotten devices, and added or removed addresses. */
+/**
+ * How many rows the draft changes: devices with changed switches or name, forgotten devices, and
+ * added or removed addresses. A name staged for a device the draft gives no permission is not
+ * saved, so it is not a change.
+ */
 export function changeCount(data: AccessDevices, draft: AccessDraft): number {
   let n = draft.forget.length;
   for (const d of data.devices) {
     const p = draft.devices[d.id];
-    if (p && (p.proxy !== d.proxy || p.admin !== d.admin)) n++;
+    if ((p && (p.proxy !== d.proxy || p.admin !== d.admin)) || draftLabel(d, draft) !== d.label) {
+      n++;
+    }
   }
   const saved = new Set(data.addresses.map(addressKey));
   const next = new Set(draft.addresses.map(addressKey));
@@ -237,18 +276,18 @@ export function changeCount(data: AccessDevices, draft: AccessDraft): number {
 
 export type Validation<T> = { ok: true; update: T } | { ok: false; error: string; detail?: string };
 
-const grantOf = (d: AccessDevice, p: Permissions): DeviceGrant => ({
+const grantOf = (d: AccessDevice, p: Permissions, label = d.label): DeviceGrant => ({
   id: d.id,
   name: d.name,
-  label: d.label,
+  label,
   proxy: p.proxy,
   admin: p.admin,
 });
 
 /**
- * The access section to save: every device with a permission, in the server's order, and the
- * addresses. The server's own node is left out, since it always has Proxy and never Admin, and
- * a forgotten device is dropped. Labels go back unchanged.
+ * The access section to save: every device with a permission, with its draft label, in the
+ * server's order, and the addresses. The server's own node is left out, since it always has
+ * Proxy and never Admin, and a forgotten device is dropped.
  */
 export function accessUpdate(
   data: AccessDevices,
@@ -258,8 +297,8 @@ export function accessUpdate(
   const devices: DeviceGrant[] = [];
   for (const d of data.devices) {
     if (d.server || draft.forget.includes(d.id)) continue;
-    const p = draft.devices[d.id] ?? { proxy: d.proxy, admin: d.admin };
-    if (p.proxy || p.admin) devices.push(grantOf(d, p));
+    const p = draftPermissions(d, draft);
+    if (p.proxy || p.admin) devices.push(grantOf(d, p, draftLabel(d, draft)));
   }
   const own = ownDeviceId(me);
   if (own && !devices.some((d) => d.id === own && d.admin)) return { ok: false, error: 'lockout' };
@@ -271,18 +310,43 @@ export interface AllowForm extends Permissions {
   name: string;
 }
 
-/** The Allow form's starting values: the name the device gave, Proxy on, Admin off. */
-export function allowDefaults(request: AccessRequest): AllowForm {
-  return { name: request.name, proxy: true, admin: false };
+/**
+ * The Allow form's starting values: the device's label when the owner gave it one, else the name
+ * the device gave itself or its Tailscale name, and its current grants with Proxy on, so Allow
+ * as shown gives at least Proxy and never takes Admin away.
+ */
+export function allowDefaults(request: AccessRequest, device?: AccessDevice): AllowForm {
+  return { name: device?.label || request.name, proxy: true, admin: device?.admin ?? false };
 }
 
 /** Labels are limited to 64 characters, counted the way the server counts them. */
 export const MAX_LABEL_LENGTH = 64;
 
+/** Control and format characters, which the server refuses in a label. */
+const HIDDEN_CHARACTERS = /[\p{Cc}\p{Cf}]/u;
+/**
+ * The space Go's strings.TrimSpace removes. String.prototype.trim also removes U+FEFF, a format
+ * character the server refuses, and keeps U+0085.
+ */
+const EDGE_SPACE =
+  /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g;
+
+/**
+ * Checks a name typed for a device the way the server does, and returns the label to save. A
+ * name equal to the Tailscale name saves no label, so the row follows the tailnet.
+ */
+export function labelFor(raw: string, tailscaleName: string): Validation<string> {
+  const label = raw.replace(EDGE_SPACE, '');
+  if ([...label].length > MAX_LABEL_LENGTH) {
+    return { ok: false, error: 'label_too_long', detail: String(MAX_LABEL_LENGTH) };
+  }
+  if (HIDDEN_CHARACTERS.test(label)) return { ok: false, error: 'label_invalid' };
+  return { ok: true, update: label === tailscaleName ? '' : label };
+}
+
 /**
  * The device list that allows one request: the saved grants, with the requesting device's entry
- * added or replaced. Unsaved switch changes are not part of it. A name equal to the Tailscale
- * name is not saved as a label.
+ * added or replaced. Unsaved switch changes are not part of it.
  */
 export function allowUpdate(
   data: AccessDevices,
@@ -290,21 +354,23 @@ export function allowUpdate(
   form: AllowForm
 ): Validation<{ devices: DeviceGrant[] }> {
   if (!form.proxy && !form.admin) return { ok: false, error: 'allow_nothing' };
-  const label = form.name.trim();
-  if ([...label].length > MAX_LABEL_LENGTH) {
-    return { ok: false, error: 'label_too_long', detail: String(MAX_LABEL_LENGTH) };
-  }
   const device = data.devices.find((d) => d.id === request.nodeId);
+  const name = device?.name ?? '';
+  // An untouched name keeps the owner's label exactly.
+  const label =
+    device?.label && form.name === device.label
+      ? ({ ok: true, update: device.label } as const)
+      : labelFor(form.name, name);
+  if (!label.ok) return label;
   const devices: DeviceGrant[] = [];
   for (const d of data.devices) {
     if (d.server || d.id === request.nodeId || !(d.proxy || d.admin)) continue;
     devices.push(grantOf(d, d));
   }
-  const name = device?.name ?? '';
   devices.push({
     id: request.nodeId,
     name,
-    label: label === name ? '' : label,
+    label: label.update,
     proxy: form.proxy,
     admin: form.admin,
   });
@@ -327,4 +393,37 @@ export function newAddress(
     return { ok: false, error: 'address_duplicate', detail: value };
   }
   return { ok: true, update: { cidr: value, note: note.trim() } };
+}
+
+/** The steps of Allow, in order: save the grant, close the request, reload the page. */
+export interface AllowSteps {
+  save: () => Promise<void>;
+  close: () => Promise<void>;
+  reload: () => Promise<void>;
+}
+
+export type AllowOutcome =
+  | { kind: 'allowed' }
+  | { kind: 'save_failed'; error: unknown }
+  | { kind: 'saved_not_closed'; error: unknown };
+
+/**
+ * Runs Allow. It saves first, since Admin for a device outside the tailnet needs the request
+ * still open. Once the save succeeded the page reloads, even when closing the request failed,
+ * because the grant changed.
+ */
+export async function runAllow(steps: AllowSteps): Promise<AllowOutcome> {
+  try {
+    await steps.save();
+  } catch (error: unknown) {
+    return { kind: 'save_failed', error };
+  }
+  let outcome: AllowOutcome = { kind: 'allowed' };
+  try {
+    await steps.close();
+  } catch (error: unknown) {
+    outcome = { kind: 'saved_not_closed', error };
+  }
+  await steps.reload();
+  return outcome;
 }

@@ -4,15 +4,18 @@ import {
   adminLock,
   allowDefaults,
   allowUpdate,
+  canRename,
   changeCount,
   deviceName,
   draftFrom,
   isIdle,
   isNew,
+  labelFor,
   layoutDevices,
   newAddress,
   proxyLock,
   rebaseDraft,
+  runAllow,
 } from '@/features/taproot-access/model/accessModel';
 import { en } from '@/i18n/resources';
 import {
@@ -231,6 +234,172 @@ describe('saving', () => {
     ).toMatchObject({ ok: false, error: 'label_too_long' });
   });
 
+  test('Allow starts from the device: Proxy on, and Admin only when it already has it', () => {
+    const byId = (id: string) => data.devices.find((d) => d.id === id);
+    const request = (nodeId: string): AccessRequest => ({ ...danaRequest, nodeId, name: '' });
+    // A Proxy-only device that opened the dashboard: Allow as shown keeps Proxy, adds nothing.
+    expect(allowDefaults(request('nBOBCNTRL'), byId('nBOBCNTRL'))).toEqual({
+      name: '',
+      proxy: true,
+      admin: false,
+    });
+    // A device with Admin keeps it.
+    expect(allowDefaults(request('nALIMBPCNTRL'), byId('nALIMBPCNTRL'))).toMatchObject({
+      proxy: true,
+      admin: true,
+    });
+    // A device without access, or one the page does not list, starts with Proxy only.
+    expect(allowDefaults(request('nWORKCNTRL'), byId('nWORKCNTRL'))).toMatchObject({
+      proxy: true,
+      admin: false,
+    });
+    const bobAllow = allowUpdate(
+      data,
+      request('nBOBCNTRL'),
+      allowDefaults(request('nBOBCNTRL'), byId('nBOBCNTRL'))
+    );
+    expect(bobAllow.ok && bobAllow.update.devices.find((d) => d.id === 'nBOBCNTRL')).toEqual({
+      id: 'nBOBCNTRL',
+      name: 'bob-laptop',
+      label: '',
+      proxy: true,
+      admin: false,
+    });
+    expect(
+      allowUpdate(data, danaRequest, { name: 'Dana\u202ePC', proxy: true, admin: false })
+    ).toMatchObject({ ok: false, error: 'label_invalid' });
+  });
+
+  test('a rename is one change and saves the label with the switches', () => {
+    const draft = draftFrom(data);
+    draft.labels.nBOBCNTRL = 'Bob laptop';
+    expect(changeCount(data, draft)).toBe(1);
+    // A switch on the same row is still one changed row.
+    draft.devices.nBOBCNTRL = { proxy: true, admin: true };
+    expect(changeCount(data, draft)).toBe(1);
+    // Clearing a label falls back to the Tailscale name.
+    draft.labels.nALIMBPCNTRL = '';
+    expect(changeCount(data, draft)).toBe(2);
+    const result = accessUpdate(data, draft, onDesktop);
+    expect(result.ok && result.update.devices.find((d) => d.id === 'nBOBCNTRL')).toEqual({
+      id: 'nBOBCNTRL',
+      name: 'bob-laptop',
+      label: 'Bob laptop',
+      proxy: true,
+      admin: true,
+    });
+    expect(result.ok && result.update.devices.find((d) => d.id === 'nALIMBPCNTRL')?.label).toBe('');
+    // A named device without a permission is not saved, so its name is no change.
+    draft.labels.nWORKCNTRL = 'Work Mac';
+    expect(changeCount(data, draft)).toBe(2);
+    const dropped = accessUpdate(data, draft, onDesktop);
+    expect(dropped.ok && dropped.update.devices.some((d) => d.id === 'nWORKCNTRL')).toBe(false);
+    // Putting the old name back is no change.
+    draft.labels.nWORKCNTRL = '';
+    draft.labels.nALIMBPCNTRL = 'Work laptop';
+    draft.labels.nBOBCNTRL = '';
+    draft.devices.nBOBCNTRL = { proxy: true, admin: false };
+    expect(changeCount(data, draft)).toBe(0);
+  });
+
+  test('only a device the draft gives a permission can be renamed', () => {
+    const byId = (id: string) => data.devices.find((d) => d.id === id)!;
+    const draft = draftFrom(data);
+    expect(canRename(byId('nBOBCNTRL'), draft)).toBe(true);
+    expect(canRename(byId('nWORKCNTRL'), draft)).toBe(false);
+    expect(canRename(byId('nHOSTCNTRL'), draft)).toBe(false);
+    // Turning a switch on in the draft makes the row renamable before the save.
+    draft.devices.nWORKCNTRL = { proxy: false, admin: true };
+    expect(canRename(byId('nWORKCNTRL'), draft)).toBe(true);
+    // A staged name on a device switched off is not a change and is not saved; switching it
+    // back on brings the name back.
+    draft.devices.nWORKCNTRL = { proxy: false, admin: false };
+    draft.labels.nBOBCNTRL = 'Bob laptop';
+    draft.devices.nBOBCNTRL = { proxy: false, admin: false };
+    expect(canRename(byId('nBOBCNTRL'), draft)).toBe(false);
+    expect(changeCount(data, draft)).toBe(1);
+    const off = accessUpdate(data, draft, onDesktop);
+    expect(off.ok && off.update.devices.some((d) => d.id === 'nBOBCNTRL')).toBe(false);
+    draft.devices.nBOBCNTRL = { proxy: true, admin: false };
+    expect(changeCount(data, draft)).toBe(1);
+    const on = accessUpdate(data, draft, onDesktop);
+    expect(on.ok && on.update.devices.find((d) => d.id === 'nBOBCNTRL')?.label).toBe('Bob laptop');
+  });
+
+  test('Allow keeps the owner’s label unless the field is edited', () => {
+    // The device asked again from its browser, which guessed a different name.
+    const labeled: AccessDevices = {
+      ...data,
+      devices: data.devices.map((d) =>
+        d.id === 'nBOBCNTRL' ? { ...d, label: "Dana's work laptop" } : d
+      ),
+    };
+    const bob = labeled.devices.find((d) => d.id === 'nBOBCNTRL');
+    const request: AccessRequest = { ...danaRequest, nodeId: 'nBOBCNTRL', name: 'Windows PC' };
+    const form = allowDefaults(request, bob);
+    expect(form.name).toBe("Dana's work laptop");
+    const kept = allowUpdate(labeled, request, form);
+    expect(kept.ok && kept.update.devices.find((d) => d.id === 'nBOBCNTRL')?.label).toBe(
+      "Dana's work laptop"
+    );
+    const edited = allowUpdate(labeled, request, { ...form, name: 'Windows PC' });
+    expect(edited.ok && edited.update.devices.find((d) => d.id === 'nBOBCNTRL')?.label).toBe(
+      'Windows PC'
+    );
+    // Without a label, the device's own name, then its Tailscale name.
+    expect(
+      allowDefaults(
+        request,
+        data.devices.find((d) => d.id === 'nBOBCNTRL')
+      ).name
+    ).toBe('Windows PC');
+    // A label equal to the Tailscale name is kept as it is.
+    const same: AccessDevices = {
+      ...data,
+      devices: data.devices.map((d) => (d.id === 'nBOBCNTRL' ? { ...d, label: 'bob-laptop' } : d)),
+    };
+    const sameForm = allowDefaults(
+      request,
+      same.devices.find((d) => d.id === 'nBOBCNTRL')
+    );
+    const sameAllow = allowUpdate(same, request, sameForm);
+    expect(sameAllow.ok && sameAllow.update.devices.find((d) => d.id === 'nBOBCNTRL')?.label).toBe(
+      'bob-laptop'
+    );
+  });
+
+  test('Allow saves, closes the request, then reloads, even when closing fails', async () => {
+    const steps = (fail: 'save' | 'close' | null) => {
+      const calls: string[] = [];
+      const step = (name: 'save' | 'close' | 'reload') => async () => {
+        calls.push(name);
+        if (fail === name) throw new Error(`${name} failed`);
+      };
+      return { calls, steps: { save: step('save'), close: step('close'), reload: step('reload') } };
+    };
+    const ok = steps(null);
+    expect(await runAllow(ok.steps)).toEqual({ kind: 'allowed' });
+    expect(ok.calls).toEqual(['save', 'close', 'reload']);
+    const notClosed = steps('close');
+    expect(await runAllow(notClosed.steps)).toMatchObject({ kind: 'saved_not_closed' });
+    expect(notClosed.calls).toEqual(['save', 'close', 'reload']);
+    const notSaved = steps('save');
+    expect(await runAllow(notSaved.steps)).toMatchObject({ kind: 'save_failed' });
+    expect(notSaved.calls).toEqual(['save']);
+  });
+
+  test('a typed name is checked the way the server checks it', () => {
+    expect(labelFor('  Bob laptop ', 'bob-laptop')).toEqual({ ok: true, update: 'Bob laptop' });
+    expect(labelFor(' bob-laptop ', 'bob-laptop')).toEqual({ ok: true, update: '' });
+    expect(labelFor('', 'bob-laptop')).toEqual({ ok: true, update: '' });
+    expect(labelFor('\t\u3000Bob\u00a0', '')).toEqual({ ok: true, update: 'Bob' });
+    expect(labelFor('é'.repeat(64), '')).toMatchObject({ ok: true });
+    expect(labelFor('é'.repeat(65), '')).toMatchObject({ ok: false, error: 'label_too_long' });
+    for (const bad of ['tab\there', 'a\u0007', 'lap\u202etop', 'lap\u200btop', '\ufeffphone']) {
+      expect(labelFor(bad, '')).toMatchObject({ ok: false, error: 'label_invalid' });
+    }
+  });
+
   test('a reload after Allow keeps the switches still being edited', () => {
     const draft = draftFrom(data);
     draft.devices.nBOBCNTRL = { proxy: false, admin: false };
@@ -242,11 +411,14 @@ describe('saving', () => {
         d.id === 'nDANA0001CNTRL' ? { ...d, proxy: true, label: "Dana's PC" } : d
       ),
     };
+    draft.labels.nCICNTRL = 'Runner';
     const next = rebaseDraft(data, draft, after);
+    expect(next.labels.nCICNTRL).toBe('Runner');
+    expect(next.labels.nDANA0001CNTRL).toBe("Dana's PC");
     expect(next.devices.nBOBCNTRL).toEqual({ proxy: false, admin: false });
     expect(next.devices.nDANA0001CNTRL).toEqual({ proxy: true, admin: false });
     expect(next.addresses).toEqual([]);
-    expect(changeCount(after, next)).toBe(2);
+    expect(changeCount(after, next)).toBe(3);
   });
 
   test('a new address must look like an address and not repeat one', () => {
@@ -283,6 +455,10 @@ test('an older server without the new fields still reads as one shape', () => {
     tags: [],
   });
   expect(read.tailnetError).toBeUndefined();
+  const asked = normalizeAccessDevices({
+    requests: [{ nodeId: 'n1CNTRL', asked: 'admin' }, { nodeId: 'n2CNTRL' }, { asked: 'root' }],
+  });
+  expect(asked.requests.map((r) => r.asked)).toEqual(['admin', 'proxy', 'proxy']);
 });
 
 test('every access error has copy, and the removed explanations are gone', () => {
@@ -294,6 +470,7 @@ test('every access error has copy, and the removed explanations are gone', () =>
     'address_duplicate',
     'allow_nothing',
     'label_too_long',
+    'label_invalid',
   ]) {
     expect(errors[key]?.length).toBeGreaterThan(0);
   }

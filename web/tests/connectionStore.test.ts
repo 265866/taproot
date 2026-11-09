@@ -273,6 +273,18 @@ describe('connection gate', () => {
     );
   });
 
+  test('a device with Proxy asks for the dashboard, with the same name field', () => {
+    const html = render('error', 'not_admin', { ...refused, proxy: true }, 'Mac');
+    expect(html).toContain('This device can use the proxy but not the dashboard.');
+    expect(html).toContain('Request dashboard access');
+    expect(html).toMatch(/<input[^>]*value="Mac"/);
+    expect(html).not.toContain('doesn&#x27;t have access yet');
+    // Once it asked, it sees the sent state like any other request.
+    const sent = render('error', 'not_admin', { ...refused, proxy: true, requested: true });
+    expect(sent).toContain('Request sent.');
+    expect(sent).not.toContain('Request dashboard access');
+  });
+
   test('a device that already asked sees its request as sent, and can check or rename', () => {
     const html = render('error', 'not_admin', { ...refused, requested: true }, 'Mac');
     expect(html).toContain(
@@ -322,6 +334,13 @@ describe('connection gate', () => {
     expect(html).not.toContain('Try again');
     expect(html).not.toContain('can&#x27;t open taproot yet');
     expect(html).not.toContain('dashboard-body');
+  });
+
+  test('a device without a name never gets the setup code form', () => {
+    const html = render('error', 'not_admin', { ...refused, node: '', claimable: true });
+    expect(html).not.toContain('Set up taproot');
+    expect(html).not.toContain('This device, ,');
+    expect(html).toContain('This device doesn&#x27;t have access yet.');
   });
 
   test('names an unreachable server separately', () => {

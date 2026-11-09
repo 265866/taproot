@@ -65,6 +65,8 @@ describe('sending the request', () => {
     const gate = en.connection_gate as Record<string, string>;
     for (const key of [
       'request_title',
+      'request_dashboard_title',
+      'request_dashboard_submit',
       'request_name_label',
       'request_submit',
       'request_sent',

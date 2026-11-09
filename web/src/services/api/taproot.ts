@@ -101,6 +101,8 @@ export interface AccessRequest {
   lastSeen: string;
   count: number;
   outside: boolean;
+  /** What the device was refused: `admin` when it opened the dashboard, else `proxy`. */
+  asked: 'proxy' | 'admin';
 }
 
 export interface AccessDevices {
@@ -569,6 +571,7 @@ function normalizeAccessRequest(raw: unknown): AccessRequest {
     lastSeen: text(r.lastSeen),
     count: typeof r.count === 'number' && Number.isFinite(r.count) ? r.count : 0,
     outside: flag(r.outside),
+    asked: r.asked === 'admin' ? 'admin' : 'proxy',
   };
 }
 
@@ -688,6 +691,9 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       request<{ status: 'pending' }>('POST', '/access/request', { body: { name } }),
     dismissRequest: (nodeId: string) =>
       request<{ dismissed: true }>('POST', `/access/requests/${id(nodeId)}/dismiss`),
+    /** Closes a request after its grant was saved, so the device's later refusals stay quiet. */
+    allowRequest: (nodeId: string) =>
+      request<{ allowed: true }>('POST', `/access/requests/${id(nodeId)}/allow`),
 
     settings: () => request<TaprootSettings>('GET', '/settings'),
     putSettings: (update: TaprootSettingsUpdate) =>

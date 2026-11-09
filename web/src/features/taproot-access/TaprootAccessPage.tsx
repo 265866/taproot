@@ -6,13 +6,14 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent,
   type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
-import { IconCopy, IconPlus, IconSearch } from '@/components/ui/icons';
+import { IconCopy, IconPencil, IconPlus, IconSearch } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import {
@@ -31,16 +32,21 @@ import {
   adminLock,
   allowDefaults,
   allowUpdate,
+  canRename,
   changeCount,
   deviceName,
   draftFrom,
+  draftLabel,
+  draftPermissions,
   isNew,
+  labelFor,
   layoutDevices,
   matchesQuery,
   newAddress,
   ownDeviceId,
   proxyLock,
   rebaseDraft,
+  runAllow,
   type AccessDraft,
   type AllowForm,
   type DeviceName,
@@ -117,14 +123,24 @@ export function TaprootAccessPage() {
     if (!result.ok) {
       return t(`taproot_access.errors.${result.error}`, { detail: result.detail ?? '' });
     }
-    try {
-      await taprootApi.putSettings({ access: result.update });
-    } catch (err: unknown) {
-      return getErrorMessage(err);
+    const outcome = await runAllow({
+      save: () => taprootApi.putSettings({ access: result.update }).then(() => undefined),
+      close: () => taprootApi.allowRequest(request.nodeId).then(() => undefined),
+      reload: () => load(true),
+    });
+    switch (outcome.kind) {
+      case 'save_failed':
+        return getErrorMessage(outcome.error);
+      case 'saved_not_closed':
+        showNotification(
+          t('taproot_access.allow_not_closed', { message: getErrorMessage(outcome.error) }),
+          'error'
+        );
+        return null;
+      case 'allowed':
+        showNotification(t('taproot_access.allowed'), 'success');
+        return null;
     }
-    showNotification(t('taproot_access.allowed'), 'success');
-    await load(true);
-    return null;
   };
 
   const deny = async (request: AccessRequest) => {
@@ -261,6 +277,7 @@ export function AccessView({
             <RequestRow
               key={request.nodeId}
               request={request}
+              device={data.devices.find((d) => d.id === request.nodeId)}
               now={now}
               disabled={!data.enabled}
               onAllow={onAllow}
@@ -360,12 +377,15 @@ function relativeTime(iso: string | null, now: number): string {
 
 function RequestRow({
   request,
+  device,
   now,
   disabled,
   onAllow,
   onDeny,
 }: {
   request: AccessRequest;
+  /** The requesting device's row, when the page lists it. */
+  device: AccessDevice | undefined;
   now: number;
   disabled: boolean;
   onAllow: AccessViewProps['onAllow'];
@@ -379,7 +399,7 @@ function RequestRow({
   const [error, setError] = useState('');
   const name = nameText(
     deviceName({
-      label: '',
+      label: device?.label ?? '',
       name: request.name,
       ownerName: request.ownerName,
       login: request.login,
@@ -412,6 +432,9 @@ function RequestRow({
             {request.outside && (
               <span className={styles.badge}>{t('taproot_access.other_tailnet')}</span>
             )}
+            {request.asked === 'admin' && (
+              <span className={styles.badge}>{t('taproot_access.wants_dashboard')}</span>
+            )}
           </span>
           <span className={styles.details}>{meta.join(' · ')}</span>
         </span>
@@ -421,7 +444,7 @@ function RequestRow({
               size="sm"
               disabled={disabled}
               aria-label={t('taproot_access.allow_label', { name })}
-              onClick={() => setForm(allowDefaults(request))}
+              onClick={() => setForm(allowDefaults(request, device))}
             >
               {t('taproot_access.allow')}
             </Button>
@@ -621,10 +644,9 @@ function DeviceRow({ device, draft, setDraft, me, now }: RowProps & { device: Ac
   const { t } = useTranslation();
   const fresh = isNew(device, now);
   const own = device.id === ownDeviceId(me);
-  const name = nameText(deviceName(device), t);
-  const p = device.server
-    ? { proxy: true, admin: false }
-    : (draft.devices[device.id] ?? { proxy: device.proxy, admin: device.admin });
+  const label = draftLabel(device, draft);
+  const name = nameText(deviceName({ ...device, label }), t);
+  const p = draftPermissions(device, draft);
   const set = (key: 'proxy' | 'admin', value: boolean) =>
     setDraft((d) => d && { ...d, devices: { ...d.devices, [device.id]: { ...p, [key]: value } } });
   const presence = device.online
@@ -632,18 +654,36 @@ function DeviceRow({ device, draft, setDraft, me, now }: RowProps & { device: Ac
     : device.lastSeen
       ? t('taproot_access.last_seen', { when: relativeTime(device.lastSeen, now) })
       : '';
-  const title = nameTitle(device);
+  const title = nameTitle({ ...device, label });
+  const badges = (
+    <>
+      {own && <span className={styles.badge}>{t('taproot_access.this_device')}</span>}
+      {device.server && <span className={styles.badge}>{t('taproot_access.this_server')}</span>}
+      {fresh && (
+        <span className={`${styles.badge} ${styles.newBadge}`}>{t('taproot_access.new')}</span>
+      )}
+    </>
+  );
   return (
     <div className={`${styles.row} ${fresh ? styles.fresh : ''}`} role="row">
       <span className={styles.device} role="cell">
-        <span className={styles.name} title={title || undefined}>
-          {name}
-          {own && <span className={styles.badge}>{t('taproot_access.this_device')}</span>}
-          {device.server && <span className={styles.badge}>{t('taproot_access.this_server')}</span>}
-          {fresh && (
-            <span className={`${styles.badge} ${styles.newBadge}`}>{t('taproot_access.new')}</span>
-          )}
-        </span>
+        {!canRename(device, draft) ? (
+          <span className={styles.name} title={title || undefined}>
+            {name}
+            {badges}
+          </span>
+        ) : (
+          <NameEditor
+            name={name}
+            label={label}
+            tailscaleName={device.name}
+            title={title}
+            badges={badges}
+            onRename={(next) =>
+              setDraft((d) => d && { ...d, labels: { ...d.labels, [device.id]: next } })
+            }
+          />
+        )}
         {presence && <span className={styles.details}>{presence}</span>}
       </span>
       <CopyId id={device.id} name={name} />
@@ -660,6 +700,117 @@ function DeviceRow({ device, draft, setDraft, me, now }: RowProps & { device: Ac
         onChange={(value) => set('admin', value)}
       />
     </div>
+  );
+}
+
+/**
+ * A device's name with a pencil that edits its label in place. Enter or leaving the field stages
+ * the name in the draft, which the save bar saves; Escape cancels. An empty name clears the label,
+ * so the row shows the Tailscale name again.
+ */
+function NameEditor({
+  name,
+  label,
+  tailscaleName,
+  title,
+  badges,
+  onRename,
+}: {
+  name: string;
+  label: string;
+  tailscaleName: string;
+  title: string;
+  badges: ReactNode;
+  onRename: (label: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const errorId = useId();
+  const [value, setValue] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  // Set once Enter or Escape closed the field, so the blur that follows does nothing.
+  const closed = useRef(false);
+  const pencil = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (value === null && refocus.current) {
+      refocus.current = false;
+      pencil.current?.focus();
+    }
+  }, [value]);
+
+  const close = (focusPencil: boolean) => {
+    closed.current = true;
+    refocus.current = focusPencil;
+    setValue(null);
+    setError('');
+  };
+  const commit = (focusPencil: boolean) => {
+    if (value === null || closed.current) return;
+    const result = labelFor(value, tailscaleName);
+    if (!result.ok) {
+      setError(t(`taproot_access.errors.${result.error}`, { detail: result.detail ?? '' }));
+      return;
+    }
+    if (result.update !== label) onRename(result.update);
+    close(focusPencil);
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commit(true);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      close(true);
+    }
+  };
+
+  if (value !== null) {
+    return (
+      <span className={styles.nameEdit}>
+        <input
+          className={`input ${styles.nameInput}`}
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value);
+            setError('');
+          }}
+          onKeyDown={onKeyDown}
+          onBlur={() => commit(false)}
+          placeholder={tailscaleName}
+          aria-label={t('taproot_access.name_for', { name })}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          autoComplete="off"
+          spellCheck={false}
+          autoFocus
+        />
+        {error && (
+          <span id={errorId} className={styles.formError} role="alert">
+            {mask(error)}
+          </span>
+        )}
+      </span>
+    );
+  }
+  return (
+    <span className={styles.name} title={title || undefined}>
+      {name}
+      <button
+        ref={pencil}
+        type="button"
+        className={styles.rename}
+        aria-label={t('taproot_access.rename', { name })}
+        title={t('taproot_access.rename', { name })}
+        onClick={() => {
+          closed.current = false;
+          setValue(label || tailscaleName);
+        }}
+      >
+        <IconPencil size={14} />
+      </button>
+      {badges}
+    </span>
   );
 }
 

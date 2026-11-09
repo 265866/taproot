@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/store"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -52,7 +53,7 @@ func requestsIn(table, where string) string {
 // finish before the writer starts, or the rebuild would miss or double-count
 // a flush.
 func rebuildDerived(ctx context.Context, db *sql.DB) error {
-	return withImmediateTx(ctx, db, func(c *sql.Conn) error {
+	return store.WithImmediateTx(ctx, db, func(c *sql.Conn) error {
 		started := time.Now()
 		var stale []derivedTable
 		for _, t := range derivedTables() {

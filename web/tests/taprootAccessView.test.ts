@@ -148,6 +148,49 @@ describe('the device table', () => {
     expect(html).toContain('aria-label="Deny Dana&#x27;s PC"');
   });
 
+  test('a request for the dashboard says so, and one for Proxy does not', () => {
+    expect(render()).toContain('>wants dashboard<');
+    const proxyOnly = { ...data, requests: [{ ...data.requests[0], asked: 'proxy' as const }] };
+    expect(render({ data: proxyOnly })).not.toContain('wants dashboard');
+  });
+
+  test('a request from a labeled device shows the label, and Allow starts from it', () => {
+    const labeled = {
+      ...data,
+      devices: data.devices.map((d) => (d.id === 'nBOBCNTRL' ? { ...d, label: 'Bob laptop' } : d)),
+      requests: [{ ...data.requests[0], nodeId: 'nBOBCNTRL', name: 'Windows PC', outside: false }],
+    };
+    const html = render({ data: labeled, draft: draftFrom(labeled) });
+    expect(html).toContain('aria-label="Allow Bob laptop"');
+    expect(html).not.toContain('Windows PC');
+  });
+
+  test('devices with a permission have a rename button, and a staged name shows in its row', () => {
+    const html = render();
+    expect(html).toContain('aria-label="Rename alice-desktop"');
+    expect(html).toContain('aria-label="Rename Work laptop"');
+    expect(html).not.toContain('aria-label="Rename taproot-host"');
+    // alice-work-laptop has no permission, so a name for it would not be saved.
+    expect(html).toContain('aria-label="Proxy for alice-work-laptop"');
+    expect(html).not.toContain('aria-label="Rename alice-work-laptop"');
+    const draft = draftFrom(data);
+    draft.labels.nBOBCNTRL = 'Bob laptop';
+    const renamed = render({ draft });
+    expect(renamed).toContain('aria-label="Rename Bob laptop"');
+    expect(renamed).toContain('aria-label="Proxy for Bob laptop"');
+    expect(renamed).toContain('1 unsaved change');
+    // Switching the permissions off drops the staged name from the row and the change count.
+    draft.devices.nBOBCNTRL = { proxy: false, admin: false };
+    const off = render({ draft });
+    expect(off).toContain('aria-label="Proxy for bob-laptop"');
+    expect(off).not.toContain('Bob laptop');
+    expect(off).not.toContain('aria-label="Rename bob-laptop"');
+    expect(off).toContain('1 unsaved change');
+    // Switching one on makes the row renamable before the save.
+    draft.devices.nWORKCNTRL = { proxy: true, admin: false };
+    expect(render({ draft })).toContain('aria-label="Rename alice-work-laptop"');
+  });
+
   test('no explanations, and no save bar until something changes', () => {
     const html = render();
     expect(html).not.toContain('New devices start with nothing');
@@ -178,14 +221,21 @@ describe('request calls', () => {
   });
   afterAll(() => server.stop(true));
 
-  test('Deny dismisses the request, and the gate posts its name, both with the request header', async () => {
+  test('Deny dismisses the request, Allow closes it, and the gate posts its name, all with the request header', async () => {
     const client = createTaprootClient(`http://127.0.0.1:${server.port}/taproot/api/v1`);
     await client.dismissRequest('nDANA0001CNTRL');
+    await client.allowRequest('nDANA0001CNTRL');
     await client.requestAccess("Dana's PC");
     expect(seen).toEqual([
       {
         method: 'POST',
         path: '/taproot/api/v1/access/requests/nDANA0001CNTRL/dismiss',
+        header: '1',
+        body: '',
+      },
+      {
+        method: 'POST',
+        path: '/taproot/api/v1/access/requests/nDANA0001CNTRL/allow',
         header: '1',
         body: '',
       },

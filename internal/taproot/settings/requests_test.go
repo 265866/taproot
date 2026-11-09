@@ -132,3 +132,67 @@ func TestClaimRefusesOutsideDevices(t *testing.T) {
 		t.Fatalf("own-tailnet claim = %d %s", status, body)
 	}
 }
+
+// The Allow form saves the grant, then closes the request. The save runs
+// while the request is still open, so Admin for an outside device passes
+// the check; allowing first would fail it.
+func TestAllowFormOrder(t *testing.T) {
+	f := newFixture(t, options{yaml: outsideYAML})
+	tn := outsideTailnet
+	f.access.tailnet = &tn
+	ctx := context.Background()
+	danaAdmin := `{"access": {"devices": [` + laptopEntry + `, ` + workEntry + `, {"id": "ndanaCNTRL", "proxy": true, "admin": true}]}}`
+	danaProxy := `{"access": {"devices": [` + laptopEntry + `, ` + workEntry + `, {"id": "ndanaCNTRL", "proxy": true}]}}`
+
+	// Allow with the defaults gives dana's Proxy-only device nothing new, so
+	// the save leaves the request open and the allow call closes it.
+	f.openRequest(t, "ndanaCNTRL")
+	if code, _, body := f.do(t, http.MethodPut, danaProxy); code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	if !f.isOpen(t, "ndanaCNTRL") {
+		t.Fatal("a save that granted nothing closed the request")
+	}
+	if found, err := f.requests.Allow(ctx, "ndanaCNTRL", time.Now()); err != nil || !found {
+		t.Fatalf("allow = %t, %v", found, err)
+	}
+	if f.isOpen(t, "ndanaCNTRL") {
+		t.Fatal("the allowed request is still open")
+	}
+	// Closed, it no longer lets Admin through.
+	if code, _, body := f.do(t, http.MethodPut, danaAdmin); code != http.StatusBadRequest || errorCode(t, body) != "outside_admin_needs_request" {
+		t.Fatalf("Admin after the request was allowed = %d %s", code, body)
+	}
+
+	// Asked again: Admin saves, then allow still finds the request.
+	if err := f.requests.Record(ctx, access.RequestInput{NodeID: "ndanaCNTRL", Self: true, Asked: access.AskAdmin}, 1, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, body := f.do(t, http.MethodPut, danaAdmin); code != http.StatusOK {
+		t.Fatalf("Admin from the reopened request = %d %s", code, body)
+	}
+	if found, err := f.requests.Allow(ctx, "ndanaCNTRL", time.Now()); err != nil || !found || f.isOpen(t, "ndanaCNTRL") {
+		t.Fatalf("allow after the save = %t, %v, open %t", found, err, f.isOpen(t, "ndanaCNTRL"))
+	}
+}
+
+// A save whose client hung up after the file was written still closes the
+// requests it answered.
+func TestSaveClosesRequestsAfterCancel(t *testing.T) {
+	f := newFixture(t, options{yaml: outsideYAML})
+	tn := outsideTailnet
+	f.access.tailnet = &tn
+	f.openRequest(t, "nphoneCNTRL")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	f.s.mu.Lock()
+	devices := append(f.guard.Grants().Devices, access.DeviceGrant{ID: "nphoneCNTRL", Proxy: true})
+	err := f.s.apply(ctx, update{Access: &accessUpdate{Devices: &devices}}, access.Identity{Via: access.ViaLoopback})
+	f.s.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.isOpen(t, "nphoneCNTRL") {
+		t.Fatal("a cancelled save left the granted request open")
+	}
+}

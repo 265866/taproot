@@ -8,6 +8,8 @@ import { submitAccessRequest } from './accessRequest';
 interface RequestAccessScreenProps {
   /** The device already has an open request, so the screen starts in its sent state. */
   requested: boolean;
+  /** The device can already use the proxy, so it asks for the dashboard. */
+  proxy: boolean;
   /** The name to start the form with. */
   defaultName: string;
   request: (name: string) => Promise<unknown>;
@@ -17,10 +19,12 @@ interface RequestAccessScreenProps {
 
 /**
  * The connection gate for a tailnet device without Admin on a claimed server: it asks the
- * server's admin for access and may name itself. The request grants nothing.
+ * server's admin for access, or for the dashboard when it has Proxy, and may name itself. The
+ * request grants nothing.
  */
 export function RequestAccessScreen({
   requested,
+  proxy,
   defaultName,
   request,
   onCheck,
@@ -63,7 +67,9 @@ export function RequestAccessScreen({
     <div className="connection-gate">
       <form className="connection-gate-card" onSubmit={(event) => void submit(event)}>
         <TaprootMark className="connection-gate-mark" />
-        <h1 className="connection-gate-title">{t('connection_gate.request_title')}</h1>
+        <h1 className="connection-gate-title">
+          {t(proxy ? 'connection_gate.request_dashboard_title' : 'connection_gate.request_title')}
+        </h1>
         <label htmlFor={nameId} className="connection-gate-body">
           {t('connection_gate.request_name_label')}
         </label>
@@ -82,7 +88,7 @@ export function RequestAccessScreen({
           </p>
         )}
         <Button type="submit" loading={pending}>
-          {t('connection_gate.request_submit')}
+          {t(proxy ? 'connection_gate.request_dashboard_submit' : 'connection_gate.request_submit')}
         </Button>
       </form>
     </div>

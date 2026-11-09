@@ -47,6 +47,7 @@ export const danaRequest: AccessRequest = {
   lastSeen: daysAgo(0.01),
   count: 7,
   outside: true,
+  asked: 'admin',
 };
 
 export const data: AccessDevices = {
