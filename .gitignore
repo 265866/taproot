@@ -7,8 +7,8 @@ cli-proxy-api
 /taproot.yaml
 .env
 
-# Runtime data: the README's data/ directory and the default taproot/ data
-# directory beside a root config.yaml. examples/taproot/ stays tracked.
+# Runtime data: the install guide's data/ directory and the default taproot/
+# data directory beside a root config.yaml. examples/taproot/ stays tracked.
 /data/
 /taproot/
 
@@ -37,7 +37,6 @@ auths/*
 # Documentation
 docs/*
 !docs/management-api-v8.md
-!docs/stability.md
 GEMINI.md
 AGENTS.override.md
 
@@ -73,6 +72,7 @@ docker-compose.override.yml
 # Local LLM Wiki vault
 .llm-wiki
 !docs/screenshots/
+!docs/*.md
 
 # Rust build output of the request-log codec library
 /internal/taproot/reqlog/codec/native/target/

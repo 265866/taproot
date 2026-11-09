@@ -335,7 +335,7 @@ func TestUpdateAppliesAVerifiedRelease(t *testing.T) {
 	wantCalls(t, calls)
 }
 
-// The README turns the updater on by pointing the quadlet at the local tag and
+// docs/updating.md turns the updater on by pointing the quadlet at the local tag and
 // running the script once, with no local tag yet, while the unit still runs
 // the ghcr.io image. That run must verify the release before it tags it.
 func TestUpdateFirstRunVerifiesAndTagsTheRelease(t *testing.T) {

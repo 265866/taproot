@@ -1,6 +1,6 @@
 # Runs scripts/taproot/taproot-update once; taproot-update.timer starts it.
-# Install both files in ~/.config/systemd/user/ ("Automatic updates
-# (optional)" in README.md).
+# Install both files in ~/.config/systemd/user/ ("Turn on automatic updates"
+# in docs/updating.md).
 
 [Unit]
 Description=Update taproot to the newest signed release on its tag
