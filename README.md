@@ -29,7 +29,7 @@ These steps run the published image with rootless Podman. They take you from an 
 ### 1. Check the prerequisites
 
 - A Linux host, amd64 or arm64, on your tailnet, with `tailscaled` running.
-- Rootless Podman 5 or later, or rootful Docker. Rootless Docker does not work: it shows taproot every caller as its bridge address, so no device can be identified, and taproot refuses them all.
+- Rootless Podman 5 or later, or rootful Docker. Rootless Docker does not work in its default setup. It shows taproot every caller as the Docker bridge's gateway address, so no device can be identified, and taproot refuses them all.
 - A second device on the same tailnet, with a browser, for the dashboard.
 
 Taproot runs on Linux only. It identifies callers through the host's `tailscaled` socket and needs a container runtime that keeps each caller's address, and Docker Desktop on macOS and Windows has neither.
@@ -61,7 +61,7 @@ While no device has Admin, taproot logs a setup code each time it starts:
 podman logs taproot 2>&1 | grep 'setup code [A-Z0-9]'
 ```
 
-On the device you will manage taproot from, open the URL in that line, `http://<server>:8317/`. `<server>` is the host's MagicDNS name or Tailscale address. The line always shows port 8317; if you published another port, use that one. Enter the code and select **Claim this server**. That device gets Proxy and Admin, and the code stops working.
+On the device you will manage taproot from, open the URL in that line, `http://<server>:8317/`. `<server>` is the host's MagicDNS name or Tailscale address. The line shows the port inside the container, 8317; if you published another port, use that one. Enter the code and select **Claim this server**. That device gets Proxy and Admin, and the code stops working.
 
 ### 4. Add an account
 
@@ -232,7 +232,7 @@ A browser on the server itself connects as the server's own node, which never ge
 
 ## Verify a release
 
-Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check the image you pulled before you run it, verify its digest rather than its tag, which can move between the pull and the check. This needs [cosign](https://github.com/sigstore/cosign/releases):
+Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check the image you pulled before you run it, verify its digest rather than its tag, which can move between the pull and the check. Install [cosign](https://github.com/sigstore/cosign/releases) first, then run:
 
 ```sh
 podman pull ghcr.io/265866/taproot:0.2
