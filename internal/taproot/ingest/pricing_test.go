@@ -29,6 +29,36 @@ func TestPriceBookLookup(t *testing.T) {
 	}
 }
 
+// Each image model a Codex account routes to gets its own row; the rows do
+// not overlap, so a later image version is not priced by an older row.
+func TestPriceBookLookupImageModels(t *testing.T) {
+	pb := newPriceBook(seedPrices)
+	cases := map[string]string{
+		"gpt-image-2":            "gpt-image-2",
+		"gpt-image-2.5":          "gpt-image-2.5*",
+		"gpt-image-2.5-flare":    "gpt-image-2.5*",
+		"gpt-image-2.5-sunburst": "gpt-image-2.5*",
+		"gpt-image-2.6":          "gpt-image-2.6*",
+		"gpt-image-2.6-flare":    "gpt-image-2.6*",
+		"gpt-image-2.6-sunburst": "gpt-image-2.6*",
+	}
+	for model, want := range cases {
+		p := pb.lookup(model)
+		if p == nil || p.ModelPattern != want {
+			t.Errorf("%s matched %+v, want %s", model, p, want)
+			continue
+		}
+		if p.Input != 8 || p.Output != 30 || p.CacheRead != 2 {
+			t.Errorf("%s priced %+v, want input 8, output 30, cached input 2", model, p)
+		}
+	}
+	for _, model := range []string{"gpt-image-2.7", "gpt-image-2-mini", "gpt-image-1.5"} {
+		if p := pb.lookup(model); p != nil {
+			t.Errorf("%s matched %s, want none", model, p.ModelPattern)
+		}
+	}
+}
+
 func TestPriceBookCost(t *testing.T) {
 	pb := newPriceBook([]Price{{ModelPattern: "m", Input: 4, Output: 20, CacheRead: 0.2, CacheWrite5m: 5, CacheWrite1h: 8}})
 	// 1M of each kind; 400k of the write has no TTL split and is priced at 5m.

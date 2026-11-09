@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/265866/taproot/internal/taproot/store"
@@ -32,11 +34,13 @@ type RestoreResult struct {
 }
 
 // Restore verifies the backup, saves the current state as a pre-restore
-// backup, replaces the config and auth files, and stages the database
-// snapshot for ApplyPendingRestore on the next start. A backup that fails
-// verification changes nothing. The restore marker is written last, so a
-// failure while replacing files leaves the database alone; the files are then
-// put back from the pre-restore backup.
+// backup, adds the backup's refresh journal entries, replaces the config and
+// auth files, and stages the database snapshot for ApplyPendingRestore on
+// the next start. A backup that fails verification changes nothing. The
+// restore marker is written last, so a failure while replacing files leaves
+// the database alone; the files are then put back from the pre-restore
+// backup. Journal entries the restore added stay, because a claim is never
+// removed.
 func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -72,7 +76,7 @@ func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error)
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("pre-restore backup: %w", err)
 	}
-	err = b.applyFiles(c.files)
+	err = b.applyFiles(c)
 	if err == nil {
 		err = b.stageDatabase(dbTmp, dbStaged, dbPath, id)
 	}
@@ -106,10 +110,10 @@ func (b *Backups) stageDatabase(dbTmp, dbStaged, dbPath, id string) error {
 	return nil
 }
 
-// applyFiles writes the config files and makes the auth dir match files.
-func (b *Backups) applyFiles(files map[string][]byte) error {
+// applyFiles writes the config files and makes the auth dir match c.
+func (b *Backups) applyFiles(c contents) error {
 	for _, f := range []struct{ name, dest string }{{configEntry, b.paths.ConfigFile}, {taprootEntry, b.paths.TaprootFile}} {
-		data, ok := files[f.name]
+		data, ok := c.files[f.name]
 		if !ok || f.dest == "" {
 			continue
 		}
@@ -117,7 +121,7 @@ func (b *Backups) applyFiles(files map[string][]byte) error {
 			return err
 		}
 	}
-	return b.restoreAuth(files)
+	return b.restoreAuth(c)
 }
 
 // rollbackFiles puts back the config and auth files saved in a pre-restore
@@ -136,22 +140,26 @@ func (b *Backups) rollbackFiles(preID string) error {
 	if err != nil {
 		return err
 	}
-	return b.applyFiles(c.files)
+	return b.applyFiles(c)
 }
 
-// restoreAuth makes the auth dir hold exactly the backup's auth files. Files
-// it removes are in the pre-restore backup.
-func (b *Backups) restoreAuth(files map[string][]byte) error {
+// restoreAuth merges the backup's refresh journal into the auth dir, then
+// makes the auth dir hold exactly the backup's auth files. Files it removes
+// are in the pre-restore backup.
+func (b *Backups) restoreAuth(c contents) error {
 	if b.paths.AuthDir == "" {
 		return nil
 	}
 	if err := os.MkdirAll(b.paths.AuthDir, 0o700); err != nil {
 		return fmt.Errorf("create auth dir: %w", err)
 	}
+	if err := b.restoreJournal(c); err != nil {
+		return err
+	}
 	keep := map[string]bool{}
-	for name, data := range files {
+	for name, data := range c.files {
 		rel, ok := strings.CutPrefix(name, authPrefix)
-		if !ok {
+		if !ok || inJournal(name) {
 			continue
 		}
 		keep[rel] = true
@@ -176,6 +184,93 @@ func (b *Backups) restoreAuth(files map[string][]byte) error {
 		}
 	}
 	return nil
+}
+
+// restoreJournal adds the backup's refresh journal claims and receipts that
+// the auth dir lacks, and syncs them to disk, before any credential is
+// written. Upstream must never resend a refresh token the journal records,
+// so a restored credential must not appear before its claim. It never
+// removes or replaces an entry: claims never expire, and the live journal
+// holds every claim made since the backup, including claims on the tokens
+// the backup restores.
+func (b *Backups) restoreJournal(c contents) error {
+	dest := func(name string) string {
+		return filepath.Join(b.paths.AuthDir, filepath.FromSlash(strings.TrimPrefix(name, authPrefix)))
+	}
+	changed := map[string]bool{}
+	sort.Strings(c.dirs)
+	for _, name := range c.dirs {
+		path := dest(name)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return fmt.Errorf("restore refresh journal: %w", err)
+		}
+		changed[filepath.Dir(path)] = true
+	}
+	for name, data := range c.files {
+		if !inJournal(name) {
+			continue
+		}
+		path := dest(name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return fmt.Errorf("restore refresh journal: %w", err)
+		}
+		if err := writeFileExclusive(path, data); err != nil {
+			return fmt.Errorf("restore refresh journal: %w", err)
+		}
+		changed[filepath.Dir(path)] = true
+	}
+	for dir := range changed {
+		if err := syncDir(dir); err != nil {
+			return fmt.Errorf("restore refresh journal: %w", err)
+		}
+	}
+	return nil
+}
+
+// writeFileExclusive creates path with data unless it already exists. Readers
+// see no file or the whole file: the data is written to a temp file and then
+// hard-linked into place, which fails rather than replace an existing file.
+func writeFileExclusive(path string, data []byte) error {
+	if _, errStat := os.Lstat(path); errStat == nil {
+		return nil
+	}
+	dir, base := filepath.Split(path)
+	tmp, err := os.CreateTemp(dir, "."+base+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp for %s: %w", base, err)
+	}
+	defer func() {
+		_ = tmp.Close()
+		if errRemove := os.Remove(tmp.Name()); errRemove != nil && !errors.Is(errRemove, os.ErrNotExist) {
+			log.WithError(errRemove).Warn("taproot backups: remove journal temp file")
+		}
+	}()
+	if err = tmp.Chmod(0o600); err != nil {
+		return fmt.Errorf("chmod temp for %s: %w", base, err)
+	}
+	if _, err = tmp.Write(data); err != nil {
+		return fmt.Errorf("write temp for %s: %w", base, err)
+	}
+	if err = tmp.Sync(); err != nil {
+		return fmt.Errorf("sync temp for %s: %w", base, err)
+	}
+	if err = os.Link(tmp.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("link %s: %w", base, err)
+	}
+	return nil
+}
+
+// syncDir makes new entries in dir durable. Windows cannot sync a directory.
+func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	errSync := f.Sync()
+	return errors.Join(errSync, f.Close())
 }
 
 // writeFileAtomic replaces path with data through a temp file in the same

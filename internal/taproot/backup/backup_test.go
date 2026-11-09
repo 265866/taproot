@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -333,6 +334,288 @@ func TestCreateListDownloadRestoreRoundTrip(t *testing.T) {
 	}
 }
 
+// Refresh journal keys are SHA-256 hex, as upstream's refreshGrantKey writes them.
+var (
+	journalDone    = strings.Repeat("a", 64)
+	journalPending = strings.Repeat("b", 64)
+	journalLater   = strings.Repeat("c", 64)
+)
+
+const journalReceipt = `{"value":{"access_token":"example","refresh_token":"next","expired":"2026-11-03T00:00:00Z"}}`
+
+func (f *fixture) journalPath(parts ...string) string {
+	return filepath.Join(append([]string{f.paths.AuthDir, journalDir}, parts...)...)
+}
+
+// writeJournal lays out a journal as upstream's FileRefreshJournal does: one
+// 0700 directory per claim, with a 0600 receipt once the refresh finished.
+func (f *fixture) writeJournal(t *testing.T) {
+	t.Helper()
+	writeFile(t, f.journalPath(journalDone, "receipt"), journalReceipt)
+	if err := os.MkdirAll(f.journalPath(journalPending), 0o700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackupIncludesRefreshJournal(t *testing.T) {
+	f := newFixture(t, Config{})
+	f.writeJournal(t)
+	e := f.create(t)
+	if e.Files != 6 {
+		t.Fatalf("entry counts %d files, want the 5 plus one receipt", e.Files)
+	}
+	raw, err := os.ReadFile(filepath.Join(f.b.dir, e.ID+archiveExt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, members := untar(t, raw)
+	var m manifest
+	if err := json.Unmarshal(members[manifestEntry], &m); err != nil {
+		t.Fatal(err)
+	}
+	dirs := map[string]bool{}
+	for _, mf := range m.Files {
+		if mf.Dir {
+			dirs[mf.Path] = true
+		}
+	}
+	wantDirs := []string{journalPrefix, journalPrefix + "/" + journalDone, journalPrefix + "/" + journalPending}
+	if len(dirs) != len(wantDirs) {
+		t.Fatalf("manifest directories %v, want %v", dirs, wantDirs)
+	}
+	for _, d := range wantDirs {
+		if !dirs[d] {
+			t.Errorf("manifest lacks journal directory %s", d)
+		}
+	}
+	if got := string(members[journalPrefix+"/"+journalDone+"/receipt"]); got != journalReceipt {
+		t.Errorf("archived receipt = %q", got)
+	}
+}
+
+// A restore adds the journal entries the auth dir lacks, keeps every entry
+// made since the backup, and never replaces one.
+func TestRestoreMergesRefreshJournal(t *testing.T) {
+	f := newFixture(t, Config{})
+	f.writeJournal(t)
+	e := f.create(t)
+
+	if err := os.RemoveAll(f.journalPath(journalPending)); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, f.journalPath(journalDone, "receipt"), `{"stage":"live"}`)
+	writeFile(t, f.journalPath(journalLater, "receipt"), `{"later":true}`)
+	writeFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json"), `{"token":"drifted"}`)
+	f.clock = f.clock.Add(time.Hour)
+
+	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(f.journalPath(journalPending))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("pending claim not restored: %v", err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
+		t.Errorf("restored claim mode %v, want 0700", info.Mode().Perm())
+	}
+	if entries, _ := os.ReadDir(f.journalPath(journalPending)); len(entries) != 0 {
+		t.Errorf("pending claim restored with entries %v", entries)
+	}
+	if got := readFile(t, f.journalPath(journalDone, "receipt")); got != `{"stage":"live"}` {
+		t.Errorf("restore replaced a live receipt: %q", got)
+	}
+	if got := readFile(t, f.journalPath(journalLater, "receipt")); got != `{"later":true}` {
+		t.Errorf("restore changed a claim made after the backup: %q", got)
+	}
+	if got := readFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json")); got != origAuth["claude-a.json"] {
+		t.Errorf("credential not restored: %q", got)
+	}
+}
+
+// A restore onto an auth dir that lost its journal puts it back whole.
+func TestRestoreRecreatesLostRefreshJournal(t *testing.T) {
+	f := newFixture(t, Config{})
+	f.writeJournal(t)
+	e := f.create(t)
+	if err := os.RemoveAll(f.journalPath()); err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(time.Hour)
+
+	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, f.journalPath(journalDone, "receipt")); got != journalReceipt {
+		t.Errorf("restored receipt = %q", got)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(f.journalPath(journalDone, "receipt"))
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Errorf("restored receipt mode: %v %v", info, err)
+		}
+	}
+	if info, err := os.Stat(f.journalPath(journalPending)); err != nil || !info.IsDir() {
+		t.Errorf("pending claim not restored: %v", err)
+	}
+}
+
+// The journal goes back before any credential: when it cannot be written,
+// the credentials stay as they were.
+func TestRestoreWritesJournalBeforeCredentials(t *testing.T) {
+	f := newFixture(t, Config{})
+	f.writeJournal(t)
+	e := f.create(t)
+	if err := os.RemoveAll(f.journalPath()); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, f.journalPath(), "a file where the journal directory belongs")
+	writeFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json"), `{"token":"drifted"}`)
+	f.clock = f.clock.Add(time.Hour)
+
+	if _, err := f.b.Restore(context.Background(), e.ID); err == nil {
+		t.Fatal("restore succeeded without its journal")
+	}
+	if got := readFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json")); got != `{"token":"drifted"}` {
+		t.Errorf("credential written although its journal was not: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(f.paths.DataDir, pendingMarkerName)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("failed restore staged the database: %v", err)
+	}
+}
+
+// A backup from before journals were backed up has no directory members and
+// no "dir" manifest key. It still restores, and leaves the live journal alone.
+func TestRestoreBackupWithoutJournal(t *testing.T) {
+	f := newFixture(t, Config{})
+	e := f.create(t)
+	raw, err := os.ReadFile(filepath.Join(f.b.dir, e.ID+archiveExt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, members := untar(t, raw)
+	if strings.Contains(string(members[manifestEntry]), `"dir"`) {
+		t.Fatalf("manifest without a journal differs from the earlier format: %s", members[manifestEntry])
+	}
+	f.writeJournal(t)
+	writeFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json"), `{"token":"drifted"}`)
+	f.clock = f.clock.Add(time.Hour)
+
+	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json")); got != origAuth["claude-a.json"] {
+		t.Errorf("credential not restored: %q", got)
+	}
+	if got := readFile(t, f.journalPath(journalDone, "receipt")); got != journalReceipt {
+		t.Errorf("live receipt changed: %q", got)
+	}
+	if _, err := os.Stat(f.journalPath(journalPending)); err != nil {
+		t.Errorf("live pending claim removed: %v", err)
+	}
+}
+
+// writeClaims adds n completed claims, each a directory with a receipt.
+func (f *fixture) writeClaims(t *testing.T, n int) {
+	t.Helper()
+	for i := range n {
+		key := fmt.Sprintf("%064x", i)
+		writeFile(t, f.journalPath(key, "receipt"), journalReceipt)
+	}
+}
+
+// Claims are never deleted, so a long-lived journal outgrows a small manifest
+// cap. 5000 claims made about a 2 MiB manifest, which the old 1 MiB cap
+// rejected on restore although the backup was reported as created.
+func TestManyRefreshClaimsRoundTrip(t *testing.T) {
+	const claims = 5000
+	f := newFixture(t, Config{})
+	f.writeClaims(t, claims)
+	e := f.create(t)
+	if want := len(origAuth) + 3 + claims; e.Files != want {
+		t.Fatalf("entry counts %d files, want %d", e.Files, want)
+	}
+	if got := f.list(t); len(got) != 1 || got[0].ID != e.ID {
+		t.Fatalf("list = %+v, want the new backup", got)
+	}
+	m, err := readManifest(filepath.Join(f.b.dir, e.ID+archiveExt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Files) != len(origAuth)+3+2*claims+1 {
+		t.Fatalf("manifest lists %d entries", len(m.Files))
+	}
+	if err := os.RemoveAll(f.journalPath()); err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(time.Hour)
+
+	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(f.journalPath())
+	if err != nil || len(entries) != claims {
+		t.Fatalf("restored %d claims, want %d: %v", len(entries), claims, err)
+	}
+}
+
+// writeArchive refuses a manifest the reader would reject, so no backup is
+// reported as created that cannot be listed or restored.
+func TestOversizedManifestRefusedAtWrite(t *testing.T) {
+	old := maxManifestBytes
+	maxManifestBytes = 4 << 10
+	t.Cleanup(func() { maxManifestBytes = old })
+	f := newFixture(t, Config{})
+	f.writeClaims(t, 50)
+
+	var apiErr apiError
+	if code, body := f.do(t, http.MethodPost, "/api/backups", &apiErr); code != http.StatusInternalServerError {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	if got := f.list(t); len(got) != 0 {
+		t.Errorf("refused backup listed: %+v", got)
+	}
+	entries, err := os.ReadDir(f.b.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), archiveExt) {
+			t.Errorf("refused backup left %s", entry.Name())
+		}
+	}
+}
+
+// Directories exist only inside the journal and carry no size, and the
+// journal root is never a file.
+func TestManifestRejectsMisplacedJournalEntries(t *testing.T) {
+	cases := map[string]func(m *manifest, members map[string][]byte) []string{
+		"journal root stored as file": func(m *manifest, members map[string][]byte) []string {
+			members[journalPrefix] = []byte("x")
+			m.Files = append(m.Files, manifestFile{Path: journalPrefix, Size: 1, SHA256: sha("x")})
+			return manifestOrder(m)
+		},
+		"journal directory with a size": func(m *manifest, members map[string][]byte) []string {
+			name := journalPrefix + "/" + journalPending
+			members[journalPrefix] = nil
+			members[name] = nil
+			m.Files = append(m.Files, manifestFile{Path: journalPrefix, Dir: true}, manifestFile{Path: name, Dir: true, Size: 1})
+			return manifestOrder(m)
+		},
+	}
+	for name, edit := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, Config{})
+			e := f.create(t)
+			path := filepath.Join(f.b.dir, e.ID+archiveExt)
+			rewriteArchive(t, path, edit)
+			_, err := readManifest(path)
+			if !errors.Is(err, errCorrupt) || !strings.Contains(err.Error(), "unexpected entry") {
+				t.Fatalf("readManifest error = %v, want an unexpected entry", err)
+			}
+		})
+	}
+}
+
 func TestApplyPendingRestoreResumesAfterInterruptedSwap(t *testing.T) {
 	dataDir := t.TempDir()
 	dbPath := filepath.Join(dataDir, "taproot.db")
@@ -482,6 +765,20 @@ func TestCorruptArchiveRejectedWithoutChanges(t *testing.T) {
 			rewriteArchive(t, path, func(m *manifest, members map[string][]byte) []string {
 				members["auth/../../escape.json"] = []byte("x")
 				m.Files = append(m.Files, manifestFile{Path: "auth/../../escape.json", Size: 1, SHA256: sha("x")})
+				return manifestOrder(m)
+			})
+		},
+		"directory outside journal": func(t *testing.T, path string) {
+			rewriteArchive(t, path, func(m *manifest, members map[string][]byte) []string {
+				members["auth/logs"] = nil
+				m.Files = append(m.Files, manifestFile{Path: "auth/logs", Dir: true})
+				return manifestOrder(m)
+			})
+		},
+		"journal directory stored as file": func(t *testing.T, path string) {
+			rewriteArchive(t, path, func(m *manifest, members map[string][]byte) []string {
+				members[journalPrefix] = nil
+				m.Files = append(m.Files, manifestFile{Path: journalPrefix, Dir: true})
 				return manifestOrder(m)
 			})
 		},
