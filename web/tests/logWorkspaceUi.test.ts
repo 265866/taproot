@@ -8,7 +8,9 @@ const styles = readSource('src/features/taproot-logs/appLogs/AppLogsPanel.module
 const layout = readSource('src/styles/layout.scss');
 
 // Structural guards complement the browser viewport/interaction checks. They do not
-// assert browser layout: the important contract is a single flexible scrolling viewer.
+// assert browser layout. The contract: the log viewer is the one element that scrolls the
+// log lines, it takes the space left on desktop, and on phones, where the page scrolls, it
+// gets a viewport-sized height of its own.
 describe('log workspace layout contract', () => {
   test('viewer uses remaining space instead of resolution-specific height budgets', () => {
     const panel = styles.match(/\.logPanel \{([^}]+)\}/)?.[1] ?? '';
@@ -19,9 +21,18 @@ describe('log workspace layout contract', () => {
     expect(styles).not.toContain('resize: vertical');
     expect(styles).not.toMatch(/calc\(100vh\s*-/);
     expect(styles).not.toMatch(/\n\s*(?:height|min-height|max-height):\s*(?:360|420|480)px/);
-    expect(layout).toMatch(
-      /&\.content-logs\s*\{\s*height: 100dvh;\s*min-height: 0;\s*overflow: hidden;/
-    );
+    // Desktop: the app log page is a fixed-height workspace and the viewer takes what is left.
+    expect(layout).toMatch(/&\.content-logs\s*\{\s*overflow: hidden;/);
+  });
+
+  test('phones scroll the page and give the viewer a viewport-sized height of its own', () => {
+    // Under the header, tabs, banner, and filters, the space left on a phone is a few lines.
+    expect(layout).toMatch(/&\.content-logs\s*\{\s*overflow: visible;\s*\}/);
+    const phone = styles.slice(styles.indexOf('@media (max-width: 768px)'));
+    const card = phone.match(/\.logCard:not\(\.logCardFullscreen\) \{([^}]+)\}/)?.[1] ?? '';
+    expect(card).toContain('flex: none');
+    expect(card).toContain('height: calc(100dvh - var(--header-height)');
+    expect(card).toMatch(/min-height: \d+px/);
   });
 
   test('error archive and fullscreen share the flexible viewport contract', () => {

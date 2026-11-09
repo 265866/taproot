@@ -1,6 +1,8 @@
 const MODAL_LOCK_CLASS = 'modal-open';
 
 let activeLockCount = 0;
+// Set by an unlock that asked not to restore, so the last unlock of a nested set skips it too.
+let skipRestore = false;
 
 const snapshot = {
   scrollY: 0,
@@ -53,8 +55,10 @@ export function lockScroll(): void {
   activeLockCount += 1;
 }
 
-export function unlockScroll(): void {
+/** Pass `restore: false` when the page that locked is gone, so the next page keeps its own scroll. */
+export function unlockScroll({ restore = true }: { restore?: boolean } = {}): void {
   if (typeof document === 'undefined') return;
+  if (!restore) skipRestore = true;
   activeLockCount = Math.max(0, activeLockCount - 1);
   if (activeLockCount === 0) {
     const body = document.body;
@@ -74,14 +78,17 @@ export function unlockScroll(): void {
     body.style.overflow = snapshot.bodyOverflow;
     html.style.overflow = snapshot.htmlOverflow;
 
-    if (contentEl) {
-      contentEl.scrollTo({ top: contentScrollTop, left: 0, behavior: 'auto' });
+    if (!skipRestore) {
+      if (contentEl) {
+        contentEl.scrollTo({ top: contentScrollTop, left: 0, behavior: 'auto' });
+      }
+      window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
     }
-    window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
 
     snapshot.scrollY = 0;
     snapshot.contentScrollTop = 0;
     snapshot.contentEl = null;
+    skipRestore = false;
   }
 }
 

@@ -164,6 +164,7 @@
 
 .showToggle {
   @include button-reset;
+  @include touch-target;
   margin-left: auto;
   font-size: 13px;
   color: var(--text-tertiary);

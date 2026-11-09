@@ -17,6 +17,24 @@
   }
 }
 
+// On a touch screen, widens a small control's hit area to at least $size without changing how it
+// looks. The control must not clip its overflow.
+@mixin touch-target($size: 40px) {
+  @media (pointer: coarse) {
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, #{$size});
+      height: max(100%, #{$size});
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
 // 文本截断
 @mixin text-ellipsis {
   overflow: hidden;

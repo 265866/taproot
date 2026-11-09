@@ -250,6 +250,8 @@
   gap: 6px;
   font-size: 13px;
   color: var(--text-primary);
+  // Upstream error messages are often unbroken JSON.
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: reduce) {

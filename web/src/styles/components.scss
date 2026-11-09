@@ -688,3 +688,38 @@ textarea {
     font-size: 12px;
   }
 }
+
+// Phones and touch screens. iOS Safari zooms into a focused field whose text is under 16px,
+// so fields get 16px there, over feature styles that shrink them.
+@media (max-width: $breakpoint-mobile), (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  select:not([multiple]):not([size]),
+  textarea:not([readonly]) {
+    font-size: 16px !important;
+  }
+}
+
+// Touch targets of about 40px on a touch screen; a mouse keeps the compact sizes.
+@media (pointer: coarse) {
+  .btn.btn-sm {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: $breakpoint-mobile) {
+  .empty-state {
+    flex-direction: column;
+    align-items: stretch;
+    padding: $spacing-md;
+
+    .empty-content {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .empty-action .btn {
+      width: 100%;
+    }
+  }
+}

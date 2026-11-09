@@ -69,6 +69,7 @@
 
 .handle {
   @include button-reset;
+  @include touch-target;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -160,6 +161,7 @@
 
 .menuButton {
   @include button-reset;
+  @include touch-target;
   display: inline-flex;
   align-items: center;
   justify-content: center;

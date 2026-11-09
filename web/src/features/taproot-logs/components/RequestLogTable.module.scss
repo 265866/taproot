@@ -3,6 +3,7 @@
   border-radius: var(--radius-lg);
   background: var(--bg-primary);
   overflow: hidden;
+  overflow-x: auto;
 }
 
 .table {
@@ -150,8 +151,9 @@
   font-size: 12px;
 }
 
-// Narrow screens: each row becomes a small card; cells label themselves.
-@media (max-width: 760px) {
+// Below tablet landscape width, eight columns do not fit beside the sidebar: each row becomes a
+// small card, and cells label themselves.
+@media (max-width: #{$breakpoint-tablet - 1}) {
   .table {
     thead {
       display: none;

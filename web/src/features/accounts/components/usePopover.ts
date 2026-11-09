@@ -7,6 +7,16 @@ interface PopoverOptions {
   onOpenChange?: (open: boolean) => void;
 }
 
+type FocusablePanel = Pick<ParentNode, 'querySelector'>;
+
+/**
+ * Focuses the panel's first enabled button without scrolling: on phones the panel is pinned to
+ * the viewport, and scrolling the page to the focused item would move the page under it.
+ */
+export function focusFirstItem(panel: FocusablePanel | null) {
+  panel?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+}
+
 /**
  * A button's dropdown panel. It closes on a press outside, on Escape (focus returns to the
  * button), and when focus leaves it, such as tabbing past its last item. Focus moves to the
@@ -41,7 +51,7 @@ export function usePopover({
 
   useEffect(() => {
     if (!open) return;
-    panelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    focusFirstItem(panelRef.current);
     const outside = (target: EventTarget | null) =>
       target instanceof Node && !rootRef.current?.contains(target);
     const onPointerDown = (event: PointerEvent) => {

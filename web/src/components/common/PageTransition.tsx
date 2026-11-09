@@ -7,6 +7,7 @@ import {
   PageTransitionLayerContext,
   type LayerStatus,
 } from './PageTransitionLayer';
+import { resolvePageScrollContainer } from './pageScrollContainer';
 import './PageTransition.scss';
 
 interface PageTransitionProps {
@@ -105,9 +106,8 @@ export function PageTransition({
   const currentLayerPathname = currentLayerLocation?.pathname;
 
   const resolveScrollContainer = useCallback(() => {
-    if (scrollContainerRef?.current) return scrollContainerRef.current;
     if (typeof document === 'undefined') return null;
-    return document.scrollingElement as HTMLElement | null;
+    return resolvePageScrollContainer(scrollContainerRef?.current, document.scrollingElement);
   }, [scrollContainerRef]);
 
   useLayoutEffect(() => {

@@ -28,11 +28,12 @@
     --sidebar-active-width: var(--sidebar-collapsed-width);
   }
 
+  // Phones scroll the document. No ancestor of the page may be a scroll container that never
+  // scrolls, or sticky bars inside the page stick to it and scroll away.
   @media (max-width: $breakpoint-mobile) {
     height: auto;
     min-height: 100vh;
     overflow: visible;
-    overflow-y: auto;
   }
 
   &.plugin-resource-shell {
@@ -813,6 +814,7 @@
   flex-direction: column;
   gap: $spacing-lg;
   overflow-x: hidden;
+  overflow-x: clip;
 
   &.main-content-logs {
     flex: 1 1 auto;
@@ -846,8 +848,16 @@
     --floating-control-size: 36px;
   }
 
+  // The drawer covers the page instead of pushing it, so the fade spans the full width. It stays
+  // solid down to the floating buttons' bottom edge, so scrolled content never shows behind them.
   .top-gradient-blur {
-    height: 114px;
+    --fade-solid: calc(var(--shell-gutter) + var(--floating-control-size) + 14px);
+
+    left: 0;
+    height: calc(var(--fade-solid) + 36px);
+    background: linear-gradient(180deg, var(--bg-secondary) var(--fade-solid), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 var(--fade-solid), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 var(--fade-solid), transparent 100%);
   }
 
   .nav-tooltip {
@@ -986,12 +996,11 @@
     height: auto;
     min-height: 100vh;
     overflow: visible;
-    overflow-y: auto;
 
+    // Phones scroll the app log page like any other; the log viewer keeps a viewport-sized
+    // height of its own (AppLogsPanel.module.scss).
     &.content-logs {
-      height: 100dvh;
-      min-height: 0;
-      overflow: hidden;
+      overflow: visible;
     }
 
     &.content-plugin-resource {
@@ -1016,10 +1025,12 @@
     }
 
     &.main-content-logs {
-      flex: 1 1 auto;
-      min-height: 0;
-      padding: calc(var(--header-height) + 8px) 8px max(8px, env(safe-area-inset-bottom));
+      flex: 1 0 auto;
+      min-height: 100%;
+      padding: calc(var(--header-height) + 16px) $spacing-md
+        max($spacing-lg, env(safe-area-inset-bottom));
       overflow: hidden;
+      overflow: clip;
     }
   }
 }

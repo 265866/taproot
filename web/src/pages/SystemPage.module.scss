@@ -256,7 +256,7 @@
 
 .quickLinks {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: $spacing-md;
 }
 
@@ -344,7 +344,27 @@
   }
 }
 
+// Phones: the cards nest tiles inside cards, so both get narrower padding, and link
+// descriptions wrap instead of cutting off after a few words.
 @media (max-width: 520px) {
+  .content > :global(.card) {
+    padding: $spacing-md;
+  }
+
+  .infoTile,
+  .tapTile,
+  .linkCard {
+    padding: $spacing-md;
+  }
+
+  .infoTile {
+    min-height: 0;
+  }
+
+  .linkDesc {
+    white-space: normal;
+  }
+
   .aboutTitle {
     width: min(100%, 19ch);
     font-size: clamp(20px, 7.2vw, 28px);
