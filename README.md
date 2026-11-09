@@ -31,7 +31,7 @@ You need a Linux server on your tailnet with `tailscaled` and rootless Podman 5 
      -v "$HOME/taproot/data:/taproot/config" \
      -v /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock \
      -p "$(tailscale ip -4):8317:8317" \
-     ghcr.io/265866/taproot:0.2
+     ghcr.io/265866/taproot:0.3
    ```
 
 2. Claim the server. Find the setup code:

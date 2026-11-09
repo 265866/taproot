@@ -10,8 +10,8 @@
 #    open the URL in that line on the device you manage taproot from, and
 #    enter the code.
 #
-# The tag 0.2 follows the 0.2 releases. To update, run
-#    podman pull ghcr.io/265866/taproot:0.2 && systemctl --user restart taproot
+# The tag 0.3 follows the 0.3 releases. To update, run
+#    podman pull ghcr.io/265866/taproot:0.3 && systemctl --user restart taproot
 # Change the tag only after you read the new minor version's release notes.
 # To have scripts/taproot/taproot-update install signed patch releases for you
 # instead, run the local tag it moves: set Image=localhost/taproot:current, add
@@ -28,7 +28,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=ghcr.io/265866/taproot:0.2
+Image=ghcr.io/265866/taproot:0.3
 ContainerName=taproot
 Environment=TZ=Etc/UTC
 # The root filesystem is read-only, so everything taproot writes goes to the

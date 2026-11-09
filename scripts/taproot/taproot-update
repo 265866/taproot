@@ -23,7 +23,7 @@
 #   TAPROOT_LOCAL_TAG       Local tag the unit's quadlet runs
 #                           (localhost/taproot:current). The image it replaces
 #                           is tagged <repository>:previous. The example
-#                           quadlet runs ghcr.io/265866/taproot:0.2 until you
+#                           quadlet runs ghcr.io/265866/taproot:0.3 until you
 #                           set its Image= to this tag, add Pull=never, and
 #                           run this script, which tags the verified release.
 #   TAPROOT_HEALTH_URL      URL that answers 2xx once taproot serves, such as
