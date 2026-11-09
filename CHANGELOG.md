@@ -12,6 +12,50 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 
 - The server's own Tailscale node reaches the proxy again after the node is tagged. A tagged node has no user login, so `allow-logins` refused it, and local clients that use the Tailscale address got 403.
 
+## [0.2.0](https://github.com/265866/taproot/compare/taproot-v0.1.0...taproot-v0.2.0) (2026-11-09)
+
+### Added
+
+* **taproot:** synthetic demo data and a screenshot capture script ([4f25922](https://github.com/265866/taproot/commit/4f25922cbf6e56137d399c31087b8930e45e8787))
+* **taproot/reqlog:** lossless blob codecs for request-log payloads ([46cede6](https://github.com/265866/taproot/commit/46cede6b500a8fdde04bfdc768f2d2412c93b4fa))
+* **taproot/reqlog:** compact request-log storage ([0316b76](https://github.com/265866/taproot/commit/0316b765021c47ca3d8c0a1e5151c4a40f3dba8d))
+* **taproot/access:** give dashboard chunks the page's callers ([2023254](https://github.com/265866/taproot/commit/202325415f86d3e363575baaa41c6898d2dcee42))
+* **taproot/reqlog:** serve a lean record detail with blobs on demand ([29a1baf](https://github.com/265866/taproot/commit/29a1bafc4c432d7cc653be7c6fae10db92a7f4a7))
+* **web:** open request-log records lean and load payloads on demand ([376c91c](https://github.com/265866/taproot/commit/376c91cd2626d34df919f99def0150846d51c7ac))
+* **taproot:** default backups to midnight and show both time zones ([#17](https://github.com/265866/taproot/pull/17)) ([00c1c86](https://github.com/265866/taproot/commit/00c1c869869a08a93ec8bc25d92043bb915e9d89))
+* **web:** show request-log recording and keep-forever limits in settings ([#16](https://github.com/265866/taproot/pull/16)) ([af4c4e7](https://github.com/265866/taproot/commit/af4c4e7421b1e179e42c459d90c6de0146087c69))
+* **taproot:** send discord alerts as components v2 cards ([#12](https://github.com/265866/taproot/pull/12)) ([a87199f](https://github.com/265866/taproot/commit/a87199f4aa19958b3072fc688773b9bf7daf7839))
+* **taproot:** taproot version and help, and clear startup failures ([#21](https://github.com/265866/taproot/pull/21)) ([c135985](https://github.com/265866/taproot/commit/c135985331681d9902e9d3c039bf13c8f8e69972))
+* **taproot:** grant access per device from a new access page ([#22](https://github.com/265866/taproot/pull/22)) ([620a401](https://github.com/265866/taproot/commit/620a401f98591bfa87bf3df8d65bbdc262826a06))
+* **nix:** add a flake with packages and a nixos module ([#23](https://github.com/265866/taproot/pull/23)) ([af793e5](https://github.com/265866/taproot/commit/af793e5a8b1ca083cff83fec595b7104d8a51988))
+* **taproot:** first start without config files, claimed with a setup code ([#25](https://github.com/265866/taproot/pull/25)) ([e568655](https://github.com/265866/taproot/commit/e5686553eaf9b1de886369473a32462579f4153d))
+* **taproot:** opt-in updater that verifies signed releases and rolls back ([#31](https://github.com/265866/taproot/pull/31)) ([cc6cfed](https://github.com/265866/taproot/commit/cc6cfed67b3a073f084af3797ca329b3363fbf4c))
+
+### Fixed
+
+* **taproot/access:** admit the server's own node before allow-logins ([f150e91](https://github.com/265866/taproot/commit/f150e9109b93814b044acdc92bf0d2ea2a1adaf8))
+* **taproot/reqlog:** keep escaped base64 runs, retry copy, and limit blob embedding ([2edbf64](https://github.com/265866/taproot/commit/2edbf64b6b16d3828679056d5d77cc8f122e7c7d))
+* **web:** copy large bodies through the copy event on plain http ([4133e9b](https://github.com/265866/taproot/commit/4133e9bcb9ad8e770fea069966865a7b28f42a3a))
+* **taproot:** ship accurate model prices and update them on upgrade ([#18](https://github.com/265866/taproot/pull/18)) ([02f4f54](https://github.com/265866/taproot/commit/02f4f54e9965af6bc4fcece7a86cb21509d45cc4))
+* **taproot:** record upstream errors on streamed request logs ([131b9ae](https://github.com/265866/taproot/commit/131b9ae737321b03eb6194671ad46fefb7efc2d4))
+* **ci:** start release builds on their tag so signatures name it ([#34](https://github.com/265866/taproot/pull/34)) ([8803bee](https://github.com/265866/taproot/commit/8803beeb047b4fd30bd47e2fbef4a72cf88ca0bc))
+* **taproot:** back up the codex refresh journal and price the gpt-image-2 models ([#36](https://github.com/265866/taproot/pull/36)) ([10d9faf](https://github.com/265866/taproot/commit/10d9faf946bb7871261db9b467dbc25f19c96263))
+
+### Performance
+
+* **executor:** cut proxy overhead on large Claude requests ([a05f50b](https://github.com/265866/taproot/commit/a05f50b30faa6f77a7cf9c0b5820aef237a19261))
+* **taproot/reqlog:** look up base64 bytes in a table ([6479898](https://github.com/265866/taproot/commit/64798989412153b58eb4a62fb4cca2b1bdd7fb35))
+* **taproot/web:** serve the dashboard as cached, gzipped chunks ([46fa5e9](https://github.com/265866/taproot/commit/46fa5e98ffc3e9aeeced44c9d9de4ed4ae5356cd))
+* **taproot/store:** keep 8 idle SQLite connections ([67f045e](https://github.com/265866/taproot/commit/67f045e582f823f66828ff59bf853f3da19cbabe))
+* **taproot/ingest:** read current quota with a loose index scan ([ec1cfef](https://github.com/265866/taproot/commit/ec1cfef374944cdc4832d4a73c3e27a08c96025d))
+* **taproot/ingest:** walk the devices TTL estimate in index order ([d3c9822](https://github.com/265866/taproot/commit/d3c98229374f91bbccf351c5951183c5f3252a1a))
+* **taproot/ingest:** read device and session usage from hourly rollups ([741ab51](https://github.com/265866/taproot/commit/741ab51f09d6c52efca1aa5f5f107d6a42f985cc))
+* **taproot/reqlog:** index the list filters and read stats ends directly ([d1c698f](https://github.com/265866/taproot/commit/d1c698f3447528e7d84158ddc403fdf793c819aa))
+
+### Upstream
+
+* Merges [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) up to [681ce41b6](https://github.com/router-for-me/CLIProxyAPI/commit/681ce41b6e44c45b15b79378b003909d6ba29e68).
+
 ## v0.1.0
 
 The first release. Taproot is a fork of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), merged with upstream up to commit `6e6afab99`, that pools Claude and Codex subscription accounts behind one endpoint on a Tailscale tailnet.
