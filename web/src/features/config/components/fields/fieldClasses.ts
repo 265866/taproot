@@ -1,10 +1,11 @@
 import styles from './Field.module.scss';
 
-/** 搜索跳转的脉冲高亮 class（useFieldJump 命令式挂载/移除）。 */
+/** Pulse highlight for a search jump; useFieldJump adds and removes it. */
 export const FIELD_HIGHLIGHT_CLASS: string = styles.fieldHighlightActive;
 
 /**
- * 表单控件宿主 class：区块编辑器内 :global(.input/.form-group/...) 覆盖的作用域根。
- * SectionCard 的内容区自动挂载；脱离卡片渲染表单块（如 Modal 内容）时手动挂。
+ * Scope root for the form-control overrides (:global(.input/.form-group/...)). SectionCard's
+ * content area applies it; apply it by hand when rendering fields outside a card, such as in a
+ * modal.
  */
 export const FIELDS_ROOT_CLASS: string = styles.fieldsRoot;
