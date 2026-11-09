@@ -11,7 +11,7 @@
 # the backup schedule's local time; the image does not pick a zone.
 
 # Matches packageManager in web/package.json.
-ARG BUN_VERSION=1.4.3
+ARG BUN_VERSION=1.4.4
 # Matches the Rust toolchain of the codec job in .github/workflows/ci.yml.
 ARG RUST_VERSION=1.99
 # Matches the go line in go.mod, which CI builds, tests, and scans with.
@@ -21,7 +21,7 @@ ARG GO_VERSION=1.26.10
 # with a digest present, the tag is not used to pick the image, so each stage
 # first checks that its toolchain is the version its ARG names.
 
-FROM docker.io/oven/bun:${BUN_VERSION}@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS web
+FROM docker.io/oven/bun:${BUN_VERSION}@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS web
 ARG BUN_VERSION
 RUN v="$(bun --version)"; [ "$v" = "${BUN_VERSION}" ] \
 	|| { echo "the oven/bun digest has bun $v, not BUN_VERSION=${BUN_VERSION}" >&2; exit 1; }
