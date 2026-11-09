@@ -129,3 +129,35 @@ jobs:
           docker run --rm --entrypoint ls taproot-ci
           /taproot/LICENSE /taproot/THIRD_PARTY_NOTICES.md /taproot/web/LICENSE
           /taproot/licenses/LGPL-3.0.txt /taproot/licenses/GPL-3.0.txt
+
+  # The flake's packages and the NixOS VM test (checks in flake.nix). Builds
+  # for x86_64-linux; aarch64-linux is evaluated only.
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          extra_nix_config: system-features = nixos-test benchmark big-parallel kvm
+      - run: nix flake check -L
+
+  # nix/vendor-hash and web/bun.nix follow go.sum and web/bun.lock. This job
+  # fails with the diff when they are stale; run scripts/taproot/nix-refresh.sh
+  # and commit the result. It does not push the fix itself: a commit pushed
+  # with the workflow token starts no CI run, so that head would go unchecked.
+  nix-hashes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - run: scripts/taproot/nix-refresh.sh
+      - name: Hashes are current
+        run: |
+          if ! git diff --exit-code -- nix/vendor-hash web/bun.nix; then
+            echo "::error::nix/vendor-hash or web/bun.nix is stale. Run scripts/taproot/nix-refresh.sh and commit the result."
+            exit 1
+          fi

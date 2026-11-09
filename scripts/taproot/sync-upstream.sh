@@ -13,7 +13,8 @@
 # deleted. Every other conflict, and every new upstream file of a kind taproot
 # deletes (such as a new docs/*.md guide), stops the merge for a person to
 # decide. The checks are those of CI's go and web jobs, except golangci-lint
-# and govulncheck, so they include check-upstream-boundary.sh.
+# and govulncheck, so they include check-upstream-boundary.sh, plus
+# nix-refresh.sh when Nix is installed.
 #
 #   scripts/taproot/sync-upstream.sh               fetch, merge, check
 #   scripts/taproot/sync-upstream.sh --dry-run     fetch and report incoming commits, conflicts, and new files to decide on;
@@ -82,6 +83,16 @@ web_verify() {
 	(cd web && bun install --frozen-lockfile && bun run verify)
 }
 
+# nix_hashes refreshes the flake's nix/vendor-hash and web/bun.nix, which
+# follow go.sum and web/bun.lock, and fails when they were stale.
+nix_hashes() {
+	"$taproot_scripts/nix-refresh.sh" || return 1
+	if ! git diff --quiet -- nix/vendor-hash web/bun.nix; then
+		echo "Refreshed nix/vendor-hash and web/bun.nix; commit them."
+		return 1
+	fi
+}
+
 # classify_conflicts reads unmerged index entries ("<mode> <object> <stage>\t<path>",
 # NUL-separated, as git ls-files -u -z and git merge-tree -z write them) and
 # prints "<kind>\t<path>" per path. The kind is "deleted" when the file existed
@@ -110,6 +121,14 @@ run_checks() {
 	check "go test ./..." go test -count=1 -skip '^TestAdvertiserAndBrowser_Integration$' ./...
 	check "upstream boundary" bash "$taproot_scripts/check-upstream-boundary.sh"
 	check "web: bun run verify" web_verify
+	if [[ -f flake.nix ]]; then
+		if command -v nix >/dev/null 2>&1; then
+			check "nix hashes" nix_hashes
+		else
+			# CI's nix-hashes job still checks them.
+			results+=("SKIP  nix hashes: nix is not installed; run scripts/taproot/nix-refresh.sh where it is")
+		fi
+	fi
 	printf '\n== Summary\n'
 }
 

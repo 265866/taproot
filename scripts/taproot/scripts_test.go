@@ -37,6 +37,8 @@ func scriptPath(t *testing.T, name string) string {
 type repo struct {
 	t   *testing.T
 	dir string
+	// bin, when set, comes first on PATH for commands run in the repository.
+	bin string
 }
 
 func newRepo(t *testing.T) *repo {
@@ -58,6 +60,10 @@ func (r *repo) env() []string {
 		name, _, _ := strings.Cut(kv, "=")
 		return slices.Contains(gitLocationVars, name)
 	})
+	if r.bin != "" {
+		// exec.Cmd keeps the last value of a repeated variable.
+		env = append(env, "PATH="+r.bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	}
 	return append(env,
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_NOSYSTEM=1",
@@ -559,5 +565,136 @@ func TestChecksOnlyPassesWithAWebDirectory(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("checks-only output lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+// fakeNix stands in for nix in nix-refresh.sh. `run` (bun2nix) writes
+// web/bun.nix from web/bun.lock, with an empty hash when the lockfile says
+// "no-integrity". `build` fails like a fixed-output derivation with a stale
+// hash, reporting go.sum's first line as the real hash, or with a download
+// error when that line is "broken".
+const fakeNix = `#!/usr/bin/env bash
+set -eu
+while [[ "$1" == --* ]]; do shift 2; done
+case "$1" in
+run)
+	if grep -q no-integrity web/bun.lock; then
+		printf '  "left-pad@1.3.0" = fetchurl {\n    url = "x";\n    hash = "";\n  };\n' >web/bun.nix
+	else
+		printf 'from %s\n' "$(cat web/bun.lock)" >web/bun.nix
+	fi
+	;;
+build)
+	want="$(head -n 1 go.sum)"
+	if [[ "$want" == broken ]]; then
+		echo "error: unable to download 'https://proxy.golang.org/x'" >&2
+		exit 1
+	fi
+	printf "error: hash mismatch in fixed-output derivation '/nix/store/x-go-modules.drv':\n         specified: %s\n            got:    %s\n" "$(cat nix/vendor-hash)" "$want" >&2
+	exit 1
+	;;
+*)
+	echo "unexpected nix call: $*" >&2
+	exit 2
+	;;
+esac
+`
+
+// nixRepo is a repository with the files nix-refresh.sh reads and writes,
+// and the fake nix first on PATH.
+func nixRepo(t *testing.T, files map[string]string) *repo {
+	t.Helper()
+	r := newRepo(t)
+	r.bin = t.TempDir()
+	if err := os.WriteFile(filepath.Join(r.bin, "nix"), []byte(fakeNix), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all := map[string]string{
+		"flake.nix":       "{ }\n",
+		"go.sum":          "sha256-new=\n",
+		"nix/vendor-hash": "sha256-old=\n",
+		"web/bun.lock":    "lock two\n",
+		"web/bun.nix":     "from lock one\n",
+	}
+	for path, content := range files {
+		all[path] = content
+	}
+	r.commitFiles("taproot", all)
+	return r
+}
+
+func (r *repo) read(path string) string {
+	r.t.Helper()
+	data, err := os.ReadFile(filepath.Join(r.dir, path))
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestNixRefreshUpdatesStaleFiles(t *testing.T) {
+	r := nixRepo(t, nil)
+	refresh := scriptPath(t, "nix-refresh.sh")
+
+	out, code := r.run("bash", refresh)
+	if code != 0 || !strings.Contains(out, "nix/vendor-hash: sha256-old= -> sha256-new=") {
+		t.Fatalf("refresh exited %d:\n%s", code, out)
+	}
+	if got := r.read("nix/vendor-hash"); got != "sha256-new=\n" {
+		t.Errorf("nix/vendor-hash = %q, want the hash from the mismatch", got)
+	}
+	if got := r.read("web/bun.nix"); got != "from lock two\n" {
+		t.Errorf("web/bun.nix = %q, want it generated from web/bun.lock", got)
+	}
+
+	out, code = r.run("bash", refresh)
+	if code != 0 || !strings.Contains(out, "nix/vendor-hash is current: sha256-new=") {
+		t.Errorf("second refresh exited %d:\n%s", code, out)
+	}
+}
+
+func TestNixRefreshKeepsTheHashWhenTheBuildFails(t *testing.T) {
+	r := nixRepo(t, map[string]string{"go.sum": "broken\n"})
+
+	out, code := r.run("bash", scriptPath(t, "nix-refresh.sh"))
+	if code == 0 || !strings.Contains(out, "unable to download") || !strings.Contains(out, "without a hash mismatch") {
+		t.Errorf("refresh exited %d, want a failure that shows the build log:\n%s", code, out)
+	}
+	if got := r.read("nix/vendor-hash"); got != "sha256-old=\n" {
+		t.Errorf("nix/vendor-hash = %q after a failed build, want the old hash back", got)
+	}
+}
+
+func TestNixRefreshRefusesPackagesWithoutIntegrity(t *testing.T) {
+	r := nixRepo(t, map[string]string{"web/bun.lock": "no-integrity\n"})
+
+	out, code := r.run("bash", scriptPath(t, "nix-refresh.sh"))
+	if code == 0 || !strings.Contains(out, "without an integrity hash") || !strings.Contains(out, "  left-pad@1.3.0") {
+		t.Errorf("refresh exited %d, want it to name the package:\n%s", code, out)
+	}
+	if got := r.read("nix/vendor-hash"); got != "sha256-old=\n" {
+		t.Errorf("nix/vendor-hash = %q, want it untouched", got)
+	}
+}
+
+func TestChecksOnlyRefreshesNixHashes(t *testing.T) {
+	r := nixRepo(t, map[string]string{
+		"go.mod":  goMod(t),
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+	sync := scriptPath(t, "sync-upstream.sh")
+
+	out, _ := r.run("bash", sync, "--checks-only")
+	if !strings.Contains(out, "FAIL  nix hashes") || !strings.Contains(out, "commit them") {
+		t.Errorf("checks-only with stale hashes lacks the nix failure:\n%s", out)
+	}
+	if got := r.read("nix/vendor-hash"); got != "sha256-new=\n" {
+		t.Errorf("nix/vendor-hash = %q, want it refreshed", got)
+	}
+
+	r.git("commit", "-q", "-am", "chore(nix): refresh")
+	out, _ = r.run("bash", sync, "--checks-only")
+	if !strings.Contains(out, "PASS  nix hashes") {
+		t.Errorf("checks-only with current hashes lacks the nix pass:\n%s", out)
 	}
 }
