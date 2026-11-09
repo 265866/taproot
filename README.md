@@ -230,17 +230,20 @@ A browser on the server itself connects as the server's own node, which never ge
 
 ## Verify a release
 
-Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check an image before you run it:
+Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check the image you pulled before you run it, verify its digest rather than its tag, which can move between the pull and the check:
 
 ```sh
-identity='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v'
-gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot --cert-identity-regex "$identity"
-cosign verify ghcr.io/265866/taproot:0.2.0 \
+podman pull ghcr.io/265866/taproot:0.2
+ref=$(podman image inspect --format '{{index .RepoDigests 0}}' ghcr.io/265866/taproot:0.2)
+identity='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v0\.2\.[0-9]+$'
+cosign verify "$ref" \
   --certificate-identity-regexp "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The identity accepts only a signature that this repository's release workflow made for a `taproot-v*` tag.
+The identity names the release line, so an image signed for a prerelease or another minor version does not pass. The release signs the multi-arch index and each platform's image, so the check passes on whichever digest Podman recorded.
+
+To check a release's build attestation, run `gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot --cert-identity-regex "$identity"`. The attestation covers only the multi-arch index, which the tag names, so it does not verify the platform digest that Podman can record.
 
 [Plain binary with systemd](#plain-binary-with-systemd) shows the checks for a tarball. Image tags are `X.Y.Z` for one release, `X.Y` for the newest release of a minor version, and `latest`.
 
@@ -264,19 +267,10 @@ With the [Podman quadlet](#podman-quadlet), [`scripts/taproot/taproot-update`](s
 
 The updater does not pull the quadlet's `ghcr.io` tag. It moves a local tag, `localhost/taproot:current`, so the quadlet must run that tag. To turn it on:
 
-1. Tag the release you run as `localhost/taproot:current`, and point the quadlet at that tag. To check the release before you tag it, verify it as in [Verify a release](#verify-a-release).
+1. Install the script, its settings file [`taproot-update.env`](examples/taproot/taproot-update.env), and its units [`taproot-update.service`](examples/taproot/taproot-update.service) and [`taproot-update.timer`](examples/taproot/taproot-update.timer), from the release tag rather than from `main`, which follows unreleased commits. Set `TAPROOT_HEALTH_URL` to the address in the quadlet's `PublishPort=`:
 
    ```sh
-   podman pull ghcr.io/265866/taproot:0.2
-   podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current
-   sed -i 's|^Image=.*|Image=localhost/taproot:current\nPull=never|' \
-     "$HOME/.config/containers/systemd/taproot.container"
-   ```
-
-2. Install the script, its settings file [`taproot-update.env`](examples/taproot/taproot-update.env), and its units [`taproot-update.service`](examples/taproot/taproot-update.service) and [`taproot-update.timer`](examples/taproot/taproot-update.timer). Set `TAPROOT_HEALTH_URL` to the address in the quadlet's `PublishPort=`:
-
-   ```sh
-   base=https://raw.githubusercontent.com/265866/taproot/main
+   base=https://raw.githubusercontent.com/265866/taproot/taproot-v0.2.0
    mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
    curl -fsSL -o "$HOME/.local/bin/taproot-update" "$base/scripts/taproot/taproot-update"
    chmod 0755 "$HOME/.local/bin/taproot-update"
@@ -288,18 +282,27 @@ The updater does not pull the quadlet's `ghcr.io` tag. It moves a local tag, `lo
      "$HOME/.config/taproot-update.env"
    ```
 
-3. Restart taproot on the local tag, see what the updater would do, then start its timer:
+2. Point the quadlet at the local tag. Taproot keeps running the `ghcr.io` image until its next restart:
 
    ```sh
+   sed -i 's|^Image=.*|Image=localhost/taproot:current\nPull=never|' \
+     "$HOME/.config/containers/systemd/taproot.container"
    systemctl --user daemon-reload
-   systemctl --user restart taproot
+   ```
+
+3. See what the updater would do, run it once, then start its timer:
+
+   ```sh
    ~/.local/bin/taproot-update --check
+   ~/.local/bin/taproot-update
    systemctl --user enable --now taproot-update.timer
    ```
 
+   The first run finds no local tag, so it verifies the newest `0.2` release, pulls it by digest, tags it as `localhost/taproot:current`, restarts taproot on it, and waits for `/healthz`. Do not tag the image yourself. The updater skips a release that the local tag already points to, so it never verifies a release you tagged by hand.
+
 `journalctl --user -u taproot-update` shows each run. The first run downloads cosign v3.1.4 to `~/.local/share/taproot-update/` and checks it against a pinned SHA-256. The script's `--help` lists its settings. To move to a new minor version, read its release notes, then change `TAPROOT_TRACK`.
 
-To update by hand while the quadlet runs the local tag, pull the release, run `podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current`, and restart taproot.
+To update at once instead of waiting for the timer, run `~/.local/bin/taproot-update`.
 
 ## Access
 

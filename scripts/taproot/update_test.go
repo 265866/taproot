@@ -335,6 +335,30 @@ func TestUpdateAppliesAVerifiedRelease(t *testing.T) {
 	wantCalls(t, calls)
 }
 
+// The README turns the updater on by pointing the quadlet at the local tag and
+// running the script once, with no local tag yet, while the unit still runs
+// the ghcr.io image. That run must verify the release before it tags it.
+func TestUpdateFirstRunVerifiesAndTagsTheRelease(t *testing.T) {
+	h := newUpdateHost(t)
+	h.remove("state/tags/" + key("localhost/taproot:current"))
+	h.remove("state/tags/" + key("localhost/taproot:previous"))
+	out, code, calls := h.run()
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	target := image + "@" + digestNew
+	wantCalls(t, calls,
+		"cosign verify "+target,
+		"podman pull "+target,
+		"podman tag "+idNew+" localhost/taproot:current",
+		"systemctl restart taproot-update-test.service",
+	)
+	if got := h.read("state/running"); got != idNew {
+		t.Fatalf("running %s, want %s", got, idNew)
+	}
+	wantOutput(t, out, "updated taproot-update-test.service to "+target)
+}
+
 func TestUpdateRefusesAnUnverifiedRelease(t *testing.T) {
 	h := newUpdateHost(t)
 	h.remove("state/signed/" + key(digestNew))

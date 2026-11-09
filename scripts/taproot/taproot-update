@@ -24,8 +24,8 @@
 #                           (localhost/taproot:current). The image it replaces
 #                           is tagged <repository>:previous. The example
 #                           quadlet runs ghcr.io/265866/taproot:0.2 until you
-#                           tag that image as this tag, set the quadlet's
-#                           Image= to this tag, and add Pull=never.
+#                           set its Image= to this tag, add Pull=never, and
+#                           run this script, which tags the verified release.
 #   TAPROOT_HEALTH_URL      URL that answers 2xx once taproot serves, such as
 #                           http://100.64.0.1:8317/healthz. Required.
 #   TAPROOT_HEALTH_TIMEOUT  Seconds to wait for health after a restart (120).
