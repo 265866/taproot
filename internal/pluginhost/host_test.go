@@ -1634,7 +1634,7 @@ func TestHostApplyConfigWaitsForBlockedQuiesceBeforeCanceledRollbackAndReplay(t 
 			return marshalRPCResult(rpcEmptyResponse{})
 		case pluginabi.MethodPluginReconfigure:
 			var reconfigureOnce sync.Once
-			_ = reconfigureOnce
+			_ = &reconfigureOnce
 			select {
 			case <-reconfigureStarted:
 			default:
