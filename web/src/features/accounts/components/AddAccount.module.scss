@@ -135,8 +135,9 @@
     top: auto;
     right: 16px;
     left: 16px;
-    bottom: 16px;
+    bottom: max(16px, env(safe-area-inset-bottom));
     width: auto;
+    max-height: calc(100dvh - var(--header-height) - 32px);
   }
 }
 

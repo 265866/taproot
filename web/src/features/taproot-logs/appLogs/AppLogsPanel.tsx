@@ -366,7 +366,6 @@ export function AppLogsPanel() {
   useEffect(() => {
     if (!fullscreenLogs) return;
 
-    document.body.classList.add('logs-fullscreen-active');
     lockScroll();
 
     const handleEscape = (event: KeyboardEvent) => {
@@ -378,7 +377,6 @@ export function AppLogsPanel() {
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      document.body.classList.remove('logs-fullscreen-active');
       unlockScroll();
     };
   }, [fullscreenLogs]);

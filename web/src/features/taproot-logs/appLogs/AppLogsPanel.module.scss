@@ -578,9 +578,6 @@
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
 }
-:global(body.logs-fullscreen-active) :global(.page-transition__layer) {
-  transform: none !important;
-}
 .logPanelFullscreen {
   min-height: 0;
 }
@@ -661,6 +658,13 @@
   }
   .errorCard {
     padding: 12px;
+  }
+  // The page scrolls on phones, so the viewer cannot take the space left under the header,
+  // tabs, and filters. It fills the screen below the floating header once scrolled to instead.
+  .logCard:not(.logCardFullscreen) {
+    flex: none;
+    height: calc(100dvh - var(--header-height) - 24px);
+    min-height: 320px;
   }
 }
 
