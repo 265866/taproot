@@ -39,6 +39,7 @@ Taproot runs on Linux only. It identifies callers through the host's `tailscaled
 ```sh
 mkdir -p "$HOME/taproot/data"
 podman run -d --name taproot --restart unless-stopped \
+  --network pasta \
   -e TZ=Etc/UTC \
   -v "$HOME/taproot/data:/taproot/config" \
   -v /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock \
@@ -46,11 +47,11 @@ podman run -d --name taproot --restart unless-stopped \
   ghcr.io/265866/taproot:0.2
 ```
 
-On the first start, taproot writes `config.yaml` and `taproot.yaml` into `~/taproot/data`. `TZ` sets the time of the daily backup. On an SELinux host, add `:Z` to the data volume.
+On the first start, taproot writes `config.yaml` and `taproot.yaml` into `~/taproot/data`. `--network pasta` keeps each caller's source address, which taproot uses to identify the caller. `TZ` sets the time of the daily backup. On an SELinux host, add `:Z` to the data volume.
 
-With rootful Docker, run the same command with `docker run` and add `--user "$(id -u):$(id -g)"`, so the process runs as the owner of the data directory.
+With rootful Docker, run the same command with `docker run`, leave out `--network pasta`, and add `--user "$(id -u):$(id -g)"`, so the process runs as the owner of the data directory.
 
-This container does not start again after the host reboots. To run taproot as a service, use one of the setups in [Install](#install). They use the same data directory.
+Rootless Podman does not start this container again after the host reboots. To run taproot as a service, use one of the setups in [Install](#install). They use the same data directory.
 
 ### 3. Claim the server
 
@@ -133,7 +134,7 @@ loginctl enable-linger "$USER"
 journalctl --user -u taproot | grep 'setup code'
 ```
 
-`loginctl enable-linger` keeps the service running when you are not signed in. Run the quadlet as your own user, without `User=` or `UserNS=`. Podman maps the container's root to your user, which owns the files in the data directory.
+The quadlet runs `ghcr.io/265866/taproot:0.2` and pulls it only when the host does not have it, so an update waits until you pull. `loginctl enable-linger` keeps the service running when you are not signed in. Run the quadlet as your own user, without `User=` or `UserNS=`. Podman maps the container's root to your user, which owns the files in the data directory.
 
 ### Docker Compose
 
@@ -156,7 +157,10 @@ The flake's NixOS module, `services.taproot`, builds taproot from source and run
 
 ```nix
 {
-  inputs.taproot.url = "github:265866/taproot";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # A release tag. Without one, the input follows unreleased commits on main.
+  inputs.taproot.url = "github:265866/taproot/taproot-v0.2.0";
+  inputs.taproot.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = { nixpkgs, taproot, ... }: {
     nixosConfigurations.server = nixpkgs.lib.nixosSystem {
@@ -197,7 +201,8 @@ arch=amd64   # or arm64
 gh release download "taproot-v$v" --repo 265866/taproot \
   --pattern "taproot-$v-linux-$arch.tar.gz" --pattern SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
-gh attestation verify "taproot-$v-linux-$arch.tar.gz" --repo 265866/taproot
+gh attestation verify "taproot-$v-linux-$arch.tar.gz" --repo 265866/taproot \
+  --cert-identity-regex '^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v'
 sudo tar -xzf "taproot-$v-linux-$arch.tar.gz" -C /opt
 sudo ln -sfn "/opt/taproot-$v-linux-$arch" /opt/taproot
 ```
@@ -221,18 +226,21 @@ sudo systemctl enable --now taproot
 sudo journalctl -u taproot | grep 'setup code'
 ```
 
-Because the unit drops loopback traffic, a browser on the server itself cannot open the dashboard. Claim the server from another device.
+A browser on the server itself connects as the server's own node, which never gets Admin, so it cannot claim the server or open the dashboard. Claim the server from another device.
 
 ## Verify a release
 
 Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check an image before you run it:
 
 ```sh
-gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot
+identity='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v'
+gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot --cert-identity-regex "$identity"
 cosign verify ghcr.io/265866/taproot:0.2.0 \
-  --certificate-identity-regexp '^https://github.com/265866/taproot/.github/workflows/release.yml@' \
+  --certificate-identity-regexp "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+The identity accepts only a signature that this repository's release workflow made for a `taproot-v*` tag.
 
 [Plain binary with systemd](#plain-binary-with-systemd) shows the checks for a tarball. Image tags are `X.Y.Z` for one release, `X.Y` for the newest release of a minor version, and `latest`.
 
@@ -245,14 +253,53 @@ Updates are manual unless you turn on the [automatic updater](#automatic-updates
 | Quick start container | `podman pull ghcr.io/265866/taproot:0.2`, then `podman rm -f taproot` and run the Quick start command again |
 | Podman quadlet | `podman pull ghcr.io/265866/taproot:0.2 && systemctl --user restart taproot` |
 | Docker Compose | `docker compose pull && docker compose up -d` |
-| NixOS | `nix flake update taproot`, then `nixos-rebuild switch` |
+| NixOS | Change the tag in `inputs.taproot.url` to the new release, such as `taproot-v0.2.1`, then run `nix flake update taproot` and `nixos-rebuild switch` |
 | Plain binary | Download and check the new tarball as in [Plain binary with systemd](#plain-binary-with-systemd), unpack it, point `/opt/taproot` at it, and run `sudo systemctl restart taproot` |
 
 The `0.2` tag brings patch releases (`0.2.1`, `0.2.2`) and never a new minor version. A minor version can rename settings, so read its release notes in [CHANGELOG.md](CHANGELOG.md) and copy the data directory before you move to it. [Stability and upgrades](docs/stability.md) explains how to roll back.
 
 ### Automatic updates (optional)
 
-The optional updater, `scripts/taproot/taproot-update`, runs on a systemd timer on a Podman quadlet host. It follows one minor version, such as `0.2`, so it installs patch releases only. Before it installs an image, it checks the image's cosign signature against this repository's release workflow. When the new release fails its health check after the restart, the updater rolls back to the previous image. The script's `--help` lists its settings.
+With the [Podman quadlet](#podman-quadlet), [`scripts/taproot/taproot-update`](scripts/taproot/taproot-update) can install patch releases for you every night at about 04:00. It follows one minor version, such as `0.2`, so patch releases install and a new minor version never does. It installs a release only when cosign verifies that this repository's release workflow signed it for a tag on that line. It pulls before it restarts taproot (about half a second without service, measured), and goes back to the previous image when the new release does not answer `/healthz` within two minutes.
+
+The updater does not pull the quadlet's `ghcr.io` tag. It moves a local tag, `localhost/taproot:current`, so the quadlet must run that tag. To turn it on:
+
+1. Tag the release you run as `localhost/taproot:current`, and point the quadlet at that tag. To check the release before you tag it, verify it as in [Verify a release](#verify-a-release).
+
+   ```sh
+   podman pull ghcr.io/265866/taproot:0.2
+   podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current
+   sed -i 's|^Image=.*|Image=localhost/taproot:current\nPull=never|' \
+     "$HOME/.config/containers/systemd/taproot.container"
+   ```
+
+2. Install the script, its settings file [`taproot-update.env`](examples/taproot/taproot-update.env), and its units [`taproot-update.service`](examples/taproot/taproot-update.service) and [`taproot-update.timer`](examples/taproot/taproot-update.timer). Set `TAPROOT_HEALTH_URL` to the address in the quadlet's `PublishPort=`:
+
+   ```sh
+   base=https://raw.githubusercontent.com/265866/taproot/main
+   mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+   curl -fsSL -o "$HOME/.local/bin/taproot-update" "$base/scripts/taproot/taproot-update"
+   chmod 0755 "$HOME/.local/bin/taproot-update"
+   curl -fsSL -o "$HOME/.config/taproot-update.env" "$base/examples/taproot/taproot-update.env"
+   for unit in taproot-update.service taproot-update.timer; do
+     curl -fsSL -o "$HOME/.config/systemd/user/$unit" "$base/examples/taproot/$unit"
+   done
+   sed -i "s|^TAPROOT_HEALTH_URL=http://100\.64\.0\.1:|TAPROOT_HEALTH_URL=http://$(tailscale ip -4):|" \
+     "$HOME/.config/taproot-update.env"
+   ```
+
+3. Restart taproot on the local tag, see what the updater would do, then start its timer:
+
+   ```sh
+   systemctl --user daemon-reload
+   systemctl --user restart taproot
+   ~/.local/bin/taproot-update --check
+   systemctl --user enable --now taproot-update.timer
+   ```
+
+`journalctl --user -u taproot-update` shows each run. The first run downloads cosign v3.1.4 to `~/.local/share/taproot-update/` and checks it against a pinned SHA-256. The script's `--help` lists its settings. To move to a new minor version, read its release notes, then change `TAPROOT_TRACK`.
+
+To update by hand while the quadlet runs the local tag, pull the release, run `podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current`, and restart taproot.
 
 ## Access
 
@@ -358,6 +405,7 @@ Data from v0.1.0 is not carried forward. To move from v0.1.0, start the new rele
 
 The dashboard is served at `/` on the proxy port. It has these pages:
 
+- **Dashboard:** recent requests and their success rate, the number of credentials and models, and the server's version and runtime settings.
 - **Accounts:** pool charts, the quota ledger, credentials, and sign-in.
 - **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
 - **Request Logs:** search and view stored requests. The application log is a tab here.

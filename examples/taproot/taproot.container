@@ -13,6 +13,9 @@
 # The tag 0.2 follows the 0.2 releases. To update, run
 #    podman pull ghcr.io/265866/taproot:0.2 && systemctl --user restart taproot
 # Change the tag only after you read the new minor version's release notes.
+# To have scripts/taproot/taproot-update install signed patch releases for you
+# instead, run the local tag it moves: set Image=localhost/taproot:current and
+# add Pull=never, as "Automatic updates (optional)" in README.md shows.
 #
 # Run it as your own user, not root, and without User= or UserNS=: Podman maps
 # the container's root to your user, which owns the 0600 files in the data
