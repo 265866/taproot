@@ -54,7 +54,16 @@
     "this_device": "This device",
     "unreachable_title": "Server unreachable",
     "unreachable_body": "The management API did not answer. Check that the server is running.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "claim_title": "Set up taproot",
+    "claim_body": "Enter the setup code from taproot's log. This device, {{node}}, will become the first admin and can use the proxy. You can add your other devices after.",
+    "claim_code_label": "Setup code",
+    "claim_submit": "Claim this server",
+    "claim_hint": "To find the code, run {{command}} on the server, or read taproot's service log, and look for \"setup code\". It works once, and taproot makes a new one each time it restarts.",
+    "claim_wrong_code": "That isn't the setup code. Check the newest \"setup code\" line in taproot's log.",
+    "claim_rate_limited": "Too many wrong codes. Try again in {{seconds}} seconds.",
+    "claim_taken": "Another device has already claimed this server. Ask its admin to turn on Admin for this device on the Access page.",
+    "claim_failed": "The claim didn't go through. Check that the server is running, then try again."
   },
   "footer": {
     "api_version": "CLI Proxy API Version",

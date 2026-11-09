@@ -27,7 +27,7 @@ It calls two same-origin APIs and never holds a credential:
 - The CLIProxyAPI v8 Management API under `/v8/management`. Taproot's guard admits allowlisted Tailscale callers and injects the management key server-side, so requests carry no `Authorization` header. Do not add v0 fallbacks or legacy config adapters. Plugin resources and custom HTTP extensions keep their backend-declared paths.
 - Taproot's own API under `/taproot/api/v1`, through the typed client in `src/services/api/taproot.ts`. Its contract is in `DESIGN.md`.
 
-There is no login page, management-key prompt, or key storage. `src/router/ConnectionGate.tsx` connects once and shows progress, access denied, or server unreachable. `src/utils/legacyStorage.ts` deletes keys the Management Center left in localStorage on the same origin.
+There is no login page, management-key prompt, or key storage. `src/router/ConnectionGate.tsx` connects once and shows progress, access denied, or server unreachable. While no device has Admin, a tailnet device sees `src/router/ClaimScreen.tsx` instead, which sends the setup code from taproot's log to `POST /taproot/api/v1/claim`. `src/utils/legacyStorage.ts` deletes keys the Management Center left in localStorage on the same origin.
 
 Removed for good: Quick Start, AI Providers and API-key provider editing, sponsor or affiliate content, Kimi China, Devin, Vertex, SIWC, Config panel API-key editing, non-English locales, and System's "Check for updates" button (it compared taproot's version with CLIProxyAPI's releases). Their backend code stays in the Go tree; only the dashboard drops them.
 

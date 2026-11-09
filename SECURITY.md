@@ -32,7 +32,7 @@ Permissions belong to a device's Tailscale stable ID, which is never reused; nam
 - **Do not publish the port on `127.0.0.1`.** A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
 - **Give Admin only to devices you use the dashboard from**, and keep `access.addresses` to single addresses.
 - **Treat the data directory and every backup like a password.** They hold the OAuth tokens.
-- **Check the deployment after every change**, with the steps in the README's [Check the deployment](README.md#4-check-the-deployment).
+- **Check the deployment after every change**, with the steps in the README's [Check the deployment](README.md#5-check-the-deployment).
 
 ## Scope
 

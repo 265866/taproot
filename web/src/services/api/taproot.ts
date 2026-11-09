@@ -37,6 +37,12 @@ export interface TaprootMe {
   admin?: boolean;
 }
 
+/** The answer to a successful claim: the calling device and its new grant. */
+export interface ClaimResult {
+  claimed: true;
+  device: DeviceGrant;
+}
+
 /** One access.devices entry: a tailnet device's permissions, by stable ID. */
 export interface DeviceGrant {
   id: string;
@@ -520,6 +526,11 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
 
   return {
     me: () => request<TaprootMe>('GET', '/me'),
+    /**
+     * Sends the setup code from taproot's log. While no device has Admin, the calling tailnet
+     * device gets Proxy and Admin; wrong codes are limited to 5 a minute for the server (429).
+     */
+    claim: (code: string) => request<ClaimResult>('POST', '/claim', { body: { code } }),
     accounts: () => request<{ accounts: TaprootAccount[] }>('GET', '/accounts'),
 
     quotaCurrent: () => request<{ accounts: AccountQuota[] }>('GET', '/quota/current'),

@@ -627,6 +627,39 @@ textarea {
   }
 }
 
+// The claim screen: the setup code form shown while no device has Admin.
+.connection-gate-mark {
+  width: 28px;
+  height: 28px;
+}
+
+.connection-gate-code {
+  align-self: stretch;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 18px;
+  letter-spacing: 0.15em;
+  text-align: center;
+}
+
+.connection-gate-error {
+  margin: 0;
+  color: var(--error-color);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.connection-gate-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+
+  code {
+    color: var(--text-secondary);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  }
+}
+
 // The refused device's name, login, and stable ID, for whoever turns on its switches.
 .connection-gate-device {
   display: flex;

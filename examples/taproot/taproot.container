@@ -1,11 +1,15 @@
 # Rootless Podman quadlet for taproot.
 #
 # 1. Build the image as your user: podman build -f Containerfile.taproot -t taproot .
-# 2. Put config.yaml and taproot.yaml from examples/taproot in ~/taproot/data.
+# 2. mkdir -p ~/taproot/data. On its first start, taproot writes config.yaml
+#    and taproot.yaml there; to use your own, copy them from examples/taproot.
 # 3. Replace 100.64.0.1 below with this host's address from `tailscale ip -4`.
 # 4. Copy this file to ~/.config/containers/systemd/taproot.container, then run
 #    systemctl --user daemon-reload && systemctl --user start taproot
 #    and `loginctl enable-linger "$USER"` so it runs without a login session.
+# 5. Find the setup code with `journalctl --user -u taproot | grep 'setup code'`,
+#    open the URL in that line on the device you manage taproot from, and
+#    enter the code.
 #
 # Run it as your own user, not root, and without User= or UserNS=: Podman maps
 # the container's root to your user, which owns the 0600 files in the data
