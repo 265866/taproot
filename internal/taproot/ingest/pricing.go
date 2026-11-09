@@ -34,7 +34,7 @@ const (
 	gpt56SolSource = "OpenAI standard tier, developers.openai.com/api/docs/pricing as of 2026-08-12 (5m/1h columns = 30m/12h writes; short-context tier; 12h write inferred as 2.5x input)"
 	// A price row has one input rate, and usage records do not split text from
 	// image tokens, so text prompt tokens are priced at the image input rate.
-	gptImage26Source = "OpenAI standard tier, developers.openai.com/api/docs/pricing read 2026-11-08 (gpt-image-2.6-sunburst and -flare image tokens; text input priced at the image rate)"
+	gptImageSource = "OpenAI standard tier, developers.openai.com/api/docs/pricing read 2026-11-08 (gpt-image-2, gpt-image-2.5 and gpt-image-2.6 image tokens; text input priced at the image rate)"
 )
 
 // priceSeeds is the price table each seed version shipped, oldest first; the
@@ -80,7 +80,9 @@ var seedPrices = []Price{
 	{"gpt-5.1", 1.25, 10, 0.125, 0, 0, openAISource, ""},
 	{"gpt-5", 1.25, 10, 0.125, 0, 0, openAISource, ""},
 	{"gpt-5-mini", 0.25, 2, 0.025, 0, 0, openAISource, ""},
-	{"gpt-image-2.6*", 8, 30, 2, 0, 0, gptImage26Source, ""},
+	{"gpt-image-2", 8, 30, 2, 0, 0, gptImageSource, ""},
+	{"gpt-image-2.5*", 8, 30, 2, 0, 0, gptImageSource, ""},
+	{"gpt-image-2.6*", 8, 30, 2, 0, 0, gptImageSource, ""},
 }
 
 // priceSeedV2 is the table seed version 2 shipped, in taproot-v0.2.0-rc.1

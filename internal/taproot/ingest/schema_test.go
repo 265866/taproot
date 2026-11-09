@@ -188,7 +188,7 @@ func TestPriceSeedUpgradeFromVersion1(t *testing.T) {
 	}
 }
 
-// A database from version 2 gets the gpt-image-2.6 row added in version 3,
+// A database from version 2 gets the gpt-image rows added in version 3,
 // unless its user already added a row with that pattern.
 func TestPriceSeedUpgradeFromVersion2(t *testing.T) {
 	const added = "gpt-image-2.6*"
@@ -288,7 +288,7 @@ func TestShippedPricesAreConsistent(t *testing.T) {
 var shippedPriceDigests = []string{
 	"932ba1541edc9fc7925ec77a68de64a838bddff4a8d8ee691c81e0f8410abae0",
 	"a0321398a83e41292cd14ce1bc63df6ba9eeac8f7574047ffead28896ef9c4d5",
-	"283393d5725c314a4844c882b2ef3e31f1d855651f59c0453bb0251be2d34b45",
+	"570e6237d44a9b6c9d7e31a6bc12c15ed19f20d14923375a7fb38aca8d6eabb5",
 }
 
 func TestShippedPriceVersionsAreFrozen(t *testing.T) {
