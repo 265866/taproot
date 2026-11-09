@@ -2669,11 +2669,16 @@ func TestCodexWebsockets_KeepalivePingDuringUpload_WithSession(t *testing.T) {
 
 		// Start server reader loop so server processes control frames.
 		readErrCh := make(chan error, 1)
+		payloadRead := make(chan struct{}, 1)
 		go func() {
 			for {
 				if _, _, errRead := conn.ReadMessage(); errRead != nil {
 					readErrCh <- errRead
 					return
+				}
+				select {
+				case payloadRead <- struct{}{}:
+				default:
 				}
 			}
 		}()
@@ -2698,6 +2703,15 @@ func TestCodexWebsockets_KeepalivePingDuringUpload_WithSession(t *testing.T) {
 			close(pongDeliveredDuringWrite)
 		case <-time.After(2 * time.Second):
 			t.Errorf("pong was not received while payload write was in progress")
+			return
+		}
+
+		// Answering before the payload arrives can close the socket before the client writes it,
+		// and the executor then retries the write on a new connection, calling the hook again.
+		select {
+		case <-payloadRead:
+		case <-time.After(5 * time.Second):
+			t.Errorf("payload was not received after the pong")
 			return
 		}
 
@@ -2766,10 +2780,15 @@ func TestCodexWebsockets_KeepalivePingDuringUpload_Sessionless(t *testing.T) {
 			return nil
 		})
 
+		payloadRead := make(chan struct{}, 1)
 		go func() {
 			for {
 				if _, _, errRead := conn.ReadMessage(); errRead != nil {
 					return
+				}
+				select {
+				case payloadRead <- struct{}{}:
+				default:
 				}
 			}
 		}()
@@ -2794,6 +2813,14 @@ func TestCodexWebsockets_KeepalivePingDuringUpload_Sessionless(t *testing.T) {
 			close(pongDeliveredDuringWrite)
 		case <-time.After(2 * time.Second):
 			t.Errorf("pong was not received while payload write was in progress on sessionless connection")
+			return
+		}
+
+		// Answering before the payload arrives can close the socket before the client writes it.
+		select {
+		case <-payloadRead:
+		case <-time.After(5 * time.Second):
+			t.Errorf("payload was not received after the pong on sessionless connection")
 			return
 		}
 

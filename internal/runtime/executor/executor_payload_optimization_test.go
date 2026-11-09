@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"mime/multipart"
 	"runtime"
 	"strings"
@@ -500,30 +501,34 @@ func TestClaudeCacheControlDocChecksDoNotMaterializeLargeMessagesArray(t *testin
 		b.WriteString(`]}`)
 		raw := []byte(b.String())
 
-		doc := ojson.NewDoc(raw)
-		// Mutate messages.0 so "messages" splits into an ojson container (v.c != nil).
-		_ = doc.Set("messages.0.content.0.text", "short")
+		scans := math.Inf(1)
+		for attempt := 0; attempt < cacheControlTimingAttempts; attempt++ {
+			doc := ojson.NewDoc(raw)
+			// Mutate messages.0 so "messages" splits into an ojson container (v.c != nil).
+			_ = doc.Set("messages.0.content.0.text", "short")
 
-		var mBefore, mAfter runtime.MemStats
-		runtime.ReadMemStats(&mBefore)
-		start := time.Now()
-		ensureCacheControlDoc(doc)
-		if got := countCacheControlsDoc(doc); got != 2 {
-			t.Fatalf("countCacheControlsDoc = %d, want 2", got)
-		}
-		enforceCacheControlLimitDoc(doc, 4)
-		upgradeClaudeCacheControlTTLDoc(doc, claudeCacheControlTTL1h)
-		normalizeCacheControlTTLDoc(doc)
-		stripClaudeCacheControlTTLDoc(doc)
-		elapsed := time.Since(start)
-		runtime.ReadMemStats(&mAfter)
+			var mBefore, mAfter runtime.MemStats
+			runtime.ReadMemStats(&mBefore)
+			start := time.Now()
+			ensureCacheControlDoc(doc)
+			if got := countCacheControlsDoc(doc); got != 2 {
+				t.Fatalf("countCacheControlsDoc = %d, want 2", got)
+			}
+			enforceCacheControlLimitDoc(doc, 4)
+			upgradeClaudeCacheControlTTLDoc(doc, claudeCacheControlTTL1h)
+			normalizeCacheControlTTLDoc(doc)
+			stripClaudeCacheControlTTLDoc(doc)
+			elapsed := time.Since(start)
+			runtime.ReadMemStats(&mAfter)
 
-		allocated := mAfter.TotalAlloc - mBefore.TotalAlloc
-		if allocated > 64*1024 {
-			t.Fatalf("split messages: cache control doc helpers allocated %d bytes (> 64 KiB)", allocated)
+			allocated := mAfter.TotalAlloc - mBefore.TotalAlloc
+			if allocated > 64*1024 {
+				t.Fatalf("split messages: cache control doc helpers allocated %d bytes (> 64 KiB)", allocated)
+			}
+			scans = math.Min(scans, fullScansOf(t, elapsed, raw, "messages.15.content.0.text"))
 		}
-		if elapsed > 20*time.Millisecond {
-			t.Fatalf("split messages took %v (> 20ms); expected O(N) single-pass traversal", elapsed)
+		if scans > maxCacheControlFullScans {
+			t.Fatalf("split messages took %.0f full scans of the payload (> %d); expected O(N) single-pass traversal", scans, maxCacheControlFullScans)
 		}
 	})
 
@@ -547,29 +552,54 @@ func TestClaudeCacheControlDocChecksDoNotMaterializeLargeMessagesArray(t *testin
 		b.WriteString(`]}`)
 		raw := []byte(b.String())
 
-		doc := ojson.NewDoc(raw)
-		// Mutate only "model" so "messages" remains unsplit in root tail.
-		_ = doc.Set("model", "claude-sonnet-4-5-20250929")
+		scans := math.Inf(1)
+		for attempt := 0; attempt < cacheControlTimingAttempts; attempt++ {
+			doc := ojson.NewDoc(raw)
+			// Mutate only "model" so "messages" remains unsplit in root tail.
+			_ = doc.Set("model", "claude-sonnet-4-5-20250929")
 
-		var mBefore, mAfter runtime.MemStats
-		runtime.ReadMemStats(&mBefore)
-		start := time.Now()
-		if got := countCacheControlsDoc(doc); got != 2 {
-			t.Fatalf("countCacheControlsDoc = %d, want 2", got)
-		}
-		enforceCacheControlLimitDoc(doc, 4)
-		normalizeCacheControlTTLDoc(doc)
-		elapsed := time.Since(start)
-		runtime.ReadMemStats(&mAfter)
+			var mBefore, mAfter runtime.MemStats
+			runtime.ReadMemStats(&mBefore)
+			start := time.Now()
+			if got := countCacheControlsDoc(doc); got != 2 {
+				t.Fatalf("countCacheControlsDoc = %d, want 2", got)
+			}
+			enforceCacheControlLimitDoc(doc, 4)
+			normalizeCacheControlTTLDoc(doc)
+			elapsed := time.Since(start)
+			runtime.ReadMemStats(&mAfter)
 
-		allocated := mAfter.TotalAlloc - mBefore.TotalAlloc
-		if allocated > 64*1024 {
-			t.Fatalf("unsplit 1024 messages: allocated %d bytes (> 64 KiB)", allocated)
+			allocated := mAfter.TotalAlloc - mBefore.TotalAlloc
+			if allocated > 64*1024 {
+				t.Fatalf("unsplit 1024 messages: allocated %d bytes (> 64 KiB)", allocated)
+			}
+			scans = math.Min(scans, fullScansOf(t, elapsed, raw, "messages.1023.content.0.cache_control"))
 		}
-		if elapsed > 20*time.Millisecond {
-			t.Fatalf("unsplit 1024 messages took %v (> 20ms); expected O(N) single-pass traversal", elapsed)
+		if scans > maxCacheControlFullScans {
+			t.Fatalf("unsplit 1024 messages took %.0f full scans of the payload (> %d); expected O(N) single-pass traversal", scans, maxCacheControlFullScans)
 		}
 	})
+}
+
+// At best of 5 attempts, loaded or not, the helpers measured 6 to 172 full scans of the
+// payload, and a lookup per message index of the unsplit payload, the regression this
+// catches, measured 518 to 1484, with rare outliers lower. The bound sits between them.
+const (
+	cacheControlTimingAttempts = 5
+	maxCacheControlFullScans   = 300
+)
+
+// fullScansOf returns elapsed as a multiple of one lookup of path, the last field in raw.
+// Both are timed back to back so that a loaded machine slows them alike.
+func fullScansOf(t *testing.T, elapsed time.Duration, raw []byte, path string) float64 {
+	t.Helper()
+	start := time.Now()
+	found := ojson.GetBytesNoCopy(raw, path).Exists()
+	scan := max(time.Since(start), time.Nanosecond)
+	if !found {
+		t.Fatalf("full scan path %q not found", path)
+	}
+	return float64(elapsed) / float64(scan)
 }
 
 func TestStripClaudeCacheControlTTLThenInjectMessagesPreservesExistingCacheControl(t *testing.T) {

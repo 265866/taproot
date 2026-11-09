@@ -9,6 +9,7 @@ import (
 	"time"
 
 	internalconfig "github.com/265866/taproot/internal/config"
+	internalregistry "github.com/265866/taproot/internal/registry"
 	"github.com/265866/taproot/internal/watcher"
 	"github.com/265866/taproot/internal/watcher/synthesizer"
 	sdkauth "github.com/265866/taproot/sdk/auth"
@@ -99,6 +100,8 @@ func TestHandleAuthUpdatesDiscardedSnapshotTriggersWatcherReread(t *testing.T) {
 	}
 
 	id := "acct.json"
+	// handleAuthUpdates registers the auth's codex models in the global registry.
+	t.Cleanup(func() { internalregistry.GetGlobalRegistry().UnregisterClient(id) })
 	path := filepath.Join(dir, id)
 	initial := `{"type":"codex","email":"a@b.c","prefix":"pfx-0"}`
 	edit := `{"type":"codex","email":"a@b.c","prefix":"pfx-1"}`
