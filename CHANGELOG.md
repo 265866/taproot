@@ -2,6 +2,18 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## [0.3.0](https://github.com/265866/taproot/compare/taproot-v0.2.0...taproot-v0.3.0) (2026-11-09)
+
+### Added
+
+* **taproot:** refused devices become access requests you can approve ([#40](https://github.com/265866/taproot/pull/40)) ([dcc9179](https://github.com/265866/taproot/commit/dcc9179a095a54f5d235b252de2dc4f9d3975b61))
+
+### Fixed
+
+* **web:** hide the access stable ID header with its column on narrow screens ([#38](https://github.com/265866/taproot/pull/38)) ([bfb045a](https://github.com/265866/taproot/commit/bfb045adb82921b3c181f88d98bcdeb920a16276))
+* **web:** dashboard pages work on phones ([#41](https://github.com/265866/taproot/pull/41)) ([cb07814](https://github.com/265866/taproot/commit/cb07814e41603f963f6e16a1a4a4cabc224addc0))
+* **deps:** update Go, dashboard, and Nix dependencies before the release ([#42](https://github.com/265866/taproot/pull/42)) ([c846f89](https://github.com/265866/taproot/commit/c846f891a7a1cd45d743728323bafdfc76f05821))
+
 ## [0.2.0](https://github.com/265866/taproot/compare/taproot-v0.1.0...taproot-v0.2.0) (2026-11-09)
 
 ### Breaking changes
