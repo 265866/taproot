@@ -41,6 +41,8 @@ scripts/taproot/sync-upstream.sh --dry-run
 scripts/taproot/sync-upstream.sh
 ```
 
+Merge a sync's pull request with a merge commit, never a squash or a rebase. The next sync looks for the rewritten snapshot commit in `main`'s history and uses it as the merge base.
+
 ## Rules for changing code
 
 These rules keep upstream merges cheap and protect behavior that users and long-running streams depend on. They apply to people and coding agents alike.
