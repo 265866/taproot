@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -289,6 +290,18 @@ func (w *streamWriter) WriteAPIWebsocketTimeline(timeline []byte) error {
 	return nil
 }
 
+// WriteAPIResponseErrors records the upstream errors the middleware collected
+// for a stream, as upstream's FileStreamingLogWriter does.
+func (w *streamWriter) WriteAPIResponseErrors(apiErrors []*interfaces.ErrorMessage) error {
+	if len(apiErrors) == 0 {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.c.apiErrors = slices.Clone(apiErrors)
+	return nil
+}
+
 func (w *streamWriter) SetFirstChunkTimestamp(ts time.Time) {
 	if ts.IsZero() {
 		return
@@ -312,7 +325,8 @@ func (w *streamWriter) Close() error {
 	l.engine.budget.release(w.reserved)
 	w.reserved = 0
 
-	reachedUpstream := hasPayload(w.c.apiRequest) || w.apiReqSrc.HasPayload() || hasPayload(w.c.apiResponse) || w.apiResSrc.HasPayload() || hasPayload(w.c.apiWSTimeline)
+	reachedUpstream := hasPayload(w.c.apiRequest) || w.apiReqSrc.HasPayload() || hasPayload(w.c.apiResponse) || w.apiResSrc.HasPayload() ||
+		hasPayload(w.c.apiWSTimeline) || len(w.c.apiErrors) > 0
 	if l.excluder.Load().excluded(w.c.method, w.c.url, w.c.status, reachedUpstream) {
 		return nil
 	}

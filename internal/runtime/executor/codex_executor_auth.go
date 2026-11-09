@@ -14,6 +14,7 @@ import (
 	codexauth "github.com/265866/taproot/internal/auth/codex"
 	"github.com/265866/taproot/internal/config"
 	"github.com/265866/taproot/internal/runtime/executor/helps"
+	sdkauth "github.com/265866/taproot/sdk/auth"
 	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
@@ -140,7 +141,11 @@ func resolveCodexAuthDiskPath(cfg *config.Config, auth *cliproxyauth.Auth) (stri
 			return "", fmt.Errorf("codex executor: stat credential file %s: %w", candidate, errStat)
 		}
 		if !info.IsDir() {
-			return candidate, nil
+			canonical, errCanonical := filepath.EvalSymlinks(candidate)
+			if errCanonical != nil {
+				return "", fmt.Errorf("codex executor: resolve credential path: %w", errCanonical)
+			}
+			return filepath.Abs(canonical)
 		}
 	}
 	return "", nil
@@ -292,6 +297,10 @@ func (e *CodexExecutor) refreshLocked(ctx context.Context, auth *cliproxyauth.Au
 			needSIWC = hasSIWC
 		}
 	}
+	// Explicit refresh requests must also respect the server's renewal window.
+	if earliest, okEarliest := auth.SIWCEarliestRefreshTime(); okEarliest && now.Before(earliest) {
+		needSIWC = false
+	}
 	suppressedRejectedOuter := false
 	if !diskRotatedOuter && auth.RejectedRefreshToken != "" && outerRefreshToken == strings.TrimSpace(auth.RejectedRefreshToken) {
 		if needOuter {
@@ -329,6 +338,15 @@ func (e *CodexExecutor) refreshLocked(ctx context.Context, auth *cliproxyauth.Au
 	}
 
 	svc := codexauth.NewCodexAuthWithProxyURL(cfg, auth.ProxyURL)
+	if diskPath != "" && (cfg == nil || cfg.AuthDir == "") {
+		svc.SetRefreshJournal(&codexauth.FileRefreshJournal{Dir: filepath.Dir(diskPath)})
+	}
+	store := sdkauth.GetTokenStore()
+	if _, isFileStore := store.(*sdkauth.FileTokenStore); !isFileStore {
+		if journal, okJournal := store.(codexauth.RefreshJournal); okJournal {
+			svc.SetRefreshJournal(journal)
+		}
+	}
 
 	outerRefreshed := false
 	var outerErr error
@@ -433,6 +451,7 @@ func (e *CodexExecutor) refreshLocked(ctx context.Context, auth *cliproxyauth.Au
 				mergedSIWC = make(map[string]any)
 			}
 			delete(mergedSIWC, "expires_at")
+			delete(mergedSIWC, "earliest_refresh_at")
 			for k, v := range siwcTD.ToMap() {
 				mergedSIWC[k] = v
 			}
@@ -496,6 +515,9 @@ func (e *CodexExecutor) refreshLocked(ctx context.Context, auth *cliproxyauth.Au
 			return auth, fmt.Errorf("codex executor: persist refreshed credentials to %s: %w", diskPath, errWrite)
 		}
 		auth.Metadata = mergedDisk
+	}
+	if siwcRefreshed {
+		log.Debug("SIWC token renewal completed")
 	}
 	return auth, nil
 }
