@@ -241,7 +241,7 @@ cosign verify "$ref" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The identity names the release line, so an image signed for a prerelease or another minor version does not pass. The release signs the multi-arch index and each platform's image, so the check passes on whichever digest Podman recorded.
+The identity names the release line, so an image signed for a prerelease or another minor version does not pass. The release signs the multi-arch index and each platform's image, so the check passes on whichever digest Podman recorded. With Docker, as in the Docker Compose setup, run `docker pull` and `docker image inspect` with the same arguments instead.
 
 To check a release's build attestation, run `gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot --cert-identity-regex "$identity"`. The attestation covers only the multi-arch index, which the tag names, so it does not verify the platform digest that Podman can record.
 
@@ -282,23 +282,31 @@ The updater does not pull the quadlet's `ghcr.io` tag. It moves a local tag, `lo
      "$HOME/.config/taproot-update.env"
    ```
 
-2. Point the quadlet at the local tag. Taproot keeps running the `ghcr.io` image until its next restart:
+2. See what the updater would do. This reads the settings and finds the newest `0.2` release, and changes nothing:
+
+   ```sh
+   ~/.local/bin/taproot-update --check
+   ```
+
+3. Point the quadlet at the local tag, run the updater once, and start its timer only when that run succeeds. Taproot keeps running the `ghcr.io` image until the updater restarts it:
 
    ```sh
    sed -i 's|^Image=.*|Image=localhost/taproot:current\nPull=never|' \
      "$HOME/.config/containers/systemd/taproot.container"
    systemctl --user daemon-reload
-   ```
-
-3. See what the updater would do, run it once, then start its timer:
-
-   ```sh
-   ~/.local/bin/taproot-update --check
-   ~/.local/bin/taproot-update
-   systemctl --user enable --now taproot-update.timer
+   ~/.local/bin/taproot-update && systemctl --user enable --now taproot-update.timer
    ```
 
    The first run finds no local tag, so it verifies the newest `0.2` release, pulls it by digest, tags it as `localhost/taproot:current`, restarts taproot on it, and waits for `/healthz`. Do not tag the image yourself. The updater skips a release that the local tag already points to, so it never verifies a release you tagged by hand.
+
+   If the first run fails, the local tag that the quadlet names may not exist yet, so taproot does not come back after its next restart. Or it may point to a release that failed its health check, with no previous image to roll back to. Either way, put the quadlet back on the `ghcr.io` tag until you fix the cause:
+
+   ```sh
+   sed -i -e 's|^Image=localhost/taproot:current$|Image=ghcr.io/265866/taproot:0.2|' -e '/^Pull=never$/d' \
+     "$HOME/.config/containers/systemd/taproot.container"
+   systemctl --user daemon-reload
+   systemctl --user restart taproot
+   ```
 
 `journalctl --user -u taproot-update` shows each run. The first run downloads cosign v3.1.4 to `~/.local/share/taproot-update/` and checks it against a pinned SHA-256. The script's `--help` lists its settings. To move to a new minor version, read its release notes, then change `TAPROOT_TRACK`.
 
