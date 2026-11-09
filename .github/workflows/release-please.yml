@@ -1,8 +1,9 @@
 name: release-please
 
 # On every push to main, release-please opens or updates the release PR, which
-# bumps the version in .github/.release-please-manifest.json, and the
-# changelog job adds the release's section to CHANGELOG.md on the PR's branch.
+# bumps the version in .github/.release-please-manifest.json and
+# web/package.json, and the changelog job adds the release's section to
+# CHANGELOG.md on the PR's branch.
 # When the push merged that PR, release-please tags taproot-vX.Y.Z on the
 # merge commit and creates a draft release instead, and the release job builds
 # and publishes it. A tag created with GITHUB_TOKEN starts no workflow, so the
