@@ -4,14 +4,16 @@
 // crates in the request-log codec library (Linux builds, reported by cargo
 // metadata), and the dashboard's production npm dependencies (reported by
 // license-checker), with each package's license text and, where it ships one,
-// its NOTICE file. Run it from anywhere in the repository after go.mod,
-// web/package.json, web/bun.lock, or the codec's Cargo.lock changes; CI fails
-// when the file is stale:
+// its NOTICE file. LGPL-3.0 crates also get the section that license requires,
+// and any other copyleft license stops the generator. Run it from anywhere in
+// the repository after go.mod, web/package.json, web/bun.lock, the codec's
+// Cargo.lock, or licenses/ changes; CI fails when the file is stale:
 //
 //   bun scripts/taproot/third-party-notices.ts
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { copyleft } from './copyleft';
 
 const GO_LICENSES = 'github.com/google/go-licenses/v2@v2.0.1';
 const LICENSE_CHECKER = 'license-checker@25.0.1';
@@ -39,7 +41,13 @@ type Entry = {
   text: string;
   // The package's NOTICE file, which Apache-2.0 section 4(d) requires to be passed on.
   notice: string;
+  // Rust crates only: where the source is and which crates link it.
+  crate?: { repository: string; checksum: string; dependents: string[] };
 };
+
+// The GNU licenses in licenses/, which the image ships in /taproot/licenses.
+const LGPL_FILE = 'licenses/LGPL-3.0.txt';
+const GPL_FILE = 'licenses/GPL-3.0.txt';
 
 // Some packages ship CRLF license files; git stores this file with LF.
 const normalize = (text: string) => text.replace(/\r\n?/g, '\n').trim();
@@ -112,6 +120,7 @@ type CargoMetadata = {
     license: string | null;
     license_file: string | null;
     manifest_path: string;
+    repository: string | null;
   }[];
   resolve: {
     nodes: { id: string; deps: { pkg: string; dep_kinds: { kind: string | null }[] }[] }[];
@@ -131,6 +140,15 @@ function readFiles(dir: string, files: string[]): string {
 function rustCrates(): Entry[] {
   const dir = join(root, CODEC_DIR);
   const byId = new Map<string, Entry>();
+  // The SHA-256 of each crates.io package, from Cargo.lock, keyed by name@version.
+  const checksums = new Map<string, string>();
+  for (const block of readFileSync(join(dir, 'Cargo.lock'), 'utf8').split('[[package]]')) {
+    const field = (key: string) => block.match(new RegExp(`^${key} = "([^"]*)"$`, 'm'))?.[1];
+    const [name, version, checksum] = [field('name'), field('version'), field('checksum')];
+    if (name && version && checksum) checksums.set(`${name}@${version}`, checksum);
+  }
+  // The crates that depend on each crate, keyed by package ID.
+  const dependents = new Map<string, Set<string>>();
   for (const target of RUST_TARGETS) {
     const meta = JSON.parse(
       run(
@@ -145,8 +163,15 @@ function rustCrates(): Entry[] {
     const seen = new Set<string>([self.id]);
     const queue = [self.id];
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      const parent = packages.get(id);
       for (const dep of nodes.get(id)?.deps ?? []) {
-        if (seen.has(dep.pkg) || !dep.dep_kinds.some((k) => k.kind === null)) continue;
+        if (!dep.dep_kinds.some((k) => k.kind === null)) continue;
+        if (parent) {
+          const set = dependents.get(dep.pkg) ?? new Set<string>();
+          set.add(`${parent.name} ${parent.version}`);
+          dependents.set(dep.pkg, set);
+        }
+        if (seen.has(dep.pkg)) continue;
         seen.add(dep.pkg);
         queue.push(dep.pkg);
       }
@@ -172,7 +197,19 @@ function rustCrates(): Entry[] {
         url: `https://crates.io/crates/${pkg.name}/${pkg.version}`,
         text: readFiles(crateDir, licenseFiles),
         notice: readFiles(crateDir, noticeFiles),
+        crate: {
+          repository: pkg.repository ?? '',
+          checksum: checksums.get(`${pkg.name}@${pkg.version}`) ?? '',
+          dependents: [],
+        },
       });
+    }
+  }
+  for (const [id, entry] of byId) {
+    if (entry.crate) {
+      entry.crate.dependents = [...(dependents.get(id) ?? [])].sort((a, b) =>
+        a.localeCompare(b, 'en')
+      );
     }
   }
   return [...byId.values()];
@@ -239,6 +276,49 @@ function section(title: string, intro: string, entries: Entry[], missing: string
   return parts.join('\n');
 }
 
+// The notice that LGPL-3.0 section 4 requires for crates linked into the
+// codec library: that they are used and under the LGPL, where their source
+// is, and how to relink taproot with a modified copy (section 4(d)(0)).
+function lgplSection(crates: Entry[]): string {
+  const repo = `https://${SELF_MODULE}`;
+  const list = crates
+    .sort(byNameVersion)
+    .map((e) => {
+      const usedBy = e.crate?.dependents.length ? `, used by ${e.crate.dependents.join(', ')}` : '';
+      const checksum = e.crate?.checksum
+        ? ` The codec's \`Cargo.lock\` pins it by its SHA-256, \`${e.crate.checksum}\`.`
+        : '';
+      const from = e.crate?.repository ? ` Its upstream repository is ${e.crate.repository}.` : '';
+      return `- ${e.name} ${e.version}, ${e.license}${usedBy}. Source: ${e.url}.${checksum}${from}`;
+    })
+    .join('\n');
+  const example = crates[0].name;
+  return `## Libraries under the GNU LGPL
+
+Taproot's image, and any server built with the \`taproot_codecs\` build tag, statically links the following crates into its request-log codec library. They are licensed under the GNU Lesser General Public License version 3 (LGPL-3.0), in the exact terms each entry names. Taproot's own code is under the MIT License.
+
+${list}
+
+The LGPL-3.0 is a set of additional permissions on the GNU General Public License version 3. Both texts are in [${LGPL_FILE}](${LGPL_FILE}) and [${GPL_FILE}](${GPL_FILE}), in \`/taproot/licenses/\` in the image, and with each crate's entry below.
+
+The complete source of each taproot release is its tagged source archive on GitHub, listed on ${repo}/releases (\`${repo}/archive/refs/tags/<tag>.tar.gz\`). An image names its release in its \`org.opencontainers.image.version\` label and its commit in \`org.opencontainers.image.revision\`; \`${repo}/archive/<commit>.tar.gz\` is the source of that commit.
+
+To build taproot with a modified copy of one of these crates:
+
+1. Unpack the source of the taproot release or commit you want to run.
+2. Put the modified crate in \`${CODEC_DIR}/patches/\`, for example \`${CODEC_DIR}/patches/${example}\`.
+3. Add a \`[patch.crates-io]\` entry for it to \`${CODEC_DIR}/Cargo.toml\`:
+
+   \`\`\`toml
+   [patch.crates-io]
+   ${example} = { path = "patches/${example}" }
+   \`\`\`
+
+4. In \`${CODEC_DIR}\`, run \`cargo update -p ${example}\` to record the patched crate in \`Cargo.lock\`.
+5. Build the image with \`docker build -f Containerfile.taproot -t taproot .\` from the repository root. Or, on Linux with cgo, a Rust toolchain, and Bun, embed the dashboard with \`bash scripts/taproot/build-web.sh\`, build the codec library with \`(cd ${CODEC_DIR} && cargo build --release --locked)\`, and then build the server with \`go build -tags taproot_codecs -o taproot ./cmd/server\`.
+`;
+}
+
 try {
   const goroot = run(['go', 'env', 'GOROOT'], root).trim();
   // go.mod's go directive, the oldest Go that builds the server, rather than
@@ -284,10 +364,31 @@ try {
     ...rustCrates(),
   ];
   const web = webPackages();
+  // A copyleft license other than the LGPL v3 of a Rust crate needs a person
+  // to decide how taproot complies, so it stops the generator.
+  const lgpl: Entry[] = [];
+  for (const [kind, entries] of [
+    ['Go module', go],
+    ['Rust crate', rust],
+    ['npm package', web],
+  ] as const) {
+    for (const e of entries) {
+      const obligation = copyleft(String(e.license));
+      if (obligation === 'lgpl' && kind === 'Rust crate') lgpl.push(e);
+      else if (obligation !== 'none') {
+        throw new Error(
+          `${kind} ${e.name} ${e.version} is under ${e.license}, which these notices do not cover. Decide how taproot complies with it, then extend scripts/taproot/third-party-notices.ts.`
+        );
+      }
+    }
+  }
   // LGPL-3.0 section 4(b) requires the GNU GPL v3 to accompany the LGPL text.
-  const gpl = normalize(readFileSync(join(licenses, 'GPL-3.0-or-later.txt'), 'utf8'));
-  for (const e of [...go, ...rust, ...web]) {
-    if (/LGPL-3\.0/.test(e.license) && e.text) {
+  const gpl = normalize(readFileSync(join(root, GPL_FILE), 'utf8'));
+  if (lgpl.length > 0 && !existsSync(join(root, LGPL_FILE))) {
+    throw new Error(`${LGPL_FILE} is missing; the image must ship it with the LGPL crates`);
+  }
+  for (const e of lgpl) {
+    if (e.text) {
       e.text = `${e.text}\n\nThe GNU General Public License v3, which the LGPL v3 supplements:\n\n${gpl}`;
     }
   }
@@ -298,6 +399,7 @@ try {
     '',
     `This file is generated by \`bun scripts/taproot/third-party-notices.ts\` with ${GO_LICENSES}, \`cargo metadata\`, and ${LICENSE_CHECKER}. Do not edit it by hand.`,
     '',
+    ...(lgpl.length > 0 ? [lgplSection(lgpl)] : []),
     section(
       'Go modules',
       `The modules linked into \`cmd/server\` for ${TARGETS.join(', ')}.`,

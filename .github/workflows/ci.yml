@@ -93,7 +93,7 @@ jobs:
       - run: bun run verify
 
   # THIRD_PARTY_NOTICES.md must match what its generator writes from go.mod,
-  # web/bun.lock, and the codec's Cargo.lock.
+  # web/bun.lock, the codec's Cargo.lock, and licenses/.
   notices:
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +113,7 @@ jobs:
           rustup toolchain install "$rust_version" --profile minimal && rustup default "$rust_version"
       - run: bun install --frozen-lockfile
         working-directory: web
+      - run: bun test scripts/taproot/
       - run: bun scripts/taproot/third-party-notices.ts
       - run: git diff --exit-code THIRD_PARTY_NOTICES.md
 
@@ -122,4 +123,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: docker build -f Containerfile.taproot .
+      - run: docker build -f Containerfile.taproot -t taproot-ci .
+      # The licenses and notices the image must ship with the binary.
+      - run: >-
+          docker run --rm --entrypoint ls taproot-ci
+          /taproot/LICENSE /taproot/THIRD_PARTY_NOTICES.md /taproot/web/LICENSE
+          /taproot/licenses/LGPL-3.0.txt /taproot/licenses/GPL-3.0.txt

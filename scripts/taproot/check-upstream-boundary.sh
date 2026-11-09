@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/upstream-lib.sh"
 
 design=internal/taproot/DESIGN.md
 # Paths that are taproot's own, so changing them is not an upstream edit.
-fork_owned='^(internal/taproot/|web/|scripts/taproot/|examples/taproot/|docs/|\.github/|nix/|(Containerfile\.taproot|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|THIRD_PARTY_NOTICES\.md|\.golangci\.yml|renovate\.json|flake\.nix|flake\.lock)$)'
+fork_owned='^(internal/taproot/|web/|scripts/taproot/|examples/taproot/|docs/|\.github/|nix/|licenses/|(Containerfile\.taproot|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|THIRD_PARTY_NOTICES\.md|\.golangci\.yml|renovate\.json|flake\.nix|flake\.lock)$)'
 
 rev="${1:-HEAD}"
 cd "$(git rev-parse --show-toplevel)"
