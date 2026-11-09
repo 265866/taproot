@@ -12,7 +12,12 @@ export function formatClaimInput(raw: string) {
   return chars.length > 4 ? `${chars.slice(0, 4)}-${chars.slice(4)}` : chars;
 }
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+// Two signatures, not an optional parameter: i18next 27's TFunction accepts a key with or
+// without options, but not an options argument that may be undefined.
+type Translate = {
+  (key: string): string;
+  (key: string, options: Record<string, unknown>): string;
+};
 
 /** Sends the code and returns null on success, or the message to show. */
 export async function submitClaim(

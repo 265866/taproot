@@ -13,7 +13,12 @@ export interface PluginConfigDraft {
   touchedFields: Record<string, boolean>;
 }
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+// Two signatures, not an optional parameter: i18next 27's TFunction accepts a key with or
+// without options, but not an options argument that may be undefined.
+type Translate = {
+  (key: string): string;
+  (key: string, options: Record<string, unknown>): string;
+};
 
 export const normalizePluginConfigFieldType = (field: PluginConfigField): string =>
   field.type.trim().toLowerCase();

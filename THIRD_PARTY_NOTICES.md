@@ -257,7 +257,7 @@ code for these subcomponents is subject to the terms and conditions
 of Apache License Version 2.0
 ~~~~
 
-- github.com/andybalholm/brotli v1.2.7, MIT (https://github.com/andybalholm/brotli/blob/v1.2.7/LICENSE)
+- github.com/andybalholm/brotli v1.2.8, MIT (https://github.com/andybalholm/brotli/blob/v1.2.8/LICENSE)
 
 ~~~~text
 Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
@@ -3423,7 +3423,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ~~~~
 
-- modernc.org/libc v1.79.0, BSD-3-Clause (https://gitlab.com/cznic/libc/-/blob/v1.79.0/LICENSE)
+- modernc.org/libc v1.80.1, BSD-3-Clause (https://gitlab.com/cznic/libc/-/blob/v1.80.1/LICENSE)
 
 ~~~~text
 Copyright (c) 2017 The Libc Authors. All rights reserved.
@@ -3519,7 +3519,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~~
 
-- modernc.org/sqlite v1.61.1, BSD-3-Clause (https://gitlab.com/cznic/sqlite/-/blob/v1.61.1/LICENSE)
+- modernc.org/sqlite v1.62.0, BSD-3-Clause (https://gitlab.com/cznic/sqlite/-/blob/v1.62.0/LICENSE)
 
 ~~~~text
 Copyright (c) 2017 The Sqlite Authors. All rights reserved.
@@ -8116,7 +8116,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 The dashboard's production dependencies.
 
-- @babel/runtime 7.29.10, MIT (https://github.com/babel/babel)
 - @babel/runtime 7.29.2, MIT (https://github.com/babel/babel)
 
 ~~~~text
@@ -8462,7 +8461,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-- axios 1.20.0, MIT (https://github.com/axios/axios)
+- axios 1.21.0, MIT (https://github.com/axios/axios)
 
 ~~~~text
 # Copyright (c) 2014-present Matt Zabriskie & Collaborators
@@ -8993,7 +8992,7 @@ Copyright (c) 2012 Felix Geisendörfer (felix@debuggable.com) and contributors
  THE SOFTWARE.
 ~~~~
 
-- framer-motion 12.42.2, MIT (https://github.com/motiondivision/motion)
+- framer-motion 14.11.0, MIT (https://github.com/motiondivision/motion)
 
 ~~~~text
 The MIT License (MIT)
@@ -9231,7 +9230,7 @@ SOFTWARE.
 
 This package ships no license file. Its README states the license above.
 
-- i18next 26.5.4, MIT (https://github.com/i18next/i18next)
+- i18next 27.0.1, MIT (https://github.com/i18next/i18next)
 
 ~~~~text
 The MIT License (MIT)
@@ -9357,9 +9356,9 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~~
 
-- motion 12.42.2, MIT (https://github.com/motiondivision/motion)
-- motion-dom 12.42.2, MIT (https://github.com/motiondivision/motion)
-- motion-utils 12.39.0, MIT (https://github.com/motiondivision/motion)
+- motion 14.11.0, MIT (https://github.com/motiondivision/motion)
+- motion-dom 14.11.0, MIT (https://github.com/motiondivision/motion)
+- motion-utils 14.7.0, MIT (https://github.com/motiondivision/motion)
 
 ~~~~text
 The MIT License (MIT)
@@ -9466,7 +9465,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-- react-i18next 17.1.0, MIT (https://github.com/i18next/react-i18next)
+- react-i18next 18.0.1, MIT (https://github.com/i18next/react-i18next)
 
 ~~~~text
 The MIT License (MIT)
