@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -58,12 +59,13 @@ func StartServiceWithPluginHost(cfg *config.Config, configPath string, localPass
 	service, err := builder.Build()
 	if err != nil {
 		log.Errorf("failed to build proxy service: %v", err)
-		return
+		os.Exit(1)
 	}
 
 	err = service.Run(runCtx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Errorf("proxy service exited with error: %v", err)
+		os.Exit(1)
 	}
 }
 

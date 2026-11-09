@@ -113,6 +113,12 @@ func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 // records to new files as it stops, so delete a data dir only after stop.
 func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (_ []api.ServerOption, stop func(), _ error) {
 	tpPath := ConfigPath(upstreamConfigPath)
+	if _, err := os.Stat(tpPath); errors.Is(err, os.ErrNotExist) {
+		if abs, errAbs := filepath.Abs(tpPath); errAbs == nil {
+			tpPath = abs
+		}
+		return nil, nil, fmt.Errorf("taproot.yaml not found at %s: create it there (the taproot repository's examples/taproot/taproot.yaml is a starting point), or set TAPROOT_CONFIG to its path", tpPath)
+	}
 	tp, err := LoadConfig(tpPath)
 	if err != nil {
 		return nil, nil, err
@@ -121,6 +127,9 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 
 	guard, err := access.New(tp.Access)
 	if err != nil {
+		return nil, nil, fmt.Errorf("taproot access (%s): %w", tpPath, err)
+	}
+	if err := guard.CheckTailscaled(ctx); err != nil {
 		return nil, nil, fmt.Errorf("taproot access (%s): %w", tpPath, err)
 	}
 	api.SetRESPConnectionFilter(access.RESPFilter)
@@ -138,6 +147,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	usage.AttachDevices(guard)
 	plugins := &pluginCallers{}
 	usage.AttachPlugins(plugins)
+	accounts := &noAccounts{}
 	logs, err := reqlog.New(tp.RequestLogs, db, dataDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot request logs: %w", err)
@@ -185,12 +195,13 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 
 	opts := []api.ServerOption{
 		// The guard must run first so the dashboard is access-checked too.
-		api.WithMiddleware(guard.Middleware(), web.Middleware()),
+		api.WithMiddleware(guard.Middleware(), web.Middleware(), accounts.middleware()),
 		api.WithRouterConfigurator(func(engine *gin.Engine, h *handlers.BaseAPIHandler, _ *config.Config) {
 			if h != nil {
 				usage.AttachAuthManager(h.AuthManager)
 				notify.AttachAuthManager(h.AuthManager)
 				plugins.attach(h)
+				accounts.attach(h.AuthManager)
 			}
 			group := engine.Group(APIPrefix)
 			guard.Routes(group)

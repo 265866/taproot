@@ -6,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // localAPIHost is the Host tailscaled's LocalAPI requires on unix-socket requests.
@@ -60,6 +64,35 @@ func newLocalClient(socketPath string) *localClient {
 		},
 		Timeout: localAPITimeout,
 	}}
+}
+
+// hostSocket is where tailscaled puts its socket on a Linux host.
+const hostSocket = "/var/run/tailscale/tailscaled.sock"
+
+// CheckTailscaled fails when the guard is enabled and tailscaled's socket is
+// missing or refuses a connection. The guard would then refuse every tailnet
+// caller, so Setup stops at startup instead of serving a server only loopback
+// can reach. It checks that the socket accepts a connection, not what
+// tailscaled answers: the guard keeps retrying LocalAPI calls while tailscaled
+// starts or logs in.
+func (g *Guard) CheckTailscaled(ctx context.Context) error {
+	if !g.enabled {
+		return nil
+	}
+	fix := fmt.Sprintf("mount the host's tailscaled socket there (podman or docker: -v %s:%s; a quadlet: Volume=%s:%s), set access.tailscale-socket in taproot.yaml to where it is, or set access.enabled: false",
+		hostSocket, g.socket, hostSocket, g.socket)
+	if _, err := os.Stat(g.socket); errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("tailscaled socket %s does not exist: %s", g.socket, fix)
+	}
+	dialer := net.Dialer{Timeout: localAPITimeout}
+	conn, err := dialer.DialContext(ctx, "unix", g.socket)
+	if err != nil {
+		return fmt.Errorf("tailscaled socket %s is unreachable (%w): check that tailscaled runs on the host and that taproot may open the socket, or %s", g.socket, err, fix)
+	}
+	if errClose := conn.Close(); errClose != nil {
+		log.WithError(errClose).Debug("taproot access: close tailscaled probe connection")
+	}
+	return nil
 }
 
 // get returns the body of a 200 response, errPeerNotFound for a 404, or an error.

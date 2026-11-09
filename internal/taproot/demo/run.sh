@@ -38,18 +38,31 @@ fi
 work="$(mktemp -d)"
 [[ -n "$dir" ]] || dir="$work/data"
 server_pid=""
+tailscaled_pid=""
 cleanup() {
-	if [[ -n "$server_pid" ]]; then
-		kill "$server_pid" 2>/dev/null || true
-		wait "$server_pid" 2>/dev/null || true
-	fi
+	for pid in "$server_pid" "$tailscaled_pid"; do
+		if [[ -n "$pid" ]]; then
+			kill "$pid" 2>/dev/null || true
+			wait "$pid" 2>/dev/null || true
+		fi
+	done
 	rm -rf "$work"
 }
 trap cleanup EXIT
 
 bin="$work/taproot$(go env GOEXE)"
-(cd "$root" && go build -o "$bin" ./cmd/server)
-(cd "$root" && go run ./internal/taproot/demo -dir "$dir" -port "$port")
+demo="$work/demo$(go env GOEXE)"
+(cd "$root" && go build -o "$bin" ./cmd/server && go build -o "$demo" ./internal/taproot/demo)
+"$demo" -dir "$dir" -port "$port"
+
+# taproot refuses to start without a tailscaled socket, so a stand-in serves
+# one that answers every call with an error.
+"$demo" -tailscaled "$dir/tailscaled.sock" &
+tailscaled_pid=$!
+for _ in $(seq 1 50); do
+	[[ -e "$dir/tailscaled.sock" ]] && break
+	sleep 0.1
+done
 
 dead="http://127.0.0.1:9"
 env -u MANAGEMENT_PASSWORD -u TAPROOT_CONFIG \

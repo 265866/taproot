@@ -170,6 +170,7 @@ type Guard struct {
 	adminNodes atomic.Pointer[[]string]
 	extraHosts map[string]bool
 	secret     string
+	socket     string
 	whois      func(context.Context, netip.Addr) (peer, error)
 	status     func(context.Context) (selfNode, error)
 	ttl        time.Duration
@@ -247,6 +248,7 @@ func New(cfg Config) (*Guard, error) {
 	if socket == "" {
 		socket = defaultSocket
 	}
+	g.socket = socket
 	client := newLocalClient(socket)
 	g.whois = client.whois
 	g.status = client.status
