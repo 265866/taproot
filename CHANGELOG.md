@@ -10,9 +10,9 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 
 ### Upgrading from 0.1.0
 
-* Rewrite the `access` block of `taproot.yaml` before you start 0.2.0: list each device that should keep access under `access.devices` with its stable ID (`tailscale status --json` shows it as `ID`), and move `trusted-cidrs` entries to `access.addresses`. See `examples/taproot/taproot.yaml`.
-* Data written by v0.1.0 is not carried forward; start from an empty data directory or keep running 0.1.0. See [docs/stability.md](docs/stability.md).
-* Release images are published at `ghcr.io/265866/taproot`, signed and attested; the README describes installing, verifying, and updating them.
+* Rewrite the `access` block of `taproot.yaml` before you start 0.2.0. List each device that keeps access under `access.devices` with `id` (its stable ID; `tailscale status --json` shows it as `ID`), `name`, and `proxy: true`, `admin: true`, or both; Admin does not imply Proxy. Move each `trusted-cidrs` string to `access.addresses` as an entry with `cidr:` (and an optional `note:`). See [the example](https://github.com/265866/taproot/blob/taproot-v0.2.0/examples/taproot/taproot.yaml). Or leave `access.devices` empty and claim the server from your device with the setup code it logs at start.
+* Data written by v0.1.0 is not carried forward. Stop 0.1.0 first, so two servers never refresh the same OAuth tokens, then start 0.2.0 on a new data directory with your `config.yaml`, `taproot.yaml`, and `auths/` copied in. See [docs/stability.md](https://github.com/265866/taproot/blob/taproot-v0.2.0/docs/stability.md).
+* Release images are published at `ghcr.io/265866/taproot`, signed and attested; the [README](https://github.com/265866/taproot/blob/taproot-v0.2.0/README.md) describes installing, verifying, and updating them.
 
 ### Added
 
