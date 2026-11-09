@@ -20,7 +20,7 @@
     "@uiw/react-codemirror": "^4.25.12",
     "axios": "1.21.0",
     "i18next": "^27.0.1",
-    "motion": "^12.42.2",
+    "motion": "^14.11.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-i18next": "^18.0.1",
