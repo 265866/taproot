@@ -1,29 +1,22 @@
 # Rootless Podman quadlet for taproot.
 #
-# 1. Pull the release line to follow and tag it as the image this unit runs.
-#    Following 0.2 brings patch releases (0.2.1, 0.2.2) but never a new minor
-#    version, which may need a config change:
-#      podman pull ghcr.io/265866/taproot:0.2
-#      podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current
-#    "Automatic updates (optional)" in README.md shows how to check the
-#    signature first, or how taproot-update does this whole step for you.
-#    To run your own build instead:
-#      podman build -f Containerfile.taproot -t localhost/taproot:current .
-# 2. mkdir -p ~/taproot/data. On its first start, taproot writes config.yaml
+# 1. mkdir -p ~/taproot/data. On its first start, taproot writes config.yaml
 #    and taproot.yaml there; to use your own, copy them from examples/taproot.
-# 3. Replace 100.64.0.1 below with this host's address from `tailscale ip -4`.
-# 4. Copy this file to ~/.config/containers/systemd/taproot.container, then run
+# 2. Replace 100.64.0.1 below with this host's address from `tailscale ip -4`.
+# 3. Copy this file to ~/.config/containers/systemd/taproot.container, then run
 #    systemctl --user daemon-reload && systemctl --user start taproot
 #    and `loginctl enable-linger "$USER"` so it runs without a login session.
-# 5. Find the setup code with `journalctl --user -u taproot | grep 'setup code'`,
+# 4. Find the setup code with `journalctl --user -u taproot | grep 'setup code'`,
 #    open the URL in that line on the device you manage taproot from, and
 #    enter the code.
 #
-# To update by hand, pull and tag the new release as in step 1, then run
-# systemctl --user restart taproot. To update automatically instead, use
-# scripts/taproot/taproot-update with taproot-update.timer from this directory
-# ("Automatic updates (optional)" in README.md). It moves the local tag only to
-# a signed release, and rolls back when the new release fails to start.
+# The tag 0.2 follows the 0.2 releases. To update, run
+#    podman pull ghcr.io/265866/taproot:0.2 && systemctl --user restart taproot
+# Change the tag only after you read the new minor version's release notes.
+# To have scripts/taproot/taproot-update install signed patch releases for you
+# instead, run the local tag it moves: set Image=localhost/taproot:current, add
+# Pull=never, and run the script once to verify, pull, and tag the release, as
+# "Automatic updates (optional)" in README.md shows.
 #
 # Run it as your own user, not root, and without User= or UserNS=: Podman maps
 # the container's root to your user, which owns the 0600 files in the data
@@ -35,8 +28,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=localhost/taproot:current
-Pull=never
+Image=ghcr.io/265866/taproot:0.2
 ContainerName=taproot
 Environment=TZ=Etc/UTC
 # The root filesystem is read-only, so everything taproot writes goes to the

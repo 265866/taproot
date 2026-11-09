@@ -1,179 +1,90 @@
 # taproot
 
-Taproot pools your Claude and Codex subscription accounts behind one endpoint on your tailnet, with a dashboard for quota, usage, request logs, and backups. Callers are admitted by their Tailscale identity, so there are no API keys to hand out.
+Taproot is one server that pools your Claude and Codex subscription accounts behind one endpoint on your tailnet. Claude Code and Codex on every device you allow send their requests to it, and taproot spreads them across the accounts. Its dashboard shows accounts, quota, usage and cost, request logs, backups, and alerts.
 
-Taproot is a fork of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) by Router-For.ME, and its dashboard is a fork of the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center). Both are MIT-licensed. Taproot is not affiliated with Router-For.ME, Anthropic, or OpenAI.
+Only devices on your tailnet can reach taproot, and it decides what each device may do by its Tailscale identity. There are no API keys to hand out.
 
 > [!WARNING]
 > Read [Terms of service](#terms-of-service) and [Security](#security) before you add an account. Using subscription credentials through a proxy can break the provider's terms, and a misconfigured taproot gives your OAuth tokens to anyone who can reach its port.
 
 ![The Accounts page: the pool chart and quota ledger for five demo accounts, with emails hidden](docs/screenshots/accounts.png)
 
-<sub>Screenshots use synthetic demo data. See [Gallery](#gallery).</sub>
+<sub>Screenshots use synthetic demo data. See [The dashboard](#the-dashboard).</sub>
 
-## Who it is for
+Taproot is for one person, or one household, with a Linux server on a Tailscale tailnet and more than one Claude or Codex subscription. It is not a multi-tenant service and has no user accounts of its own. It is a fork of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) and adds these features:
 
-Taproot is for one person, or one household, who runs a Linux server on a Tailscale tailnet and uses Claude Code and Codex from several devices with more than one subscription account. It is not a multi-tenant service and has no user accounts of its own.
-
-## How it differs from CLIProxyAPI
-
-Taproot keeps CLIProxyAPI's proxy, provider protocols, and configuration, and adds the following features. Most of their code lives in `internal/taproot`.
-
-- **Tailscale access guard.** Callers are identified by source address through the host's `tailscaled`. Proxy API keys and the management key prompt are gone.
-- **Quota ledger.** Taproot records every account's 5-hour and weekly utilization from response headers and from a poller for idle accounts. The dashboard projects when each pool runs empty and when it resets.
-- **Soonest-reset-first routing.** New sessions go to the eligible account whose weekly window resets soonest, so quota that is about to reset is spent first. Session affinity keeps a running session on its account.
-- **Usage and cost.** Requests, tokens (including cache reads and writes), latency, time to first token, and failures, by account, model, session, and Tailscale device. Costs are API-equivalent prices from an editable price table.
-- **Request logs.** Full request and response records, stored per session as zstd streams, indexed in SQLite, searchable, and pruned by age and total size.
-- **Backups.** A daily archive of `config.yaml`, `taproot.yaml`, the credential files, and the database. You can download or restore one from the dashboard.
+- **Soonest-reset-first routing.** New sessions go to the account whose weekly window resets soonest, so quota that is about to reset is spent first. A running session stays on its account.
+- **Quota ledger.** Taproot records every account's 5-hour and weekly use and projects when each pool runs empty.
+- **Usage and cost.** Requests, tokens, latency, and failures by account, model, session, and device, priced at API rates from an editable table.
+- **Request logs.** Every request and response, compressed, searchable, and deleted by age or total size.
+- **Backups.** A daily archive of the configuration, credentials, and database, which you can download or restore from the dashboard.
 - **Discord alerts.** A limit hit, an empty pool, a broken login, and an expiring Claude reset grant.
-- **One Accounts page.** Quota, credentials, and sign-in for every account in one place.
-- **Email redaction.** Account emails are hidden everywhere in the dashboard until you turn on **Show emails** for the session.
 
-Taproot's quota tracking and routing cover Claude and Codex. CLIProxyAPI's other providers still work through the proxy, without those features.
-
-## How access works
-
-The guard runs before every route and looks only at the connection's source address. Forwarding headers and `Tailscale-*` headers are ignored.
-
-| Caller | Proxy (`/v1/...`) | Dashboard and management API |
-| --- | --- | --- |
-| Loopback inside the container | yes | yes |
-| A device with `proxy: true` in `access.devices` | yes | no |
-| A device with `admin: true` in `access.devices` | no | yes |
-| The server's own Tailscale node | yes | no |
-| An address in `access.addresses` | yes | no |
-| Any other device, including a new one | no | no |
-| Anyone else, including whois failures | no | no |
-
-Access is per device. Each device has two switches, set on the dashboard's **Access** page or in `access.devices`: **Proxy** sends model requests, and **Admin** opens the dashboard and the management API. A device with both is on both rows above. A device that joins the tailnet starts with neither. Permissions belong to the device's Tailscale stable ID, which Tailscale never reuses, so a device that takes an old device's name gets nothing. A device that leaves the tailnet is forgotten 24 hours later.
-
-For a tailnet address, the guard asks `tailscaled` which device the caller is through its LocalAPI socket, and caches the answer for one minute. For admitted callers, the guard adds the management key to management requests inside the process. The key never reaches a browser. `/healthz` is open to every caller.
-
-The dashboard page itself loads for every device on the tailnet, because it holds no data. A device without Admin sees its name, owner, and stable ID, and which switch to turn on. A proxy request from a device without Proxy gets a 403 that names the device and says to turn on Proxy on the Access page.
-
-The guard also refuses browser requests from other sites: a `Host` that is not one of the server's names, a cross-origin `Origin`, and a state-changing `GET` without the `X-Taproot-Request: 1` header. Command-line clients send none of these headers and are not affected. To reach the server under another name, add it to `access.extra-hosts`.
-
-### Security
-
-Taproot stores OAuth refresh tokens for your accounts, and the request logs hold every prompt and response. Treat the data directory and every backup like a password. To report a vulnerability, see [SECURITY.md](SECURITY.md).
-
-- **Do not put anything in front of taproot.** Loopback callers are admins. `tailscale serve`, `tailscale funnel`, a reverse proxy, or an SSH tunnel on the same host usually connects from loopback, so every caller it forwards becomes an admin.
-- **Publish the port on the host's Tailscale address only.** Never publish on `0.0.0.0` or `127.0.0.1`. A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
-- **Check the result after every deployment change.** Run the checks in [Check the deployment](#5-check-the-deployment).
-- **Do not set `access.enabled: false`.** It turns off every check on the proxy, so anyone who reaches the port can spend your accounts' quota without a login. The dashboard and the management and taproot APIs then answer loopback callers only: processes inside the container, or, when taproot runs outside a container or with host networking, every process on the host, including its browsers. They still refuse browser requests from other sites, but nothing checks who calls the proxy.
-- **Give Admin only to devices you use the dashboard from.** Admin reaches every OAuth token and every stored prompt. A server or router of yours that only runs agents needs Proxy at most. Taproot refuses unknown keys in `taproot.yaml`, so a misspelled key stops startup with the key's name instead of being ignored.
-- **Keep `access.addresses` to single addresses** (`/32`). Every host in a wider range reaches the proxy without Tailscale.
-- **Home mode and the TUI's embedded server are refused.** CLIProxyAPI's Home mode (`-home-jwt`) and `--tui --standalone` would start the server without taproot's guard, so taproot exits with an error instead. `--tui` alone, connected to a running server, still works.
+CLIProxyAPI's other providers still work through the proxy, without quota tracking or routing.
 
 ## Quick start
 
-You need:
+These steps run the published image with rootless Podman. They take you from an empty host to a proxied request.
 
-- A Linux host on your tailnet, with `tailscaled` running. Docker Desktop on macOS and Windows does not keep caller addresses and has no `tailscaled` socket, so it cannot run taproot.
-- Rootful Docker, or rootless Podman 5 or later (which uses `pasta` and keeps caller addresses).
-- Git.
+### 1. Check the prerequisites
 
-### 1. Build the image
+- A Linux host, amd64 or arm64, on your tailnet, with `tailscaled` running.
+- Rootless Podman 5 or later, or rootful Docker.
+- A second device on the same tailnet, with a browser, for the dashboard.
 
-```sh
-git clone https://github.com/265866/taproot.git
-cd taproot
-git checkout taproot-v0.1.0
-docker build -f Containerfile.taproot \
-  --build-arg VERSION="$(git describe --tags --match 'taproot-v*' --always)" \
-  --build-arg COMMIT="$(git rev-parse --short HEAD)" \
-  -t taproot .
-```
+Taproot runs on Linux only. It identifies callers through the host's `tailscaled` socket and needs a container runtime that keeps each caller's address, and Docker Desktop on macOS and Windows has neither.
 
-Releases are tagged `taproot-vX.Y.Z`, and [CHANGELOG.md](CHANGELOG.md) lists what each one changed. [Stability and upgrades](docs/stability.md) says what a release can break and how to upgrade and roll back. Built from a release tag, the image reports that tag, such as `taproot-v0.1.0`, as its version; built from another commit, it reports the nearest release tag plus the commit. With Podman, run `podman build` with the same arguments.
-
-### 2. Create the data directory
+### 2. Start the container
 
 ```sh
-mkdir -p data
-```
-
-Taproot reads two files from this directory. `config.yaml` is CLIProxyAPI's configuration. `taproot.yaml` holds taproot's settings, kept apart from CLIProxyAPI's schema. CLIProxyAPI silently ignores keys it does not know in `config.yaml`, so a taproot setting placed there has no effect.
-
-You do not need to write either file. On the first start, when `data/config.yaml` does not exist, taproot writes it from [`examples/taproot/config.yaml`](examples/taproot/config.yaml), and writes a `taproot.yaml` with no devices beside it. It never replaces an existing file. To start from your own files instead, copy both examples into `data/` and edit them.
-
-Mount the directory, not the single files. Restoring a backup replaces the files by rename, which fails on a single-file mount.
-
-### 3. Start the container
-
-```sh
-TS_IP="$(tailscale ip -4)"
-docker run -d --name taproot --restart unless-stopped \
-  --user "$(id -u):$(id -g)" \
+mkdir -p "$HOME/taproot/data"
+podman run -d --name taproot --restart unless-stopped \
+  --network pasta \
   -e TZ=Etc/UTC \
-  -v "$PWD/data:/taproot/config" \
+  -v "$HOME/taproot/data:/taproot/config" \
   -v /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock \
-  -p "$TS_IP:8317:8317" \
-  taproot
+  -p "$(tailscale ip -4):8317:8317" \
+  ghcr.io/265866/taproot:0.2
 ```
 
-For rootless Podman, use the same command with `podman run`, without the `--user` line, and the image name `localhost/taproot`. On an SELinux host, add `:Z` to the data volume. `TZ` sets the local time of the daily backup.
+On the first start, taproot writes `config.yaml` and `taproot.yaml` into `~/taproot/data`. `--network pasta` keeps each caller's source address, which taproot uses to identify the caller. `TZ` sets the time of the daily backup. On an SELinux host, add `:Z` to the data volume.
 
-To run taproot as a systemd user service under rootless Podman instead, use the quadlet in [`examples/taproot/taproot.container`](examples/taproot/taproot.container). It runs the container with a read-only root filesystem and no capabilities, publishes only on the host's Tailscale address, and its header lists the install steps.
+With rootful Docker, run the same command with `docker run`, leave out `--network pasta`, and add `--user "$(id -u):$(id -g)"`, so the process runs as the owner of the data directory.
 
-The image has no user of its own; the process runs as whatever user the container starts with. Under rootless Podman that is the container's root, which Podman's default user namespace maps to your own user, so taproot reads and writes `data/` as you and has no more rights on the host than you do. Do not pass `--user` there: Podman would map that uid to a subordinate uid that cannot read the files in `data/`, which taproot keeps at mode 0600. Rootful Docker has no such mapping, and container root is the host's root, so the Docker command passes `--user` to run as the owner of `data/`.
+Rootless Podman does not start this container again after the host reboots. To run taproot as a service, use one of the setups in [Install](#install). They use the same data directory.
 
-The data directory then holds:
-
-| Path | Contents |
-| --- | --- |
-| `data/config.yaml`, `data/taproot.yaml` | Configuration, written on the first start |
-| `data/auths/` | OAuth credential files |
-| `data/taproot/taproot.db` | Usage, quota, and request-log index (SQLite) |
-| `data/taproot/request-logs/` | Compressed request logs |
-| `data/taproot/backups/` | Backup archives, mode 0600 |
-
-### 4. Claim the server
+### 3. Claim the server
 
 While no device has Admin, taproot logs a setup code each time it starts:
 
 ```sh
-docker logs taproot 2>&1 | grep 'setup code'
+podman logs taproot 2>&1 | grep 'setup code'
 ```
 
-With Podman, run `podman logs taproot`; under the quadlet, `journalctl --user -u taproot`. Open the URL in that line, `http://<server>:8317/`, on the device you will manage taproot from, enter the code, and select **Claim this server**. That device gets Proxy and Admin, and the code stops working. Turn on your other devices on the dashboard's **Access** page.
+On the device you will manage taproot from, open the URL in that line, `http://<server>:8317/`. `<server>` is the host's MagicDNS name or Tailscale address. Enter the code and select **Claim this server**. That device gets Proxy and Admin, and the code stops working.
 
-If you lose every admin device, remove the `admin: true` entries from `data/taproot.yaml` and restart taproot. It logs a new setup code.
+### 4. Add an account
 
-### 5. Check the deployment
+On the dashboard, go to **Accounts** and select **Add account**.
 
-Run each check, and stop if any result differs.
+1. Select Claude or Codex under **Sign in with a provider**. The provider's sign-in page opens.
+2. Sign in. The provider then sends you to a `http://localhost:...` address, which does not load.
+3. Copy the full address from the address bar, paste it into **Callback URL**, and select **Submit Callback URL**.
 
-1. From a device with Admin, open `http://<server>:8317/taproot/api/v1/me`. It must show `"via":"tailnet"` and `"admin":true`. If it shows `"via":"loopback"`, something rewrites caller addresses and every caller is an admin.
-2. From a device without Admin, the same URL must return 403, with the code `not_admin`.
-3. On the server host, `curl http://$TS_IP:8317/taproot/api/v1/me` must return 403.
+To move an existing credential instead, select **Upload auth file** and choose its JSON file. Use each account with one proxy only. Claude rotates refresh tokens, so two proxies that refresh the same account sign each other out.
 
-`<server>` is the host's MagicDNS name or Tailscale address.
+### 5. Point Claude Code or Codex at taproot
 
-## Add accounts
+Taproot ignores the API key, so clients send any placeholder.
 
-Open `http://<server>:8317/` from an admin device, go to **Accounts**, and select **Add account**.
-
-1. Select a provider under **Sign in with a provider**. The provider's sign-in page opens.
-2. Sign in. The provider then redirects to a `http://localhost:...` address, which does not load on your device.
-3. Copy the full address from the browser's address bar, paste it into **Callback URL**, and select **Submit Callback URL**.
-
-To move an existing credential instead, select **Upload auth file** and choose its JSON file. Taproot stores credentials in `data/auths/`.
-
-Only one proxy may use a credential at a time. Claude rotates refresh tokens, so two proxies that refresh the same account log each other out.
-
-## Connect clients
-
-Clients send any placeholder key. Taproot ignores it.
-
-Claude Code:
+For Claude Code, set these variables in your shell profile:
 
 ```sh
 export ANTHROPIC_BASE_URL="http://<server>:8317"
 export ANTHROPIC_AUTH_TOKEN="taproot"
 ```
 
-Codex, in `~/.codex/config.toml` (see [Codex advanced configuration](https://learn.chatgpt.com/docs/config-file/config-advanced)):
+For Codex, add this to `~/.codex/config.toml` (see [Codex advanced configuration](https://learn.chatgpt.com/docs/config-file/config-advanced)):
 
 ```toml
 model_provider = "taproot"
@@ -184,44 +95,142 @@ base_url = "http://<server>:8317/v1"
 wire_api = "responses"
 ```
 
-## The dashboard
-
-The dashboard is served at `/` on the proxy port. It has these sections:
-
-- **Accounts:** pool charts, the quota ledger, credentials, and sign-in.
-- **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
-- **Request Logs:** search and view stored requests. The application log is a tab here.
-- **Backups:** create, download, and restore backups.
-- **Access:** every device on the tailnet, grouped by owner, with its Proxy and Admin switches, and the addresses that reach the proxy without Tailscale.
-- **Settings:** retention, backup schedule, poller interval, and Discord alerts.
-- **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins.
-
-![The Usage overview: 30 days of cost, requests, tokens, cache hits, and latency](docs/screenshots/usage-overview.png)
-
-### Gallery
-
-All screenshots use synthetic demo data from `internal/taproot/demo` (see [CONTRIBUTING.md](CONTRIBUTING.md#demo-data-and-screenshots)). Click an image for the full size.
-
-| | |
-| --- | --- |
-| [<img src="docs/screenshots/accounts.png" width="420" alt="Accounts">](docs/screenshots/accounts.png)<br>**Accounts:** pool chart and quota ledger | [<img src="docs/screenshots/accounts-manage.png" width="420" alt="Manage sheet">](docs/screenshots/accounts-manage.png)<br>**Manage:** quota, resets, health, credential, and advanced settings for one account |
-| [<img src="docs/screenshots/usage-overview.png" width="420" alt="Usage overview">](docs/screenshots/usage-overview.png)<br>**Usage:** cost, tokens, cache hits, and latency | [<img src="docs/screenshots/usage-devices.png" width="420" alt="Usage by device">](docs/screenshots/usage-devices.png)<br>**Devices:** usage per tailnet device and the cache TTL check |
-| [<img src="docs/screenshots/usage-sessions.png" width="420" alt="Sessions">](docs/screenshots/usage-sessions.png)<br>**Sessions:** session affinity and account switches | [<img src="docs/screenshots/request-logs.png" width="420" alt="Request logs">](docs/screenshots/request-logs.png)<br>**Request Logs:** every proxied request, compressed and searchable |
-| [<img src="docs/screenshots/request-log-detail.png" width="420" alt="Request log detail">](docs/screenshots/request-log-detail.png)<br>**Request detail:** headers with credentials redacted, and the body | [<img src="docs/screenshots/routing.png" width="420" alt="Routing">](docs/screenshots/routing.png)<br>**Routing:** soonest-reset-first and session affinity |
-| [<img src="docs/screenshots/backups.png" width="420" alt="Backups">](docs/screenshots/backups.png)<br>**Backups:** scheduled and manual snapshots | [<img src="docs/screenshots/settings.png" width="420" alt="Settings">](docs/screenshots/settings.png)<br>**Settings:** retention and backup schedule |
-| [<img src="docs/screenshots/access.png" width="420" alt="Access">](docs/screenshots/access.png)<br>**Access:** every tailnet device by owner, with its Proxy and Admin switches | [<img src="docs/screenshots/accounts-light.png" width="420" alt="Accounts, light theme">](docs/screenshots/accounts-light.png)<br>**Light theme** |
-
-## Automatic updates (optional)
-
-Taproot never updates itself. By default you update by hand: read the release notes ([Stability and upgrades](docs/stability.md) says why), pull the release, tag it as the image your unit runs, and restart.
+To check the proxy from that device, list the models. The list includes the models of the accounts you added:
 
 ```sh
-podman pull ghcr.io/265866/taproot:0.2
-podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current
-systemctl --user restart taproot
+curl http://<server>:8317/v1/models
 ```
 
-To check the signature first, verify the digest you pulled rather than the tag, which can move between the pull and the check. Run `cosign verify` (cosign 3), or `gh attestation verify "oci://$ref" --repo 265866/taproot --cert-identity-regex "$identity"` for the build provenance, and tag only the verified digest:
+To let another device use the proxy, turn on **Proxy** for it on the dashboard's **Access** page.
+
+## Install
+
+Each setup below runs taproot as a service that starts at boot. All of them keep the same files in the data directory:
+
+| Path | Contents |
+| --- | --- |
+| `config.yaml`, `taproot.yaml` | Configuration, written on the first start |
+| `auths/` | OAuth credential files |
+| `taproot/taproot.db` | Usage, quota, and the request-log index (SQLite) |
+| `taproot/request-logs/` | Compressed request logs |
+| `taproot/backups/` | Backup archives |
+
+The data directory holds your OAuth refresh tokens and every prompt. Treat it, and every backup, like a password. Mount the whole directory into a container, not single files. Restoring a backup replaces the files by rename, which fails on a single-file mount.
+
+### Podman quadlet
+
+[`examples/taproot/taproot.container`](examples/taproot/taproot.container) runs taproot as a systemd user service under rootless Podman. It uses a read-only root filesystem, drops every capability, and publishes the port on the host's Tailscale address only. If you started taproot with the Quick start command, run `podman rm -f taproot` first.
+
+```sh
+mkdir -p "$HOME/taproot/data" "$HOME/.config/containers/systemd"
+curl -fsSL -o "$HOME/.config/containers/systemd/taproot.container" \
+  https://raw.githubusercontent.com/265866/taproot/main/examples/taproot/taproot.container
+sed -i "s/^PublishPort=100\.64\.0\.1:/PublishPort=$(tailscale ip -4):/" \
+  "$HOME/.config/containers/systemd/taproot.container"
+podman pull ghcr.io/265866/taproot:0.2
+systemctl --user daemon-reload
+systemctl --user start taproot
+loginctl enable-linger "$USER"
+journalctl --user -u taproot | grep 'setup code'
+```
+
+The quadlet runs `ghcr.io/265866/taproot:0.2` and pulls it only when the host does not have it, so an update waits until you pull. `loginctl enable-linger` keeps the service running when you are not signed in. Run the quadlet as your own user, without `User=` or `UserNS=`. Podman maps the container's root to your user, which owns the files in the data directory.
+
+### Docker Compose
+
+[`examples/taproot/compose.yaml`](examples/taproot/compose.yaml) runs taproot under rootful Docker with the same restrictions as the quadlet. It reads the host's Tailscale address and your user and group IDs from a `.env` file beside it.
+
+```sh
+mkdir -p "$HOME/taproot/data"
+cd "$HOME/taproot"
+curl -fsSLO https://raw.githubusercontent.com/265866/taproot/main/examples/taproot/compose.yaml
+printf 'TS_IP=%s\nTAPROOT_USER=%s:%s\n' "$(tailscale ip -4)" "$(id -u)" "$(id -g)" > .env
+docker compose up -d
+docker compose logs taproot | grep 'setup code'
+```
+
+Create `data/` before the first `docker compose up`. Otherwise Docker creates it as root, and taproot cannot write to it.
+
+### NixOS
+
+The flake's NixOS module, `services.taproot`, builds taproot from source and runs it as a hardened systemd service after `tailscaled.service`. Add the flake to your system flake and enable the module:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # A release tag. Without one, the input follows unreleased commits on main.
+  inputs.taproot.url = "github:265866/taproot/taproot-v0.2.0";
+  inputs.taproot.inputs.nixpkgs.follows = "nixpkgs";
+
+  outputs = { nixpkgs, taproot, ... }: {
+    nixosConfigurations.server = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        taproot.nixosModules.default
+        {
+          services.tailscale.enable = true;
+          services.taproot = {
+            enable = true;
+            # This host's address from `tailscale ip -4`. Taproot listens only there.
+            tailscale.address = "100.64.0.1";
+            openFirewall = true;
+            timeZone = "Etc/UTC";
+            # Copied to taproot.yaml on the first start only.
+            taprootSettings.access.devices = [
+              { id = "nEXAMPLE1CNTRL"; name = "laptop"; proxy = true; admin = true; }
+            ];
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+The module keeps loopback callers out and requires `taprootSettings`, so give Admin there to the device you manage taproot from. Its stable ID is the `ID` that `tailscale status --json` prints under `Self` on that device.
+
+Nix owns `config.yaml` and writes it from `services.taproot.settings` on every start, so a dashboard change to it lasts until the next restart. Nix only seeds `taproot.yaml` from `taprootSettings` while the file does not exist. After that the dashboard owns `taproot.yaml`, and later changes to `taprootSettings` do not apply. The data directory is `/var/lib/taproot`. [`nix/module.nix`](nix/module.nix) documents every option.
+
+### Plain binary with systemd
+
+Each release has a tarball for linux-amd64 and linux-arm64. The binary needs glibc 2.34 or later, so it runs on Debian 12, Ubuntu 22.04, and later, but not on musl distributions such as Alpine. You need the [GitHub CLI](https://cli.github.com/) to check the tarball's attestation.
+
+```sh
+v=0.2.0
+arch=amd64   # or arm64
+gh release download "taproot-v$v" --repo 265866/taproot \
+  --pattern "taproot-$v-linux-$arch.tar.gz" --pattern SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+gh attestation verify "taproot-$v-linux-$arch.tar.gz" --repo 265866/taproot \
+  --cert-identity-regex '^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v'
+sudo tar -xzf "taproot-$v-linux-$arch.tar.gz" -C /opt
+sudo ln -sfn "/opt/taproot-$v-linux-$arch" /opt/taproot
+```
+
+The tarball holds the `taproot` binary with `LICENSE`, `THIRD_PARTY_NOTICES.md`, `web/LICENSE`, and `licenses/`. Keep those files beside the binary. The binary includes LGPL-licensed code, and the LGPL requires its notices to go with every copy you pass on.
+
+Outside a container, every process on the host can connect from loopback, and taproot treats loopback callers as admins. [`examples/taproot/taproot.service`](examples/taproot/taproot.service) drops loopback traffic for that reason, and taproot must listen on the host's Tailscale address. Write the configuration before the first start:
+
+```sh
+sudo useradd --system --home-dir /var/lib/taproot --shell /usr/sbin/nologin taproot
+sudo install -d -m 0700 -o taproot -g taproot /var/lib/taproot
+curl -fsSL "https://raw.githubusercontent.com/265866/taproot/taproot-v$v/examples/taproot/config.yaml" \
+  | sed -e "s|host: \"0.0.0.0\"|host: \"$(tailscale ip -4)\"|" \
+        -e 's|/taproot/config/auths|/var/lib/taproot/auths|' \
+  | sudo install -m 0600 -o taproot -g taproot /dev/stdin /var/lib/taproot/config.yaml
+sudo install -m 0600 -o taproot -g taproot /dev/null /var/lib/taproot/taproot.yaml
+sudo curl -fsSL -o /etc/systemd/system/taproot.service \
+  "https://raw.githubusercontent.com/265866/taproot/taproot-v$v/examples/taproot/taproot.service"
+sudo systemctl daemon-reload
+sudo systemctl enable --now taproot
+sudo journalctl -u taproot | grep 'setup code'
+```
+
+A browser on the server itself connects as the server's own node, which never gets Admin, so it cannot claim the server or open the dashboard. Claim the server from another device.
+
+## Verify a release
+
+Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check the image you pulled before you run it, verify its digest rather than its tag, which can move between the pull and the check:
 
 ```sh
 podman pull ghcr.io/265866/taproot:0.2
@@ -230,58 +239,202 @@ identity='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@re
 cosign verify "$ref" \
   --certificate-identity-regexp "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-podman tag "$ref" localhost/taproot:current
 ```
 
-The identity names the release line, so an image signed for a prerelease or another minor version does not pass.
+The identity names the release line, so an image signed for a prerelease or another minor version does not pass. The release signs the multi-arch index and each platform's image, so the check passes on whichever digest Podman recorded. With Docker, as in the Docker Compose setup, run `docker pull` and `docker image inspect` with the same arguments instead.
 
-With rootless Podman and the [quadlet](examples/taproot/taproot.container), [`scripts/taproot/taproot-update`](scripts/taproot/taproot-update) can do this every night at about 04:00. It follows one release line, such as `0.2`, so patch releases install and a new minor version never does. It installs a release only when cosign verifies that taproot's release workflow signed it for a tag on that line, pulls before it restarts (about half a second without service, measured), and rolls back when the new release does not answer `/healthz` within two minutes.
+To check a release's build attestation, run `gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot --cert-identity-regex "$identity"`. The attestation covers only the multi-arch index, which the tag names, so it does not verify the platform digest that Podman can record.
 
-1. Install the script, its settings, and its units:
+[Plain binary with systemd](#plain-binary-with-systemd) shows the checks for a tarball. Image tags are `X.Y.Z` for one release, `X.Y` for the newest release of a minor version, and `latest`.
+
+## Update
+
+Updates are manual unless you turn on the [automatic updater](#automatic-updates-optional). A restart cuts the requests that are running through taproot, so update when your agents are idle.
+
+| Setup | Update |
+| --- | --- |
+| Quick start container | `podman pull ghcr.io/265866/taproot:0.2`, then `podman rm -f taproot` and run the Quick start command again |
+| Podman quadlet | `podman pull ghcr.io/265866/taproot:0.2 && systemctl --user restart taproot` |
+| Docker Compose | `docker compose pull && docker compose up -d` |
+| NixOS | Change the tag in `inputs.taproot.url` to the new release, such as `taproot-v0.2.1`, then run `nix flake update taproot` and `nixos-rebuild switch` |
+| Plain binary | Download and check the new tarball as in [Plain binary with systemd](#plain-binary-with-systemd), unpack it, point `/opt/taproot` at it, and run `sudo systemctl restart taproot` |
+
+The `0.2` tag brings patch releases (`0.2.1`, `0.2.2`) and never a new minor version. A minor version can rename settings, so read its release notes in [CHANGELOG.md](CHANGELOG.md) and copy the data directory before you move to it. [Stability and upgrades](docs/stability.md) explains how to roll back.
+
+### Automatic updates (optional)
+
+With the [Podman quadlet](#podman-quadlet), [`scripts/taproot/taproot-update`](scripts/taproot/taproot-update) can install patch releases for you every night at about 04:00. It follows one minor version, such as `0.2`, so patch releases install and a new minor version never does. It installs a release only when cosign verifies that this repository's release workflow signed it for a tag on that line. It pulls before it restarts taproot (about half a second without service, measured), and goes back to the previous image when the new release does not answer `/healthz` within two minutes.
+
+The updater does not pull the quadlet's `ghcr.io` tag. It moves a local tag, `localhost/taproot:current`, so the quadlet must run that tag. To turn it on:
+
+1. Install the script, its settings file [`taproot-update.env`](examples/taproot/taproot-update.env), and its units [`taproot-update.service`](examples/taproot/taproot-update.service) and [`taproot-update.timer`](examples/taproot/taproot-update.timer), from the release tag rather than from `main`, which follows unreleased commits. Set `TAPROOT_HEALTH_URL` to the address in the quadlet's `PublishPort=`:
 
    ```sh
-   mkdir -p ~/.local/bin ~/.config/systemd/user
-   install -m 0755 scripts/taproot/taproot-update ~/.local/bin/
-   cp examples/taproot/taproot-update.env ~/.config/
-   cp examples/taproot/taproot-update.service examples/taproot/taproot-update.timer ~/.config/systemd/user/
+   base=https://raw.githubusercontent.com/265866/taproot/taproot-v0.2.0
+   mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+   curl -fsSL -o "$HOME/.local/bin/taproot-update" "$base/scripts/taproot/taproot-update"
+   chmod 0755 "$HOME/.local/bin/taproot-update"
+   curl -fsSL -o "$HOME/.config/taproot-update.env" "$base/examples/taproot/taproot-update.env"
+   for unit in taproot-update.service taproot-update.timer; do
+     curl -fsSL -o "$HOME/.config/systemd/user/$unit" "$base/examples/taproot/$unit"
+   done
+   sed -i "s|^TAPROOT_HEALTH_URL=http://100\.64\.0\.1:|TAPROOT_HEALTH_URL=http://$(tailscale ip -4):|" \
+     "$HOME/.config/taproot-update.env"
    ```
 
-2. In `~/.config/taproot-update.env`, set `TAPROOT_HEALTH_URL` to the address in the quadlet's `PublishPort=`.
-3. See what it would do, then start the timer:
+2. See what the updater would do. This reads the settings and finds the newest `0.2` release, and changes nothing:
 
    ```sh
    ~/.local/bin/taproot-update --check
-   systemctl --user daemon-reload
-   systemctl --user enable --now taproot-update.timer
    ```
 
-`journalctl --user -u taproot-update` shows each run. The first run downloads cosign v3.1.4 to `~/.local/share/taproot-update/` and checks it against a pinned SHA-256. On a new install, run `~/.local/bin/taproot-update` once before you start taproot, and it verifies, pulls, and tags the release for you. To move to a new minor version, read its release notes, then change `TAPROOT_TRACK`.
+3. Point the quadlet at the local tag, run the updater once, and start its timer only when that run succeeds. Taproot keeps running the `ghcr.io` image until the updater restarts it:
 
-## Configuration reference
+   ```sh
+   sed -i 's|^Image=.*|Image=localhost/taproot:current\nPull=never|' \
+     "$HOME/.config/containers/systemd/taproot.container"
+   systemctl --user daemon-reload
+   ~/.local/bin/taproot-update && systemctl --user enable --now taproot-update.timer
+   ```
 
-Every key in `taproot.yaml` is optional, but without a device with `admin: true` only loopback reaches the dashboard. An unknown key stops the server at startup, and so do the removed `access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs`, with a message naming what replaces them. A relative `data-dir` resolves against the directory of `config.yaml`.
+   The first run finds no local tag, so it verifies the newest `0.2` release, pulls it by digest, tags it as `localhost/taproot:current`, restarts taproot on it, and waits for `/healthz`. Do not tag the image yourself. The updater skips a release that the local tag already points to, so it never verifies a release you tagged by hand.
+
+   If the first run fails, the local tag that the quadlet names may not exist yet, so taproot does not come back after its next restart. Or it may point to a release that failed its health check, with no previous image to roll back to. Either way, put the quadlet back on the `ghcr.io` tag until you fix the cause:
+
+   ```sh
+   sed -i -e 's|^Image=localhost/taproot:current$|Image=ghcr.io/265866/taproot:0.2|' -e '/^Pull=never$/d' \
+     "$HOME/.config/containers/systemd/taproot.container"
+   systemctl --user daemon-reload
+   systemctl --user restart taproot
+   ```
+
+`journalctl --user -u taproot-update` shows each run. The first run downloads cosign v3.1.4 to `~/.local/share/taproot-update/` and checks it against a pinned SHA-256. The script's `--help` lists its settings. To move to a new minor version, read its release notes, then change `TAPROOT_TRACK`.
+
+To update at once instead of waiting for the timer, run `~/.local/bin/taproot-update`.
+
+## Access
+
+Taproot checks every request by its source address. It ignores forwarding headers. For a tailnet address, it asks `tailscaled` which device is calling. Each device has two permissions, which you set on the dashboard's **Access** page:
+
+- **Proxy** lets the device send model requests.
+- **Admin** lets the device open the dashboard and the management API, which hold your OAuth tokens.
+
+A device that joins the tailnet has neither. Permissions belong to the device's Tailscale stable ID, which Tailscale never reuses, so a device that takes an old device's name gets nothing. Taproot forgets a device 24 hours after it leaves the tailnet. The server's own node always has Proxy and never Admin. Tagged devices, which belong to a tag instead of a person, are listed in their own group.
+
+![The Access page: tailnet devices grouped by owner, each with Proxy and Admin switches](docs/screenshots/access.png)
+
+**Addresses without Tailscale**, at the end of the page, lets a caller outside the tailnet use the proxy. Such a caller has no Tailscale identity, so it can never be an admin. Add single addresses (`/32`) only, because every host in a wider range reaches the proxy.
+
+Loopback callers are admins. Do not put `tailscale serve`, `tailscale funnel`, a reverse proxy, or an SSH tunnel in front of taproot on the same host. They usually connect from loopback, so every caller they forward becomes an admin. If you lose every admin device, remove the `admin: true` entries from `taproot.yaml` and restart taproot. It logs a new setup code.
+
+The "Security model" section of [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md#security-model) describes who reaches what and how the guard refuses requests from other websites.
+
+### Check the deployment
+
+Run these checks after you install taproot and after every change to how it is published. Stop if a result differs.
+
+1. From a device with Admin, open `http://<server>:8317/taproot/api/v1/me`. It must show `"via":"tailnet"` and `"admin":true`. If it shows `"via":"loopback"`, something rewrites caller addresses, and every caller is an admin.
+2. From a device without Admin, the same URL must return 403 with the code `not_admin`.
+3. On the server host, `curl "http://$(tailscale ip -4):8317/taproot/api/v1/me"` must return 403.
+
+## Configuration
+
+Taproot reads two files from the data directory:
+
+- `config.yaml` is CLIProxyAPI's configuration. On the first start, taproot writes [`examples/taproot/config.yaml`](examples/taproot/config.yaml), the minimal configuration for taproot, with `oauth.auth-dir` moved beside the file. CLIProxyAPI ignores keys it does not know, so a taproot setting in `config.yaml` has no effect.
+- `taproot.yaml` holds taproot's own settings. Taproot reads it strictly, so an unknown key stops startup with the key's name. The dashboard's **Access** and **Settings** pages edit it in place. [`examples/taproot/taproot.yaml`](examples/taproot/taproot.yaml) shows a filled-in file.
+
+Taproot never replaces an existing file. If `config.yaml` exists and `taproot.yaml` does not, taproot stops and names the missing file.
+
+### taproot.yaml
+
+Every key is optional. Sizes accept a number of bytes or a value such as `512MiB` or `20GB`, and both suffixes mean powers of 1024.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `data-dir` | `taproot` | Database, request logs, and backups. |
+| `data-dir` | `taproot` | Directory for the database, request logs, and backups. A relative path is relative to `config.yaml`. |
+| `store.path` | `taproot.db` | The SQLite database. A relative path is relative to `data-dir`. |
 | `access.devices` | empty | Each device's permissions: `id` (its stable ID), `name` (a label taproot keeps in step with the tailnet), `proxy`, and `admin`. A device that is not listed has neither. |
-| `access.addresses` | empty | Addresses outside Tailscale that reach the proxy only: `cidr` and an optional `note`. |
+| `access.addresses` | empty | Addresses outside Tailscale that may use the proxy: `cidr` and an optional `note`. |
 | `access.extra-hosts` | empty | More `Host` names the server answers to. |
 | `access.tailscale-socket` | `/var/run/tailscale/tailscaled.sock` | The `tailscaled` LocalAPI socket. |
-| `access.cache-ttl` | `1m` | How long a whois answer is cached. |
-| `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. See [Security](#security). |
-| `ingest.poll-interval` | `15m` | Quota poll interval for idle accounts. `0` disables polling. |
-| `request-logs.max-days` | `14` | Retention by age. A negative value disables the limit. |
-| `request-logs.max-bytes` | `20GiB` | Retention by size of the request-log directory on disk. A negative value disables the limit. |
-| `request-logs.exclude-paths` | empty | Paths never stored, such as `HEAD /api/*`. |
-| `backups.daily-at` | `00:00` | Server-local time of the daily backup (the `TZ` zone), or `off`. |
-| `backups.keep` | `14` | Backups kept of each kind. |
+| `access.cache-ttl` | `1m` | How long taproot caches the answer to "which device is this address". |
+| `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. |
+| `ingest.poll-interval` | `15m` | How often taproot polls the quota of idle accounts. `0` turns polling off. |
+| `request-logs.max-days` | `14` | Delete request logs older than this many days. A negative value keeps them forever. |
+| `request-logs.max-bytes` | `20GiB` | Delete the oldest request logs when the directory passes this size. A negative value removes the limit. |
+| `request-logs.exclude-paths` | empty | Paths never stored, such as `/v1/models` or `HEAD /api/*`. |
+| `request-logs.keep-unrouted-404` | `false` | Store 404 responses for paths the proxy does not serve. |
+| `request-logs.queue-bytes` | `256MiB` | Memory for records that wait to be written. Past it, bodies are dropped and the record says so. |
+| `request-logs.segment-max-bytes` | `128MiB` | Stored size at which a segment file closes. |
+| `request-logs.open-max-bytes` | `4GiB` | Total raw size of open segments. Past it, the largest one closes early. |
+| `request-logs.seal-idle` | `15m` | Close a session's segment after this long without requests. |
+| `request-logs.seal-age` | `6h` | Close a segment this long after it opened. |
+| `backups.daily-at` | `00:00` | Time of the daily backup, as `HH:MM` in the `TZ` zone, or `off`. |
+| `backups.keep` | `14` | Backups kept of each kind: scheduled, manual, and pre-restore. |
 | `alerts.discord-webhook` | empty | Discord webhook URL. It is a secret. |
 | `alerts.enabled` | `true` | Turns alerts off without removing the webhook. |
 
-The environment variable `TAPROOT_CONFIG` overrides the location of `taproot.yaml`. `config.example.yaml` documents every key of `config.yaml`. Request logs are stored only while `observability.logs.request-log` is `true` in `config.yaml`.
+`access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs` from v0.1.0 stop startup with a message that names their replacement, `access.devices` or `access.addresses`.
 
-The server loads a `.env` file from its working directory at startup, so variables there apply without being set in the shell. The upstream `PGSTORE_*`, `GITSTORE_*`, and `OBJECTSTORE_*` variables move `config.yaml` and the auth files from local files to Postgres, a git repository, or an object store. Taproot is tested only with local files. With a store, a backup captures the local copies, not the remote store.
+### Environment variables
+
+| Variable | Meaning |
+| --- | --- |
+| `TZ` | Time zone of the backup schedule, such as `Etc/UTC` or `Europe/Berlin`. The image sets none. |
+| `TAPROOT_CONFIG` | Path of `taproot.yaml`, when it is not beside `config.yaml`. |
+
+### config.yaml
+
+[`config.example.yaml`](config.example.yaml) documents every CLIProxyAPI key, such as `routing`, `requests`, and the per-provider `upstream` settings. You need it only for advanced settings. Taproot replaces or ignores some of them:
+
+- Keep `access.api-keys` empty. Taproot admits callers by Tailscale identity, and clients send a placeholder key.
+- Leave `management.secret-key`, `management.allow-remote`, and the control-panel keys as the minimal config sets them. Taproot authorizes the management API itself and serves its own dashboard.
+- The access guard ignores forwarding headers, so `server.trusted-proxies` does not change who reaches taproot.
+- `observability.logs.request-log` turns taproot's request logs on and off. The dashboard's **Record requests** switch writes it.
+- Taproot refuses to start in CLIProxyAPI's Home mode.
+- Do not use CLIProxyAPI's Postgres, git, or object stores (the `PGSTORE_*`, `GITSTORE_*`, and `OBJECTSTORE_*` variables). Taproot is tested only with local files, and a backup captures only the local copies.
+
+## Try it without Tailscale
+
+The demo seeds a temporary data directory with synthetic accounts, 30 days of usage, request logs, and backups, and serves the real server with a fake `tailscaled` on `http://127.0.0.1:8399`. Nothing leaves the machine. It needs Go and Bun and a clone of this repository:
+
+```sh
+bash scripts/taproot/build-web.sh
+bash internal/taproot/demo/run.sh
+```
+
+`build-web.sh` rewrites `internal/taproot/web/dist/index.html`. Run `git checkout internal/taproot/web/dist/index.html` afterwards to restore it. [CONTRIBUTING.md](CONTRIBUTING.md#demo-data-and-screenshots) describes the demo's options.
+
+## Stability and upgrades
+
+Taproot is not at version 1.0. A minor release can rename a `taproot.yaml` key or change the dashboard, and a patch release fixes bugs. [docs/stability.md](docs/stability.md) says what a release can change and how to upgrade and roll back.
+
+Data from v0.1.0 is not carried forward. To move from v0.1.0, start the new release on a new data directory with your `config.yaml`, `taproot.yaml`, and `auths/`. In `taproot.yaml`, replace `access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs` with an `access.devices` list and `access.addresses`, as [`examples/taproot/taproot.yaml`](examples/taproot/taproot.yaml) shows. Taproot refuses to start until you do.
+
+## The dashboard
+
+The dashboard is served at `/` on the proxy port. It has these pages:
+
+- **Dashboard:** recent requests and their success rate, the number of credentials and models, and the server's version and runtime settings.
+- **Accounts:** pool charts, the quota ledger, credentials, and sign-in.
+- **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
+- **Request Logs:** search and view stored requests. The application log is a tab here.
+- **Backups:** create, download, and restore backups.
+- **Access:** every device on the tailnet with its Proxy and Admin switches, and the addresses that reach the proxy without Tailscale.
+- **Settings:** request logs and their limits, the backup schedule, quota polling, and Discord alerts.
+- **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins.
+
+Account emails are hidden until you select **Show emails**. All screenshots use synthetic data from the demo. Select an image for the full size.
+
+| | |
+| --- | --- |
+| [<img src="docs/screenshots/accounts.png" width="420" alt="Accounts">](docs/screenshots/accounts.png)<br>**Accounts:** pool chart and quota ledger | [<img src="docs/screenshots/accounts-manage.png" width="420" alt="Manage sheet">](docs/screenshots/accounts-manage.png)<br>**Manage:** quota, resets, health, credential, and advanced settings for one account |
+| [<img src="docs/screenshots/usage-overview.png" width="420" alt="Usage overview">](docs/screenshots/usage-overview.png)<br>**Usage:** cost, tokens, cache hits, and latency | [<img src="docs/screenshots/usage-devices.png" width="420" alt="Usage by device">](docs/screenshots/usage-devices.png)<br>**Devices:** usage per tailnet device and the cache TTL check |
+| [<img src="docs/screenshots/usage-sessions.png" width="420" alt="Sessions">](docs/screenshots/usage-sessions.png)<br>**Sessions:** session affinity and account switches | [<img src="docs/screenshots/request-logs.png" width="420" alt="Request logs">](docs/screenshots/request-logs.png)<br>**Request Logs:** every proxied request, compressed and searchable |
+| [<img src="docs/screenshots/request-log-detail.png" width="420" alt="Request log detail">](docs/screenshots/request-log-detail.png)<br>**Request detail:** headers with credentials redacted, and the body | [<img src="docs/screenshots/routing.png" width="420" alt="Routing">](docs/screenshots/routing.png)<br>**Routing:** soonest-reset-first and session affinity |
+| [<img src="docs/screenshots/backups.png" width="420" alt="Backups">](docs/screenshots/backups.png)<br>**Backups:** scheduled and manual backups, with the next run in server time and your time | [<img src="docs/screenshots/settings.png" width="420" alt="Settings">](docs/screenshots/settings.png)<br>**Settings:** request logs and the backup schedule |
+| [<img src="docs/screenshots/access.png" width="420" alt="Access">](docs/screenshots/access.png)<br>**Access:** every tailnet device by owner, with its Proxy and Admin switches | [<img src="docs/screenshots/accounts-light.png" width="420" alt="Accounts, light theme">](docs/screenshots/accounts-light.png)<br>**Light theme** |
 
 ## Terms of service
 
@@ -298,40 +451,29 @@ CLIProxyAPI, by default, presents clients other than Claude Code as the Claude C
 
 A provider can suspend or close an account that breaks its terms. Use taproot only with accounts you own, for your own use. Read each provider's current terms before you add an account, and decide for yourself whether your use is allowed.
 
-## Build from source
+## Security
 
-Taproot needs Go 1.26 or later, and Bun for the dashboard.
+Taproot stores OAuth refresh tokens, and its request logs hold every prompt and response. [SECURITY.md](SECURITY.md) lists the rules for running it safely and how to report a vulnerability privately. The short version:
 
-```sh
-bash scripts/taproot/build-web.sh
-go build -o taproot ./cmd/server
-./taproot --config ./config.yaml
-```
+- Publish the port on the host's Tailscale address only, never on `0.0.0.0`, a LAN address, or `127.0.0.1`.
+- Put nothing in front of taproot on the same host, and never set `access.enabled: false`.
+- Give Admin only to the devices you use the dashboard from.
+- Run [Check the deployment](#check-the-deployment) after every change.
 
-`build-web.sh` builds `web/` into `index.html` and hashed chunks under `assets/`, and copies them to `internal/taproot/web/dist/`, which the binary embeds. Without that step, the binary serves a placeholder page. This build also leaves out the native request-log codec, so it cannot read the JPEG and PNG blobs the image stores; [CONTRIBUTING.md](CONTRIBUTING.md#before-you-send-a-change) shows the `taproot_codecs` build the image uses.
+## Contributing
 
-If you start from `examples/taproot/config.yaml`, change `oauth.auth-dir` to a path on your machine. Outside a container, every process on the machine can connect from loopback, so every process is an admin. Use this for development only.
+[CONTRIBUTING.md](CONTRIBUTING.md) explains what belongs in taproot, how the fork stays mergeable with CLIProxyAPI, and the checks to run before you send a change. To build from source, you need Go, Bun, and, for the request-log codec, a Rust toolchain. CONTRIBUTING.md shows the build the image uses. [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md) describes how taproot is built and why.
 
-To check a change, run `go test ./...` and, in `web/`, `bun run verify`. [CONTRIBUTING.md](CONTRIBUTING.md) lists the full checks and the rules for changing code.
+## License
 
-## Upstream sync
+Taproot is released under the [MIT License](LICENSE), the license of CLIProxyAPI. The dashboard in `web/` keeps the Management Center's [MIT License](web/LICENSE). [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists the licenses of the Go modules, Rust crates, and npm packages taproot ships, and of the Go and Rust standard libraries.
 
-Taproot's Go module path is `github.com/265866/taproot`, and upstream's is `github.com/router-for-me/CLIProxyAPI/v8`. The sync script rewrites each upstream snapshot to taproot's path before it merges, so import lines do not conflict. Taproot changes only a few upstream files, each listed with its reason in [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md).
-
-To merge CLIProxyAPI's `main` branch:
-
-```sh
-git remote add upstream https://github.com/router-for-me/CLIProxyAPI.git
-scripts/taproot/sync-upstream.sh --dry-run
-scripts/taproot/sync-upstream.sh
-```
-
-The script commits `upstream/main` with the module path rewritten to the branch `taproot/upstream`, merges that branch into the current branch, then runs CI's Go and dashboard checks, except golangci-lint and govulncheck. Files taproot deleted stay deleted, and new upstream files of those kinds, such as a new `docs/*.md` guide, stop the merge for you to keep or delete. It never pushes. The dashboard does not follow the Management Center's changes.
-
-## License and credits
-
-Taproot is released under the [MIT License](LICENSE), the license of CLIProxyAPI. The dashboard in `web/` keeps the Management Center's [MIT License](web/LICENSE). The licenses of the Go modules, Rust crates, and npm packages taproot ships, and of the Go and Rust standard libraries, are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Some of the Rust crates are under the GNU LGPL v3. The notices say where their source is and how to rebuild taproot with a modified copy, and [licenses/](licenses) holds the LGPL and GPL texts. The image ships all of these files in `/taproot/`.
+The request-log codec links Rust crates under the GNU LGPL v3. The notices say where their source is and how to rebuild taproot with a modified copy, and [licenses/](licenses) holds the LGPL and GPL texts. The image ships these files in `/taproot/`, and each release tarball ships them beside the binary.
 
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI): Copyright (c) Luis Pater and Router-For.ME.
 - [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center): Copyright (c) Router-For.ME.
-- Most provider icons come from [Lobe Icons](https://github.com/lobehub/lobe-icons). Claude, Codex, OpenAI, and the other provider names and logos are trademarks of their owners.
+- Most provider icons come from [Lobe Icons](https://github.com/lobehub/lobe-icons).
+
+## Trademarks
+
+Taproot is not affiliated with Router-For.ME, Anthropic, OpenAI, or Tailscale. Claude, Codex, OpenAI, Tailscale, and the other provider names and logos are trademarks of their owners.
