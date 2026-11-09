@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { FIELDS_ROOT_CLASS } from './fields/FieldPrimitives';
+import { FIELDS_ROOT_CLASS } from './fields/fieldClasses';
 import styles from './SectionCard.module.scss';
 
 export type SectionCardProps = {

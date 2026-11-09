@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { prefersReducedMotion } from '@/hooks/motion';
 import type { VisualConfigValues } from '@/types/visualConfig';
-import { FIELD_HIGHLIGHT_CLASS } from '../components/fields/FieldPrimitives';
+import { FIELD_HIGHLIGHT_CLASS } from '../components/fields/fieldClasses';
 import type { ConfigTabId } from '../constants';
 import {
   configFieldDomId,
