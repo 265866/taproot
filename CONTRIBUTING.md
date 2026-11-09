@@ -98,6 +98,36 @@ By contributing, you agree that your contribution is released under the [MIT Lic
 - **What merges itself.** Digest pins and digest updates of GitHub Actions and base images merge once CI passes. Every other update waits for a review.
 - **Generated files.** When a Renovate pull request changes `go.sum`, `web/bun.lock`, the codec's `Cargo.lock`, `flake.lock`, or `Containerfile.taproot` (`THIRD_PARTY_NOTICES.md` records its `RUST_VERSION`), `.github/workflows/renovate-refresh.yml` regenerates `nix/vendor-hash`, `web/bun.nix`, and `THIRD_PARTY_NOTICES.md`, pushes them to the branch, and starts CI for the new commit. On any other branch, refresh them by hand as described above.
 
+## Releases
+
+[release-please](https://github.com/googleapis/release-please) prepares each release, and [`.github/workflows/release.yml`](.github/workflows/release.yml) builds and publishes it.
+
+- **The release PR.** On every push to `main`, release-please opens or updates a pull request titled `chore: release taproot X.Y.Z`, which sets the version in `.github/.release-please-manifest.json` and in `web/package.json`, where the Nix flake reads it. A second job in the same workflow then writes the release's section into `CHANGELOG.md` on the PR's branch, with `scripts/taproot/release-changelog.sh`. The section lists taproot's own Conventional Commit subjects since the previous release: `feat` under Added, `fix` under Fixed, `perf` under Performance, and `revert` under Reverted. Other types are left out. A `!` after the type, or a `BREAKING CHANGE:` footer, also lists the change under Breaking changes. Upstream commits that a sync merged are left out; when the release includes a sync, one Upstream line names the CLIProxyAPI commit it merges. The list in the PR's description is release-please's and still counts upstream commits. The `CHANGELOG.md` diff is what ships.
+- **Versions.** release-please reads the whole history, so it picks the version from every commit since the previous release, upstream commits included. Before 1.0, a breaking change or a `feat` raises the minor version, and a `fix`, `perf`, or `revert` raises the patch version. While no commit of those types has landed, release-please opens no release PR. To choose the version yourself, add a `Release-As: X.Y.Z` footer to a commit on `main`.
+- **Notes by hand.** Some changes need more than a commit subject, such as a renamed setting or an upgrade step. Write those notes under `## Unreleased` in `CHANGELOG.md`, in the same change. Before you merge the release PR, move them into the new release's section on the PR's branch, and delete the empty `## Unreleased` heading. The workflow rewrites that branch whenever `main` moves, so make this edit last.
+- **Publishing.** Merging the release PR tags `taproot-vX.Y.Z` on the merge commit and creates a draft GitHub release. `release.yml` then checks that the version has a `CHANGELOG.md` section, and stops before it pushes anything when it has none. It builds `linux/amd64` and `linux/arm64` on native runners. It runs the codec tests on both, and each architecture decodes request-log bytes the other stored. It pushes `ghcr.io/265866/taproot` with the tags `X.Y.Z` and `sha-<commit>`, an SBOM, build provenance, a GitHub attestation, and a keyless cosign signature. It also tags `X.Y` when no newer `X.Y.*` release exists, and `latest` when no newer release exists at all. Last, it publishes the release with `taproot-X.Y.Z-linux-amd64.tar.gz`, `taproot-X.Y.Z-linux-arm64.tar.gz`, `SHA256SUMS`, and the tarballs' attestation, `taproot-X.Y.Z.sigstore.json`. The release notes are the version's `CHANGELOG.md` section and the oldest glibc the binaries run on. The binaries link against glibc from the image's Debian base (glibc 2.34 for Debian 12), so they do not run on older distributions or on musl ones such as Alpine; the image runs there.
+- **Release candidates.** To test a release before you merge its PR, push a tag with an `-rc.N` suffix on the commit to test. The tag runs the `release.yml` of that commit. A candidate's image gets only its version tag and its `sha-` tag, never `X.Y` or `latest`. Its GitHub release is a prerelease, with the `## Unreleased` section as its notes. Give each new candidate the next number rather than moving a tag.
+
+  ```sh
+  git tag taproot-v0.2.0-rc.1 <commit>
+  git push origin taproot-v0.2.0-rc.1
+  ```
+
+- **Re-running.** To rebuild and republish an existing tag, for example after a failed run, run the release workflow from the Actions tab with the tag. Re-running a release older than the newest one republishes its own tags, but leaves `X.Y`, `latest`, and the latest GitHub release on the newer one.
+- **Repository settings.** release-please opens its PR with the workflow's `GITHUB_TOKEN`, which needs "Allow GitHub Actions to create and approve pull requests" under Settings, Actions, General. GitHub starts no workflow for a PR that token opens, so CI does not run on the release PR, which changes only `CHANGELOG.md`, the manifest, and the version in `web/package.json`.
+
+To check a published release:
+
+```sh
+gh attestation verify oci://ghcr.io/265866/taproot:0.2.0 --repo 265866/taproot
+cosign verify ghcr.io/265866/taproot:0.2.0 \
+  --certificate-identity-regexp '^https://github.com/265866/taproot/.github/workflows/release.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh release download taproot-v0.2.0 --repo 265866/taproot
+sha256sum -c SHA256SUMS
+gh attestation verify taproot-0.2.0-linux-amd64.tar.gz --repo 265866/taproot
+```
+
 ## Demo data and screenshots
 
 `internal/taproot/demo` seeds a data directory with synthetic accounts, 30 days of usage, quota history, request logs, and backups, all written through taproot's own ingest, request-log, and backup code. It also serves a fake tailscaled with a small tailnet, so the Access page has devices. The README screenshots come from it.

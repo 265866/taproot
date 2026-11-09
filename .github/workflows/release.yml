@@ -1,0 +1,377 @@
+name: release
+
+# Builds a release tag and publishes it: the multi-arch image on GHCR with an
+# SBOM, build provenance, a GitHub attestation, and a cosign signature, and a
+# GitHub release with binary tarballs, SHA256SUMS, and their attestation.
+# release-please.yml calls it for the tags it creates. A tag pushed by a
+# person, such as a release candidate (taproot-v0.2.0-rc.1), starts it
+# directly, and it can be run by hand for an existing tag. Re-running it for
+# the same tag re-publishes that tag, but moves X.Y and latest only while no
+# newer release exists.
+#
+# The signatures and attestations name this file in this repository as their
+# signer (the Fulcio certificate's workflow URI), and the documented
+# `cosign verify` pins that URI. Renaming or moving the file makes those
+# checks refuse every later image.
+on:
+  push:
+    tags: ['taproot-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to build and publish, such as taproot-v0.2.0
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: The release tag to build and publish
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/265866/taproot
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+# An explicit bash adds pipefail, so a failing command before a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  meta:
+    name: Read the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      latest: ${{ steps.meta.outputs.latest }}
+      image-tags: ${{ steps.meta.outputs.image-tags }}
+      commit: ${{ steps.meta.outputs.commit }}
+      build-date: ${{ steps.meta.outputs.build-date }}
+      source-date-epoch: ${{ steps.meta.outputs.source-date-epoch }}
+    steps:
+      - name: Check the tag name
+        run: |
+          if [[ ! "$TAG" =~ ^taproot-v[0-9A-Za-z.-]+$ ]]; then
+            echo "::error::$TAG is not a taproot release tag"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      # The build date is the commit's, so rebuilding a tag stamps the same one.
+      # The release notes are checked here, before anything is pushed.
+      - id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/taproot-v" --jq '.[].ref | ltrimstr("refs/tags/")' > "$RUNNER_TEMP/tags"
+          scripts/taproot/release-version.sh "$TAG" "$commit" "$RUNNER_TEMP/tags" | tee -a "$GITHUB_OUTPUT"
+          scripts/taproot/release-notes.sh "${TAG#taproot-v}" > /dev/null
+          {
+            echo "commit=$commit"
+            echo "build-date=$(TZ=UTC0 git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd)"
+            echo "source-date-epoch=$(git log -1 --format=%ct)"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  # The request-log codec on each architecture: its tests, including decoding
+  # the committed stored bytes, which were written on amd64. Each job then
+  # stores the test images again and hands the bytes to codec-cross.
+  codec:
+    name: Codec (${{ matrix.arch }})
+    needs: meta
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.meta.outputs.commit }}
+          persist-credentials: false
+      # No build cache in a release build: a cache written by another workflow
+      # could change what ships.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install the image's Rust toolchain
+        run: |
+          rust_version="$(sed -n 's/^ARG RUST_VERSION=//p' Containerfile.taproot)"
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install "$rust_version" --profile minimal
+          rustup default "$rust_version"
+      - run: cargo build --release --locked
+        working-directory: internal/taproot/reqlog/codec/native
+      - run: go test -tags taproot_codecs ./...
+        working-directory: internal/taproot/reqlog
+      - name: Store the test images on ${{ matrix.arch }}
+        working-directory: internal/taproot/reqlog/codec
+        run: |
+          TAPROOT_CODEC_GOLDEN=update go test -tags taproot_codecs -count=1 -run '^TestGoldenStoredBytesStillDecode$' .
+          mkdir -p "$RUNNER_TEMP/codec"
+          cp testdata/*.stored native/target/release/libtaproot_codec.a "$RUNNER_TEMP/codec/"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codec-${{ matrix.arch }}
+          path: ${{ runner.temp }}/codec
+          if-no-files-found: error
+          retention-days: 7
+
+  # Request logs written on one architecture must read on the other, since a
+  # backup can move between hosts: each architecture decodes the other's bytes.
+  codec-cross:
+    name: Codec (${{ matrix.other }} bytes on ${{ matrix.arch }})
+    needs: [meta, codec]
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            other: arm64
+            runner: ubuntu-latest
+          - arch: arm64
+            other: amd64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.meta.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codec-${{ matrix.arch }}
+          path: ${{ runner.temp }}/own
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codec-${{ matrix.other }}
+          path: ${{ runner.temp }}/other
+      - working-directory: internal/taproot/reqlog/codec
+        run: |
+          mkdir -p native/target/release
+          cp "$RUNNER_TEMP/own/libtaproot_codec.a" native/target/release/
+          cp "$RUNNER_TEMP"/other/*.stored testdata/
+          git status --short testdata
+          go test -tags taproot_codecs -count=1 -v -run '^TestGoldenStoredBytesStillDecode$' .
+
+  image:
+    name: Image (${{ matrix.arch }})
+    needs: meta
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.meta.outputs.commit }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Pushed by digest only; the publish job tags the multi-arch index.
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Containerfile.taproot
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ needs.meta.outputs.version }}
+            COMMIT=${{ needs.meta.outputs.commit }}
+            BUILD_DATE=${{ needs.meta.outputs.build-date }}
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+      # The tarball holds the image's binary and the license files the image
+      # ships with it, including the LGPL texts the codec library requires.
+      - name: Copy the binary into a tarball
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
+        run: |
+          docker pull "$IMAGE@$DIGEST"
+          cid="$(docker create "$IMAGE@$DIGEST")"
+          docker cp "$cid:/taproot" "$RUNNER_TEMP/image"
+          docker rm "$cid"
+          name="taproot-$VERSION-linux-$ARCH"
+          stage="$RUNNER_TEMP/stage/$name"
+          mkdir -p "$stage/web" "$RUNNER_TEMP/dist"
+          cp "$RUNNER_TEMP/image/taproot" "$RUNNER_TEMP/image/LICENSE" "$RUNNER_TEMP/image/THIRD_PARTY_NOTICES.md" "$stage/"
+          cp "$RUNNER_TEMP/image/web/LICENSE" "$stage/web/"
+          cp -R "$RUNNER_TEMP/image/licenses" "$stage/"
+          line="$("$stage/taproot" --version)"
+          echo "$line"
+          if [[ "$line" != "taproot $VERSION "* ]]; then
+            echo "::error::the binary reports \"$line\", not version $VERSION"
+            exit 1
+          fi
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w \
+            --mtime="@$SOURCE_DATE_EPOCH" -C "$RUNNER_TEMP/stage" -cf - "$name" \
+            | gzip -n -9 > "$RUNNER_TEMP/dist/$name.tar.gz"
+          tar -tvzf "$RUNNER_TEMP/dist/$name.tar.gz"
+          echo "$DIGEST" > "$RUNNER_TEMP/dist/digest"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Tag, attest, sign, and publish
+    needs: [meta, codec-cross, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+      LATEST: ${{ needs.meta.outputs.latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.meta.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}/image
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag the multi-arch image
+        id: index
+        env:
+          IMAGE_TAGS: ${{ needs.meta.outputs.image-tags }}
+        run: |
+          args=()
+          for tag in $IMAGE_TAGS; do
+            args+=(-t "$IMAGE:$tag")
+          done
+          docker buildx imagetools create "${args[@]}" \
+            "$IMAGE@$(cat "$RUNNER_TEMP/image/image-amd64/digest")" \
+            "$IMAGE@$(cat "$RUNNER_TEMP/image/image-arm64/digest")"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+          digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "digest=$digest" | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+          # Storage records exist only for organization-owned repositories.
+          create-storage-record: false
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      # The legacy format stores the signature under the registry's
+      # sha256-<digest>.sig tag, which verifiers that read only tag-based
+      # signatures need. --recursive also signs each platform's image. See
+      # "Releases" in internal/taproot/DESIGN.md.
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: cosign sign --yes --recursive --new-bundle-format=false --use-signing-config=false "$IMAGE@$DIGEST"
+      - name: Verify the signature and the attestation
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cosign verify "$IMAGE@$DIGEST" \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY"
+      - name: Write checksums
+        run: |
+          mkdir dist
+          cp "$RUNNER_TEMP"/image/image-*/*.tar.gz dist/
+          (cd dist && sha256sum -- *.tar.gz > SHA256SUMS && cat SHA256SUMS)
+      - id: attest-tarballs
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.tar.gz
+      # release-please creates its releases as drafts, and they are published
+      # here once their files are uploaded. A tag pushed by a person has no
+      # release yet. Either way the notes are the tag's CHANGELOG.md section,
+      # and the oldest glibc the binaries run on, which the Debian base sets.
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.attest-tarballs.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "dist/taproot-$VERSION.sigstore.json"
+          mkdir "$RUNNER_TEMP/bin"
+          for tarball in dist/*.tar.gz; do
+            tar -xzf "$tarball" -C "$RUNNER_TEMP/bin"
+          done
+          glibc="$(readelf -V "$RUNNER_TEMP"/bin/*/taproot | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
+          if [[ -z "$glibc" ]]; then
+            echo "::error::found no glibc version in the binaries"
+            exit 1
+          fi
+          {
+            scripts/taproot/release-notes.sh "$VERSION"
+            printf '\n### Binaries\n\nThe tarballs hold Linux binaries linked against glibc. They need glibc %s or later, and do not run on musl distributions such as Alpine. On other systems, run the image.\n' "${glibc#GLIBC_}"
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+          if [[ "$PRERELEASE" == true ]]; then
+            flags=(--prerelease --latest=false)
+          else
+            flags=(--prerelease=false "--latest=$LATEST")
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md" --draft=false "${flags[@]}"
+          else
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "taproot $VERSION" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+          fi
