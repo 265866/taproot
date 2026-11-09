@@ -24,7 +24,14 @@ func TestOpenAppliesSchemaSeedsNewTablesAndSnapshots(t *testing.T) {
 	registerForTest(t, Schema{
 		Module: "storetest",
 		SQL:    `CREATE TABLE IF NOT EXISTS storetest_items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
-		Seed:   `INSERT INTO storetest_items (name) VALUES ('seed')`,
+		Seed: func(ctx context.Context, tx *sql.Tx, created bool) error {
+			name := "reopened"
+			if created {
+				name = "seed"
+			}
+			_, err := tx.ExecContext(ctx, `INSERT INTO storetest_items (name) VALUES (?)`, name)
+			return err
+		},
 	})
 
 	ctx := context.Background()
@@ -63,8 +70,8 @@ func TestOpenAppliesSchemaSeedsNewTablesAndSnapshots(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(names, []string{"seed", "a"}) {
-		t.Fatalf("rows after reopen = %q, want the seed once and the inserted row", names)
+	if !slices.Equal(names, []string{"seed", "a", "reopened"}) {
+		t.Fatalf("rows after reopen = %q, want the created seed, the inserted row, then the reopened seed", names)
 	}
 	var tracked int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE name = 'schema_migrations'`).Scan(&tracked); err != nil {
@@ -87,8 +94,8 @@ func TestOpenAppliesSchemaSeedsNewTablesAndSnapshots(t *testing.T) {
 	}
 	defer func() { _ = snap.Close() }()
 	var count int
-	if err := snap.QueryRowContext(ctx, `SELECT COUNT(*) FROM storetest_items`).Scan(&count); err != nil || count != 2 {
-		t.Fatalf("snapshot rows = %d, %v; want 2", count, err)
+	if err := snap.QueryRowContext(ctx, `SELECT COUNT(*) FROM storetest_items`).Scan(&count); err != nil || count != 4 {
+		t.Fatalf("snapshot rows = %d, %v; want the 3 snapshotted rows and one reopened seed", count, err)
 	}
 }
 

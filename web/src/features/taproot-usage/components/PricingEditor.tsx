@@ -19,6 +19,7 @@ import {
   type PriceField,
   type PriceFieldError,
 } from '../logic/prices';
+import { resetPricesConfirmation } from '../logic/resetPrices';
 import { DASH, formatDateTime } from '../logic/format';
 import styles from '../TaprootUsage.module.scss';
 
@@ -46,6 +47,7 @@ export function PricingEditor({ models, onSaved }: Props) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const showNotification = useNotificationStore((s) => s.showNotification);
+  const showConfirmation = useNotificationStore((s) => s.showConfirmation);
   const query = useTaprootQuery('prices', () => taprootApi.prices());
   const [saved, setSaved] = useState<Price[] | null>(null);
   const [drafts, setDrafts] = useState<PriceDraft[]>([]);
@@ -124,6 +126,22 @@ export function PricingEditor({ models, onSaved }: Props) {
       setSaving(false);
     }
   };
+
+  const resetToShipped = () =>
+    showConfirmation(
+      resetPricesConfirmation(t, {
+        reset: taprootApi.resetPrices,
+        onReset: (prices) => {
+          setSaved(prices);
+          setDrafts(toDrafts(prices));
+          setShowErrors(false);
+          showNotification(t('taproot_usage.pricing.reset_shipped_done'), 'success');
+          onSaved();
+        },
+        onError: (message) =>
+          showNotification(t('taproot_usage.pricing.reset_shipped_failed', { message }), 'error'),
+      })
+    );
 
   const coverage = useMemo(() => {
     const patterns = drafts.map((d) => ({ modelPattern: d.modelPattern.trim() }));
@@ -264,6 +282,14 @@ export function PricingEditor({ models, onSaved }: Props) {
             }}
           >
             {t('taproot_usage.pricing.reset')}
+          </button>
+          <button
+            type="button"
+            className={styles.ghostButton}
+            disabled={!saved || saving}
+            onClick={resetToShipped}
+          >
+            {t('taproot_usage.pricing.reset_shipped')}
           </button>
         </div>
       </section>

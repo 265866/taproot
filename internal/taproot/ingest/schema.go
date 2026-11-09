@@ -158,8 +158,13 @@ CREATE TABLE IF NOT EXISTS prices (
 	source TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS price_seed (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	version INTEGER NOT NULL
+);
 `
 
 func init() {
-	store.Register(store.Schema{Module: "ingest", SQL: schema, Seed: seedPricesSQL()})
+	store.Register(store.Schema{Module: "ingest", SQL: schema, Seed: seedPriceTable})
 }
