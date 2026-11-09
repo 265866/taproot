@@ -581,11 +581,12 @@ func TestClaudeCacheControlDocChecksDoNotMaterializeLargeMessagesArray(t *testin
 	})
 }
 
-// On a loaded machine the helpers measured 15 to 160 full scans of the payload, at best
-// of 5 attempts, and a lookup per message index of the unsplit payload more than 1100.
+// At best of 5 attempts, loaded or not, the helpers measured 6 to 172 full scans of the
+// payload, and a lookup per message index of the unsplit payload, the regression this
+// catches, measured 518 to 1484, with rare outliers lower. The bound sits between them.
 const (
 	cacheControlTimingAttempts = 5
-	maxCacheControlFullScans   = 500
+	maxCacheControlFullScans   = 300
 )
 
 // fullScansOf returns elapsed as a multiple of one lookup of path, the last field in raw.
