@@ -1,9 +1,10 @@
 name: renovate-refresh
 
 # Renovate's hosted app cannot run post-upgrade commands, so a Renovate pull
-# request that changes a lockfile leaves the files generated from it stale:
-# nix/vendor-hash and web/bun.nix (CI's nix-hashes job) and
-# THIRD_PARTY_NOTICES.md (CI's notices job). This workflow regenerates them,
+# request that changes a lockfile or the image's RUST_VERSION leaves the files
+# generated from them stale: nix/vendor-hash and web/bun.nix (CI's nix-hashes
+# job) and THIRD_PARTY_NOTICES.md (CI's notices job, which records the Rust
+# version). This workflow regenerates them,
 # pushes them to the pull request's branch, and starts CI for the new head.
 #
 # It cannot loop: GitHub starts no workflow for a push made with the workflow
@@ -18,6 +19,7 @@ on:
       - web/bun.lock
       - internal/taproot/reqlog/codec/native/Cargo.lock
       - flake.lock
+      - Containerfile.taproot
 
 permissions: {}
 
@@ -98,4 +100,13 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit --quiet -m 'chore(deps): refresh nix hashes and third-party notices' -- "${files[@]}"
           git push origin "HEAD:refs/heads/$HEAD_REF"
-          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+          # A rerun cannot recover a failed dispatch, because its push of the
+          # same base is rejected, so retry here.
+          for attempt in 1 2 3; do
+            if gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"; then
+              exit 0
+            fi
+            sleep $((attempt * 15))
+          done
+          echo "::error::Pushed the refresh but could not start CI. Run: gh workflow run ci.yml --ref $HEAD_REF"
+          exit 1

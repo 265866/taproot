@@ -67,7 +67,12 @@ func TestRenovateRegexManagers(t *testing.T) {
 						t.Errorf("customManagers[%d] matches %s %d times, want once", i, file, len(all))
 						continue
 					}
-					if got := all[0][re.SubexpIndex("currentValue")]; got != rustVersion[1] {
+					idx := re.SubexpIndex("currentValue")
+					if idx < 0 {
+						t.Errorf("customManagers[%d]: match string has no currentValue group", i)
+						continue
+					}
+					if got := all[0][idx]; got != rustVersion[1] {
 						t.Errorf("customManagers[%d] reads Rust %q from %s, want RUST_VERSION %q", i, got, file, rustVersion[1])
 					}
 					if idx := re.SubexpIndex("currentDigest"); idx >= 0 && all[0][idx] != rustDigest[1] {

@@ -24,17 +24,6 @@
     "Containerfile.taproot",
     "flake.nix"
   ],
-  "ignorePaths": [
-    "**/node_modules/**",
-    "**/vendor/**",
-    "**/examples/**",
-    "**/testdata/**",
-    "**/test/**",
-    "**/tests/**",
-    "**/__tests__/**",
-    "**/__fixtures__/**",
-    "internal/taproot/reqlog/codec/native/patches/**"
-  ],
   "dockerfile": {
     "managerFilePatterns": ["/^Containerfile\\.taproot$/"]
   },
@@ -88,7 +77,10 @@
         "github.com/klauspost/compress",
         "github.com/andybalholm/brotli"
       ],
-      "enabled": true
+      "enabled": true,
+      "prBodyNotes": [
+        "Before merging: the \"Upstream boundary\" section of `internal/taproot/DESIGN.md` names each `go.mod` line taproot changes, with its version. Update the entries this pull request changes, and add any upstream requirement that minimal version selection newly raises."
+      ]
     },
     {
       "description": "GO_VERSION must equal go.mod's go line, which is upstream's, so the golang image gets digest updates only.",

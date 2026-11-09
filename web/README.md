@@ -6,7 +6,7 @@ It started as a fork of the [CLIProxyAPI Management Center](https://github.com/r
 
 ## Commands
 
-Use Bun; `package.json` pins `bun@1.4.3`. Keep dependency changes in `bun.lock` and add no other package manager's lockfile.
+Use Bun; the `packageManager` field in `package.json` pins its version. Keep dependency changes in `bun.lock` and add no other package manager's lockfile.
 
 ```sh
 bun install --frozen-lockfile

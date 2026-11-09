@@ -21,7 +21,10 @@ describe('Bun toolchain version', () => {
     );
   });
 
-  test('the dashboard README documents the pinned Bun release', () => {
-    expect(readProjectFile('README.md')).toContain(`\`bun@${bunVersion}\``);
+  // Renovate moves the pin, so the README names the field instead of a version that goes stale.
+  test('the dashboard README points to the pin without repeating the version', () => {
+    const readme = readProjectFile('README.md');
+    expect(readme).toContain('`packageManager` field in `package.json`');
+    expect(readme).not.toMatch(/bun@\d/);
   });
 });

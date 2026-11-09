@@ -85,7 +85,7 @@ The Nix build reads two files that the lockfiles decide: `nix/vendor-hash` (from
 
 Keep personal data out of the repository. Tests, fixtures, screenshots, and examples use example values such as `alice@github`, `example.com`, `100.64.0.x`, and `tailnet-0000.ts.net`, never a real login, email, node ID, address, or token.
 
-Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(taproot): …` or `feat(web): …`. After a dependency change in `go.mod`, `web/package.json`, `web/bun.lock`, or the codec's `Cargo.lock`, run `bun scripts/taproot/third-party-notices.ts` to update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). It needs Go, Bun, and a Rust toolchain, and CI fails when the file is stale.
+Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(taproot): …` or `feat(web): …`. After a dependency change in `go.mod`, `web/package.json`, `web/bun.lock`, the codec's `Cargo.lock`, or `RUST_VERSION` in `Containerfile.taproot`, run `bun scripts/taproot/third-party-notices.ts` to update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). It needs Go, Bun, and a Rust toolchain, and CI fails when the file is stale.
 
 By contributing, you agree that your contribution is released under the [MIT License](LICENSE).
 
@@ -94,9 +94,9 @@ By contributing, you agree that your contribution is released under the [MIT Lic
 [Renovate](https://docs.renovatebot.com/) opens update pull requests once a week, as `renovate.json` configures it. The "Dependency updates" section of `DESIGN.md` has the details.
 
 - **What it updates.** The dashboard's packages and Bun, the codec's crates, the GitHub Actions, the `Containerfile.taproot` base images and their digests, the Rust toolchain in the image and in CI, the flake inputs, and three Go modules: `modernc.org/sqlite`, `github.com/klauspost/compress`, and `github.com/andybalholm/brotli`.
-- **Why not the other Go modules.** Every other line in `go.mod`, including the `go` line, is upstream's. Bumping one conflicts with the next upstream merge, so those updates arrive with the sync. `GO_VERSION` follows the `go` line, so the golang image gets digest updates only. The SQLite driver's indirect dependencies move only with the driver, because it needs the exact `modernc.org/libc` version that its own `go.mod` names.
+- **Why not the other Go modules.** Every other line in `go.mod`, including the `go` line, is upstream's. Bumping one conflicts with the next upstream merge, so those updates arrive with the sync. `GO_VERSION` follows the `go` line, so the golang image gets digest updates only. The SQLite driver's indirect dependencies move only with the driver, because it needs the exact `modernc.org/libc` version that its own `go.mod` names. The "Upstream boundary" section of `DESIGN.md` records each `go.mod` line taproot changes, with its version, so a Go update pull request must update those entries before it merges, including any upstream requirement that minimal version selection newly raises. Renovate repeats this in the pull request's description.
 - **What merges itself.** Digest pins and digest updates of GitHub Actions and base images merge once CI passes. Every other update waits for a review.
-- **Generated files.** When a Renovate pull request changes `go.sum`, `web/bun.lock`, the codec's `Cargo.lock`, or `flake.lock`, `.github/workflows/renovate-refresh.yml` regenerates `nix/vendor-hash`, `web/bun.nix`, and `THIRD_PARTY_NOTICES.md`, pushes them to the branch, and starts CI for the new commit. On any other branch, refresh them by hand as described above.
+- **Generated files.** When a Renovate pull request changes `go.sum`, `web/bun.lock`, the codec's `Cargo.lock`, `flake.lock`, or `Containerfile.taproot` (`THIRD_PARTY_NOTICES.md` records its `RUST_VERSION`), `.github/workflows/renovate-refresh.yml` regenerates `nix/vendor-hash`, `web/bun.nix`, and `THIRD_PARTY_NOTICES.md`, pushes them to the branch, and starts CI for the new commit. On any other branch, refresh them by hand as described above.
 
 ## Demo data and screenshots
 
