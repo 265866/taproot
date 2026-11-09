@@ -1,0 +1,158 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "schedule:weekly",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "enabledManagers": [
+    "gomod",
+    "cargo",
+    "bun",
+    "github-actions",
+    "dockerfile",
+    "custom.regex",
+    "nix"
+  ],
+  "includePaths": [
+    "go.mod",
+    "internal/taproot/reqlog/codec/native/Cargo.toml",
+    "web/package.json",
+    "web/bun.lock",
+    ".github/workflows/**",
+    "Containerfile.taproot",
+    "flake.nix"
+  ],
+  "dockerfile": {
+    "managerFilePatterns": ["/^Containerfile\\.taproot$/"]
+  },
+  "nix": {
+    "enabled": true,
+    "lockFileMaintenance": {
+      "enabled": true
+    }
+  },
+  "postUpdateOptions": ["gomodTidy"],
+  "gitIgnoredAuthors": ["41898282+github-actions[bot]@users.noreply.github.com"],
+  "platformAutomerge": false,
+  "customManagers": [
+    {
+      "description": "RUST_VERSION and the rust image digest in Containerfile.taproot. The tag has a suffix that the ARG lacks, so the template rewrites both values in the matched text.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^Containerfile\\.taproot$/"],
+      "matchStrings": [
+        "ARG RUST_VERSION=(?<currentValue>\\S+)\\n[\\s\\S]*?\\nFROM docker\\.io/library/rust:\\$\\{RUST_VERSION\\}-slim-bookworm@(?<currentDigest>sha256:[0-9a-f]{64})"
+      ],
+      "depNameTemplate": "rust",
+      "packageNameTemplate": "docker.io/library/rust",
+      "datasourceTemplate": "docker",
+      "currentValueTemplate": "{{{currentValue}}}-slim-bookworm",
+      "autoReplaceStringTemplate": "{{{replace 'sha256:[0-9a-f]{64}$' newDigest (replace '^ARG RUST_VERSION=\\S+' (replace '^(.+)-slim-bookworm$' 'ARG RUST_VERSION=$1' newValue) replaceString)}}}"
+    },
+    {
+      "description": "RUST_VERSION in the codec job of .github/workflows/ci.yml, which matches the image's.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["RUST_VERSION: \"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "rust",
+      "packageNameTemplate": "docker.io/library/rust",
+      "datasourceTemplate": "docker",
+      "currentValueTemplate": "{{{currentValue}}}-slim-bookworm",
+      "autoReplaceStringTemplate": "RUST_VERSION: \"{{{replace '-slim-bookworm$' '' newValue}}}\""
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "go.mod is upstream's, apart from the modules the next rule enables: a change to any other line conflicts with the next upstream merge, so those updates arrive through the sync.",
+      "matchManagers": ["gomod"],
+      "enabled": false
+    },
+    {
+      "description": "Go modules whose versions taproot owns. The SQLite driver's indirect dependencies (modernc.org/libc and the rest) move only with it, because modernc.org/sqlite needs the exact modernc.org/libc version its own go.mod names.",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["require"],
+      "matchPackageNames": [
+        "modernc.org/sqlite",
+        "github.com/klauspost/compress",
+        "github.com/andybalholm/brotli"
+      ],
+      "enabled": true,
+      "prBodyNotes": [
+        "Before merging: the \"Upstream boundary\" section of `internal/taproot/DESIGN.md` names each `go.mod` line taproot changes, with its version. Update the entries this pull request changes, and add any upstream requirement that minimal version selection newly raises."
+      ]
+    },
+    {
+      "description": "GO_VERSION must equal go.mod's go line, which is upstream's, so the golang image gets digest updates only.",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["docker.io/library/golang"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "enabled": false
+    },
+    {
+      "description": "Rust version updates come from the regex managers, which also change RUST_VERSION; the dockerfile manager keeps the digest.",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["docker.io/library/rust"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "enabled": false
+    },
+    {
+      "description": "The dockerfile manager owns image digests.",
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["digest"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "pinDigests": true
+    },
+    {
+      "groupName": "Rust toolchain",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["rust"]
+    },
+    {
+      "groupName": "Bun",
+      "matchDepNames": ["bun", "docker.io/oven/bun"],
+      "matchUpdateTypes": ["major", "minor", "patch"]
+    },
+    {
+      "groupName": "SQLite driver",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["modernc.org/**"]
+    },
+    {
+      "groupName": "Go compression libraries",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/klauspost/compress", "github.com/andybalholm/brotli"]
+    },
+    {
+      "groupName": "codec crates",
+      "matchManagers": ["cargo"]
+    },
+    {
+      "groupName": "dashboard dependencies (non-major)",
+      "groupSlug": "dashboard-non-major",
+      "matchManagers": ["bun"],
+      "matchDepTypes": ["dependencies", "devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "groupName": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major", "minor", "patch"]
+    },
+    {
+      "groupName": "Nix flake inputs",
+      "matchManagers": ["nix"]
+    },
+    {
+      "description": "Digest pins and digest updates of GitHub Actions and the image's base images merge themselves once CI passes. Everything else waits for a person.",
+      "groupName": "digests",
+      "matchManagers": ["github-actions", "dockerfile"],
+      "matchUpdateTypes": ["pinDigest", "digest"],
+      "automerge": true,
+      "automergeType": "pr"
+    }
+  ]
+}
