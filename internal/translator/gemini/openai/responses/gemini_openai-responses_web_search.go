@@ -7,9 +7,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/265866/taproot/internal/registry"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 )
 
 // ModelSupportsWebSearch checks whether the given model supports native web search,

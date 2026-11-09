@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	sdkconfig "github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/interfaces"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/gin-gonic/gin"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 // Issue 7017: with header passthrough enabled, the raw upstream Retry-After

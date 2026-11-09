@@ -3,7 +3,7 @@ package pluginhost
 import (
 	"testing"
 
-	internalregistry "github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	internalregistry "github.com/265866/taproot/internal/registry"
 )
 
 func TestRegistryModelToPluginModelKeepsDisableType(t *testing.T) {

@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
+	helps "github.com/265866/taproot/internal/runtime/executor/helps"
+	_ "github.com/265866/taproot/internal/thinking/provider/gemini"
+	_ "github.com/265866/taproot/internal/translator"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	helps "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/gemini"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 type summaryRemovingPluginHooks struct {

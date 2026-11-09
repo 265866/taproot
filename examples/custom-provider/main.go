@@ -23,15 +23,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/sdk/api"
+	sdkAuth "github.com/265866/taproot/sdk/auth"
+	"github.com/265866/taproot/sdk/cliproxy"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	clipexec "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/config"
+	"github.com/265866/taproot/sdk/logging"
+	sdktr "github.com/265866/taproot/sdk/translator"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	clipexec "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/logging"
-	sdktr "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 const (

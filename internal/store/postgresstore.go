@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/misc"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 

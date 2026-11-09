@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
+	"github.com/265866/taproot/internal/util"
 )
 
 func tcHash(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }

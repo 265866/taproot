@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	homekv "github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/kvstore"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	homekv "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/kvstore"
 )
 
 func TestKVStoreBBoltPersistenceAndRouting(t *testing.T) {

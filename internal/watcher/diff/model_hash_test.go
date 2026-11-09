@@ -3,8 +3,8 @@ package diff
 import (
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
 )
 
 func TestComputeOpenAICompatModelsHash_Deterministic(t *testing.T) {

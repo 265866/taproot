@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/pluginstore"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginstore"
 )
 
 func TestListPluginStoreMergesInstalledStatus(t *testing.T) {

@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
+	xaiauth "github.com/265866/taproot/internal/auth/xai"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/runtime/executor"
+	sdkAuth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	sdkconfig "github.com/265866/taproot/sdk/config"
 	"github.com/gin-gonic/gin"
-	xaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/xai"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 )
 
 func TestAPICallUsesRequestProxyURL(t *testing.T) {

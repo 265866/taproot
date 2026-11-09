@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	applypatch "github.com/265866/taproot/internal/client/codex/apply-patch"
 	"github.com/MoeForge/moego/ojson"
-	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
 )
 
 // ResponsesToolIdentity represents the resolved identity of a tool in OpenAI Responses format.

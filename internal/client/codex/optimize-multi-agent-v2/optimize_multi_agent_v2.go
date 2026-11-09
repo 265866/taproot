@@ -11,13 +11,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/util"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 const (

@@ -5,9 +5,9 @@ import (
 	"github.com/MoeForge/moego/base64"
 	"strings"
 
+	sigcompat "github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 const (

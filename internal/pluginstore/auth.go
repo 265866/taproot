@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/githubauth"
 	"github.com/MoeForge/moego/base64"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/githubauth"
 )
 
 const (

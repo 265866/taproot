@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	internalconfig "github.com/265866/taproot/internal/config"
 )
 
 type recordingCooldownStateStore struct {

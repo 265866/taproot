@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/265866/taproot/internal/config"
 )
 
 type githubAssetTransport func(*http.Request) (*http.Response, error)

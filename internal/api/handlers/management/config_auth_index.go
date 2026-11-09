@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/watcher/synthesizer"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"gopkg.in/yaml.v3"
 )
 

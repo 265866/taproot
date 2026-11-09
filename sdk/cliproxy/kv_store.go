@@ -1,9 +1,9 @@
 package cliproxy
 
 import (
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/kvstore"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/kvstore"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 
+	applypatch "github.com/265866/taproot/internal/client/codex/apply-patch"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // ConvertOpenAIRequestToCodex converts an OpenAI Chat Completions request JSON

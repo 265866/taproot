@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
+	claudeauth "github.com/265866/taproot/internal/auth/claude"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
-	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 func TestEnsureClaudeCLIFingerprintIdentitySynthesizesStableSources(t *testing.T) {

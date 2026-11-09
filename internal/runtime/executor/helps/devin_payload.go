@@ -7,8 +7,8 @@ import (
 	"github.com/MoeForge/moego/base64"
 	"math"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

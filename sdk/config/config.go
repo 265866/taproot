@@ -4,7 +4,7 @@
 // embed CLIProxyAPI without importing internal packages.
 package config
 
-import internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+import internalconfig "github.com/265866/taproot/internal/config"
 
 type SDKConfig = internalconfig.SDKConfig
 

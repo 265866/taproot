@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/265866/taproot/sdk/proxyutil"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 

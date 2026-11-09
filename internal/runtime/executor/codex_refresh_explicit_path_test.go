@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/config"
+	sdkauth "github.com/265866/taproot/sdk/auth"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 func TestCodexRefreshWithExplicitFilePathStore(t *testing.T) {

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	internallogging "github.com/265866/taproot/internal/logging"
+	coresession "github.com/265866/taproot/sdk/cliproxy/session"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/google/uuid"
-	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	coresession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 func init() {

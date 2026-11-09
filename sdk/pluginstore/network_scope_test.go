@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	internalpluginstore "github.com/router-for-me/CLIProxyAPI/v8/internal/pluginstore"
+	internalpluginstore "github.com/265866/taproot/internal/pluginstore"
 )
 
 type networkScopeDoer func(*http.Request) (*http.Response, error)

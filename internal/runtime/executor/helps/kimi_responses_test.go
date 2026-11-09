@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
+	kimiauth "github.com/265866/taproot/internal/auth/kimi"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
-	kimiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/kimi"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 func TestResolveKimiResponsesURL(t *testing.T) {

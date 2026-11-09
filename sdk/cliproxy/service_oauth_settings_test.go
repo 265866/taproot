@@ -3,8 +3,8 @@ package cliproxy
 import (
 	"testing"
 
-	codexmodels "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/models"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	codexmodels "github.com/265866/taproot/internal/client/codex/models"
+	"github.com/265866/taproot/internal/config"
 )
 
 func TestApplyOAuthSettings_MaxContextLength(t *testing.T) {

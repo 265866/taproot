@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/265866/taproot/internal/cache"
+	"github.com/265866/taproot/internal/thinking"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // Keep text signature carriers off the client-visible reasoning timeline. The

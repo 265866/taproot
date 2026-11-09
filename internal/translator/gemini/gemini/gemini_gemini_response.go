@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
 )
 
 // PassthroughGeminiResponseStream forwards Gemini responses unchanged.

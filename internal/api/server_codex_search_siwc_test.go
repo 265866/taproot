@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/runtime/executor"
+	"github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 type codexSearchSIWCTransport func(*http.Request) (*http.Response, error)

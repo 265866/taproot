@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/265866/taproot/internal/clienterror"
+	"github.com/265866/taproot/internal/interfaces"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"golang.org/x/net/context"
 )
 

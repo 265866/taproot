@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialweight"
+	"github.com/265866/taproot/internal/credentialweight"
 )
 
 // ValidateAuthWeight validates every explicit credential weight source.

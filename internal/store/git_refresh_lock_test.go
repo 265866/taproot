@@ -9,11 +9,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/265866/taproot/internal/auth/codex"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/runtime/executor"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/go-git/go-git/v6"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 type journalRoundTripper func(*http.Request) (*http.Response, error)

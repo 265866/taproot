@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
+	internalconfig "github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
 )
 
 type aliasRoutingExecutor struct {

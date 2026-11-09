@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 func TestListAuthFiles_IncludesRecentRequestsBuckets(t *testing.T) {

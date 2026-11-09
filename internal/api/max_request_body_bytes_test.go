@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	proxyconfig "github.com/265866/taproot/internal/config"
+	sdkaccess "github.com/265866/taproot/sdk/access"
 	"github.com/klauspost/compress/zstd"
-	proxyconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 )
 
 type countingBodyReader struct {

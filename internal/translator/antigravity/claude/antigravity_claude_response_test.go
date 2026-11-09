@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/cache"
+	sigcompat "github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // ============================================================================

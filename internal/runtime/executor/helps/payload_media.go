@@ -10,10 +10,10 @@ import (
 	"mime/multipart"
 	"net/textproto"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/util"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 // ApplyMediaPayloadConfig exposes multipart fields as JSON business values. File

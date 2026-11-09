@@ -16,7 +16,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/265866/taproot/internal/config"
 )
 
 func testHostCallbackID(t *testing.T, client *dynamicLibraryClient) uintptr {

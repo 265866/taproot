@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/265866/taproot/internal/registry"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
 func TestCollapseConfigurationUpdatesBoundaries(t *testing.T) {

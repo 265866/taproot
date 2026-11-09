@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/watcher/synthesizer"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 // SnapshotAuthFile re-synthesizes one source file without consulting cached auth state.
