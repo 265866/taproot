@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # renovate-refresh.yml starts a run this way for the commit it pushes to a
+  # Renovate branch, which the workflow token's push does not trigger.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -147,6 +150,8 @@ jobs:
   # fails with the diff when they are stale; run scripts/taproot/nix-refresh.sh
   # and commit the result. It does not push the fix itself: a commit pushed
   # with the workflow token starts no CI run, so that head would go unchecked.
+  # On Renovate's branches, renovate-refresh.yml pushes the fix and starts a
+  # run for it.
   nix-hashes:
     runs-on: ubuntu-latest
     steps:

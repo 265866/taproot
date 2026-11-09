@@ -89,6 +89,15 @@ Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(t
 
 By contributing, you agree that your contribution is released under the [MIT License](LICENSE).
 
+## Dependency updates
+
+[Renovate](https://docs.renovatebot.com/) opens update pull requests once a week, as `renovate.json` configures it. The "Dependency updates" section of `DESIGN.md` has the details.
+
+- **What it updates.** The dashboard's packages and Bun, the codec's crates, the GitHub Actions, the `Containerfile.taproot` base images and their digests, the Rust toolchain in the image and in CI, the flake inputs, and three Go modules: `modernc.org/sqlite`, `github.com/klauspost/compress`, and `github.com/andybalholm/brotli`.
+- **Why not the other Go modules.** Every other line in `go.mod`, including the `go` line, is upstream's. Bumping one conflicts with the next upstream merge, so those updates arrive with the sync. `GO_VERSION` follows the `go` line, so the golang image gets digest updates only. The SQLite driver's indirect dependencies move only with the driver, because it needs the exact `modernc.org/libc` version that its own `go.mod` names.
+- **What merges itself.** Digest pins and digest updates of GitHub Actions and base images merge once CI passes. Every other update waits for a review.
+- **Generated files.** When a Renovate pull request changes `go.sum`, `web/bun.lock`, the codec's `Cargo.lock`, or `flake.lock`, `.github/workflows/renovate-refresh.yml` regenerates `nix/vendor-hash`, `web/bun.nix`, and `THIRD_PARTY_NOTICES.md`, pushes them to the branch, and starts CI for the new commit. On any other branch, refresh them by hand as described above.
+
 ## Demo data and screenshots
 
 `internal/taproot/demo` seeds a data directory with synthetic accounts, 30 days of usage, quota history, request logs, and backups, all written through taproot's own ingest, request-log, and backup code. It also serves a fake tailscaled with a small tailnet, so the Access page has devices. The README screenshots come from it.
