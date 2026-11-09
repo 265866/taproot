@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/265866/taproot/internal/interfaces"
 )
 
 // restoreSnapshot stops the harness, replaces its database with snapshot the
@@ -151,6 +153,62 @@ func TestStreamBudgetReleasedWhenLoggingTurnsOff(t *testing.T) {
 	h.flush()
 	if _, err := h.logs.Get(context.Background(), "kept", true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestStreamKeepsAPIResponseErrors covers WriteAPIResponseErrors, which
+// upstream's Finalize calls after a stream whose upstream failed.
+func TestStreamKeepsAPIResponseErrors(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+
+	// A 404 whose only upstream evidence is the error still reached the
+	// upstream, so the unrouted-404 rule must not drop it.
+	w, err := lg.LogStreamingRequest("/v1/messages", "POST", nil, []byte(`{"model":"m"}`), "failed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.WriteStatus(200, map[string][]string{"Content-Type": {"text/event-stream"}})
+	apiErrors := []*interfaces.ErrorMessage{{StatusCode: 404, Error: errors.New("model not found")}}
+	if err := w.WriteAPIResponseErrors(apiErrors); err != nil {
+		t.Fatal(err)
+	}
+	// The writer keeps its own copy, and an empty call keeps what it has.
+	apiErrors[0] = &interfaces.ErrorMessage{StatusCode: 500, Error: errors.New("caller reused its slice")}
+	if err := w.WriteAPIResponseErrors(nil); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.WriteStatus(404, nil)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without errors or other upstream evidence, a streamed 404 is unrouted.
+	w2, _ := lg.LogStreamingRequest("/v1/messages", "POST", nil, []byte(`{"model":"m"}`), "unrouted")
+	_ = w2.WriteStatus(404, nil)
+	_ = w2.WriteAPIResponseErrors(nil)
+	if err := w2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+
+	d, err := h.logs.Get(context.Background(), "failed", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Meta.Status != 404 || !d.Meta.Streaming || len(d.Upstream.Errors) != 1 ||
+		d.Upstream.Errors[0].Status != 404 || d.Upstream.Errors[0].Message != "model not found" {
+		t.Fatalf("failed stream: meta %+v errors %+v", d.Meta, d.Upstream.Errors)
+	}
+	_, raw, err := h.logs.Raw(context.Background(), "failed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte("=== API ERROR RESPONSE ===\nHTTP Status: 404\nmodel not found")) {
+		t.Fatalf("raw text has no API error section:\n%s", raw)
+	}
+	if _, err := h.logs.Get(context.Background(), "unrouted", true); !errors.Is(err, errNotFound) {
+		t.Fatalf("unrouted streamed 404 stored: %v", err)
 	}
 }
 

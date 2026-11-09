@@ -106,6 +106,17 @@ func TestRawTextMatchesUpstreamLayout(t *testing.T) {
 				streamThrough(t, h.logs.logger, "0190a0b0-0000-7000-8000-00000000c0a3", reqHeaders, body, apiReq, apiResp)
 			},
 		},
+		{
+			name:      "streaming with mid-stream error",
+			id:        "0190a0b0-0000-7000-8000-00000000c0a5",
+			streaming: true,
+			upstream: func(l *logging.FileRequestLogger) {
+				streamFailedThrough(t, l, "0190a0b0-0000-7000-8000-00000000c0a5", reqHeaders, body, apiReq, errs)
+			},
+			taproot: func() {
+				streamFailedThrough(t, h.logs.logger, "0190a0b0-0000-7000-8000-00000000c0a5", reqHeaders, body, apiReq, errs)
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -139,6 +150,24 @@ func streamThrough(t *testing.T, l logging.RequestLogger, id string, headers map
 	w.WriteChunkAsync([]byte("event: message_stop\ndata: {}\n\n"))
 	_ = w.WriteAPIRequest(apiReq)
 	_ = w.WriteAPIResponse(apiResp)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// streamFailedThrough finishes a stream the way upstream's Finalize does when
+// the upstream failed mid-stream: the error status, then the API errors.
+func streamFailedThrough(t *testing.T, l logging.RequestLogger, id string, headers map[string][]string, body, apiReq []byte, apiErrors []*interfaces.ErrorMessage) {
+	t.Helper()
+	w, err := l.LogStreamingRequest("/v1/messages?beta=true", "POST", headers, body, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.WriteStatus(200, map[string][]string{"Content-Type": {"text/event-stream"}})
+	w.WriteChunkAsync([]byte("event: message_start\ndata: {}\n\n"))
+	_ = w.WriteAPIRequest(apiReq)
+	_ = w.WriteStatus(apiErrors[0].StatusCode, nil)
+	_ = w.WriteAPIResponseErrors(apiErrors)
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
