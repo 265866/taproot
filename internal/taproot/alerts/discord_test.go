@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -18,6 +21,8 @@ import (
 const fakeToken = "s3cr3t-token_ABCDEFxyz123"
 
 // fakeDiscord records webhook posts and answers with the queued statuses.
+// Like Discord, it refuses a post that is not a Components V2 message sent
+// with ?wait=true&with_components=true.
 type fakeDiscord struct {
 	mu       sync.Mutex
 	paths    []string
@@ -32,18 +37,83 @@ func (f *fakeDiscord) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
-	f.paths = append(f.paths, r.Method+" "+r.URL.Path+" "+r.Header.Get("Content-Type"))
+	f.paths = append(f.paths, r.Method+" "+r.URL.RequestURI()+" "+r.Header.Get("Content-Type"))
 	f.bodies = append(f.bodies, body)
 	var respond func(http.ResponseWriter)
 	if len(f.statuses) > 0 {
 		respond, f.statuses = f.statuses[0], f.statuses[1:]
 	}
 	f.mu.Unlock()
+	if problem := v2Problem(r.URL.Query(), body); problem != "" {
+		status(http.StatusBadRequest, `{"message":"`+problem+`","code":50035}`)(w)
+		return
+	}
 	if respond == nil {
-		w.WriteHeader(http.StatusNoContent)
+		status(http.StatusOK, `{"id":"1","flags":32768}`)(w)
 		return
 	}
 	respond(w)
+}
+
+// v2Problem reports why Discord would refuse the post, or "" if it would not.
+func v2Problem(q url.Values, body []byte) string {
+	if q.Get("wait") != "true" || q.Get("with_components") != "true" {
+		return "missing wait=true or with_components=true"
+	}
+	var p map[string]json.RawMessage
+	if err := json.Unmarshal(body, &p); err != nil {
+		return "body is not JSON"
+	}
+	if string(p["flags"]) != "32768" {
+		return "flags must be 1<<15"
+	}
+	if _, ok := p["embeds"]; ok {
+		return "a V2 message cannot have embeds"
+	}
+	if _, ok := p["content"]; ok {
+		return "a V2 message cannot have content"
+	}
+	var components []json.RawMessage
+	if json.Unmarshal(p["components"], &components) != nil || len(components) == 0 {
+		return "no components"
+	}
+	return ""
+}
+
+// card is the text of a posted message.
+type card struct {
+	accent                              int
+	title, description, details, footer string
+	thumbnail                           string
+}
+
+func decodeCard(t *testing.T, body []byte) card {
+	t.Helper()
+	var p webhookPayload
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatalf("payload: %v\n%s", err, body)
+	}
+	if len(p.Components) != 1 || len(p.Components[0].Components) < 3 {
+		t.Fatalf("want one container with a section, a divider, and a footer: %s", body)
+	}
+	box := p.Components[0]
+	section, parts := box.Components[0], box.Components
+	if section.Type != componentSection || len(section.Components) == 0 || section.Accessory == nil || section.Accessory.Media == nil {
+		t.Fatalf("first component is not a section with a thumbnail: %s", body)
+	}
+	c := card{
+		accent:    box.AccentColor,
+		title:     strings.TrimPrefix(section.Components[0].Content, "### "),
+		footer:    parts[len(parts)-1].Content,
+		thumbnail: section.Accessory.Media.URL,
+	}
+	if len(section.Components) > 1 {
+		c.description = section.Components[1].Content
+	}
+	if len(parts) == 4 {
+		c.details = parts[2].Content
+	}
+	return c
 }
 
 func (f *fakeDiscord) count() int {
@@ -112,39 +182,110 @@ func TestSendPayloadShape(t *testing.T) {
 	msg := Message{
 		Key: "limit:a:five_hour", Severity: SeverityWarning, At: t0,
 		Title: "Claude account hit its 5-hour limit", Description: "**acct** is at its limit",
-		Fields: []Field{{Name: "Account", Value: "acct", Inline: true}, {Name: "Long", Value: strings.Repeat("x", 2000)}},
+		Fields: []Field{{Name: "Account", Value: "acct"}, {Name: "Long", Value: strings.Repeat("x", 2000)}},
 	}
 	if err := s.Send(context.Background(), testWebhook, msg); err != nil {
 		t.Fatalf("send: %v", err)
 	}
-	if fake.paths[0] != "POST /api/webhooks/123456789/"+fakeToken+" application/json" {
+	if fake.paths[0] != "POST /api/webhooks/123456789/"+fakeToken+"?wait=true&with_components=true application/json" {
 		t.Fatalf("request = %q", fake.paths[0])
 	}
-	var got struct {
-		Username string `json:"username"`
-		Embeds   []struct {
-			Title       string  `json:"title"`
-			Description string  `json:"description"`
-			Color       int     `json:"color"`
-			Timestamp   string  `json:"timestamp"`
-			Fields      []Field `json:"fields"`
-		} `json:"embeds"`
-		AllowedMentions struct {
-			Parse []string `json:"parse"`
-		} `json:"allowed_mentions"`
+	// The card layout chosen from mockups posted to a test channel.
+	want := `{
+		"username": "Taproot",
+		"avatar_url": "https://raw.githubusercontent.com/265866/taproot/main/internal/taproot/alerts/assets/taproot.png",
+		"flags": 32768,
+		"allowed_mentions": {"parse": []},
+		"components": [{"type": 17, "accent_color": 16096779, "components": [
+			{"type": 9, "components": [
+				{"type": 10, "content": "### Claude account hit its 5-hour limit"},
+				{"type": 10, "content": "**acct** is at its limit"}
+			], "accessory": {"type": 11, "media": {"url": "https://raw.githubusercontent.com/265866/taproot/main/internal/taproot/alerts/assets/taproot.png"}}},
+			{"type": 14, "divider": true, "spacing": 1},
+			{"type": 10, "content": "**Account** acct\n**Long** ` + strings.Repeat("x", 1023) + `…"},
+			{"type": 10, "content": "-# Taproot · <t:1793707200:f>"}
+		]}]
+	}`
+	assertJSONEqual(t, fake.bodies[0], want)
+}
+
+func assertJSONEqual(t *testing.T, got []byte, want string) {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got, &g); err != nil {
+		t.Fatalf("got: %v\n%s", err, got)
 	}
-	if err := json.Unmarshal(fake.bodies[0], &got); err != nil {
-		t.Fatalf("payload: %v\n%s", err, fake.bodies[0])
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatalf("want: %v", err)
 	}
-	if got.Username != "taproot" || len(got.Embeds) != 1 || got.AllowedMentions.Parse == nil || len(got.AllowedMentions.Parse) != 0 {
-		t.Fatalf("payload = %s", fake.bodies[0])
+	if !reflect.DeepEqual(g, w) {
+		t.Fatalf("payload = %s\nwant %s", got, want)
 	}
-	e := got.Embeds[0]
-	if e.Title != msg.Title || e.Description != msg.Description || e.Color != 0xF59E0B || e.Timestamp != "2026-11-03T12:00:00Z" {
-		t.Fatalf("embed = %+v", e)
+}
+
+// TestPayloadWithoutDescriptionOrFields keeps the card valid when an
+// optional part is empty: Discord refuses an empty text display.
+func TestPayloadWithoutDescriptionOrFields(t *testing.T) {
+	raw, err := json.Marshal(payloadFor(Message{Severity: SeverityRecovered, Title: "t", Description: " ", At: t0}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(e.Fields) != 2 || e.Fields[0] != msg.Fields[0] || len([]rune(e.Fields[1].Value)) != 1024 {
-		t.Fatalf("fields = %+v", e.Fields)
+	assertJSONEqual(t, raw, `{
+		"username": "Taproot", "avatar_url": "`+logoURL+`", "flags": 32768, "allowed_mentions": {"parse": []},
+		"components": [{"type": 17, "accent_color": 2278750, "components": [
+			{"type": 9, "components": [{"type": 10, "content": "### t"}], "accessory": {"type": 11, "media": {"url": "`+logoURL+`"}}},
+			{"type": 14, "divider": true, "spacing": 1},
+			{"type": 10, "content": "-# Taproot · <t:1793707200:f>"}
+		]}]
+	}`)
+}
+
+// TestPayloadStaysWithinDiscordLimits sends oversized text: the message
+// keeps under Discord's 4000 characters of text and 40 components, and the
+// title and footer survive.
+func TestPayloadStaysWithinDiscordLimits(t *testing.T) {
+	m := Message{Title: strings.Repeat("T", 500), Description: strings.Repeat("d", 5000), At: t0}
+	for i := range 30 {
+		m.Fields = append(m.Fields, Field{Name: "Field " + itoa(int64(i)), Value: strings.Repeat("é", 2000)})
+	}
+	p := payloadFor(m)
+	var count, chars int
+	var walk func([]component)
+	walk = func(cs []component) {
+		for _, c := range cs {
+			count++
+			chars += utf8.RuneCountInString(c.Content)
+			walk(c.Components)
+			if c.Accessory != nil {
+				walk([]component{*c.Accessory})
+			}
+		}
+	}
+	walk(p.Components)
+	if count > 40 || chars > maxText {
+		t.Fatalf("components = %d, text = %d characters", count, chars)
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := decodeCard(t, raw)
+	if c.title != strings.Repeat("T", maxTitle-1)+"…" || c.footer != "-# Taproot · <t:1793707200:f>" {
+		t.Fatalf("title = %q, footer = %q", c.title, c.footer)
+	}
+	if utf8.RuneCountInString(c.description) != maxDescription || !strings.HasPrefix(c.details, "**Field 0** éé") || strings.Count(c.details, "\n") >= maxFields {
+		t.Fatalf("description %d characters, details %q…", utf8.RuneCountInString(c.description), c.details[:40])
+	}
+}
+
+func TestTargetAddsTheExecuteQuery(t *testing.T) {
+	want := testWebhook + "?wait=true&with_components=true"
+	if got, err := NewSender(nil, "").target(testWebhook); err != nil || got != want {
+		t.Fatalf("target = %q, %v; want %q", got, err, want)
+	}
+	want = "http://127.0.0.1:9/api/webhooks/123456789/" + fakeToken + "?wait=true&with_components=true"
+	if got, err := NewSender(nil, "http://127.0.0.1:9/").target(testWebhook); err != nil || got != want {
+		t.Fatalf("origin target = %q, %v; want %q", got, err, want)
 	}
 }
 
@@ -319,11 +460,13 @@ func TestEnqueueCoalescesByKeyAndKeepsRecoveries(t *testing.T) {
 	if len(fake.bodies) != 101 {
 		t.Fatalf("posts = %d, want 101", len(fake.bodies))
 	}
-	var first webhookPayload
-	if err := json.Unmarshal(fake.bodies[0], &first); err != nil {
-		t.Fatal(err)
+	first := decodeCard(t, fake.bodies[0])
+	if first.title != "login works again" || first.accent != severityColors[SeverityRecovered] {
+		t.Fatalf("first post = %+v, want the recovery in the alert's place", first)
 	}
-	if first.Embeds[0].Title != "login works again" {
-		t.Fatalf("first post = %q, want the recovery in the alert's place", first.Embeds[0].Title)
+	for i, p := range fake.paths {
+		if !strings.HasSuffix(p, "?wait=true&with_components=true application/json") {
+			t.Fatalf("post %d = %q", i, p)
+		}
 	}
 }

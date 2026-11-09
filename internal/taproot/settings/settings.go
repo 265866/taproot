@@ -54,6 +54,8 @@ type AlertsSetter interface {
 	SetConfig(alerts.Config) error
 	Active() bool
 	WebhookInvalid() bool
+	// AnnounceWebhook queues a "Webhook connected" message without blocking.
+	AnnounceWebhook()
 }
 
 // Deps are the modules and paths the settings endpoints read and change.
@@ -411,6 +413,7 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 		}
 	}
 
+	newWebhook := false
 	if a := u.Alerts; a != nil {
 		if s.deps.Alerts == nil {
 			rollback()
@@ -432,6 +435,7 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 		undo = append(undo, func() { s.restore("alerts", s.deps.Alerts.SetConfig(before)) })
 		if next.DiscordWebhook != before.DiscordWebhook {
 			edits = append(edits, yamlEdit{path: []string{"alerts", "discord-webhook"}, value: next.DiscordWebhook})
+			newWebhook = next.DiscordWebhook != ""
 		}
 		if next.Enabled != nil && (before.Enabled == nil || *before.Enabled != *next.Enabled) {
 			edits = append(edits, yamlEdit{path: []string{"alerts", "enabled"}, value: *next.Enabled})
@@ -458,6 +462,9 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 		}
 	}
 	s.configPoll = poll
+	if newWebhook {
+		s.deps.Alerts.AnnounceWebhook()
+	}
 	return nil
 }
 

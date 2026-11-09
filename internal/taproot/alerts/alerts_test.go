@@ -113,11 +113,7 @@ func (h *harness) titles(t *testing.T, want int) []string {
 	defer h.fake.mu.Unlock()
 	var out []string
 	for _, b := range h.fake.bodies {
-		var p webhookPayload
-		if err := json.Unmarshal(b, &p); err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, p.Embeds[0].Title)
+		out = append(out, decodeCard(t, b).title)
 	}
 	if len(out) != want {
 		t.Fatalf("posts = %q, want %d", out, want)
@@ -385,11 +381,7 @@ func TestLoginWithAValidTokenStillServes(t *testing.T) {
 	if got := h.titles(t, 2); got[1] != "Claude login broken" {
 		t.Fatalf("titles = %q", got)
 	}
-	var p webhookPayload
-	if err := json.Unmarshal([]byte(h.body(t, 1)), &p); err != nil {
-		t.Fatal(err)
-	}
-	login := p.Embeds[0].Description
+	login := decodeCard(t, []byte(h.body(t, 1))).description
 	if !strings.Contains(login, "keeps working until") || !strings.Contains(login, "<t:"+itoa(expiry.Unix())+":f>") || strings.Contains(login, "serves no requests") {
 		t.Fatalf("login alert should say b works until its token expires: %s", login)
 	}
@@ -591,7 +583,7 @@ func TestDiscordOriginOverrideIsLoopbackOnlyAndLogged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target, _ := svc.sender.target(testWebhook); target != testWebhook {
+	if target, _ := svc.sender.target(testWebhook); target != testWebhook+"?"+executeQuery {
 		t.Fatalf("a non-loopback origin must be ignored, target = %q", target)
 	}
 	if !strings.Contains(logs.String(), "ignoring non-loopback") {
@@ -603,7 +595,7 @@ func TestDiscordOriginOverrideIsLoopbackOnlyAndLogged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target, _ := svc.sender.target(testWebhook); target != "http://127.0.0.1:9999/api/webhooks/123456789/"+fakeToken {
+	if target, _ := svc.sender.target(testWebhook); target != "http://127.0.0.1:9999/api/webhooks/123456789/"+fakeToken+"?"+executeQuery {
 		t.Fatalf("loopback target = %q", target)
 	}
 	out := logs.String()
@@ -656,5 +648,72 @@ func TestTestEndpointMakesOneShortAttempt(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
 	if w.Code != http.StatusBadGateway || time.Since(start) > 5*time.Second || strings.Contains(w.Body.String(), fakeToken) {
 		t.Fatalf("hung test send = %d %s after %v", w.Code, w.Body, time.Since(start))
+	}
+}
+
+func TestAnnounceWebhookPostsOnceAndOnlyWhenActive(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake)
+	h.svc.AnnounceWebhook()
+	if got := h.titles(t, 1); got[0] != "Webhook connected" {
+		t.Fatalf("titles = %q", got)
+	}
+	c := decodeCard(t, []byte(h.body(t, 0)))
+	if c.accent != severityColors[SeverityInfo] || c.thumbnail != logoURL || c.details != "" ||
+		!strings.Contains(c.description, "reset grant is about to expire") || c.footer != "-# Taproot · <t:"+itoa(t0.Unix())+":f>" {
+		t.Fatalf("connected message = %+v", c)
+	}
+
+	off := false
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	h.svc.AnnounceWebhook()
+	h.svc.sender.mu.Lock()
+	queued := len(h.svc.sender.order)
+	h.svc.sender.mu.Unlock()
+	if queued != 0 {
+		t.Fatalf("queued %d messages while alerts are off", queued)
+	}
+}
+
+// TestNewWebhookWaitsForItsAnnouncement keeps alerts that are already due
+// from reaching a new channel before "Webhook connected": SetConfig leaves
+// the evaluation asleep for a new webhook, and AnnounceWebhook queues the
+// message before waking it.
+func TestNewWebhookWaitsForItsAnnouncement(t *testing.T) {
+	h := newHarness(t, openDB(t, t.TempDir()), &fakeDiscord{})
+	woken := func() bool {
+		select {
+		case <-h.svc.wake:
+			return true
+		default:
+			return false
+		}
+	}
+	woken()
+	other := "https://discord.com/api/webhooks/42/otherToken"
+	if err := h.svc.SetConfig(Config{DiscordWebhook: other}); err != nil {
+		t.Fatal(err)
+	}
+	if woken() {
+		t.Fatal("a new webhook woke the evaluation before its announcement")
+	}
+	h.svc.AnnounceWebhook()
+	if !woken() {
+		t.Fatal("the announcement should wake the evaluation")
+	}
+	if got := h.titles(t, 1); got[0] != "Webhook connected" {
+		t.Fatalf("titles = %q", got)
+	}
+
+	off := false
+	for _, cfg := range []Config{{DiscordWebhook: other, Enabled: &off}, {}} {
+		if err := h.svc.SetConfig(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if !woken() {
+			t.Fatalf("SetConfig(%+v) should wake the evaluation", cfg)
+		}
 	}
 }

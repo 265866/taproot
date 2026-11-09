@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -42,22 +43,53 @@ var severityColors = map[Severity]int{
 	SeverityRecovered: 0x22C55E,
 }
 
-type embedFooter struct {
-	Text string `json:"text"`
+// Discord Components V2 component types.
+const (
+	componentSection   = 9
+	componentText      = 10
+	componentThumbnail = 11
+	componentSeparator = 14
+	componentContainer = 17
+)
+
+const (
+	// flagComponentsV2 marks a message whose content is components only.
+	flagComponentsV2 = 1 << 15
+	// executeQuery makes Discord accept components from a channel webhook
+	// and answer with the created message.
+	executeQuery = "wait=true&with_components=true"
+	// maxText is Discord's limit on the text of all components of a message.
+	// The fixed layout stays far below its 40-component limit.
+	maxText        = 4000
+	maxTitle       = 256
+	maxDescription = 2000
+	maxFieldName   = 256
+	maxFieldValue  = 1024
+	maxFields      = 25
+)
+
+// component is one Components V2 component; each type uses its own subset
+// of the fields.
+type component struct {
+	Type        int         `json:"type"`
+	AccentColor int         `json:"accent_color,omitempty"`
+	Content     string      `json:"content,omitempty"`
+	Components  []component `json:"components,omitempty"`
+	Accessory   *component  `json:"accessory,omitempty"`
+	Media       *media      `json:"media,omitempty"`
+	Divider     bool        `json:"divider,omitempty"`
+	Spacing     int         `json:"spacing,omitempty"`
 }
 
-type embed struct {
-	Title       string      `json:"title"`
-	Description string      `json:"description,omitempty"`
-	Color       int         `json:"color"`
-	Timestamp   string      `json:"timestamp"`
-	Fields      []Field     `json:"fields,omitempty"`
-	Footer      embedFooter `json:"footer"`
+type media struct {
+	URL string `json:"url"`
 }
 
 type webhookPayload struct {
 	Username        string          `json:"username"`
-	Embeds          []embed         `json:"embeds"`
+	AvatarURL       string          `json:"avatar_url"`
+	Flags           int             `json:"flags"`
+	Components      []component     `json:"components"`
 	AllowedMentions allowedMentions `json:"allowed_mentions"`
 }
 
@@ -66,24 +98,42 @@ type allowedMentions struct {
 	Parse []string `json:"parse"`
 }
 
+func textDisplay(content string) component {
+	return component{Type: componentText, Content: content}
+}
+
+// payloadFor lays m out as one card: the title and description beside the
+// logo, a divider, the fields as "**Name** value" lines, and a footer with
+// the time in Discord's <t:…> markup.
 func payloadFor(m Message) webhookPayload {
-	fields := make([]Field, 0, len(m.Fields))
-	for _, f := range m.Fields {
-		fields = append(fields, Field{Name: truncate(f.Name, 256), Value: truncate(f.Value, 1024), Inline: f.Inline})
+	title := "### " + truncate(m.Title, maxTitle)
+	description := truncate(m.Description, maxDescription)
+	footer := fmt.Sprintf("-# Taproot · <t:%d:f>", m.At.Unix())
+
+	header := []component{textDisplay(title)}
+	if strings.TrimSpace(description) != "" {
+		header = append(header, textDisplay(description))
 	}
-	if len(fields) > 25 {
-		fields = fields[:25]
+	card := []component{
+		{Type: componentSection, Components: header, Accessory: &component{Type: componentThumbnail, Media: &media{URL: logoURL}}},
+		{Type: componentSeparator, Divider: true, Spacing: 1},
 	}
+	fields := m.Fields[:min(len(m.Fields), maxFields)]
+	lines := make([]string, 0, len(fields))
+	for _, f := range fields {
+		lines = append(lines, "**"+truncate(f.Name, maxFieldName)+"** "+truncate(f.Value, maxFieldValue))
+	}
+	if len(lines) > 0 {
+		budget := maxText - utf8.RuneCountInString(title) - utf8.RuneCountInString(description) - utf8.RuneCountInString(footer)
+		card = append(card, textDisplay(truncate(strings.Join(lines, "\n"), budget)))
+	}
+	card = append(card, textDisplay(footer))
+
 	return webhookPayload{
-		Username: "taproot",
-		Embeds: []embed{{
-			Title:       truncate(m.Title, 256),
-			Description: truncate(m.Description, 4096),
-			Color:       severityColors[m.Severity],
-			Timestamp:   m.At.UTC().Format(time.RFC3339),
-			Fields:      fields,
-			Footer:      embedFooter{Text: "taproot"},
-		}},
+		Username:        "Taproot",
+		AvatarURL:       logoURL,
+		Flags:           flagComponentsV2,
+		Components:      []component{{Type: componentContainer, AccentColor: severityColors[m.Severity], Components: card}},
 		AllowedMentions: allowedMentions{Parse: []string{}},
 	}
 }
@@ -259,15 +309,18 @@ func (s *Sender) prepare(webhook string, m Message) ([]byte, string, error) {
 	return body, target, nil
 }
 
+// target is the execute URL: the webhook, or its path on the test origin,
+// with executeQuery. ValidateWebhook refuses webhooks that carry a query.
 func (s *Sender) target(webhook string) (string, error) {
-	if s.origin == "" {
-		return webhook, nil
-	}
 	u, err := url.Parse(webhook)
 	if err != nil {
 		return "", &DeliveryError{Reason: "invalid webhook"}
 	}
-	return s.origin + u.EscapedPath(), nil
+	if s.origin != "" {
+		return s.origin + u.EscapedPath() + "?" + executeQuery, nil
+	}
+	u.RawQuery = executeQuery
+	return u.String(), nil
 }
 
 // post sends once. It returns how long Discord asked to wait, and whether

@@ -19,11 +19,10 @@ const (
 	SeverityRecovered
 )
 
-// Field is one embed field.
+// Field is one "**Name** value" line of a message.
 type Field struct {
-	Name   string `json:"name"`
-	Value  string `json:"value"`
-	Inline bool   `json:"inline"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // Message is one alert or recovery notice.
@@ -178,11 +177,11 @@ func limitCondition(key string, a Account, o ingest.QuotaObservation) Condition 
 			Title:       fmt.Sprintf("%s account hit its %s limit", providerName(a.Provider), window),
 			Description: desc,
 			Fields: []Field{
-				{Name: "Account", Value: a.Label, Inline: true},
-				{Name: "Provider", Value: providerName(a.Provider), Inline: true},
-				{Name: "Window", Value: window, Inline: true},
-				{Name: "Used", Value: fmt.Sprintf("%.0f%%", o.Utilization*100), Inline: true},
-				{Name: "Resets", Value: resetText(o.ResetsAt), Inline: true},
+				{Name: "Account", Value: a.Label},
+				{Name: "Provider", Value: providerName(a.Provider)},
+				{Name: "Window", Value: window},
+				{Name: "Used", Value: fmt.Sprintf("%.0f%%", o.Utilization*100)},
+				{Name: "Resets", Value: resetText(o.ResetsAt)},
 			},
 		},
 		Recovery: &Message{
@@ -190,8 +189,8 @@ func limitCondition(key string, a Account, o ingest.QuotaObservation) Condition 
 			Title:       fmt.Sprintf("%s account usable again", providerName(a.Provider)),
 			Description: fmt.Sprintf("**%s** is below its %s limit again.", a.Label, window),
 			Fields: []Field{
-				{Name: "Account", Value: a.Label, Inline: true},
-				{Name: "Window", Value: window, Inline: true},
+				{Name: "Account", Value: a.Label},
+				{Name: "Window", Value: window},
 			},
 		},
 	}
@@ -199,8 +198,8 @@ func limitCondition(key string, a Account, o ingest.QuotaObservation) Condition 
 
 func loginCondition(key string, a Account) Condition {
 	fields := []Field{
-		{Name: "Account", Value: a.Label, Inline: true},
-		{Name: "Provider", Value: providerName(a.Provider), Inline: true},
+		{Name: "Account", Value: a.Label},
+		{Name: "Provider", Value: providerName(a.Provider)},
 	}
 	desc := fmt.Sprintf("**%s** can no longer refresh its credential and serves no requests until you sign in again from OAuth Login.", a.Label)
 	if a.StillServes {
@@ -209,7 +208,7 @@ func loginCondition(key string, a Account) Condition {
 			until += " at " + discordTime(a.ServesUntil)
 		}
 		desc = fmt.Sprintf("**%s** can no longer refresh its credential. It keeps working until %s; sign in again from OAuth Login before then.", a.Label, until)
-		fields = append(fields, Field{Name: "Works until", Value: resetText(a.ServesUntil), Inline: true})
+		fields = append(fields, Field{Name: "Works until", Value: resetText(a.ServesUntil)})
 	}
 	if a.LoginReason != "" {
 		fields = append(fields, Field{Name: "Reason", Value: a.LoginReason})
@@ -272,10 +271,10 @@ func poolCondition(provider string, list []Account, limited map[string]bool, lim
 			Title:       fmt.Sprintf("%s pool is empty", name),
 			Description: desc,
 			Fields: []Field{
-				{Name: "Provider", Value: name, Inline: true},
-				{Name: "Accounts", Value: fmt.Sprintf("%d", len(list)), Inline: true},
-				{Name: "Needs sign-in", Value: fmt.Sprintf("%d", broken), Inline: true},
-				{Name: "First back", Value: backText, Inline: true},
+				{Name: "Provider", Value: name},
+				{Name: "Accounts", Value: fmt.Sprintf("%d", len(list))},
+				{Name: "Needs sign-in", Value: fmt.Sprintf("%d", broken)},
+				{Name: "First back", Value: backText},
 			},
 		},
 		Recovery: &Message{
@@ -299,9 +298,9 @@ func grantCondition(key string, a Account, g Grant) Condition {
 			Description: fmt.Sprintf("**%s** has %d unused reset%s on grant *%s*, which expires %s. Redeem it from the dashboard before then.",
 				a.Label, g.ResetsLeft, plural(g.ResetsLeft), label, discordTime(g.EndsAt)),
 			Fields: []Field{
-				{Name: "Account", Value: a.Label, Inline: true},
-				{Name: "Resets left", Value: fmt.Sprintf("%d", g.ResetsLeft), Inline: true},
-				{Name: "Expires", Value: discordTime(g.EndsAt), Inline: true},
+				{Name: "Account", Value: a.Label},
+				{Name: "Resets left", Value: fmt.Sprintf("%d", g.ResetsLeft)},
+				{Name: "Expires", Value: discordTime(g.EndsAt)},
 			},
 		},
 		Until: g.EndsAt,

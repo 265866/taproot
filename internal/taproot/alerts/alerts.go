@@ -157,9 +157,14 @@ func (s *Service) SetConfig(cfg Config) error {
 		}
 	}
 	s.cfgMu.Lock()
+	newWebhook := cfg.DiscordWebhook != "" && cfg.DiscordWebhook != s.cfg.DiscordWebhook
 	s.cfg, s.webhookInvalid = cfg, false
 	s.cfgMu.Unlock()
-	s.signal()
+	// AnnounceWebhook wakes the evaluation for a new webhook, so the
+	// connected message is posted before any alert.
+	if !newWebhook {
+		s.signal()
+	}
 	return nil
 }
 
@@ -177,6 +182,20 @@ func (s *Service) WebhookInvalid() bool {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.webhookInvalid
+}
+
+// AnnounceWebhook queues a "Webhook connected" message after settings save
+// a new webhook, then wakes the evaluation that SetConfig held back. While
+// alerts are off it queues nothing.
+func (s *Service) AnnounceWebhook() {
+	if s.Active() {
+		s.sender.Enqueue(Message{
+			Key: "connected", Severity: SeverityInfo, At: s.now(),
+			Title:       "Webhook connected",
+			Description: "Taproot will post here when an account hits a limit, a provider runs out of accounts, a login stops working, or a reset grant is about to expire.",
+		})
+	}
+	s.signal()
 }
 
 // webhook is the URL deliveries use, or "" when alerts are off.
