@@ -2,6 +2,7 @@
 
 Taproot pools your Claude and Codex subscription accounts behind one endpoint on your tailnet. Claude Code and Codex on every device you allow send their requests to it, and taproot spreads them across the accounts. Only tailnet devices reach it, and it decides what each device may do by its Tailscale identity, so there are no API keys to hand out. Taproot is for one person or one household with a Linux server. It is a fork of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) and adds these features:
 
+- **Per-device access control.** Each tailnet device gets its own permissions: Proxy to send model requests, Admin to open the dashboard. New devices start with neither. A device you haven't allowed shows up as a request you can approve, including devices from your other tailnets. See [Access](docs/access.md).
 - **Soonest-reset-first routing.** New sessions go to the account whose weekly window resets soonest, so quota that is about to reset is spent first. A running session stays on its account.
 - **Quota ledger.** Taproot records every account's 5-hour and weekly use and projects when each pool runs empty.
 - **Usage and cost.** Requests, tokens, latency, and failures by account, model, session, and device, priced at API rates from an editable table.
