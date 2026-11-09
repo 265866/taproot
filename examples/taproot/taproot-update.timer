@@ -1,0 +1,14 @@
+# Checks for a taproot update once a day. An update restarts taproot, which
+# cuts streams in flight, so it runs in a quiet hour of the server's local
+# time. Persistent=true runs a check that the host slept or was off through.
+
+[Unit]
+Description=Check for a taproot update daily
+
+[Timer]
+OnCalendar=*-*-* 04:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

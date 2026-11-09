@@ -5,9 +5,13 @@ name: release-please
 # web/package.json, and the changelog job adds the release's section to
 # CHANGELOG.md on the PR's branch.
 # When the push merged that PR, release-please tags taproot-vX.Y.Z on the
-# merge commit and creates a draft release instead, and the release job builds
-# and publishes it. A tag created with GITHUB_TOKEN starts no workflow, so the
-# tag's push event never runs release.yml; this workflow calls it.
+# merge commit and creates a draft release instead, and the release job starts
+# release.yml on the tag, which builds and publishes it. A tag created with
+# GITHUB_TOKEN starts no workflow, so the tag's push event never runs
+# release.yml, but a workflow_dispatch with GITHUB_TOKEN does. The job
+# dispatches rather than calling release.yml as a reusable workflow, because a
+# called workflow's signing identity names the caller's ref (refs/heads/main),
+# and the documented `cosign verify` requires release.yml@refs/tags/taproot-v*.
 on:
   push:
     branches: [main]
@@ -82,12 +86,17 @@ jobs:
   release:
     needs: release-please
     if: needs.release-please.outputs.release-created == 'true'
-    # The most release.yml's jobs ask for; each job takes only its own.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
-      contents: write
-      packages: write
-      id-token: write
-      attestations: write
-    uses: ./.github/workflows/release.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag }}
+      actions: write
+    steps:
+      - name: Start release.yml on the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: |
+          if ! gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f tag="$TAG"; then
+            echo "::error::Could not start the release. Re-run this job, or run: gh workflow run release.yml --ref $TAG -f tag=$TAG"
+            exit 1
+          fi

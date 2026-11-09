@@ -1,15 +1,22 @@
 # Rootless Podman quadlet for taproot.
 #
-# 1. Build the image as your user: podman build -f Containerfile.taproot -t taproot .
-# 2. mkdir -p ~/taproot/data. On its first start, taproot writes config.yaml
+# 1. mkdir -p ~/taproot/data. On its first start, taproot writes config.yaml
 #    and taproot.yaml there; to use your own, copy them from examples/taproot.
-# 3. Replace 100.64.0.1 below with this host's address from `tailscale ip -4`.
-# 4. Copy this file to ~/.config/containers/systemd/taproot.container, then run
+# 2. Replace 100.64.0.1 below with this host's address from `tailscale ip -4`.
+# 3. Copy this file to ~/.config/containers/systemd/taproot.container, then run
 #    systemctl --user daemon-reload && systemctl --user start taproot
 #    and `loginctl enable-linger "$USER"` so it runs without a login session.
-# 5. Find the setup code with `journalctl --user -u taproot | grep 'setup code'`,
+# 4. Find the setup code with `journalctl --user -u taproot | grep 'setup code'`,
 #    open the URL in that line on the device you manage taproot from, and
 #    enter the code.
+#
+# The tag 0.2 follows the 0.2 releases. To update, run
+#    podman pull ghcr.io/265866/taproot:0.2 && systemctl --user restart taproot
+# Change the tag only after you read the new minor version's release notes.
+# To have scripts/taproot/taproot-update install signed patch releases for you
+# instead, run the local tag it moves: set Image=localhost/taproot:current, add
+# Pull=never, and run the script once to verify, pull, and tag the release, as
+# "Automatic updates (optional)" in README.md shows.
 #
 # Run it as your own user, not root, and without User= or UserNS=: Podman maps
 # the container's root to your user, which owns the 0600 files in the data
@@ -21,8 +28,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=localhost/taproot:latest
-Pull=never
+Image=ghcr.io/265866/taproot:0.2
 ContainerName=taproot
 Environment=TZ=Etc/UTC
 # The root filesystem is read-only, so everything taproot writes goes to the

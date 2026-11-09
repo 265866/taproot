@@ -1,0 +1,12 @@
+# Runs scripts/taproot/taproot-update once; taproot-update.timer starts it.
+# Install both files in ~/.config/systemd/user/ ("Automatic updates
+# (optional)" in README.md).
+
+[Unit]
+Description=Update taproot to the newest signed release on its tag
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/taproot-update
+# The update itself takes seconds; this bounds a hung download or registry.
+TimeoutStartSec=30min
