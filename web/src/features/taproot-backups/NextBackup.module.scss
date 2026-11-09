@@ -1,0 +1,31 @@
+.next {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.title {
+  color: var(--text-secondary);
+}
+
+.rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.row {
+  display: contents;
+
+  dt {
+    color: var(--text-tertiary);
+  }
+
+  dd {
+    margin: 0;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+}

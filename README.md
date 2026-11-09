@@ -226,7 +226,7 @@ Set `access.allow-logins`. Every other key in `taproot.yaml` is optional. An unk
 | `request-logs.max-days` | `14` | Retention by age. A negative value disables the limit. |
 | `request-logs.max-bytes` | `20GiB` | Retention by size of the request-log directory on disk. A negative value disables the limit. |
 | `request-logs.exclude-paths` | empty | Paths never stored, such as `HEAD /api/*`. |
-| `backups.daily-at` | `03:13` | Local time of the daily backup, or `off`. |
+| `backups.daily-at` | `00:00` | Server-local time of the daily backup (the `TZ` zone), or `off`. |
 | `backups.keep` | `14` | Backups kept of each kind. |
 | `alerts.discord-webhook` | empty | Discord webhook URL. It is a secret. |
 | `alerts.enabled` | `true` | Turns alerts off without removing the webhook. |

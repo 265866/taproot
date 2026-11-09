@@ -11,8 +11,14 @@
     "schedule": "Schedule",
     "schedule_off": "Off",
     "schedule_daily": "Daily at {{time}}",
-    "keep_one": "Server time · keeps {{count}} backup.",
-    "keep_other": "Server time · keeps the newest {{count}}.",
+    "keep_one": "Server time ({{zone}}) · keeps {{count}} backup.",
+    "keep_other": "Server time ({{zone}}) · keeps the newest {{count}}.",
+    "next": {
+      "title": "Next backup",
+      "server_time": "Server time",
+      "your_time": "Your time",
+      "zoned": "{{time}} ({{zone}})"
+    },
     "change_schedule": "Change in Settings",
     "loading": "Loading backups…",
     "load_failed": "Could not load backups: {{message}}",

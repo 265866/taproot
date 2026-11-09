@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/Button';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconX } from '@/components/ui/icons';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { NextBackup } from '@/features/taproot-backups/NextBackup';
+import { serverZoneLabel, type ServerZone } from '@/features/taproot-backups/model/schedule';
 import {
   taprootApi,
   type TaprootMe,
@@ -81,7 +83,7 @@ export function TaprootSettingsPage() {
           <AccessSection settings={settings.access} me={me} save={save} />
           <AdminNodesSection settings={settings.access} me={me} save={save} />
           <RetentionSection settings={settings.requestLogs} save={save} />
-          <BackupsSection settings={settings.backups} save={save} />
+          <BackupsSection settings={settings.backups} zone={settings.info} save={save} />
           <IngestSection settings={settings.ingest} save={save} />
           {settings.alerts && <AlertsSection settings={settings.alerts} save={save} />}
           <AboutSection settings={settings} me={me} />
@@ -492,7 +494,15 @@ function RetentionSection({
   );
 }
 
-function BackupsSection({ settings, save }: { settings: TaprootSettings['backups']; save: Save }) {
+export function BackupsSection({
+  settings,
+  zone,
+  save,
+}: {
+  settings: TaprootSettings['backups'];
+  zone: ServerZone;
+  save: Save;
+}) {
   const { t } = useTranslation();
   const ids = { time: useId(), keep: useId() };
   const [form, setForm, dirty, reset] = useDraft<BackupsForm>(backupsForm(settings));
@@ -525,9 +535,12 @@ function BackupsSection({ settings, save }: { settings: TaprootSettings['backups
             onChange={(event) => set('dailyAt', event.target.value)}
             disabled={!form.scheduled}
           />
-          <span className={styles.muted}>{t('taproot_settings.backups.server_time')}</span>
+          <span className={styles.muted}>
+            {t('taproot_settings.backups.server_time', { zone: serverZoneLabel(zone) })}
+          </span>
         </label>
       </div>
+      {settings.nextRunAt && <NextBackup nextRunAt={settings.nextRunAt} zone={zone} />}
       <label htmlFor={ids.keep} className={styles.inline}>
         <span>{t('taproot_settings.backups.keep')}</span>
         <input

@@ -25,9 +25,9 @@ import {
   summarizeBackups,
   type RestartWatch,
 } from './model/backups';
+import { formatCreatedAt, serverZoneLabel } from './model/schedule';
+import { NextBackup } from './NextBackup';
 import styles from './TaprootBackupsPage.module.scss';
-
-const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 export function TaprootBackupsPage() {
   const { t } = useTranslation();
@@ -35,13 +35,24 @@ export function TaprootBackupsPage() {
   const showNotification = useNotificationStore((state) => state.showNotification);
   const [backups, setBackups] = useState<Backup[] | null>(null);
   const [error, setError] = useState('');
-  const [schedule, setSchedule] = useState<TaprootSettings['backups'] | null>(null);
+  const [settings, setSettings] = useState<TaprootSettings | null>(null);
   const [creating, setCreating] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
   const [restored, setRestored] = useState<RestoreResult | null>(null);
   const [watch, setWatch] = useState<RestartWatch | null>(null);
 
+  // The schedule line is informational; the list still works without it.
+  const loadSettings = useCallback(
+    () =>
+      taprootApi
+        .settings()
+        .then(setSettings)
+        .catch(() => {}),
+    []
+  );
+
   const load = useCallback(async () => {
+    const settingsLoaded = loadSettings();
     try {
       const res = await taprootApi.backups();
       setBackups(res.backups);
@@ -49,16 +60,11 @@ export function TaprootBackupsPage() {
     } catch (err: unknown) {
       setError(getErrorMessage(err));
     }
-  }, []);
+    await settingsLoaded;
+  }, [loadSettings]);
 
   useEffect(() => {
     void load();
-    taprootApi
-      .settings()
-      .then((settings) => setSchedule(settings.backups))
-      .catch(() => {
-        // The schedule line is informational; the list still works without it.
-      });
   }, [load]);
   useHeaderRefresh(load);
 
@@ -71,11 +77,13 @@ export function TaprootBackupsPage() {
         .then((res) => {
           setWatch((current) => current && stepRestartWatch(current, true));
           setBackups(res.backups);
+          // The restore may have replaced taproot.yaml and with it the schedule.
+          void loadSettings();
         })
         .catch(() => setWatch((current) => current && stepRestartWatch(current, false)));
     }, RESTART_PROBE_MS);
     return () => window.clearTimeout(timer);
-  }, [watch]);
+  }, [watch, loadSettings]);
 
   const create = async () => {
     setCreating(true);
@@ -126,7 +134,7 @@ export function TaprootBackupsPage() {
         <div className={styles.figure}>
           <span className={styles.label}>{t('taproot_backups.latest')}</span>
           <span className={`numeral-lg ${styles.latest}`}>
-            {totals.newest ? dateTime.format(new Date(totals.newest.createdAt)) : '—'}
+            {totals.newest ? formatCreatedAt(totals.newest.createdAt) : '—'}
           </span>
           <span className={styles.sub}>
             {totals.newest ? t(`taproot_backups.reason.${totals.newest.reason}`) : ''}
@@ -135,16 +143,23 @@ export function TaprootBackupsPage() {
         <div className={styles.figure}>
           <span className={styles.label}>{t('taproot_backups.schedule')}</span>
           <span className={`numeral-lg ${styles.latest}`}>
-            {!schedule
+            {!settings
               ? '—'
-              : schedule.dailyAt === 'off'
+              : settings.backups.dailyAt === 'off'
                 ? t('taproot_backups.schedule_off')
-                : t('taproot_backups.schedule_daily', { time: schedule.dailyAt })}
+                : t('taproot_backups.schedule_daily', { time: settings.backups.dailyAt })}
           </span>
           <span className={styles.sub}>
-            {schedule && t('taproot_backups.keep', { count: schedule.keep })}{' '}
+            {settings &&
+              t('taproot_backups.keep', {
+                count: settings.backups.keep,
+                zone: serverZoneLabel(settings.info),
+              })}{' '}
             <Link to={ROUTES.settings}>{t('taproot_backups.change_schedule')}</Link>
           </span>
+          {settings?.backups.nextRunAt && (
+            <NextBackup nextRunAt={settings.backups.nextRunAt} zone={settings.info} />
+          )}
         </div>
       </section>
 
@@ -188,9 +203,7 @@ export function TaprootBackupsPage() {
               {backups.map((backup) => (
                 <tr key={backup.id}>
                   <td>
-                    <div className={styles.created}>
-                      {dateTime.format(new Date(backup.createdAt))}
-                    </div>
+                    <div className={styles.created}>{formatCreatedAt(backup.createdAt)}</div>
                     <code className={styles.id}>{backup.id}</code>
                   </td>
                   <td>
@@ -311,7 +324,7 @@ function RestoreDialog({
       >
         <p className={styles.dialogLead}>
           {t('taproot_backups.restore_lead', {
-            when: dateTime.format(new Date(backup.createdAt)),
+            when: formatCreatedAt(backup.createdAt),
           })}
         </p>
         <ol className={styles.steps}>

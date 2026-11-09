@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -43,6 +44,8 @@ type RetentionSetter interface {
 type ScheduleSetter interface {
 	Schedule() (dailyAt string, keep int)
 	SetSchedule(dailyAt string, keep int) error
+	// NextRun is the next scheduled backup, false while the schedule is off.
+	NextRun() (time.Time, bool)
 }
 
 // AlertsSetter is the alerts module's runtime webhook and switch.
@@ -74,6 +77,9 @@ type Settings struct {
 	deps         Deps
 	activePoll   time.Duration
 	identityFrom func(*gin.Context) (access.Identity, bool)
+	// timeZone is the IANA name of the server's zone, or "" when unknown.
+	timeZone string
+	now      func() time.Time
 
 	mu         sync.Mutex
 	configPoll time.Duration
@@ -91,7 +97,10 @@ func New(deps Deps) (*Settings, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Settings{deps: deps, activePoll: poll, configPoll: poll, identityFrom: access.IdentityFrom}, nil
+	return &Settings{
+		deps: deps, activePoll: poll, configPoll: poll, identityFrom: access.IdentityFrom,
+		timeZone: localZoneName(os.LookupEnv, os.Readlink), now: time.Now,
+	}, nil
 }
 
 // parsePollInterval mirrors ingest's rules: blank is the default, "0" disables.
@@ -147,6 +156,8 @@ type requestLogsView struct {
 type backupsView struct {
 	DailyAt string `json:"dailyAt"`
 	Keep    int    `json:"keep"`
+	// NextRunAt is RFC 3339 in the server's zone, absent while the schedule is off.
+	NextRunAt string `json:"nextRunAt,omitempty"`
 }
 
 type ingestView struct {
@@ -174,6 +185,11 @@ type infoView struct {
 	Version    string `json:"version"`
 	Commit     string `json:"commit"`
 	BuildDate  string `json:"buildDate"`
+	// TimeZone is the server zone's IANA name, or "" when it cannot be
+	// named. UTCOffsetSeconds and ZoneAbbreviation are its current values.
+	TimeZone         string `json:"timeZone"`
+	UTCOffsetSeconds int    `json:"utcOffsetSeconds"`
+	ZoneAbbreviation string `json:"zoneAbbreviation"`
 }
 
 type view struct {
@@ -214,6 +230,11 @@ type update struct {
 func (s *Settings) current() view {
 	ret := s.deps.Logs.Retention()
 	dailyAt, keep := s.deps.Backups.Schedule()
+	backups := backupsView{DailyAt: dailyAt, Keep: keep}
+	if next, ok := s.deps.Backups.NextRun(); ok {
+		backups.NextRunAt = next.Format(time.RFC3339)
+	}
+	abbreviation, offset := s.now().Zone()
 	var alertsSection *alertsView
 	if s.deps.Alerts != nil {
 		cfg := s.deps.Alerts.Config()
@@ -231,7 +252,7 @@ func (s *Settings) current() view {
 		RequestLogs: requestLogsView{
 			MaxDays: ret.MaxDays, MaxBytes: int64(ret.MaxBytes), ExcludePaths: nonNilStrings(ret.ExcludePaths), KeepUnrouted404: ret.KeepUnrouted404,
 		},
-		Backups: backupsView{DailyAt: dailyAt, Keep: keep},
+		Backups: backups,
 		Ingest: ingestView{
 			PollInterval:       formatDuration(s.configPoll),
 			ActivePollInterval: formatDuration(s.activePoll),
@@ -241,6 +262,7 @@ func (s *Settings) current() view {
 		Info: infoView{
 			ConfigPath: s.deps.ConfigPath, DataDir: s.deps.DataDir,
 			Version: buildinfo.Version, Commit: buildinfo.Commit, BuildDate: buildinfo.BuildDate,
+			TimeZone: s.timeZone, UTCOffsetSeconds: offset, ZoneAbbreviation: abbreviation,
 		},
 	}
 }

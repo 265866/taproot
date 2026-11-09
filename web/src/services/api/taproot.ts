@@ -321,7 +321,13 @@ export interface TaprootSettings {
     excludePaths: string[];
     keepUnrouted404: boolean;
   };
-  backups: { dailyAt: string; keep: number };
+  backups: {
+    /** `HH:MM` in the server's zone, or `off`. */
+    dailyAt: string;
+    keep: number;
+    /** RFC 3339 with the server's offset; absent while the schedule is off. */
+    nextRunAt?: string;
+  };
   ingest: { pollInterval: string; activePollInterval: string; restartRequired: boolean };
   /** Absent when the server has no alerts module. The webhook itself never leaves the server. */
   alerts?: {
@@ -334,7 +340,20 @@ export interface TaprootSettings {
     webhookInvalid: boolean;
     active: boolean;
   };
-  info: { configPath: string; dataDir: string; version: string; commit: string; buildDate: string };
+  info: TaprootServerInfo;
+}
+
+export interface TaprootServerInfo {
+  configPath: string;
+  dataDir: string;
+  version: string;
+  commit: string;
+  buildDate: string;
+  /** The server zone's IANA name, or `''` when the server cannot name it. */
+  timeZone: string;
+  /** The server zone's current offset from UTC. */
+  utcOffsetSeconds: number;
+  zoneAbbreviation: string;
 }
 
 /** A `PUT /settings` body: absent sections and fields stay as they are. */

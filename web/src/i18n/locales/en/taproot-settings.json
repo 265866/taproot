@@ -53,7 +53,7 @@
       "description": "A daily snapshot of config, credentials, and the database.",
       "scheduled": "Back up daily",
       "at": "at",
-      "server_time": "server time",
+      "server_time": "server time ({{zone}})",
       "keep": "Keep the newest",
       "keep_unit": "backups of each kind",
       "keep_hint": "The count applies to each kind separately: scheduled, manual, and pre-restore backups each keep this many. Lowering it removes the oldest of each kind after the next backup is written."
@@ -106,7 +106,7 @@
       "size_min": "The size limit must be at least 1 MB.",
       "exclude_format": "{{detail}} must be a path starting with /, optionally after a method.",
       "keep_range": "Keep must be a whole number from 1 to 1000.",
-      "time_format": "Use a 24-hour time such as 03:13.",
+      "time_format": "Use a 24-hour time such as 00:00 or 14:30.",
       "duration_format": "Use a duration such as 15m or 1h30m, or 0.",
       "webhook_format": "Paste a Discord webhook URL, which starts with https://discord.com/api/webhooks/."
     }
