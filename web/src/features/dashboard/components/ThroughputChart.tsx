@@ -229,31 +229,33 @@ export function ThroughputChart({ traffic }: ThroughputChartProps) {
       </div>
 
       <Collapsible className={styles.tableToggle} label={t('dashboard.traffic_table')}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th scope="col">{t('dashboard.traffic_table_window')}</th>
-              <th scope="col">{t('stats.success')}</th>
-              <th scope="col">{t('stats.failure')}</th>
-              <th scope="col">{t('dashboard.success_rate')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {buckets.map((bucket, index) => {
-              const bucketTotal = bucket.success + bucket.failed;
-              return (
-                <tr key={bucket.time ?? index}>
-                  <th scope="row">{bucketRangeLabel(bucket.time, index, buckets.length)}</th>
-                  <td>{bucket.success.toLocaleString()}</td>
-                  <td>{bucket.failed.toLocaleString()}</td>
-                  <td>
-                    {bucketTotal > 0 ? formatPercent((bucket.success / bucketTotal) * 100) : '—'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className={styles.tableScroll}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th scope="col">{t('dashboard.traffic_table_window')}</th>
+                <th scope="col">{t('stats.success')}</th>
+                <th scope="col">{t('stats.failure')}</th>
+                <th scope="col">{t('dashboard.success_rate')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {buckets.map((bucket, index) => {
+                const bucketTotal = bucket.success + bucket.failed;
+                return (
+                  <tr key={bucket.time ?? index}>
+                    <th scope="row">{bucketRangeLabel(bucket.time, index, buckets.length)}</th>
+                    <td>{bucket.success.toLocaleString()}</td>
+                    <td>{bucket.failed.toLocaleString()}</td>
+                    <td>
+                      {bucketTotal > 0 ? formatPercent((bucket.success / bucketTotal) * 100) : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </Collapsible>
     </figure>
   );

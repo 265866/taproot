@@ -133,6 +133,8 @@
 
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   padding: 3px;
   gap: 2px;
   border-radius: 10px;
@@ -168,6 +170,13 @@
   &:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 1px;
+  }
+}
+
+// Five group-by segments fit one row on a 360px phone with narrower padding; wider ones wrap.
+@media (max-width: 480px) {
+  .segment {
+    padding: 8px 7px;
   }
 }
 
@@ -643,6 +652,12 @@
   }
 }
 
+@media (pointer: coarse) {
+  .sortButton {
+    min-height: 40px;
+  }
+}
+
 .groupCell {
   display: inline-flex;
   align-items: center;
@@ -932,6 +947,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
   gap: 12px;
+
+  // Tablets fit four 170px tiles, which leaves the fifth alone on a row; wider tiles give 3 + 2.
+  @media (min-width: 600px) and (max-width: 1100px) {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
 }
 
 .poolBar {

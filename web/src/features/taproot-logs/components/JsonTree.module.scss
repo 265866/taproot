@@ -59,7 +59,11 @@
   border-left: 1px solid var(--border-color);
 }
 
+// A long value must not squeeze the key to one character per line; the key keeps its width up
+// to 60% of the row and wraps beyond that.
 .key {
+  flex-shrink: 0;
+  max-width: 60%;
   color: var(--text-secondary);
 }
 

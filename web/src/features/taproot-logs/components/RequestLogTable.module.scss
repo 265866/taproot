@@ -3,6 +3,8 @@
   border-radius: var(--radius-lg);
   background: var(--bg-primary);
   overflow: hidden;
+  overflow-x: auto;
+  container: request-log-table / inline-size;
 }
 
 .table {
@@ -150,8 +152,9 @@
   font-size: 12px;
 }
 
-// Narrow screens: each row becomes a small card; cells label themselves.
-@media (max-width: 760px) {
+// A narrow table, on a phone or beside the sidebar on a tablet, cannot fit eight columns: each
+// row becomes a small card, and cells label themselves.
+@container request-log-table (max-width: 760px) {
   .table {
     thead {
       display: none;
