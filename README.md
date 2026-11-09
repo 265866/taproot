@@ -29,7 +29,7 @@ These steps run the published image with rootless Podman. They take you from an 
 ### 1. Check the prerequisites
 
 - A Linux host, amd64 or arm64, on your tailnet, with `tailscaled` running.
-- Rootless Podman 5 or later, or rootful Docker.
+- Rootless Podman 5 or later, or rootful Docker. Rootless Docker does not work in its default setup. It shows taproot every caller as the Docker bridge's gateway address, so no device can be identified, and taproot refuses them all.
 - A second device on the same tailnet, with a browser, for the dashboard.
 
 Taproot runs on Linux only. It identifies callers through the host's `tailscaled` socket and needs a container runtime that keeps each caller's address, and Docker Desktop on macOS and Windows has neither.
@@ -58,16 +58,16 @@ Rootless Podman does not start this container again after the host reboots. To r
 While no device has Admin, taproot logs a setup code each time it starts:
 
 ```sh
-podman logs taproot 2>&1 | grep 'setup code'
+podman logs taproot 2>&1 | grep 'setup code [A-Z0-9]'
 ```
 
-On the device you will manage taproot from, open the URL in that line, `http://<server>:8317/`. `<server>` is the host's MagicDNS name or Tailscale address. Enter the code and select **Claim this server**. That device gets Proxy and Admin, and the code stops working.
+On the device you will manage taproot from, open the URL in that line, `http://<server>:8317/`. `<server>` is the host's MagicDNS name or Tailscale address. The line shows the port inside the container, 8317; if you published another port, use that one. Enter the code and select **Claim this server**. That device gets Proxy and Admin, and the code stops working.
 
 ### 4. Add an account
 
 On the dashboard, go to **Accounts** and select **Add account**.
 
-1. Select Claude or Codex under **Sign in with a provider**. The provider's sign-in page opens.
+1. Select Claude or Codex under **Sign in with a provider**, then select **Open Link** in the dialog to open the provider's sign-in page.
 2. Sign in. The provider then sends you to a `http://localhost:...` address, which does not load.
 3. Copy the full address from the address bar, paste it into **Callback URL**, and select **Submit Callback URL**.
 
@@ -126,14 +126,14 @@ A backup also holds the Codex refresh journal, `auths/.codex-refresh/`, where ta
 ```sh
 mkdir -p "$HOME/taproot/data" "$HOME/.config/containers/systemd"
 curl -fsSL -o "$HOME/.config/containers/systemd/taproot.container" \
-  https://raw.githubusercontent.com/265866/taproot/main/examples/taproot/taproot.container
+  https://raw.githubusercontent.com/265866/taproot/taproot-v0.2.0/examples/taproot/taproot.container
 sed -i "s/^PublishPort=100\.64\.0\.1:/PublishPort=$(tailscale ip -4):/" \
   "$HOME/.config/containers/systemd/taproot.container"
 podman pull ghcr.io/265866/taproot:0.2
 systemctl --user daemon-reload
 systemctl --user start taproot
 loginctl enable-linger "$USER"
-journalctl --user -u taproot | grep 'setup code'
+journalctl --user -u taproot | grep 'setup code [A-Z0-9]'
 ```
 
 The quadlet runs `ghcr.io/265866/taproot:0.2` and pulls it only when the host does not have it, so an update waits until you pull. `loginctl enable-linger` keeps the service running when you are not signed in. Run the quadlet as your own user, without `User=` or `UserNS=`. Podman maps the container's root to your user, which owns the files in the data directory.
@@ -145,10 +145,10 @@ The quadlet runs `ghcr.io/265866/taproot:0.2` and pulls it only when the host do
 ```sh
 mkdir -p "$HOME/taproot/data"
 cd "$HOME/taproot"
-curl -fsSLO https://raw.githubusercontent.com/265866/taproot/main/examples/taproot/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/265866/taproot/taproot-v0.2.0/examples/taproot/compose.yaml
 printf 'TS_IP=%s\nTAPROOT_USER=%s:%s\n' "$(tailscale ip -4)" "$(id -u)" "$(id -g)" > .env
 docker compose up -d
-docker compose logs taproot | grep 'setup code'
+docker compose logs taproot | grep 'setup code [A-Z0-9]'
 ```
 
 Create `data/` before the first `docker compose up`. Otherwise Docker creates it as root, and taproot cannot write to it.
@@ -225,14 +225,14 @@ sudo curl -fsSL -o /etc/systemd/system/taproot.service \
   "https://raw.githubusercontent.com/265866/taproot/taproot-v$v/examples/taproot/taproot.service"
 sudo systemctl daemon-reload
 sudo systemctl enable --now taproot
-sudo journalctl -u taproot | grep 'setup code'
+sudo journalctl -u taproot | grep 'setup code [A-Z0-9]'
 ```
 
 A browser on the server itself connects as the server's own node, which never gets Admin, so it cannot claim the server or open the dashboard. Claim the server from another device.
 
 ## Verify a release
 
-Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check the image you pulled before you run it, verify its digest rather than its tag, which can move between the pull and the check:
+Releases are built by the release workflow in this repository. Each image has a GitHub build attestation and a keyless cosign signature, and each tarball has a GitHub build attestation. To check the image you pulled before you run it, verify its digest rather than its tag, which can move between the pull and the check. Install [cosign](https://github.com/sigstore/cosign/releases) first, then run:
 
 ```sh
 podman pull ghcr.io/265866/taproot:0.2
