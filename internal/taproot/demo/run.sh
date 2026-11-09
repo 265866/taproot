@@ -17,6 +17,9 @@
 # Build the dashboard first (bash scripts/taproot/build-web.sh); without it
 # the server embeds a placeholder page.
 set -euo pipefail
+# The server and the browser both show times with their zone, so pin one: a
+# capture must not reveal the host's time zone.
+export TZ=Etc/UTC
 
 port=8399
 dir=""
