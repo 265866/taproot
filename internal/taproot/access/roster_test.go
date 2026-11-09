@@ -57,11 +57,11 @@ func TestDevicesEndpointJoinsTailnetAndGrants(t *testing.T) {
 		t.Fatalf("devices = %+v, want 7 with the server first", resp.Devices)
 	}
 	for id, want := range map[string]deviceView{
-		serverID:              {Name: "server", DNSName: "server." + tailnetSuffix, Login: testLogin, OS: "linux", Server: true, OnTailnet: true, Proxy: true},
-		laptopID:              {Name: "laptop", DNSName: "laptop." + tailnetSuffix, Login: testLogin, OS: "macOS", OnTailnet: true, Proxy: true, Admin: true},
-		workerID:              {Name: "worker", DNSName: "worker." + tailnetSuffix, Login: testLogin, OS: "linux", OnTailnet: true, Proxy: true},
-		bobID:                 {Name: "bob-pc", DNSName: "bob-pc." + tailnetSuffix, Login: "bob@example.org", OS: "windows", OnTailnet: true},
-		stableID("ci-runner"): {Name: "ci-runner", DNSName: "ci-runner." + tailnetSuffix, OS: "linux", OnTailnet: true, Proxy: true},
+		serverID:              {Name: "server", DNSName: "server." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "linux", Server: true, OnTailnet: true, Online: true, Proxy: true},
+		laptopID:              {Name: "laptop", DNSName: "laptop." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "macOS", OnTailnet: true, Online: true, Proxy: true, Admin: true},
+		workerID:              {Name: "worker", DNSName: "worker." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "linux", OnTailnet: true, Online: true, Proxy: true},
+		bobID:                 {Name: "bob-pc", DNSName: "bob-pc." + tailnetSuffix, Login: "bob@example.org", OwnerName: "Bob", OS: "windows", OnTailnet: true, Online: true},
+		stableID("ci-runner"): {Name: "ci-runner", DNSName: "ci-runner." + tailnetSuffix, OS: "linux", OnTailnet: true, Online: true, Proxy: true},
 		"ngoneCNTRL":          {Name: "old-laptop", Proxy: true},
 	} {
 		got, ok := findDevice(resp, id)

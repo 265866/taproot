@@ -91,6 +91,9 @@ func seed(ctx context.Context, dir string, port int, start time.Time) (string, e
 	if err := writeUsage(ctx, db, requests); err != nil {
 		return "", err
 	}
+	if err := seedRequest(ctx, db, start); err != nil {
+		return "", err
+	}
 	backups, err := backup.New(backup.Config{DailyAt: "off"}, db, backup.Paths{
 		ConfigFile:  filepath.Join(dir, "config.yaml"),
 		TaprootFile: filepath.Join(dir, "taproot.yaml"),
@@ -119,6 +122,22 @@ func requireEmptyDir(dir string) error {
 	}
 	if len(entries) > 0 {
 		return fmt.Errorf("%s is not empty; the demo writes into an empty directory so a rerun never mixes data", dir)
+	}
+	return nil
+}
+
+// seedRequest records dana's access request through taproot's own request
+// code: Claude Code was refused a few times, then the device named itself
+// from its browser.
+func seedRequest(ctx context.Context, db *store.DB, start time.Time) error {
+	requests := access.NewRequests(db, nil)
+	in := access.RequestInput{NodeID: danaPC.id, Login: danaLogin, OwnerName: displayNames[danaLogin], Outside: true, Client: "Claude Code"}
+	if err := requests.Record(ctx, in, 6, start.Add(-25*time.Minute)); err != nil {
+		return fmt.Errorf("seed access request: %w", err)
+	}
+	in.NameHint = "Dana's PC"
+	if err := requests.Record(ctx, in, 1, start.Add(-20*time.Minute)); err != nil {
+		return fmt.Errorf("seed access request: %w", err)
 	}
 	return nil
 }

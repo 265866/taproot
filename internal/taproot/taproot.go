@@ -184,6 +184,9 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot alerts: %w", err)
 	}
+	guard.AttachRequests(access.NewRequests(db, func(n access.RequestNotice) {
+		notify.AccessRequested(alerts.AccessRequest{NodeID: n.NodeID, Name: n.Name, Login: n.Login, Client: n.Client, At: n.At})
+	}))
 	editable, err := settings.New(settings.Deps{
 		Access:        guard,
 		AccessEnabled: tp.Access.Enabled == nil || *tp.Access.Enabled,

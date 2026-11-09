@@ -176,6 +176,7 @@ func TestClaimWriteFailureKeepsTheCode(t *testing.T) {
 func TestAdminEditEndsTheClaim(t *testing.T) {
 	f, code := newUnclaimed(t)
 	f.caller = access.Identity{Via: access.ViaLoopback}
+	f.access.tailnet = &access.Tailnet{Self: access.TailnetDevice{ID: serverID}, Peers: []access.TailnetDevice{{ID: "nworkerCNTRL", Name: "worker"}}}
 	if status, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nworkerCNTRL", "name": "worker", "proxy": true, "admin": true}]}}`); status != http.StatusOK {
 		t.Fatalf("PUT = %d %s", status, body)
 	}
