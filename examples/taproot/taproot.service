@@ -1,0 +1,78 @@
+# systemd system unit for the taproot release binary, outside a container.
+#
+# Outside a container every local process can connect from loopback, and
+# taproot treats loopback callers as admins. This unit drops loopback traffic
+# (IPAddressDeny=localhost), and config.yaml must make taproot listen on this
+# host's Tailscale address, never 0.0.0.0 or 127.0.0.1. The README's
+# "Plain binary with systemd" section lists the install steps:
+#
+# 1. Unpack the release tarball to /opt/taproot. Keep the license files beside
+#    the binary; the LGPL requires them.
+# 2. Create the user: useradd --system --home-dir /var/lib/taproot --shell /usr/sbin/nologin taproot
+# 3. Put config.yaml, with server.host set to `tailscale ip -4` and
+#    oauth.auth-dir set to /var/lib/taproot/auths, and an empty taproot.yaml
+#    in /var/lib/taproot.
+# 4. Copy this file to /etc/systemd/system/taproot.service, then run
+#    systemctl daemon-reload && systemctl enable --now taproot
+# 5. Find the setup code with `journalctl -u taproot | grep 'setup code'`.
+
+[Unit]
+Description=taproot (tailnet-only AI proxy and dashboard)
+# The access guard identifies callers through tailscaled's socket.
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+ExecStart=/opt/taproot/taproot --config /var/lib/taproot/config.yaml
+User=taproot
+Group=taproot
+StateDirectory=taproot
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/taproot
+Environment=HOME=/var/lib/taproot/home
+Environment=XDG_CACHE_HOME=/var/lib/taproot/cache
+Environment=WRITABLE_PATH=/var/lib/taproot
+# The local time of the daily backup. Remove the line to use the system zone.
+Environment=TZ=Etc/UTC
+# IPAddressDeny below also blocks a loopback DNS server, such as
+# systemd-resolved's stub at 127.0.0.53. Where resolved runs, this gives
+# taproot resolved's upstream servers instead. The - skips it elsewhere.
+BindReadOnlyPaths=-/run/systemd/resolve/resolv.conf:/etc/resolv.conf
+# Restarts also cover a start before tailscaled has assigned the address.
+Restart=always
+RestartSec=5
+# Long-running streams get time to finish on stop.
+TimeoutStopSec=45
+UMask=0077
+
+# Loopback callers are admins, so loopback traffic is dropped both ways. That
+# also blocks outbound connections to loopback, such as a local proxy-url.
+IPAddressDeny=localhost
+# AF_UNIX for tailscaled's socket and name lookups, AF_NETLINK for Go's
+# interface listing.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+
+[Install]
+WantedBy=multi-user.target

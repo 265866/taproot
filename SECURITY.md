@@ -22,7 +22,7 @@ The server has two surfaces:
 
 The admin surface needs no key: for admitted callers, the guard adds the management key inside the process, and the key never reaches a browser. Because of that, the guard also refuses browser requests made on behalf of another site: a `Host` that is not one of the server's names, a cross-origin `Origin`, cross-site `Sec-Fetch-Site` values, and a state-changing `GET` without `X-Taproot-Request: 1`. Upstream's Redis-protocol usage queue on the same port accepts loopback connections only.
 
-Permissions belong to a device's Tailscale stable ID, which is never reused; names grant nothing. Taproot refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. The [README](README.md#how-access-works) and [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md) describe the model in full.
+Permissions belong to a device's Tailscale stable ID, which is never reused; names grant nothing. Taproot refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. The [README](README.md#access) summarizes the model, and the "Security model" section of [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md#security-model) describes it in full.
 
 ## Run taproot safely
 
@@ -32,7 +32,7 @@ Permissions belong to a device's Tailscale stable ID, which is never reused; nam
 - **Do not publish the port on `127.0.0.1`.** A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
 - **Give Admin only to devices you use the dashboard from**, and keep `access.addresses` to single addresses.
 - **Treat the data directory and every backup like a password.** They hold the OAuth tokens.
-- **Check the deployment after every change**, with the steps in the README's [Check the deployment](README.md#5-check-the-deployment).
+- **Check the deployment after every change**, with the steps in the README's [Check the deployment](README.md#check-the-deployment).
 
 ## Scope
 

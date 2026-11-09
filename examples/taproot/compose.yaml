@@ -1,0 +1,50 @@
+# Docker Compose file for taproot under rootful Docker.
+#
+# 1. Put this file in a new directory, such as ~/taproot, and create data/
+#    beside it: mkdir -p ~/taproot/data. On its first start, taproot writes
+#    config.yaml and taproot.yaml there.
+# 2. In the same directory, write the two values below to .env, which Compose
+#    reads:
+#      printf 'TS_IP=%s\nTAPROOT_USER=%s:%s\n' "$(tailscale ip -4)" "$(id -u)" "$(id -g)" > .env
+# 3. docker compose up -d
+# 4. Find the setup code with `docker compose logs taproot | grep 'setup code'`,
+#    open the URL in that line on the device you manage taproot from, and
+#    enter the code.
+#
+# For rootless Podman, use taproot.container instead.
+
+services:
+  taproot:
+    image: ghcr.io/265866/taproot:0.2
+    container_name: taproot
+    restart: unless-stopped
+    # Container root is the host's root under rootful Docker, so run as the
+    # owner of data/. Taproot keeps the files there at mode 0600.
+    user: "${TAPROOT_USER:?set TAPROOT_USER to your uid:gid in .env}"
+    environment:
+      TZ: Etc/UTC
+      # The root filesystem is read-only, so everything taproot writes goes to
+      # the data directory.
+      HOME: /taproot/config/home
+      XDG_CACHE_HOME: /taproot/config/cache
+      WRITABLE_PATH: /taproot/config
+    volumes:
+      # config.yaml, taproot.yaml, auths/, and taproot's database, request logs,
+      # and backups. Mount the directory, not single files: restoring a backup
+      # replaces files by rename. Add :Z on an SELinux host.
+      - ./data:/taproot/config
+      # The access guard identifies callers through the host's tailscaled.
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+    # Publish on the host's Tailscale address only. Never 0.0.0.0, a LAN
+    # address, or 127.0.0.1: loopback callers are admins.
+    ports:
+      - "${TS_IP:?set TS_IP to the output of tailscale ip -4 in .env}:8317:8317"
+    read_only: true
+    # Podman adds this tmpfs to a read-only container by itself; Docker does not.
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 45s
