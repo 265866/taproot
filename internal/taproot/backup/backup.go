@@ -356,7 +356,7 @@ func (b *Backups) createLocked(ctx context.Context, reason Reason) (Entry, error
 	if err != nil {
 		return Entry{}, fmt.Errorf("stat backup: %w", err)
 	}
-	return Entry{ID: id, CreatedAt: createdAt, Bytes: info.Size(), Reason: reason, Files: len(m.Files)}, nil
+	return Entry{ID: id, CreatedAt: createdAt, Bytes: info.Size(), Reason: reason, Files: fileCount(m)}, nil
 }
 
 func (b *Backups) freeID(createdAt time.Time, reason Reason) (string, error) {
@@ -377,9 +377,11 @@ func (b *Backups) freeID(createdAt time.Time, reason Reason) (string, error) {
 	return "", fmt.Errorf("no free backup id at %s", base)
 }
 
-// collect reads config and auth files into memory. They are small, and
-// holding them keeps the archive consistent with its manifest even when a
-// token refresh rewrites a file mid-backup.
+// collect reads config and auth files and the refresh journal into memory.
+// They are small, and holding them keeps the archive consistent with its
+// manifest even when a token refresh rewrites a file mid-backup. The journal
+// is read after the credentials, so a claim on any refresh token the backup
+// holds, made before that token was read, is in the backup too.
 func (b *Backups) collect() ([]source, error) {
 	var sources []source
 	for _, f := range []struct{ name, path string }{
@@ -412,7 +414,80 @@ func (b *Backups) collect() ([]source, error) {
 		}
 		sources = append(sources, source{name: authPrefix + rel, data: data})
 	}
+	journal, err := b.journalSources()
+	if err != nil {
+		return nil, err
+	}
+	sources = append(sources, journal...)
 	sort.Slice(sources, func(i, j int) bool { return sources[i].name < sources[j].name })
+	return sources, nil
+}
+
+// authRoot returns the absolute auth dir with symlinks resolved, or "" when
+// none is configured.
+func (b *Backups) authRoot() (string, error) {
+	if b.paths.AuthDir == "" {
+		return "", nil
+	}
+	root, err := filepath.Abs(b.paths.AuthDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve auth dir: %w", err)
+	}
+	if resolved, errResolve := filepath.EvalSymlinks(root); errResolve == nil {
+		root = resolved
+	}
+	return root, nil
+}
+
+// journalSources reads every directory and regular file of upstream's Codex
+// refresh journal. Upstream says restoring Codex credentials without their
+// journal is unsafe: a refresh token the journal records as sent must never
+// be sent again.
+func (b *Backups) journalSources() ([]source, error) {
+	root, err := b.authRoot()
+	if err != nil || root == "" {
+		return nil, err
+	}
+	dir := filepath.Join(root, journalDir)
+	if resolved, errResolve := filepath.EvalSymlinks(dir); errResolve == nil {
+		dir = resolved
+	}
+	var sources []source
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return filepath.SkipDir
+			}
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		name := journalPrefix
+		if rel != "." {
+			name += "/" + filepath.ToSlash(rel)
+		}
+		if d.IsDir() {
+			sources = append(sources, source{name: name, dir: true})
+			return nil
+		}
+		if !d.Type().IsRegular() || rel == "." {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read refresh journal %s: %w", rel, err)
+		}
+		sources = append(sources, source{name: name, data: data})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk refresh journal: %w", err)
+	}
 	return sources, nil
 }
 
@@ -420,18 +495,12 @@ func (b *Backups) collect() ([]source, error) {
 // top-level *.json files from the auth dir as credentials, so subdirectories
 // (upstream may write app logs to <auth-dir>/logs, and the data dir may sit
 // inside the auth dir) and other files are neither backed up nor touched by a
-// restore.
+// restore. The refresh journal is backed up and restored on its own.
 func (b *Backups) authFiles() (map[string]string, error) {
 	files := map[string]string{}
-	if b.paths.AuthDir == "" {
-		return files, nil
-	}
-	root, err := filepath.Abs(b.paths.AuthDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve auth dir: %w", err)
-	}
-	if resolved, errResolve := filepath.EvalSymlinks(root); errResolve == nil {
-		root = resolved
+	root, err := b.authRoot()
+	if err != nil || root == "" {
+		return files, err
 	}
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -513,7 +582,7 @@ func (b *Backups) List() ([]Entry, error) {
 		}
 		e := Entry{ID: id, CreatedAt: createdAt, Bytes: info.Size(), Reason: reason}
 		if m, errManifest := readManifest(filepath.Join(b.dir, name)); errManifest == nil {
-			e.Files = len(m.Files)
+			e.Files = fileCount(m)
 		} else {
 			log.WithError(errManifest).WithField("id", id).Warn("taproot backups: unreadable manifest")
 		}

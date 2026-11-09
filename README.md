@@ -117,6 +117,8 @@ Each setup below runs taproot as a service that starts at boot. All of them keep
 
 The data directory holds your OAuth refresh tokens and every prompt. Treat it, and every backup, like a password. Mount the whole directory into a container, not single files. Restoring a backup replaces the files by rename, which fails on a single-file mount.
 
+A backup also holds the Codex refresh journal, `auths/.codex-refresh/`, where taproot records each Codex token refresh before it sends it. A restore adds the journal entries the auth directory lacks before it puts the credentials back, and never deletes one, so a restore does not make taproot resend a Codex refresh token that the journal records as sent. Do not copy Codex credentials between machines without that directory. Backups leave out `auths/kv.db`, a cache that taproot rebuilds.
+
 ### Podman quadlet
 
 [`examples/taproot/taproot.container`](examples/taproot/taproot.container) runs taproot as a systemd user service under rootless Podman. It uses a read-only root filesystem, drops every capability, and publishes the port on the host's Tailscale address only. If you started taproot with the Quick start command, run `podman rm -f taproot` first.

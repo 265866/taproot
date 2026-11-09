@@ -25,6 +25,12 @@ const (
 	taprootEntry    = "taproot.yaml"
 	dbEntry         = "taproot.db"
 	authPrefix      = "auth/"
+	// journalDir is upstream's Codex refresh journal in the auth dir: one
+	// directory per refresh claim, which gets a receipt file once the refresh
+	// finishes. An empty claim directory is an unresolved refresh, so the
+	// archive keeps directories as members too.
+	journalDir    = ".codex-refresh"
+	journalPrefix = authPrefix + journalDir
 
 	maxManifestBytes = 1 << 20
 	// Config and auth files are read into memory on restore; this caps what a
@@ -44,13 +50,33 @@ type manifestFile struct {
 	Path   string `json:"path"`
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
+	// Dir marks a refresh journal directory, which has no size or sum.
+	Dir bool `json:"dir,omitempty"`
 }
 
-// source is one archive member: in-memory data, or a file on disk for the DB snapshot.
+// source is one archive member: in-memory data, a file on disk for the DB
+// snapshot, or a journal directory.
 type source struct {
 	name string
 	data []byte
 	path string
+	dir  bool
+}
+
+// inJournal reports whether an archive member name is in the refresh journal.
+func inJournal(name string) bool {
+	return name == journalPrefix || strings.HasPrefix(name, journalPrefix+"/")
+}
+
+// fileCount is the number of files in a manifest, leaving out directories.
+func fileCount(m manifest) int {
+	n := 0
+	for _, f := range m.Files {
+		if !f.Dir {
+			n++
+		}
+	}
+	return n
 }
 
 func corruptf(format string, args ...any) error {
@@ -75,6 +101,10 @@ func validEntryName(name string) bool {
 func writeArchive(dest string, m *manifest, sources []source) (err error) {
 	m.Files = m.Files[:0]
 	for _, s := range sources {
+		if s.dir {
+			m.Files = append(m.Files, manifestFile{Path: s.name, Dir: true})
+			continue
+		}
 		size, sum, errHash := hashSource(s)
 		if errHash != nil {
 			return errHash
@@ -140,6 +170,13 @@ func hashSource(s source) (int64, string, error) {
 }
 
 func copySource(tw *tar.Writer, s source, size int64, modTime time.Time) error {
+	if s.dir {
+		hdr := &tar.Header{Typeflag: tar.TypeDir, Name: s.name, Mode: 0o700, ModTime: modTime, Format: tar.FormatPAX}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return fmt.Errorf("write %s header: %w", s.name, err)
+		}
+		return nil
+	}
 	if s.path == "" {
 		return writeMember(tw, s.name, size, modTime, bytes.NewReader(s.data))
 	}
@@ -200,6 +237,10 @@ func readManifestFrom(tr *tar.Reader) (manifest, error) {
 		if !validEntryName(f.Path) {
 			return m, corruptf("manifest names unexpected file %q", f.Path)
 		}
+		// Directories exist only in the journal, whose root is never a file.
+		if f.Dir && (!inJournal(f.Path) || f.Size != 0) || !f.Dir && f.Path == journalPrefix {
+			return m, corruptf("manifest names unexpected entry %q", f.Path)
+		}
 		if seen[f.Path] {
 			return m, corruptf("manifest lists %q twice", f.Path)
 		}
@@ -220,11 +261,13 @@ func readManifest(archivePath string) (manifest, error) {
 	return readManifestFrom(tr)
 }
 
-// contents holds a verified archive's config and auth files. The DB member is
-// streamed to the path passed to extractVerified instead.
+// contents holds a verified archive's config and auth files and its journal
+// directories. The DB member is streamed to the path passed to
+// extractVerified instead.
 type contents struct {
 	manifest manifest
 	files    map[string][]byte
+	dirs     []string
 	hasDB    bool
 }
 
@@ -262,6 +305,13 @@ func extractVerified(archivePath, dbDest string) (contents, error) {
 			return contents{}, corruptf("unexpected member %q", hdr.Name)
 		}
 		delete(want, hdr.Name)
+		if mf.Dir {
+			if hdr.Typeflag != tar.TypeDir || hdr.Size != 0 {
+				return contents{}, corruptf("member %q does not match manifest", hdr.Name)
+			}
+			out.dirs = append(out.dirs, hdr.Name)
+			continue
+		}
 		if hdr.Typeflag != tar.TypeReg || hdr.Size != mf.Size {
 			return contents{}, corruptf("member %q does not match manifest", hdr.Name)
 		}
