@@ -6,6 +6,7 @@ import {
   backupsUpdate,
   formatSize,
   ingestUpdate,
+  keepsForever,
   ownLogin,
   ownNode,
   parseSize,
@@ -149,47 +150,70 @@ describe('request log retention', () => {
     keepUnrouted404: false,
   };
 
-  test('round-trips the server values unchanged', () => {
-    expect(retentionUpdate(retentionForm(server))).toEqual({ ok: true, update: server });
+  test('round-trips the server values and recording state unchanged', () => {
+    expect(retentionUpdate(retentionForm(server, true))).toEqual({
+      ok: true,
+      update: { requestLogs: server, recording: true },
+    });
+    expect(retentionUpdate(retentionForm(server, false))).toMatchObject({
+      update: { recording: false },
+    });
+  });
+
+  test('an unreadable config.yaml leaves recording alone', () => {
+    const form = retentionForm(server, null);
+    expect(form.recording).toBeNull();
+    expect(retentionUpdate(form)).toEqual({
+      ok: true,
+      update: { requestLogs: server, recording: null },
+    });
   });
 
   test('keeps an odd byte budget exactly unless the size text is edited', () => {
     // 1,500,000,000 bytes shows as "1.4 GB", which parses back to 1,503,238,554.
-    const odd = retentionForm({ ...server, maxBytes: 1_500_000_000 });
+    const odd = retentionForm({ ...server, maxBytes: 1_500_000_000 }, true);
     expect(odd.size).toBe('1.4 GB');
     expect(retentionUpdate({ ...odd, days: '30' })).toMatchObject({
       ok: true,
-      update: { maxDays: 30, maxBytes: 1_500_000_000 },
+      update: { requestLogs: { maxDays: 30, maxBytes: 1_500_000_000 } },
     });
-    // Turning the limit off and on again with the same text still keeps it.
+    // Choosing "Keep forever" and back with the same text still keeps it.
     expect(retentionUpdate({ ...odd, size: ' 1.4 GB ' })).toMatchObject({
-      update: { maxBytes: 1_500_000_000 },
+      update: { requestLogs: { maxBytes: 1_500_000_000 } },
     });
     expect(retentionUpdate({ ...odd, size: '1.5 GB' })).toMatchObject({
-      update: { maxBytes: 1_610_612_736 },
+      update: { requestLogs: { maxBytes: 1_610_612_736 } },
     });
     expect(retentionUpdate({ ...odd, sizeLimited: false })).toMatchObject({
-      update: { maxBytes: -1 },
+      update: { requestLogs: { maxBytes: -1 } },
     });
   });
 
-  test('negative limits mean off and come back as -1', () => {
-    const form = retentionForm({ ...server, maxDays: -1, maxBytes: -1 });
+  test('negative limits mean keep forever and come back as -1', () => {
+    const form = retentionForm({ ...server, maxDays: -1, maxBytes: -1 }, true);
     expect(form.daysLimited).toBe(false);
     expect(form.sizeLimited).toBe(false);
+    expect(keepsForever(form)).toBe(true);
     expect(retentionUpdate(form)).toMatchObject({
       ok: true,
-      update: { maxDays: -1, maxBytes: -1 },
+      update: { requestLogs: { maxDays: -1, maxBytes: -1 } },
     });
   });
 
-  const base: RetentionForm = retentionForm(server);
+  test('keeps forever only when neither limit is set', () => {
+    expect(keepsForever(retentionForm(server, true))).toBe(false);
+    expect(keepsForever(retentionForm({ ...server, maxDays: -1 }, true))).toBe(false);
+    expect(keepsForever(retentionForm({ ...server, maxBytes: -1 }, true))).toBe(false);
+    expect(keepsForever(retentionForm({ ...server, maxDays: 0, maxBytes: 0 }, true))).toBe(true);
+  });
+
+  const base: RetentionForm = retentionForm(server, true);
 
   test('validates days, size, and exclude rules', () => {
     expect(retentionUpdate({ ...base, days: '0' })).toMatchObject({ error: 'days_range' });
     expect(retentionUpdate({ ...base, days: '2.5' })).toMatchObject({ error: 'days_range' });
     expect(retentionUpdate({ ...base, days: '3651' })).toMatchObject({ error: 'days_range' });
-    // Disabled fields are not validated.
+    // Fields behind "Keep forever" are not validated.
     expect(retentionUpdate({ ...base, daysLimited: false, days: 'x' }).ok).toBe(true);
     expect(retentionUpdate({ ...base, size: 'lots' })).toMatchObject({ error: 'size_format' });
     expect(retentionUpdate({ ...base, size: '512 KB' })).toMatchObject({ error: 'size_min' });
@@ -208,10 +232,13 @@ describe('request log retention', () => {
     expect(result).toEqual({
       ok: true,
       update: {
-        maxDays: 14,
-        maxBytes: 21_474_836_480,
-        excludePaths: ['HEAD /api/hello', '/v1/models', 'GET /api/*'],
-        keepUnrouted404: true,
+        requestLogs: {
+          maxDays: 14,
+          maxBytes: 21_474_836_480,
+          excludePaths: ['HEAD /api/hello', '/v1/models', 'GET /api/*'],
+          keepUnrouted404: true,
+        },
+        recording: true,
       },
     });
   });
