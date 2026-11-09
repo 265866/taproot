@@ -2,7 +2,7 @@
 
 The dashboard taproot serves at `/` on its proxy port. It is a React 19 and TypeScript app, built with Vite into `index.html` and hashed chunks under `assets/`, which the Go server embeds.
 
-It started as a fork of the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) and no longer follows it. It has no login page and holds no key: taproot's access guard decides who reaches it. The [repository README](../README.md) covers taproot itself, and the "Web" and "Dashboard scope" sections of [`internal/taproot/DESIGN.md`](../internal/taproot/DESIGN.md) cover how the server serves the dashboard and what it includes. The dashboard keeps the Management Center's [MIT License](LICENSE).
+It started as a fork of the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) and no longer follows it. It has no login page and holds no key: taproot's access guard decides who reaches it. The [repository README](../README.md) and the [documentation](../README.md#documentation) cover taproot itself, and the "Web" and "Dashboard scope" sections of [`internal/taproot/DESIGN.md`](../internal/taproot/DESIGN.md) cover how the server serves the dashboard and what it includes. The dashboard keeps the Management Center's [MIT License](LICENSE).
 
 ## Commands
 

@@ -2,7 +2,7 @@
 # taproot-update: move a rootless Podman taproot install to the newest signed
 # release on one image tag, and roll back when the new release fails its
 # health check. It runs on the host, outside taproot, and is optional; see
-# "Automatic updates (optional)" in README.md and examples/taproot.
+# "Turn on automatic updates" in docs/updating.md and examples/taproot.
 #
 # Usage: taproot-update [--check] [--config FILE]
 #

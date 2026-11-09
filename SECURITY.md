@@ -22,7 +22,7 @@ The server has two surfaces:
 
 The admin surface needs no key: for admitted callers, the guard adds the management key inside the process, and the key never reaches a browser. Because of that, the guard also refuses browser requests made on behalf of another site: a `Host` that is not one of the server's names, a cross-origin `Origin`, cross-site `Sec-Fetch-Site` values, and a state-changing `GET` without `X-Taproot-Request: 1`. Upstream's Redis-protocol usage queue on the same port accepts loopback connections only.
 
-Permissions belong to a device's Tailscale stable ID, which is never reused; names grant nothing. Taproot refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. The [README](README.md#access) summarizes the model, and the "Security model" section of [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md#security-model) describes it in full.
+Permissions belong to a device's Tailscale stable ID, which is never reused; names grant nothing. Taproot refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. [Access](docs/access.md) shows how to manage permissions, and the "Security model" section of [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md#security-model) describes it in full.
 
 ## Run taproot safely
 
@@ -32,7 +32,7 @@ Permissions belong to a device's Tailscale stable ID, which is never reused; nam
 - **Do not publish the port on `127.0.0.1`.** A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
 - **Give Admin only to devices you use the dashboard from**, and keep `access.addresses` to single addresses.
 - **Treat the data directory and every backup like a password.** They hold the OAuth tokens.
-- **Check the deployment after every change**, with the steps in the README's [Check the deployment](README.md#check-the-deployment).
+- **Check the deployment after every change**, with the steps in [Check the deployment](docs/access.md#check-the-deployment).
 
 ## Scope
 
@@ -50,12 +50,12 @@ Out of scope:
 - Deployments that ignore the warnings above, such as the guard turned off, the port published beyond the tailnet, or a proxy in front of taproot.
 - Attacks that need root on the server host, control of an admin device, or control of your tailnet.
 - Plugins. A plugin runs inside the server process with full access, so install only plugins you trust.
-- The providers' terms of service. See the README's [Terms of service](README.md#terms-of-service).
+- The providers' terms of service. See [Terms of service](docs/terms-of-service.md).
 - Bugs in upstream CLIProxyAPI that do not affect taproot's access model or data. Report those to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
 
 ## Supported versions
 
-Only the latest minor release gets security fixes. For example, once `taproot-v0.3.0` is out, a fix ships in a `0.3.x` release and not in a `0.2.x` release. [`docs/stability.md`](docs/stability.md) explains how to upgrade.
+Only the latest minor release gets security fixes. For example, once `taproot-v0.3.0` is out, a fix ships in a `0.3.x` release and not in a `0.2.x` release. [Update taproot](docs/updating.md) explains how to upgrade.
 
 ## Report a vulnerability
 

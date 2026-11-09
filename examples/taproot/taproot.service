@@ -3,8 +3,8 @@
 # Outside a container every local process can connect from loopback, and
 # taproot treats loopback callers as admins. This unit drops loopback traffic
 # (IPAddressDeny=localhost), and config.yaml must make taproot listen on this
-# host's Tailscale address, never 0.0.0.0 or 127.0.0.1. The README's
-# "Plain binary with systemd" section lists the install steps:
+# host's Tailscale address, never 0.0.0.0 or 127.0.0.1. "Plain binary with
+# systemd" in docs/install.md lists the install steps:
 #
 # 1. Unpack the release tarball to /opt/taproot. Keep the license files beside
 #    the binary; the LGPL requires them.

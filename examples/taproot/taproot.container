@@ -16,7 +16,7 @@
 # To have scripts/taproot/taproot-update install signed patch releases for you
 # instead, run the local tag it moves: set Image=localhost/taproot:current, add
 # Pull=never, and run the script once to verify, pull, and tag the release, as
-# "Automatic updates (optional)" in README.md shows.
+# "Turn on automatic updates" in docs/updating.md shows.
 #
 # Run it as your own user, not root, and without User= or UserNS=: Podman maps
 # the container's root to your user, which owns the 0600 files in the data

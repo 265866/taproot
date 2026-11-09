@@ -1,7 +1,8 @@
 /**
- * Captures the README screenshots from a running demo server (see run.sh) with
- * playwright-core driving the installed Chrome. Every page is checked for
- * personal data before its screenshot is kept.
+ * Captures the documentation screenshots from a running demo server (see run.sh)
+ * with playwright-core driving the installed Chrome. Each page is captured at a
+ * desktop size as <name>.png and at a phone size as <name>-mobile.png. Every
+ * capture is checked for personal data before its screenshot is kept.
  *
  *   bun internal/taproot/demo/capture.ts --url http://127.0.0.1:8399 \
  *     --out docs/screenshots --playwright <dir of an installed playwright-core> \
@@ -63,6 +64,13 @@ async function waitForAccounts(expected: number) {
 }
 
 await waitForAccounts(5);
+
+// run.sh sets TZ=Etc/UTC, but Go on Windows reads the zone from the system, not TZ, so the
+// server could label host-zone times as UTC. Refuse rather than capture the host's zone.
+const { info } = await api<{ info: { utcOffsetSeconds: number } }>('/settings');
+if (info.utcOffsetSeconds !== 0) {
+  throw new Error(`the server's clock is ${info.utcOffsetSeconds}s from UTC; set the host zone to UTC to capture`);
+}
 const { logs } = await api<{ logs: { requestId: string; status: number; model: string }[] }>(
   '/request-logs?limit=20'
 );
@@ -72,40 +80,41 @@ if (!detail) throw new Error('no successful Claude request log to show');
 type Page = import('playwright-core').Page;
 
 interface Shot {
-  file: string;
+  /** Written as <name>.png and <name>-mobile.png. */
+  name: string;
   route: string;
   theme?: 'dark' | 'light';
-  /** Viewport height; the default is 900. */
+  /** Desktop viewport height; the default is 900. */
   height?: number;
   /** Runs after the page is ready, before the screenshot. */
   act?: (page: Page) => Promise<void>;
 }
 
 const shots: Shot[] = [
-  { file: 'accounts.png', route: '/accounts' },
+  { name: 'accounts', route: '/accounts' },
   {
-    file: 'accounts-manage.png',
+    name: 'accounts-manage',
     route: '/accounts',
     act: async (page) => {
       await page.getByRole('button', { name: 'Manage' }).first().click();
       await page.getByRole('dialog').waitFor();
     },
   },
-  { file: 'usage-overview.png', route: '/usage?tab=overview&range=30d' },
+  { name: 'usage-overview', route: '/usage?tab=overview&range=30d' },
   {
-    file: 'usage-devices.png',
+    name: 'usage-devices',
     route: '/usage?tab=devices&range=30d',
-    // A taller viewport fits the cache TTL check and the devices table below it.
+    // A taller desktop viewport fits the cache TTL check and the devices table below it.
     height: 1400,
   },
-  { file: 'usage-sessions.png', route: '/usage?tab=sessions&range=7d' },
-  { file: 'request-logs.png', route: '/request-logs' },
-  { file: 'request-log-detail.png', route: `/request-logs?requestId=${encodeURIComponent(detail.requestId)}` },
-  { file: 'routing.png', route: '/routing' },
-  { file: 'backups.png', route: '/backups' },
-  { file: 'access.png', route: '/access', height: 1480 },
-  { file: 'settings.png', route: '/settings' },
-  { file: 'accounts-light.png', route: '/accounts', theme: 'light' },
+  { name: 'usage-sessions', route: '/usage?tab=sessions&range=7d' },
+  { name: 'request-logs', route: '/request-logs' },
+  { name: 'request-log-detail', route: `/request-logs?requestId=${encodeURIComponent(detail.requestId)}` },
+  { name: 'routing', route: '/routing' },
+  { name: 'backups', route: '/backups' },
+  { name: 'access', route: '/access', height: 1480 },
+  { name: 'settings', route: '/settings' },
+  { name: 'accounts-light', route: '/accounts', theme: 'light' },
 ];
 
 async function waitUntilSettled(page: Page) {
@@ -158,32 +167,50 @@ const browser = await chromium.launch(
   args.chrome ? { executablePath: args.chrome } : { channel: 'chrome' }
 );
 const failures: string[] = [];
+
+interface Size {
+  suffix: string;
+  options: (shot: Shot) => import('playwright-core').BrowserContextOptions;
+}
+
+const sizes: Size[] = [
+  { suffix: '', options: (shot) => ({ viewport: { width: 1440, height: shot.height ?? 900 } }) },
+  {
+    suffix: '-mobile',
+    options: () => ({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }),
+  },
+];
+
 try {
   for (const shot of shots) {
-    const theme = shot.theme ?? 'dark';
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: shot.height ?? 900 },
-      colorScheme: theme,
-      reducedMotion: 'reduce',
-    });
-    await context.addInitScript((t) => {
-      localStorage.setItem('cli-proxy-theme', JSON.stringify({ state: { theme: t }, version: 0 }));
-    }, theme);
-    const page = await context.newPage();
-    await page.goto(`${args.url}/#${shot.route}`);
-    await waitUntilSettled(page);
-    if (shot.act) {
-      await shot.act(page);
+    for (const size of sizes) {
+      const file = `${shot.name}${size.suffix}.png`;
+      const theme = shot.theme ?? 'dark';
+      const context = await browser.newContext({
+        ...size.options(shot),
+        colorScheme: theme,
+        reducedMotion: 'reduce',
+        timezoneId: 'Etc/UTC',
+      });
+      await context.addInitScript((t) => {
+        localStorage.setItem('cli-proxy-theme', JSON.stringify({ state: { theme: t }, version: 0 }));
+      }, theme);
+      const page = await context.newPage();
+      await page.goto(`${args.url}/#${shot.route}`);
       await waitUntilSettled(page);
+      if (shot.act) {
+        await shot.act(page);
+        await waitUntilSettled(page);
+      }
+      const problems = await privacyProblems(page);
+      if (problems.length > 0) {
+        failures.push(`${file}: ${[...new Set(problems)].join(', ')}`);
+      } else {
+        await page.screenshot({ path: join(args.out, file) });
+        console.log(`captured ${file}`);
+      }
+      await context.close();
     }
-    const problems = await privacyProblems(page);
-    if (problems.length > 0) {
-      failures.push(`${shot.file}: ${[...new Set(problems)].join(', ')}`);
-    } else {
-      await page.screenshot({ path: join(args.out, shot.file) });
-      console.log(`captured ${shot.file}`);
-    }
-    await context.close();
   }
 } finally {
   await browser.close();
