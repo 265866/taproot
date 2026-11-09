@@ -3,16 +3,17 @@ name: release
 # Builds a release tag and publishes it: the multi-arch image on GHCR with an
 # SBOM, build provenance, a GitHub attestation, and a cosign signature, and a
 # GitHub release with binary tarballs, SHA256SUMS, and their attestation.
-# release-please.yml calls it for the tags it creates. A tag pushed by a
-# person, such as a release candidate (taproot-v0.2.0-rc.1), starts it
-# directly, and it can be run by hand for an existing tag. Re-running it for
-# the same tag re-publishes that tag, but moves X.Y and latest only while no
-# newer release exists.
+# release-please.yml starts it with workflow_dispatch on the tags it creates.
+# A tag pushed by a person, such as a release candidate (taproot-v0.2.0-rc.1),
+# starts it directly, and it can be run by hand for an existing tag. Re-running
+# it for the same tag re-publishes that tag, but moves X.Y and latest only
+# while no newer release exists.
 #
-# The signatures and attestations name this file in this repository as their
-# signer (the Fulcio certificate's workflow URI), and the documented
-# `cosign verify` pins that URI. Renaming or moving the file makes those
-# checks refuse every later image.
+# The signatures and attestations name this file in this repository, at the
+# ref the run started on, as their signer (the Fulcio certificate's workflow
+# URI), and the documented `cosign verify` pins release.yml@refs/tags/taproot-v*.
+# So a run must start on the tag it builds, which the first step checks.
+# Renaming or moving the file makes those checks refuse every later image.
 on:
   push:
     tags: ['taproot-v*']
@@ -20,12 +21,6 @@ on:
     inputs:
       tag:
         description: The release tag to build and publish, such as taproot-v0.2.0
-        required: true
-        type: string
-  workflow_call:
-    inputs:
-      tag:
-        description: The release tag to build and publish
         required: true
         type: string
 
@@ -60,10 +55,14 @@ jobs:
       build-date: ${{ steps.meta.outputs.build-date }}
       source-date-epoch: ${{ steps.meta.outputs.source-date-epoch }}
     steps:
-      - name: Check the tag name
+      - name: Check the tag name and the run's ref
         run: |
           if [[ ! "$TAG" =~ ^taproot-v[0-9A-Za-z.-]+$ ]]; then
             echo "::error::$TAG is not a taproot release tag"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/tags/$TAG" ]]; then
+            echo "::error::The run started on $GITHUB_REF, so its signatures would not name refs/tags/$TAG. Run: gh workflow run release.yml --ref $TAG -f tag=$TAG"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -326,10 +325,10 @@ jobs:
           DIGEST: ${{ steps.index.outputs.digest }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          cosign verify "$IMAGE@$DIGEST" \
-            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@" \
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$TAG"
+          cosign verify "$IMAGE@$DIGEST" --certificate-identity "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
-          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --cert-identity "$identity"
       - name: Write checksums
         run: |
           mkdir dist
