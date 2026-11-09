@@ -3,13 +3,30 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuthStore } from '@/stores';
-import type { ConnectionFailure, ConnectionStatus } from '@/types';
+import type { ConnectionFailure, ConnectionStatus, DeniedDevice } from '@/types';
+
+const NAME_SLOT = '\u0000';
+
+/**
+ * Renders a translated sentence with the device name in bold where the slot was. The name comes
+ * from the server, so it is rendered as text, never parsed as markup.
+ */
+function withStrongName(sentence: string, name: string) {
+  const [before, ...rest] = sentence.split(NAME_SLOT);
+  return (
+    <>
+      {before}
+      <strong>{name}</strong>
+      {rest.join(name)}
+    </>
+  );
+}
 
 interface ConnectionGateViewProps {
   status: ConnectionStatus;
   failure: ConnectionFailure | null;
-  /** The refused device's MagicDNS name, for a `not_admin` failure. */
-  node?: string | null;
+  /** The refused device, for a `not_admin` failure. */
+  device?: DeniedDevice | null;
   onRetry: () => void;
   children: ReactElement;
 }
@@ -17,7 +34,7 @@ interface ConnectionGateViewProps {
 export function ConnectionGateView({
   status,
   failure,
-  node = null,
+  device = null,
   onRetry,
   children,
 }: ConnectionGateViewProps) {
@@ -27,17 +44,33 @@ export function ConnectionGateView({
 
   if (status === 'error') {
     const key = failure ?? 'unreachable';
-    const body =
-      key === 'not_admin'
-        ? node
-          ? t('connection_gate.not_admin_body', { node })
-          : t('connection_gate.not_admin_body_unnamed')
+    const named = key === 'not_admin' && device;
+    const body = named
+      ? withStrongName(
+          t(device.proxy ? 'connection_gate.not_admin_body' : 'connection_gate.no_access_body', {
+            node: NAME_SLOT,
+          }),
+          device.node
+        )
+      : key === 'not_admin'
+        ? t('connection_gate.not_admin_body_unnamed')
         : t(`connection_gate.${key}_body`);
     return (
       <div className="connection-gate" role="alert">
         <div className="connection-gate-card">
           <h1 className="connection-gate-title">{t(`connection_gate.${key}_title`)}</h1>
           <p className="connection-gate-body">{body}</p>
+          {named && (
+            <dl className="connection-gate-device">
+              <dt>{t('connection_gate.this_device')}</dt>
+              <dd>{[device.node, device.login].filter(Boolean).join(' · ')}</dd>
+              {device.nodeId && (
+                <dd>
+                  <code>{device.nodeId}</code>
+                </dd>
+              )}
+            </dl>
+          )}
           <Button variant="secondary" onClick={onRetry}>
             {t('connection_gate.retry')}
           </Button>
@@ -58,7 +91,7 @@ export function ConnectionGateView({
 export function ConnectionGate({ children }: { children: ReactElement }) {
   const status = useAuthStore((state) => state.connectionStatus);
   const failure = useAuthStore((state) => state.connectionFailure);
-  const node = useAuthStore((state) => state.connectionFailureNode);
+  const device = useAuthStore((state) => state.connectionFailureDevice);
   const connect = useAuthStore((state) => state.connect);
 
   useEffect(() => {
@@ -71,7 +104,7 @@ export function ConnectionGate({ children }: { children: ReactElement }) {
     <ConnectionGateView
       status={status}
       failure={failure}
-      node={node}
+      device={device}
       onRetry={() => void connect()}
     >
       {children}

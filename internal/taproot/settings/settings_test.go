@@ -33,9 +33,13 @@ func init() { gin.SetMode(gin.TestMode) }
 const commentedYAML = `# taproot settings
 data-dir: /srv/taproot # keep me
 access:
-  allow-logins: [alice@github] # me
-  trusted-cidrs:
-    - 10.0.0.0/8
+  devices:
+    - id: nlaptopCNTRL
+      name: laptop
+      proxy: true
+      admin: true
+  addresses:
+    - cidr: 10.0.0.0/8 # podman
 request-logs:
   max-bytes: 20GB
 backups:
@@ -63,13 +67,40 @@ func decodeStrict(raw []byte, cfg *fileConfig) error {
 	return nil
 }
 
-// fixtureLogin admits a caller when the fixture's taproot.yaml names no
-// login, because an enabled guard refuses to start without one.
-const fixtureLogin = "fixture@example.com"
+// laptop is the fixture's admin device; the server's own node is serverID.
+var laptop = access.DeviceGrant{ID: "nlaptopCNTRL", Name: "laptop", Proxy: true, Admin: true}
+
+const serverID = "nserverCNTRL"
+
+// fakeAccess is the guard with a known server node and, when tailnet is set,
+// a canned tailnet read and reconcile result, since the fixture has no
+// tailscaled.
+type fakeAccess struct {
+	*access.Guard
+	tailnet   *access.Tailnet
+	reconcile func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool)
+}
+
+func (f *fakeAccess) ServerNodeID() string { return serverID }
+
+func (f *fakeAccess) ReadTailnet(ctx context.Context) (access.Tailnet, error) {
+	if f.tailnet == nil {
+		return f.Guard.ReadTailnet(ctx)
+	}
+	return *f.tailnet, nil
+}
+
+func (f *fakeAccess) Reconcile(tn access.Tailnet) (access.Grants, []access.DeviceGrant, bool) {
+	if f.reconcile != nil {
+		return f.reconcile(tn)
+	}
+	return f.Guard.Reconcile(tn)
+}
 
 type fixture struct {
 	path    string
 	guard   *access.Guard
+	access  *fakeAccess
 	logs    *reqlog.Logs
 	backups *backup.Backups
 	s       *Settings
@@ -99,9 +130,8 @@ func newFixture(t *testing.T, opt options) *fixture {
 		t.Fatal(err)
 	}
 	cfg.Access.Enabled = opt.accessEnabled
-	if cfg.Access.AllowLogins == nil {
-		cfg.Access.AllowLogins = []string{fixtureLogin}
-	}
+	// Never the host's real tailscaled.
+	cfg.Access.TailscaleSocket = filepath.Join(dir, "absent.sock")
 	dataDir := filepath.Join(dir, "data")
 	db, err := store.Open(context.Background(), store.Config{}, dataDir)
 	if err != nil {
@@ -117,8 +147,9 @@ func newFixture(t *testing.T, opt options) *fixture {
 	if f.backups, err = backup.New(cfg.Backups, db, backup.Paths{TaprootFile: f.path, DataDir: dataDir}); err != nil {
 		t.Fatal(err)
 	}
+	f.access = &fakeAccess{Guard: f.guard}
 	f.s, err = New(Deps{
-		Access: f.guard, AccessEnabled: opt.accessEnabled == nil || *opt.accessEnabled,
+		Access: f.access, AccessEnabled: opt.accessEnabled == nil || *opt.accessEnabled,
 		Logs: f.logs, Backups: f.backups, PollInterval: opt.pollInterval,
 		ConfigPath: f.path, DataDir: dataDir,
 	})
@@ -181,7 +212,8 @@ func TestGetReportsLiveValues(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET = %d %s", code, body)
 	}
-	if !v.Access.Enabled || !slices.Equal(v.Access.AllowLogins, []string{"alice@github"}) {
+	if !v.Access.Enabled || !slices.Equal(v.Access.Devices, []access.DeviceGrant{laptop}) ||
+		!slices.Equal(v.Access.Addresses, []access.AddressGrant{{CIDR: "10.0.0.0/8"}}) {
 		t.Errorf("access = %+v", v.Access)
 	}
 	// max-days is absent from the file, so reqlog's default of 14 applies.
@@ -286,11 +318,18 @@ func TestLocalZoneName(t *testing.T) {
 	}
 }
 
+// laptopCaller is the fixture's admin device calling over the tailnet.
+var laptopCaller = access.Identity{Login: "alice@github", Node: "laptop.tailnet-0000.ts.net", NodeID: laptop.ID, Via: access.ViaTailnet, Proxy: true, Admin: true}
+
 func TestPutAppliesLiveAndPreservesFile(t *testing.T) {
 	f := newFixture(t, options{yaml: commentedYAML})
-	f.caller = access.Identity{Login: "alice@github", Via: access.ViaTailnet}
+	f.caller = laptopCaller
 	code, v, body := f.do(t, http.MethodPut, `{
-		"access": {"allowLogins": ["alice@github", " Friend@GitHub "]},
+		"access": {"devices": [
+			{"id": "nlaptopCNTRL", "name": "laptop", "proxy": true, "admin": true},
+			{"id": " nworkerCNTRL ", "name": " worker ", "proxy": true, "admin": false},
+			{"id": "nbob-pcCNTRL", "name": "bob-pc", "proxy": false, "admin": false}
+		]},
 		"requestLogs": {"maxDays": 30, "maxBytes": 5368709120, "excludePaths": ["HEAD /api/*"], "keepUnrouted404": true},
 		"backups": {"dailyAt": "04:30", "keep": 7},
 		"ingest": {"pollInterval": "30m"}
@@ -299,8 +338,13 @@ func TestPutAppliesLiveAndPreservesFile(t *testing.T) {
 		t.Fatalf("PUT = %d %s", code, body)
 	}
 
-	if got := f.guard.AllowLogins(); !slices.Equal(got, []string{"alice@github", "friend@github"}) {
-		t.Errorf("guard allow-logins = %v", got)
+	// A device with neither permission is not kept.
+	wantDevices := []access.DeviceGrant{laptop, {ID: "nworkerCNTRL", Name: "worker", Proxy: true}}
+	if got := f.guard.Grants().Devices; !slices.Equal(got, wantDevices) {
+		t.Errorf("guard devices = %+v", got)
+	}
+	if !slices.Equal(v.Access.Devices, wantDevices) {
+		t.Errorf("response devices = %+v", v.Access.Devices)
 	}
 	ret := f.logs.Retention()
 	if ret.MaxDays != 30 || ret.MaxBytes != 5<<30 || !slices.Equal(ret.ExcludePaths, []string{"HEAD /api/*"}) || !ret.KeepUnrouted404 {
@@ -314,20 +358,16 @@ func TestPutAppliesLiveAndPreservesFile(t *testing.T) {
 	}
 
 	raw := f.file(t)
-	for _, keep := range []string{"# taproot settings", "# keep me", "# me", "trusted-cidrs:", "- 10.0.0.0/8", "data-dir: /srv/taproot"} {
+	for _, keep := range []string{"# taproot settings", "# keep me", "cidr: 10.0.0.0/8 # podman", "data-dir: /srv/taproot", "- id: nworkerCNTRL\n      name: worker\n      proxy: true\n      admin: false"} {
 		if !strings.Contains(raw, keep) {
-			t.Errorf("taproot.yaml lost %q:\n%s", keep, raw)
+			t.Errorf("taproot.yaml lacks %q:\n%s", keep, raw)
 		}
-	}
-	if !strings.Contains(raw, "allow-logins: [alice@github, friend@github]") {
-		t.Errorf("allow-logins not written in flow style:\n%s", raw)
 	}
 	if !strings.Contains(raw, "max-bytes: 5GB") {
 		t.Errorf("max-bytes not written as a size:\n%s", raw)
 	}
 	cfg := f.parsed(t)
-	if !slices.Equal(cfg.Access.AllowLogins, []string{"alice@github", "friend@github"}) ||
-		!slices.Equal(cfg.Access.TrustedCIDRs, []string{"10.0.0.0/8"}) {
+	if !slices.Equal(cfg.Access.Devices, wantDevices) || !slices.Equal(cfg.Access.Addresses, []access.AddressGrant{{CIDR: "10.0.0.0/8"}}) {
 		t.Errorf("file access = %+v", cfg.Access)
 	}
 	if cfg.RequestLogs.MaxDays != 30 || cfg.RequestLogs.MaxBytes != 5<<30 || !cfg.RequestLogs.KeepUnrouted404 ||
@@ -347,15 +387,23 @@ func TestPutAppliesLiveAndPreservesFile(t *testing.T) {
 	}
 }
 
+// A device cannot take its own Admin away, and nothing else in the same
+// request is applied.
 func TestPutRefusesToLockOutCaller(t *testing.T) {
 	f := newFixture(t, options{yaml: commentedYAML})
-	f.caller = access.Identity{Login: "alice@github", Via: access.ViaTailnet}
-	code, _, body := f.do(t, http.MethodPut, `{"access": {"allowLogins": ["friend@github"]}, "backups": {"keep": 5}}`)
-	if code != http.StatusConflict || errorCode(t, body) != "would_lock_out" {
-		t.Fatalf("PUT = %d %s, want 409 would_lock_out", code, body)
+	f.caller = laptopCaller
+	for _, put := range []string{
+		`{"access": {"devices": [{"id": "nlaptopCNTRL", "proxy": true, "admin": false}]}, "backups": {"keep": 5}}`,
+		`{"access": {"devices": []}, "backups": {"keep": 5}}`,
+		`{"access": {"devices": [{"id": "nworkerCNTRL", "admin": true}]}, "backups": {"keep": 5}}`,
+	} {
+		code, _, body := f.do(t, http.MethodPut, put)
+		if code != http.StatusConflict || errorCode(t, body) != "would_lock_out" {
+			t.Fatalf("PUT %s = %d %s, want 409 would_lock_out", put, code, body)
+		}
 	}
-	if got := f.guard.AllowLogins(); !slices.Equal(got, []string{"alice@github"}) {
-		t.Errorf("allow-logins changed to %v", got)
+	if got := f.guard.Grants().Devices; !slices.Equal(got, []access.DeviceGrant{laptop}) {
+		t.Errorf("devices changed to %+v", got)
 	}
 	if _, keep := f.backups.Schedule(); keep != 3 {
 		t.Errorf("keep changed to %d", keep)
@@ -364,71 +412,69 @@ func TestPutRefusesToLockOutCaller(t *testing.T) {
 		t.Errorf("file changed:\n%s", f.file(t))
 	}
 
-	// Matching is case-insensitive, like the guard's.
-	if code, _, body = f.do(t, http.MethodPut, `{"access": {"allowLogins": ["Alice@GitHub", "friend@github"]}}`); code != http.StatusOK {
-		t.Fatalf("PUT keeping own login in other case = %d %s", code, body)
+	// Keeping Admin, the device may drop its own Proxy, and addresses alone
+	// need no device list.
+	if code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nlaptopCNTRL", "name": "laptop", "admin": true}]}}`); code != http.StatusOK {
+		t.Fatalf("PUT keeping own Admin = %d %s", code, body)
+	}
+	if code, v, body := f.do(t, http.MethodPut, `{"access": {"addresses": []}}`); code != http.StatusOK || len(v.Access.Addresses) != 0 || len(v.Access.Devices) != 1 {
+		t.Fatalf("PUT addresses only = %d %s", code, body)
 	}
 }
 
-func TestAdminNodes(t *testing.T) {
+// The server's own node always has Proxy and never Admin, so a list that
+// gives it Admin is refused rather than silently ignored.
+func TestServerNodeNeverGetsAdmin(t *testing.T) {
 	f := newFixture(t, options{yaml: commentedYAML})
-	_, v, _ := f.do(t, http.MethodGet, "")
-	if v.Access.AdminNodes == nil || len(v.Access.AdminNodes) != 0 {
-		t.Fatalf("GET adminNodes = %#v, want []", v.Access.AdminNodes)
+	code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nlaptopCNTRL", "admin": true}, {"id": "nserverCNTRL", "proxy": true, "admin": true}]}}`)
+	if code != http.StatusBadRequest || errorCode(t, body) != "server_admin" {
+		t.Fatalf("PUT = %d %s, want 400 server_admin", code, body)
 	}
+	if f.file(t) != commentedYAML {
+		t.Errorf("file changed:\n%s", f.file(t))
+	}
+	if code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nserverCNTRL", "proxy": true}]}}`); code != http.StatusOK {
+		t.Fatalf("PUT server with Proxy = %d %s", code, body)
+	}
+}
 
-	// Loopback may set any list; entries are normalized and written to the file.
-	code, v, body := f.do(t, http.MethodPut, `{"access": {"adminNodes": [" Laptop. ", "laptop", "phone.tailnet-0000.ts.net"]}}`)
-	if code != http.StatusOK || !slices.Equal(v.Access.AdminNodes, []string{"laptop", "phone.tailnet-0000.ts.net"}) {
+func TestAddresses(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	code, v, body := f.do(t, http.MethodPut, `{"access": {"addresses": [{"cidr": " 192.0.2.20 ", "note": " agents "}, {"cidr": "fd00::5"}]}}`)
+	want := []access.AddressGrant{{CIDR: "192.0.2.20/32", Note: "agents"}, {CIDR: "fd00::5/128"}}
+	if code != http.StatusOK || !slices.Equal(v.Access.Addresses, want) {
 		t.Fatalf("PUT = %d %s", code, body)
 	}
-	if got := f.parsed(t).Access.AdminNodes; !slices.Equal(got, []string{"laptop", "phone.tailnet-0000.ts.net"}) {
-		t.Errorf("file admin-nodes = %v", got)
+	if got := f.parsed(t).Access.Addresses; !slices.Equal(got, want) {
+		t.Errorf("file addresses = %+v", got)
 	}
-	if !strings.Contains(f.file(t), "allow-logins: [alice@github] # me") {
-		t.Errorf("unrelated access lines changed:\n%s", f.file(t))
+	if got := f.parsed(t).Access.Devices; !slices.Equal(got, []access.DeviceGrant{laptop}) {
+		t.Errorf("an address change touched devices: %+v", got)
 	}
-
-	// A tailnet caller cannot drop its own device.
-	f.caller = access.Identity{Login: "alice@github", Node: "phone.tailnet-0000.ts.net", Via: access.ViaTailnet}
-	before := f.file(t)
-	code, _, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": ["laptop"]}, "backups": {"keep": 5}}`)
-	if code != http.StatusConflict || errorCode(t, body) != "would_lock_out" {
-		t.Fatalf("PUT dropping own node = %d %s, want 409 would_lock_out", code, body)
+	for _, bad := range []string{
+		`{"access": {"addresses": [{"cidr": "10.0.0.0/33"}]}}`,
+		`{"access": {"addresses": [{"cidr": "laptop"}]}}`,
+		`{"access": {"addresses": [{"cidr": "10.0.0.1"}, {"cidr": "10.0.0.1/32"}]}}`,
+	} {
+		if code, _, body := f.do(t, http.MethodPut, bad); code != http.StatusBadRequest || errorCode(t, body) != "invalid_access" {
+			t.Errorf("PUT %s = %d %s", bad, code, body)
+		}
 	}
-	if got := f.guard.AdminNodes(); !slices.Equal(got, []string{"laptop", "phone.tailnet-0000.ts.net"}) {
-		t.Errorf("admin-nodes changed to %v", got)
-	}
-	if _, keep := f.backups.Schedule(); keep != 3 || f.file(t) != before {
-		t.Errorf("a refused update changed state: keep %d\n%s", keep, f.file(t))
-	}
-	if code, _, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": []}}`); code != http.StatusConflict {
-		t.Fatalf("PUT clearing the list from a tailnet caller = %d %s", code, body)
-	}
-	if code, v, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": ["PHONE.tailnet-0000.ts.net."]}}`); code != http.StatusOK || !slices.Equal(v.Access.AdminNodes, []string{"phone.tailnet-0000.ts.net"}) {
-		t.Fatalf("PUT keeping own node in other case = %d %s", code, body)
-	}
-
-	// Loopback may clear it.
-	f.caller = access.Identity{Via: access.ViaLoopback}
-	if code, v, body = f.do(t, http.MethodPut, `{"access": {"adminNodes": []}}`); code != http.StatusOK || len(v.Access.AdminNodes) != 0 {
-		t.Fatalf("PUT clearing from loopback = %d %s", code, body)
-	}
-	if got := f.parsed(t).Access.AdminNodes; len(got) != 0 {
-		t.Errorf("file admin-nodes after clearing = %v", got)
+	if got := f.guard.Grants().Addresses; !slices.Equal(got, want) {
+		t.Errorf("a refused update changed addresses to %+v", got)
 	}
 }
 
 func TestLoopbackCallerMaySetAnyList(t *testing.T) {
 	f := newFixture(t, options{})
-	code, v, body := f.do(t, http.MethodPut, `{"access": {"allowLogins": ["friend@github"]}}`)
-	if code != http.StatusOK || !slices.Equal(v.Access.AllowLogins, []string{"friend@github"}) {
+	code, v, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nworkerCNTRL", "proxy": true}]}}`)
+	if code != http.StatusOK || !slices.Equal(v.Access.Devices, []access.DeviceGrant{{ID: "nworkerCNTRL", Proxy: true}}) {
 		t.Fatalf("PUT = %d %s", code, body)
 	}
 	// taproot.yaml did not exist; it is created private.
 	cfg := f.parsed(t)
-	if !slices.Equal(cfg.Access.AllowLogins, []string{"friend@github"}) {
-		t.Errorf("file allow-logins = %v", cfg.Access.AllowLogins)
+	if !slices.Equal(cfg.Access.Devices, []access.DeviceGrant{{ID: "nworkerCNTRL", Proxy: true}}) {
+		t.Errorf("file devices = %+v", cfg.Access.Devices)
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(f.path)
@@ -439,22 +485,89 @@ func TestLoopbackCallerMaySetAnyList(t *testing.T) {
 			t.Errorf("mode = %v, want 0600", info.Mode().Perm())
 		}
 	}
-	for _, bad := range []string{`{"access": {"allowLogins": []}}`, `{"access": {"allowLogins": ["a@github", "  "]}}`} {
-		if code, _, body := f.do(t, http.MethodPut, bad); code != http.StatusBadRequest || errorCode(t, body) != "invalid_allow_logins" {
+	if code, v, body := f.do(t, http.MethodPut, `{"access": {"devices": []}}`); code != http.StatusOK || len(v.Access.Devices) != 0 {
+		t.Fatalf("PUT clearing from loopback = %d %s", code, body)
+	}
+	for _, bad := range []string{`{"access": {"devices": [{"id": "", "proxy": true}]}}`, `{"access": {"devices": [{"id": "n1", "proxy": true}, {"id": "n1", "admin": true}]}}`} {
+		if code, _, body := f.do(t, http.MethodPut, bad); code != http.StatusBadRequest || errorCode(t, body) != "invalid_access" {
 			t.Errorf("PUT %s = %d %s", bad, code, body)
 		}
 	}
 }
 
+// The sweep applies what Reconcile finds live and to taproot.yaml, and a
+// failed write leaves the guard as it was.
+func TestSweepWritesForgottenAndRenamedDevices(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	worker := access.DeviceGrant{ID: "nworkerCNTRL", Name: "worker", Proxy: true}
+	if code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nlaptopCNTRL", "name": "laptop", "proxy": true, "admin": true}, {"id": "nworkerCNTRL", "name": "worker", "proxy": true}]}}`); code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	renamed := laptop
+	renamed.Name = "alice-laptop"
+	f.access.tailnet = &access.Tailnet{}
+	f.access.reconcile = func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool) {
+		return access.Grants{Devices: []access.DeviceGrant{renamed}, Addresses: f.guard.Grants().Addresses}, []access.DeviceGrant{worker}, true
+	}
+	if err := f.s.sweep(t.Context()); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if got := f.guard.Grants().Devices; !slices.Equal(got, []access.DeviceGrant{renamed}) {
+		t.Errorf("guard devices = %+v", got)
+	}
+	if got := f.parsed(t).Access.Devices; !slices.Equal(got, []access.DeviceGrant{renamed}) {
+		t.Errorf("file devices = %+v", got)
+	}
+	if !strings.Contains(f.file(t), "cidr: 10.0.0.0/8 # podman") {
+		t.Errorf("sweep rewrote addresses:\n%s", f.file(t))
+	}
+
+	// Nothing to change writes nothing.
+	f.access.reconcile = func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool) {
+		return f.guard.Grants(), nil, false
+	}
+	before := f.file(t)
+	if err := f.s.sweep(t.Context()); err != nil || f.file(t) != before {
+		t.Fatalf("no-op sweep: %v\n%s", err, f.file(t))
+	}
+
+	// A failed write rolls the guard back.
+	f.access.reconcile = func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool) {
+		return access.Grants{Devices: []access.DeviceGrant{}}, []access.DeviceGrant{renamed}, true
+	}
+	if err := os.Remove(f.path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(f.path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.sweep(t.Context()); err == nil {
+		t.Fatal("sweep with an unwritable file returned no error")
+	}
+	if got := f.guard.Grants().Devices; !slices.Equal(got, []access.DeviceGrant{renamed}) {
+		t.Errorf("guard devices after a failed write = %+v", got)
+	}
+}
+
+// Without tailscaled, a sweep reads nothing and changes nothing.
+func TestSweepWithoutTailscaledChangesNothing(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	if err := f.s.sweep(t.Context()); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if f.file(t) != commentedYAML || !slices.Equal(f.guard.Grants().Devices, []access.DeviceGrant{laptop}) {
+		t.Fatalf("sweep without tailscaled changed state:\n%s", f.file(t))
+	}
+}
 func TestLaterFailureRollsBackEarlierChanges(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, code string
 	}{
-		{"bad exclude path", `{"access": {"allowLogins": ["a@github"]}, "requestLogs": {"excludePaths": ["no-slash"]}}`, "invalid_retention"},
-		{"bad admin node", `{"access": {"allowLogins": ["a@github"], "adminNodes": ["bad name"]}}`, "invalid_admin_nodes"},
-		{"bad daily-at", `{"access": {"allowLogins": ["a@github"]}, "requestLogs": {"maxDays": 3}, "backups": {"dailyAt": "25:00"}}`, "invalid_backups"},
+		{"bad exclude path", `{"access": {"devices": [{"id": "nworkerCNTRL", "proxy": true}]}, "requestLogs": {"excludePaths": ["no-slash"]}}`, "invalid_retention"},
+		{"bad device id", `{"backups": {"keep": 9}, "access": {"devices": [{"id": "bad id", "proxy": true}]}}`, "invalid_access"},
+		{"bad daily-at", `{"access": {"devices": [{"id": "nworkerCNTRL", "proxy": true}]}, "requestLogs": {"maxDays": 3}, "backups": {"dailyAt": "25:00"}}`, "invalid_backups"},
 		{"bad keep", `{"requestLogs": {"maxDays": 3}, "backups": {"keep": 0}}`, "invalid_backups"},
-		{"bad poll interval", `{"access": {"allowLogins": ["a@github"]}, "backups": {"dailyAt": "off"}, "ingest": {"pollInterval": "soon"}}`, "invalid_poll_interval"},
+		{"bad poll interval", `{"access": {"devices": [{"id": "nworkerCNTRL", "proxy": true}]}, "backups": {"dailyAt": "off"}, "ingest": {"pollInterval": "soon"}}`, "invalid_poll_interval"},
 		{"negative poll interval", `{"backups": {"keep": 9}, "ingest": {"pollInterval": "-5m"}}`, "invalid_poll_interval"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -463,8 +576,8 @@ func TestLaterFailureRollsBackEarlierChanges(t *testing.T) {
 			if code != http.StatusBadRequest || errorCode(t, body) != tc.code {
 				t.Fatalf("PUT = %d %s, want 400 %s", code, body, tc.code)
 			}
-			if got := f.guard.AllowLogins(); !slices.Equal(got, []string{"alice@github"}) {
-				t.Errorf("allow-logins = %v", got)
+			if got := f.guard.Grants().Devices; !slices.Equal(got, []access.DeviceGrant{laptop}) {
+				t.Errorf("devices = %+v", got)
 			}
 			if ret := f.logs.Retention(); ret.MaxDays != 14 || len(ret.ExcludePaths) != 0 {
 				t.Errorf("retention = %+v", ret)
@@ -488,12 +601,12 @@ func TestWriteFailureRollsBackLiveChanges(t *testing.T) {
 	if err := os.Mkdir(f.path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	code, _, body := f.do(t, http.MethodPut, `{"access": {"allowLogins": ["a@github"]}, "backups": {"keep": 2}, "requestLogs": {"maxDays": 2}}`)
+	code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nworkerCNTRL", "proxy": true}]}, "backups": {"keep": 2}, "requestLogs": {"maxDays": 2}}`)
 	if code != http.StatusInternalServerError {
 		t.Fatalf("PUT = %d %s, want 500", code, body)
 	}
-	if got := f.guard.AllowLogins(); !slices.Equal(got, []string{"alice@github"}) {
-		t.Errorf("allow-logins = %v", got)
+	if got := f.guard.Grants().Devices; !slices.Equal(got, []access.DeviceGrant{laptop}) {
+		t.Errorf("devices = %+v", got)
 	}
 	if ret := f.logs.Retention(); ret.MaxDays != 14 {
 		t.Errorf("max-days = %d", ret.MaxDays)
@@ -511,7 +624,7 @@ func TestUnchangedValuesLeaveFileAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, body := f.do(t, http.MethodPut, `{
-		"access": {"allowLogins": ["alice@github"]},
+		"access": {"devices": [{"id": "nlaptopCNTRL", "name": "laptop", "proxy": true, "admin": true}], "addresses": [{"cidr": "10.0.0.0/8"}]},
 		"requestLogs": {"maxDays": 14, "maxBytes": 21474836480, "excludePaths": [], "keepUnrouted404": false},
 		"backups": {"dailyAt": "00:00", "keep": 3},
 		"ingest": {"pollInterval": "15m"}
@@ -528,14 +641,14 @@ func TestUnchangedValuesLeaveFileAlone(t *testing.T) {
 	}
 }
 
-func TestDisabledGuardRefusesAllowLogins(t *testing.T) {
+func TestDisabledGuardRefusesAccessLists(t *testing.T) {
 	off := false
 	f := newFixture(t, options{accessEnabled: &off})
 	_, v, _ := f.do(t, http.MethodGet, "")
-	if v.Access.Enabled || v.Access.AllowLogins == nil {
+	if v.Access.Enabled || v.Access.Devices == nil || v.Access.Addresses == nil {
 		t.Errorf("access = %+v", v.Access)
 	}
-	for _, put := range []string{`{"access": {"allowLogins": ["a@github"]}}`, `{"access": {"adminNodes": ["laptop"]}}`} {
+	for _, put := range []string{`{"access": {"devices": [{"id": "nworkerCNTRL", "proxy": true}]}}`, `{"access": {"addresses": [{"cidr": "10.0.0.1"}]}}`} {
 		code, _, body := f.do(t, http.MethodPut, put)
 		if code != http.StatusConflict || errorCode(t, body) != "access_disabled" {
 			t.Fatalf("PUT %s = %d %s", put, code, body)
@@ -571,12 +684,12 @@ func TestWriteYAMLHandlesNullSections(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# only a comment\naccess:\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeYAML(path, []yamlEdit{{path: []string{"access", "allow-logins"}, value: []string{"a@github"}}}); err != nil {
+	if err := writeYAML(path, []yamlEdit{{path: []string{"access", "devices"}, value: []access.DeviceGrant{{ID: "n1", Proxy: true}}}}); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)
 	var cfg fileConfig
-	if err := decodeStrict(raw, &cfg); err != nil || !slices.Equal(cfg.Access.AllowLogins, []string{"a@github"}) {
+	if err := decodeStrict(raw, &cfg); err != nil || !slices.Equal(cfg.Access.Devices, []access.DeviceGrant{{ID: "n1", Proxy: true}}) {
 		t.Fatalf("got %+v %v:\n%s", cfg.Access, err, raw)
 	}
 	if !bytes.Contains(raw, []byte("# only a comment")) {

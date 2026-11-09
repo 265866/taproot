@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/265866/taproot/internal/api"
 	"github.com/265866/taproot/internal/config"
@@ -55,6 +57,18 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if err != nil {
 		return cfg, fmt.Errorf("read %s: %w", path, err)
+	}
+	// A removed access key gets a message naming its replacement. The strict
+	// decode below reports any other problem, so a parse error here is ignored.
+	var keys struct {
+		Access map[string]yaml.Node `yaml:"access"`
+	}
+	if yaml.Unmarshal(raw, &keys) == nil {
+		for _, key := range slices.Sorted(maps.Keys(keys.Access)) {
+			if err := access.RemovedKey(key); err != nil {
+				return cfg, fmt.Errorf("parse %s: %w", path, err)
+			}
+		}
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
@@ -192,6 +206,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	logs.Start(ctx)
 	backups.Start(ctx)
 	notify.Start(ctx)
+	editable.Start(ctx)
 
 	opts := []api.ServerOption{
 		// The guard must run first so the dashboard is access-checked too.

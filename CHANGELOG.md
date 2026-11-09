@@ -4,6 +4,10 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`.
 
 ## Unreleased
 
+### Changed
+
+- **Access is per device.** Each tailnet device has a Proxy and an Admin switch, set on the new **Access** page or in `access.devices` by stable ID, and a new device has neither. `access.addresses` replaces `access.trusted-cidrs`. `access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs` stop startup with a message naming their replacement, with no migration. A device that leaves the tailnet is removed from `taproot.yaml` 24 hours later. The server's own node keeps Proxy without an entry.
+
 ### Fixed
 
 - The server's own Tailscale node reaches the proxy again after the node is tagged. A tagged node has no user login, so `allow-logins` refused it, and local clients that use the Tailscale address got 403.

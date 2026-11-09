@@ -106,8 +106,8 @@ func sideEffectGET(r *http.Request) bool {
 }
 
 // isDashboardShell is the dashboard page and its chunks under /assets/. Every
-// admitted caller may load them: they are static and hold no data, and they
-// are how a device that is not in admin-nodes learns why the API refuses it.
+// identified caller may load them: they are static and hold no data, and they
+// are how a device without Admin learns why the API refuses it.
 func isDashboardShell(r *http.Request) bool {
 	return (r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/assets/")) &&
 		(r.Method == http.MethodGet || r.Method == http.MethodHead)

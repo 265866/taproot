@@ -1,4 +1,4 @@
-// Package access admits requests by the caller's Tailscale identity instead of
+// Package access admits requests by the caller's Tailscale device instead of
 // API keys or the management key.
 //
 // # Security model
@@ -14,27 +14,27 @@
 //
 //   - Loopback reaches both surfaces. Only processes inside the container, or
 //     on the development machine, connect from loopback.
-//   - trusted-cidrs reach the proxy only. They hold host-local addresses, such
-//     as the LAN address that a host-local publish arrives from.
-//   - The server's own tailnet node reaches the proxy only, whatever its login.
-//     Every process and container on the host connects through it, so it
-//     never reaches the admin surface. It is admitted without allow-logins
-//     because a tagged node has no user login, and an untagged server node
-//     admitted every process on the host anyway. whois decides which node an
-//     address belongs to; the status address list is the fallback when whois
-//     fails.
-//   - Any other tailnet address reaches the proxy when tailscaled's whois login
-//     is in allow-logins. It reaches the admin surface only when, in addition,
-//     its node is listed in admin-nodes. With admin-nodes empty, no tailnet
-//     caller is an admin.
+//   - access.addresses reach the proxy only. They hold host-local addresses,
+//     such as the LAN address that a host-local publish arrives from.
+//   - The server's own tailnet node reaches the proxy only, whatever
+//     access.devices says. Every process and container on the host connects
+//     through it, so it never reaches the admin surface. whois decides which
+//     node an address belongs to; the status address list is the fallback
+//     when whois fails.
+//   - Any other tailnet address is resolved with tailscaled's whois to a
+//     device's stable ID, and access.devices decides: proxy: true reaches the
+//     proxy, admin: true the admin surface. A device that is not listed has
+//     neither. Names never grant anything, because a stable ID is never
+//     reused and a name can be.
 //
-// Every admitted caller may load the dashboard page and its chunks, which are
-// static, so a device outside admin-nodes sees why the API refuses it.
+// Every caller with an identity may load the dashboard page and its chunks,
+// which are static, so a device without Admin sees why the API refuses it.
+// A tailnet device that is refused is told its own name, login, and ID, and
+// which switch to turn on; nobody else gets more than "forbidden".
 //
 // The server's own node comes from tailscaled's LocalAPI status. Until it has
 // been read once, tailnet callers get no admin access, only local host names
-// pass the Host check, and the server's own node needs an allowed login like
-// any other node, so a tagged one is refused.
+// pass the Host check, and the server's own node is just another device.
 //
 // The admin surface is keyless for admitted callers, so a browser is its weak
 // point: any page the admin visits could send requests with the admin's
@@ -108,26 +108,62 @@ type Config struct {
 	// the proxy surface, keeps the admin surface loopback-only, and leaves
 	// management auth to upstream.
 	Enabled *bool `yaml:"enabled"`
-	// AllowLogins lists admitted Tailscale login names. An enabled guard
-	// refuses to start without one.
-	AllowLogins []string `yaml:"allow-logins"`
-	// AdminNodes lists the tailnet nodes that reach the admin surface. Empty
-	// means no tailnet node does; loopback still does. An entry is either a
-	// node's stable ID as "id:<StableID>" (GET /taproot/api/v1/me shows it), or
-	// a MagicDNS name: the full name (desktop.tailnet-0000.ts.net) or its
-	// first label for nodes in the server's own tailnet (desktop).
-	// Prefer IDs. MagicDNS names derive from the device hostname unless set in
-	// the admin console, so once a listed device is deleted or renamed another
-	// node of the same login can claim its name; a stable ID is never reused.
-	AdminNodes []string `yaml:"admin-nodes"`
-	// TrustedCIDRs reach the proxy surface without a whois lookup. Use single
-	// host-local addresses (/32), never a whole LAN.
-	TrustedCIDRs []string `yaml:"trusted-cidrs"`
+	// Devices grants Proxy and Admin to tailnet devices by stable ID. A device
+	// that is not listed has neither. The Access page edits this list.
+	Devices []DeviceGrant `yaml:"devices"`
+	// Addresses reach the proxy surface without Tailscale, and never the
+	// admin surface. Use single host-local addresses (/32), never a whole LAN.
+	Addresses []AddressGrant `yaml:"addresses"`
 	// ExtraHosts are additional Host names or addresses the server answers to,
 	// besides localhost, loopback, and its own tailnet names and addresses.
 	ExtraHosts      []string      `yaml:"extra-hosts"`
 	TailscaleSocket string        `yaml:"tailscale-socket"`
 	CacheTTL        time.Duration `yaml:"cache-ttl"`
+}
+
+// DeviceGrant is one tailnet device's permissions.
+type DeviceGrant struct {
+	// ID is the device's stable node ID, such as nQ7v2xK8CNTRL (tailscale
+	// status --json shows it as ID). Tailscale never reuses one.
+	ID string `yaml:"id" json:"id"`
+	// Name is a label for people reading the file. Taproot refreshes it from
+	// the tailnet, and it grants nothing.
+	Name string `yaml:"name,omitempty" json:"name"`
+	// Proxy lets the device send model requests.
+	Proxy bool `yaml:"proxy" json:"proxy"`
+	// Admin lets the device open the dashboard and the management API.
+	Admin bool `yaml:"admin" json:"admin"`
+}
+
+// AddressGrant is an address outside Tailscale that reaches the proxy.
+type AddressGrant struct {
+	// CIDR is an address or prefix, such as 192.0.2.20/32. A bare address
+	// means just that address.
+	CIDR string `yaml:"cidr" json:"cidr"`
+	Note string `yaml:"note,omitempty" json:"note"`
+}
+
+// Grants are the access lists the guard enforces, as taproot.yaml holds them.
+type Grants struct {
+	Devices   []DeviceGrant
+	Addresses []AddressGrant
+}
+
+// removedKeys are access keys from before per-device permissions. taproot.yaml
+// is strict, so they would fail anyway; this names what replaces them.
+var removedKeys = map[string]string{
+	"allow-logins":  "access.allow-logins was removed: access is granted per device now. List each device that may use taproot under access.devices, with its stable ID (tailscale status --json shows it as ID), a name, and proxy: true",
+	"admin-nodes":   "access.admin-nodes was removed: access is granted per device now. Give each admin device an entry under access.devices with its stable ID (tailscale status --json shows it as ID), a name, and admin: true",
+	"trusted-cidrs": "access.trusted-cidrs was removed: list each address under access.addresses with cidr (such as 192.0.2.20/32) and an optional note",
+}
+
+// RemovedKey returns an error naming the replacement when key is an access
+// key taproot no longer reads, and nil otherwise.
+func RemovedKey(key string) error {
+	if msg, ok := removedKeys[key]; ok {
+		return errors.New(msg + "; see examples/taproot/taproot.yaml")
+	}
+	return nil
 }
 
 // Via says how a caller was admitted, or for a device, how its requests
@@ -143,7 +179,8 @@ const (
 	ViaPlugin Via = "plugin"
 )
 
-// Identity is an admitted caller.
+// Identity is a caller the guard identified. Proxy and Admin say which
+// surfaces it reaches; a tailnet device may have neither.
 type Identity struct {
 	Login       string
 	DisplayName string
@@ -151,13 +188,19 @@ type Identity struct {
 	// NodeID is the node's stable ID from whois.
 	NodeID string
 	Via    Via
+	// Proxy is true when the caller may reach the proxy surface.
+	Proxy bool
 	// Admin is true when the caller may reach the admin surface.
 	Admin bool
 	// notAdmin says why Admin is false.
 	notAdmin string
-	// unlistedNode is true when Admin is false only because the node is not
-	// in admin-nodes.
-	unlistedNode bool
+	// device is true for a tailnet device other than the server, whose
+	// grant decides, so a denial may tell it its name and which switch to
+	// turn on.
+	device bool
+	// noAdminGrant is true when Admin is false because the device's grant
+	// lacks it.
+	noAdminGrant bool
 	// self is true for a tailnet caller on the server's own node.
 	self bool
 }
@@ -165,14 +208,13 @@ type Identity struct {
 // Guard decides whether a request may reach the proxy or the admin surface.
 type Guard struct {
 	enabled    bool
-	trusted    []netip.Prefix
-	allow      atomic.Pointer[[]string]
-	adminNodes atomic.Pointer[[]string]
+	grants     atomic.Pointer[grantSet]
 	extraHosts map[string]bool
 	secret     string
 	socket     string
 	whois      func(context.Context, netip.Addr) (peer, error)
 	status     func(context.Context) (selfNode, error)
+	tailnet    func(context.Context) (Tailnet, error)
 	ttl        time.Duration
 	now        func() time.Time
 
@@ -185,9 +227,19 @@ type Guard struct {
 	selfExpires time.Time
 	selfRetryAt time.Time
 
+	// missing tracks granted devices absent from tailscaled's list.
+	missing missingDevices
+
 	requests requestDevices
-	// own names trusted-cidrs devices only; admission never reads it.
+	// own names access.addresses devices only; admission never reads it.
 	own ownAddrs
+}
+
+// grantSet is Grants checked and indexed for admission.
+type grantSet struct {
+	Grants
+	byID     map[string]DeviceGrant
+	prefixes []netip.Prefix
 }
 
 type cacheEntry struct {
@@ -214,6 +266,10 @@ func New(cfg Config) (*Guard, error) {
 		}
 		g.extraHosts[host] = true
 	}
+	// The Access page lists the configured grants with the guard off too.
+	if err := g.SetGrants(Grants{Devices: cfg.Devices, Addresses: cfg.Addresses}); err != nil {
+		return nil, err
+	}
 	if !g.enabled {
 		log.Warn("taproot access: guard disabled (access.enabled: false). Every caller that reaches the port, from any address and without a login, can use the proxy routes (/v1/..., /v1beta/..., /backend-api/codex/...) and spend every account's quota, and no Host, Origin, or cross-site check runs there. The dashboard, /taproot/**, /v0/management/**, /v8/management/**, plugin pages, the OAuth callbacks, and /v1/ws stay loopback-only and refuse browser requests from other sites.")
 		return g, nil
@@ -224,26 +280,6 @@ func New(cfg Config) (*Guard, error) {
 	if g.ttl == 0 {
 		g.ttl = defaultCacheTTL
 	}
-	for _, raw := range cfg.TrustedCIDRs {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
-		if err != nil {
-			return nil, fmt.Errorf("trusted-cidrs %q: %w", raw, err)
-		}
-		if !prefix.IsSingleIP() {
-			log.Warnf("taproot access: trusted-cidrs %s covers more than one address; every host in it reaches the proxy without a login", prefix.Masked())
-		}
-		g.trusted = append(g.trusted, prefix.Masked())
-	}
-	if err := g.SetAdminNodes(cfg.AdminNodes); err != nil {
-		return nil, fmt.Errorf("admin-nodes: %w", err)
-	}
-	logins := cfg.AllowLogins
-	if len(logins) == 0 {
-		return nil, errors.New("access.allow-logins is empty; list the Tailscale logins that may use taproot (`tailscale whois <device-ip>` shows a login)")
-	}
-	if err := g.SetAllowLogins(logins); err != nil {
-		return nil, fmt.Errorf("allow-logins: %w", err)
-	}
 	socket := cfg.TailscaleSocket
 	if socket == "" {
 		socket = defaultSocket
@@ -252,14 +288,28 @@ func New(cfg Config) (*Guard, error) {
 	client := newLocalClient(socket)
 	g.whois = client.whois
 	g.status = client.status
+	g.tailnet = client.tailnet
 
 	secret, err := managementSecret()
 	if err != nil {
 		return nil, err
 	}
 	g.secret = secret
-	log.Infof("taproot access: guard enabled with %d allowed logins, %d admin nodes, %d trusted CIDRs, %d extra hosts, tailscaled socket %s",
-		len(logins), len(g.AdminNodes()), len(g.trusted), len(g.extraHosts), socket)
+	set := g.grants.Load()
+	proxy, admin := 0, 0
+	for _, d := range set.Devices {
+		if d.Proxy {
+			proxy++
+		}
+		if d.Admin {
+			admin++
+		}
+	}
+	log.Infof("taproot access: guard enabled with %d devices (%d with Proxy, %d with Admin), %d addresses, %d extra hosts, tailscaled socket %s",
+		len(set.Devices), proxy, admin, len(set.Addresses), len(g.extraHosts), socket)
+	if admin == 0 {
+		log.Warn("taproot access: no device has Admin, so only loopback reaches the dashboard and the management API. Give a device admin: true under access.devices in taproot.yaml")
+	}
 	return g, nil
 }
 
@@ -280,90 +330,74 @@ func managementSecret() (string, error) {
 	return secret, nil
 }
 
-// SetAllowLogins replaces the admitted login list at runtime. Matching is
-// case-insensitive. An empty list is rejected so a settings change cannot lock
-// out every tailnet caller.
-func (g *Guard) SetAllowLogins(logins []string) error {
-	normalized := make([]string, 0, len(logins))
-	for _, login := range logins {
-		login = strings.ToLower(strings.TrimSpace(login))
-		if login == "" {
-			return errors.New("login must not be blank")
-		}
-		if !slices.Contains(normalized, login) {
-			normalized = append(normalized, login)
-		}
-	}
-	if len(normalized) == 0 {
-		return errors.New("at least one login is required")
-	}
-	g.allow.Store(&normalized)
-	return nil
-}
-
-// AllowLogins returns the current admitted login list.
-func (g *Guard) AllowLogins() []string {
-	if p := g.allow.Load(); p != nil {
-		return slices.Clone(*p)
-	}
-	return nil
-}
-
-// SetAdminNodes replaces the admin node list at runtime. Entries are
-// lowercased without a trailing dot. An empty list is allowed and leaves only
-// loopback with admin access.
-func (g *Guard) SetAdminNodes(nodes []string) error {
-	normalized, err := normalizeAdminNodes(nodes)
+// SetGrants checks and replaces the device and address lists at runtime.
+// Entries are trimmed, a device with neither permission is dropped, and a bare
+// address becomes a single-address prefix.
+func (g *Guard) SetGrants(in Grants) error {
+	set, err := newGrantSet(in)
 	if err != nil {
 		return err
 	}
-	if prev := g.adminNodes.Swap(&normalized); len(normalized) == 0 && (prev == nil || len(*prev) > 0) {
-		log.Warn("taproot access: admin-nodes is empty, so no tailnet device is an admin (management API, settings, backups); only loopback is. Add your devices to access.admin-nodes in taproot.yaml")
-	}
+	g.grants.Store(set)
 	return nil
 }
 
-func normalizeAdminNodes(nodes []string) ([]string, error) {
-	normalized := make([]string, 0, len(nodes))
-	for _, raw := range nodes {
-		trimmed := strings.TrimSpace(raw)
-		var node string
-		if prefix, id, ok := strings.Cut(trimmed, ":"); ok && strings.EqualFold(prefix, "id") {
-			// Stable IDs are case-sensitive, so they keep their case.
-			if id == "" || strings.ContainsAny(id, " /:@") {
-				return nil, fmt.Errorf("invalid node id %q", raw)
-			}
-			node = adminNodeIDPrefix + id
-		} else {
-			node = strings.ToLower(strings.TrimSuffix(trimmed, "."))
-			if node == "" || strings.ContainsAny(node, " /:@") {
-				return nil, fmt.Errorf("invalid node name %q", raw)
-			}
+func newGrantSet(in Grants) (*grantSet, error) {
+	set := &grantSet{Grants: Grants{Devices: []DeviceGrant{}, Addresses: []AddressGrant{}}, byID: map[string]DeviceGrant{}}
+	seen := map[string]bool{}
+	for _, d := range in.Devices {
+		d.ID = strings.TrimSpace(d.ID)
+		d.Name = strings.TrimSpace(d.Name)
+		// Stable IDs are case-sensitive, so they keep their case.
+		if d.ID == "" || strings.ContainsFunc(d.ID, func(r rune) bool { return r <= ' ' || strings.ContainsRune("/:@", r) }) {
+			return nil, fmt.Errorf("access.devices: invalid device id %q", d.ID)
 		}
-		if !slices.Contains(normalized, node) {
-			normalized = append(normalized, node)
+		if seen[d.ID] {
+			return nil, fmt.Errorf("access.devices: device %s is listed twice", d.ID)
 		}
+		seen[d.ID] = true
+		if !d.Proxy && !d.Admin {
+			continue
+		}
+		set.byID[d.ID] = d
+		set.Devices = append(set.Devices, d)
 	}
-	return normalized, nil
+	for _, a := range in.Addresses {
+		raw := strings.TrimSpace(a.CIDR)
+		prefix, err := netip.ParsePrefix(raw)
+		if err != nil {
+			addr, errAddr := netip.ParseAddr(raw)
+			if errAddr != nil {
+				return nil, fmt.Errorf("access.addresses: %q is not an address or CIDR", a.CIDR)
+			}
+			prefix = netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen())
+		}
+		prefix = prefix.Masked()
+		if slices.Contains(set.prefixes, prefix) {
+			return nil, fmt.Errorf("access.addresses: %s is listed twice", prefix)
+		}
+		if !prefix.IsSingleIP() {
+			log.Warnf("taproot access: access.addresses %s covers more than one address; every host in it reaches the proxy without Tailscale", prefix)
+		}
+		set.prefixes = append(set.prefixes, prefix)
+		set.Addresses = append(set.Addresses, AddressGrant{CIDR: prefix.String(), Note: strings.TrimSpace(a.Note)})
+	}
+	return set, nil
 }
 
-// AdminNodes returns the current admin node list.
-func (g *Guard) AdminNodes() []string {
-	if p := g.adminNodes.Load(); p != nil {
-		return slices.Clone(*p)
-	}
-	return nil
+// Grants returns a copy of the current device and address lists.
+func (g *Guard) Grants() Grants {
+	set := g.grants.Load()
+	return Grants{Devices: slices.Clone(set.Devices), Addresses: slices.Clone(set.Addresses)}
 }
 
-// AdminNodesInclude reports whether a candidate admin-nodes list would admit
-// the node a whois named, using the same matching as the guard. Settings uses
-// it to refuse a change that removes the caller's own device.
-func (g *Guard) AdminNodesInclude(nodes []string, caller Identity) bool {
-	normalized, err := normalizeAdminNodes(nodes)
-	if err != nil {
-		return false
+// ServerNodeID returns the server's own stable node ID from the last
+// tailscaled status read, or "" before the first one.
+func (g *Guard) ServerNodeID() string {
+	if self, _ := g.cachedSelf(); self != nil {
+		return self.StableID
 	}
-	return matchAdminNode(normalized, caller.Node, caller.NodeID, g.self(context.Background()))
+	return ""
 }
 
 // IdentityFrom returns the identity the middleware admitted for this request.
@@ -419,18 +453,21 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			reason = g.browserCheck(r, self)
 		}
 		denial := gin.H{"code": "forbidden", "message": "caller is not allowed"}
-		if reason == "" && surf == surfaceAdmin && !id.Admin && !isDashboardShell(r) {
+		// Only a tailnet device on a request that passed the browser checks
+		// gets a denial naming it, which tells it nothing it does not know.
+		switch {
+		case reason != "":
+		case surf == surfaceProxy && !id.Proxy:
+			reason = "device " + quoteHeader(id.Node) + " (" + id.NodeID + ") has no Proxy"
+			if id.device {
+				denial = g.deviceDenial("no_proxy", id, "this device has no Proxy permission. Turn on Proxy for it on the Access page of taproot's dashboard")
+			}
+		case surf == surfaceAdmin && !id.Admin && !isDashboardShell(r):
 			reason = id.notAdmin
-			if id.unlistedNode {
-				// Only an allowlisted login on a request that passed the
-				// browser checks gets here, so naming its own node discloses
-				// nothing new.
-				denial = gin.H{
-					"code":    "not_admin_node",
-					"message": "this device is not in access.admin-nodes in taproot.yaml",
-					"node":    id.Node,
-					"nodeId":  id.NodeID,
-				}
+			if id.noAdminGrant {
+				denial = g.deviceDenial("not_admin", id, "this device has no Admin permission. On a device that has it, turn on Admin for this one on the Access page of taproot's dashboard")
+				// The connection gate words its advice by whether the device has Proxy.
+				denial["proxy"] = id.Proxy
 			}
 		}
 		if reason == "" && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
@@ -456,6 +493,20 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			r.Header.Del("X-Management-Key")
 		}
 		c.Next()
+	}
+}
+
+// deviceDenial is the 403 body for a tailnet device that lacks a permission.
+// The message names the device, because command-line clients show only it.
+func (g *Guard) deviceDenial(code string, id Identity, message string) gin.H {
+	self, _ := g.cachedSelf()
+	name := shortNodeName(id.Node, self)
+	return gin.H{
+		"code":    code,
+		"message": fmt.Sprintf("%s (%s, ID %s): %s", cmp.Or(name, "this device"), id.Login, id.NodeID, message),
+		"node":    name,
+		"nodeId":  id.NodeID,
+		"login":   id.Login,
 	}
 }
 
@@ -489,7 +540,9 @@ func isManagementPath(path string) bool {
 	return false
 }
 
-// admit returns the caller's identity, or a non-empty denial reason.
+// admit returns the caller's identity, or a non-empty denial reason when the
+// caller has none. A tailnet device with an identity may still have neither
+// permission; the middleware decides per surface.
 func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfNode) (Identity, string) {
 	addrPort, err := netip.ParseAddrPort(remoteAddr)
 	if err != nil {
@@ -497,11 +550,12 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 	}
 	addr := addrPort.Addr().Unmap().WithZone("")
 	if addr.IsLoopback() {
-		return Identity{Via: ViaLoopback, Node: addr.String(), Admin: true}, ""
+		return Identity{Via: ViaLoopback, Node: addr.String(), Proxy: true, Admin: true}, ""
 	}
-	for _, prefix := range g.trusted {
+	set := g.grants.Load()
+	for _, prefix := range set.prefixes {
 		if prefix.Contains(addr) {
-			return Identity{Via: ViaCIDR, Node: addr.String(), notAdmin: "trusted-cidrs callers reach the proxy only"}, ""
+			return Identity{Via: ViaCIDR, Node: addr.String(), Proxy: true, notAdmin: "access.addresses callers reach the proxy only"}, ""
 		}
 	}
 	if !isTailnet(addr) {
@@ -526,55 +580,29 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 		return Identity{
 			Login: p.Login, DisplayName: p.DisplayName,
 			Node: cmp.Or(p.Node, s.DNSName), NodeID: cmp.Or(p.StableID, s.StableID),
-			Via: ViaTailnet, notAdmin: "this server's own node reaches the proxy only", self: true,
+			Via: ViaTailnet, Proxy: true, notAdmin: "this server's own node reaches the proxy only", self: true,
 		}, ""
 	}
-	if !slices.Contains(*g.allow.Load(), strings.ToLower(p.Login)) {
-		return Identity{}, "login " + p.Login + " not in allow-logins"
+	if p.StableID == "" {
+		return Identity{}, "whois for " + addr.String() + " names no node ID"
 	}
-	id := Identity{Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, NodeID: p.StableID, Via: ViaTailnet}
+	grant := set.byID[p.StableID]
+	id := Identity{
+		Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, NodeID: p.StableID, Via: ViaTailnet,
+		Proxy: grant.Proxy, device: true,
+	}
 	switch {
+	case !grant.Admin:
+		id.notAdmin = "device " + quoteHeader(p.Node) + " (" + p.StableID + ") has no Admin"
+		id.noAdminGrant = true
 	case s == nil:
 		id.notAdmin = "this server's own tailnet node is unknown, so tailnet callers reach the proxy only"
 	case containsAddr(s.IPs, addr):
 		id.notAdmin = "the address is still this server's own in tailscaled status, so it reaches the proxy only"
-	case !matchAdminNode(*g.adminNodes.Load(), p.Node, p.StableID, s):
-		id.notAdmin = "node " + quoteHeader(p.Node) + " not in admin-nodes"
-		id.unlistedNode = true
 	default:
 		id.Admin = true
 	}
 	return id, ""
-}
-
-const adminNodeIDPrefix = "id:"
-
-// matchAdminNode matches a whois node against admin-nodes, by stable ID or by
-// MagicDNS name. A short name entry matches only nodes in the server's own
-// tailnet. An empty list, or an empty name and ID, matches nothing.
-func matchAdminNode(adminNodes []string, node, nodeID string, self *selfNode) bool {
-	if nodeID != "" && slices.Contains(adminNodes, adminNodeIDPrefix+nodeID) {
-		return true
-	}
-	node = strings.ToLower(node)
-	if node == "" {
-		return false
-	}
-	short := ""
-	if self != nil {
-		if _, suffix, ok := strings.Cut(self.DNSName, "."); ok && suffix != "" {
-			short, _ = strings.CutSuffix(node, "."+suffix)
-			if short == node {
-				short = ""
-			}
-		}
-	}
-	for _, entry := range adminNodes {
-		if entry == node || (short != "" && entry == short) {
-			return true
-		}
-	}
-	return false
 }
 
 func isTailnet(addr netip.Addr) bool {
@@ -662,6 +690,7 @@ func (g *Guard) cachedSelf() (*selfNode, bool) {
 // Routes registers access endpoints under the taproot API group.
 func (g *Guard) Routes(r *gin.RouterGroup) {
 	r.GET("/me", g.handleMe)
+	r.GET("/access/devices", g.handleDevices)
 }
 
 type meResponse struct {
@@ -670,12 +699,13 @@ type meResponse struct {
 	Node        string `json:"node"`
 	NodeID      string `json:"nodeId"`
 	Via         string `json:"via"`
+	Proxy       bool   `json:"proxy"`
 	Admin       bool   `json:"admin"`
 }
 
 func (g *Guard) handleMe(c *gin.Context) {
 	if !g.enabled {
-		c.JSON(http.StatusOK, meResponse{Via: "disabled", Admin: true})
+		c.JSON(http.StatusOK, meResponse{Via: "disabled", Proxy: true, Admin: true})
 		return
 	}
 	id, ok := IdentityFrom(c)
@@ -683,5 +713,5 @@ func (g *Guard) handleMe(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"code": "forbidden", "message": "no admitted identity"}})
 		return
 	}
-	c.JSON(http.StatusOK, meResponse{Login: id.Login, DisplayName: id.DisplayName, Node: id.Node, NodeID: id.NodeID, Via: string(id.Via), Admin: id.Admin})
+	c.JSON(http.StatusOK, meResponse{Login: id.Login, DisplayName: id.DisplayName, Node: id.Node, NodeID: id.NodeID, Via: string(id.Via), Proxy: id.Proxy, Admin: id.Admin})
 }

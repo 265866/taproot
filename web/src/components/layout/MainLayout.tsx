@@ -18,6 +18,7 @@ import { PageTransition } from '@/components/common/PageTransition';
 import { MainRoutes } from '@/router/MainRoutes';
 import { authFilesApi, pluginsApi } from '@/services/api';
 import {
+  IconSidebarAccess,
   IconSidebarAccounts,
   IconSidebarBackups,
   IconSidebarConfig,
@@ -55,6 +56,7 @@ const sidebarIcons = {
   plugins: <IconSidebarPlugins size={18} />,
   pluginStore: <IconSidebarStore size={18} />,
   backups: <IconSidebarBackups size={18} />,
+  access: <IconSidebarAccess size={18} />,
   settings: <IconSidebarSettings size={18} />,
   system: <IconSidebarSystem size={18} />,
 } satisfies Partial<Record<keyof typeof ROUTES, ReactNode>>;
@@ -566,6 +568,7 @@ export function MainLayout() {
           ? [link('plugins', 'nav.plugins'), link('pluginStore', 'nav.plugin_store')]
           : []),
         link('backups', 'nav.backups'),
+        link('access', 'nav.access'),
         link('settings', 'nav.settings'),
         link('system', 'nav.system_info'),
       ],

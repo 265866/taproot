@@ -30,10 +30,55 @@ export interface TaprootMe {
   login: string;
   displayName: string;
   node: string;
-  /** The node's stable ID; an admin-nodes entry "id:<nodeId>" pins this device. */
+  /** The node's stable ID, which access.devices grants permissions to. */
   nodeId?: string;
   via: TaprootVia;
+  proxy?: boolean;
   admin?: boolean;
+}
+
+/** One access.devices entry: a tailnet device's permissions, by stable ID. */
+export interface DeviceGrant {
+  id: string;
+  /** A label; taproot keeps it in step with the tailnet, and it grants nothing. */
+  name: string;
+  proxy: boolean;
+  admin: boolean;
+}
+
+/** One access.addresses entry: an address outside Tailscale that may use the proxy. */
+export interface AddressGrant {
+  cidr: string;
+  note: string;
+}
+
+/** A device on the Access page: tailscaled's view joined with its grant. */
+export interface AccessDevice extends DeviceGrant {
+  /** The MagicDNS name; empty for a device no longer on the tailnet. */
+  dnsName: string;
+  /** The owner's login; empty for a tagged device and one no longer on the tailnet. */
+  login: string;
+  tags: string[];
+  os: string;
+  /** When the device joined the tailnet, or null when unknown. */
+  created: string | null;
+  /** The taproot server's own node: always Proxy, never Admin. */
+  server: boolean;
+  /** False for a granted device the last tailnet read did not list. */
+  onTailnet: boolean;
+  /** When successful reads stopped listing the device. */
+  missingSince: string | null;
+}
+
+export interface AccessDevices {
+  /** False when access.enabled is false; the lists then have no effect. */
+  enabled: boolean;
+  devices: AccessDevice[];
+  addresses: AddressGrant[];
+  /** Why tailscaled could not be read; devices then lists only those with a permission. */
+  tailnetError?: string;
+  /** Taproot forgets a device this long after it leaves the tailnet. */
+  forgetAfterHours: number;
 }
 
 export interface TaprootAccount {
@@ -311,8 +356,8 @@ export interface RestoreResult {
 }
 
 export interface TaprootSettings {
-  /** adminNodes: tailnet devices that reach the admin surface; empty means loopback only. */
-  access: { enabled: boolean; allowLogins: string[]; adminNodes: string[] };
+  /** Devices listed have at least one permission; every other device has none. */
+  access: { enabled: boolean; devices: DeviceGrant[]; addresses: AddressGrant[] };
   requestLogs: {
     /** Negative disables the age limit. */
     maxDays: number;
@@ -358,7 +403,8 @@ export interface TaprootServerInfo {
 
 /** A `PUT /settings` body: absent sections and fields stay as they are. */
 export interface TaprootSettingsUpdate {
-  access?: { allowLogins?: string[]; adminNodes?: string[] };
+  /** Each list replaces the whole list. */
+  access?: { devices?: DeviceGrant[]; addresses?: AddressGrant[] };
   requestLogs?: Partial<TaprootSettings['requestLogs']>;
   backups?: Partial<TaprootSettings['backups']>;
   ingest?: { pollInterval?: string };
@@ -528,6 +574,8 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       buildTaprootUrl(base, `/backups/${id(backupId)}/download`),
     restoreBackup: (backupId: string) =>
       request<RestoreResult>('POST', `/backups/${id(backupId)}/restore`),
+
+    accessDevices: () => request<AccessDevices>('GET', '/access/devices'),
 
     settings: () => request<TaprootSettings>('GET', '/settings'),
     putSettings: (update: TaprootSettingsUpdate) =>

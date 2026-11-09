@@ -2,96 +2,11 @@
  * Form state for the settings page and its conversion to `PUT /settings` sections. Each section
  * saves on its own, so each converter returns either the update or the first problem found.
  */
-import type { TaprootMe, TaprootSettings, TaprootSettingsUpdate } from '@/services/api/taproot';
+import type { TaprootSettings, TaprootSettingsUpdate } from '@/services/api/taproot';
 
 export type Validation<T> = { ok: true; update: T } | { ok: false; error: string; detail?: string };
 
 const fail = <T>(error: string, detail?: string): Validation<T> => ({ ok: false, error, detail });
-
-// ---- Access ----------------------------------------------------------------------------------
-
-/** Tailscale logins look like `alice@github` or `name@example.com`. */
-const LOGIN = /^[^\s@]+@[^\s@]+$/;
-
-export function normalizeLogin(login: string): string {
-  return login.trim().toLowerCase();
-}
-
-/** The caller's own login, when they reached taproot through the tailnet and have one. */
-export function ownLogin(me: TaprootMe | null): string | null {
-  return me?.via === 'tailnet' && me.login ? normalizeLogin(me.login) : null;
-}
-
-export function accessUpdate(
-  logins: string[],
-  me: TaprootMe | null
-): Validation<NonNullable<TaprootSettingsUpdate['access']>> {
-  const normalized: string[] = [];
-  for (const raw of logins) {
-    const login = normalizeLogin(raw);
-    if (!login) continue;
-    if (!LOGIN.test(login)) return fail('login_format', raw.trim());
-    if (!normalized.includes(login)) normalized.push(login);
-  }
-  if (normalized.length === 0) return fail('logins_empty');
-  const own = ownLogin(me);
-  if (own && !normalized.includes(own)) return fail('lockout', own);
-  return { ok: true, update: { allowLogins: normalized } };
-}
-
-// ---- Admin devices ---------------------------------------------------------------------------
-
-/** A MagicDNS name: `desktop` or `desktop.tailnet-0000.ts.net`. */
-const NODE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
-/** A stable node ID pin: `id:nExample1CNTRL`. IDs are case-sensitive. */
-const NODE_ID = /^id:[^\s/:@]+$/;
-const ID_PREFIX = 'id:';
-
-export function normalizeNode(node: string): string {
-  const trimmed = node.trim();
-  if (trimmed.slice(0, ID_PREFIX.length).toLowerCase() === ID_PREFIX) {
-    return ID_PREFIX + trimmed.slice(ID_PREFIX.length).trim();
-  }
-  return trimmed.toLowerCase().replace(/\.$/, '');
-}
-
-/** The caller's own node ID, when they reached taproot through the tailnet. */
-export function ownNodeId(me: TaprootMe | null): string | null {
-  return me?.via === 'tailnet' && me.nodeId ? me.nodeId : null;
-}
-
-/** The caller's own device, when they reached taproot through the tailnet. */
-export function ownNode(me: TaprootMe | null): string | null {
-  return me?.via === 'tailnet' && me.node ? normalizeNode(me.node) : null;
-}
-
-/**
- * Whether an admin-nodes entry names a device: its full MagicDNS name, or its first label. The
- * server also requires a short entry's device to be in its own tailnet, and has the last word.
- */
-export function entryMatchesNode(entry: string, node: string, nodeId?: string | null): boolean {
-  if (entry.startsWith(ID_PREFIX)) return !!nodeId && entry === ID_PREFIX + nodeId;
-  return entry === node || entry === node.split('.')[0];
-}
-
-export function adminNodesUpdate(
-  nodes: string[],
-  me: TaprootMe | null
-): Validation<NonNullable<TaprootSettingsUpdate['access']>> {
-  const normalized: string[] = [];
-  for (const raw of nodes) {
-    const node = normalizeNode(raw);
-    if (!node) continue;
-    if (!NODE.test(node) && !NODE_ID.test(node)) return fail('node_format', raw.trim());
-    if (!normalized.includes(node)) normalized.push(node);
-  }
-  const own = ownNode(me);
-  const ownId = ownNodeId(me);
-  if (own && !normalized.some((entry) => entryMatchesNode(entry, own, ownId))) {
-    return fail('node_lockout', own);
-  }
-  return { ok: true, update: { adminNodes: normalized } };
-}
 
 // ---- Request log retention -------------------------------------------------------------------
 

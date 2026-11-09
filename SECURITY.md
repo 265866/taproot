@@ -14,15 +14,15 @@ The server has two surfaces:
 | Caller | Proxy | Admin |
 | --- | --- | --- |
 | Loopback inside the container | yes | yes |
-| A login in `access.allow-logins` on a device in `access.admin-nodes` | yes | yes |
-| A login in `access.allow-logins` on any other device | yes | no |
+| A device with `proxy: true` in `access.devices` | yes | no |
+| A device with `admin: true` in `access.devices` | no | yes |
 | The server's own Tailscale node | yes | no |
-| An address in `access.trusted-cidrs` | yes | no |
-| Anyone else, including whois failures | no | no |
+| An address in `access.addresses` | yes | no |
+| Any other device, including a new one, and anyone else, including whois failures | no | no |
 
 The admin surface needs no key: for admitted callers, the guard adds the management key inside the process, and the key never reaches a browser. Because of that, the guard also refuses browser requests made on behalf of another site: a `Host` that is not one of the server's names, a cross-origin `Origin`, cross-site `Sec-Fetch-Site` values, and a state-changing `GET` without `X-Taproot-Request: 1`. Upstream's Redis-protocol usage queue on the same port accepts loopback connections only.
 
-Taproot refuses to start without `access.allow-logins`, refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. The [README](README.md#how-access-works) and [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md) describe the model in full.
+Permissions belong to a device's Tailscale stable ID, which is never reused; names grant nothing. Taproot refuses unknown keys in `taproot.yaml`, and refuses CLIProxyAPI's Home mode and `--tui --standalone`, which would start the server without the guard. The [README](README.md#how-access-works) and [`internal/taproot/DESIGN.md`](internal/taproot/DESIGN.md) describe the model in full.
 
 ## Run taproot safely
 
@@ -30,7 +30,7 @@ Taproot refuses to start without `access.allow-logins`, refuses unknown keys in 
 - **Never expose the port beyond your tailnet.** Publish it on the host's Tailscale address only, never on `0.0.0.0`, a LAN address, or the internet. Do not use `tailscale funnel`.
 - **Never put anything in front of taproot on the same host.** `tailscale serve`, a reverse proxy, or an SSH tunnel usually connects from loopback, and loopback callers are admins.
 - **Do not publish the port on `127.0.0.1`.** A container runtime that delivers host connections with a loopback source makes every process on the host an admin.
-- **Pin admin devices by stable node ID** (`id:<StableID>`), not by MagicDNS name, and keep `trusted-cidrs` to single addresses.
+- **Give Admin only to devices you use the dashboard from**, and keep `access.addresses` to single addresses.
 - **Treat the data directory and every backup like a password.** They hold the OAuth tokens.
 - **Check the deployment after every change**, with the steps in the README's [Check the deployment](README.md#4-check-the-deployment).
 

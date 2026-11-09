@@ -67,7 +67,7 @@ func TestSetupRequiresTailscaledSocket(t *testing.T) {
 		{"missing", missing, "tailscaled socket " + missing + " does not exist"},
 		{"nobody listening", stale, "tailscaled socket " + stale + " is unreachable"},
 	} {
-		tp := "access:\n  allow-logins: [\"" + login + "\"]\n  tailscale-socket: " + filepath.ToSlash(tc.socket) + "\n"
+		tp := "access:\n  tailscale-socket: " + filepath.ToSlash(tc.socket) + "\n"
 		_, err := setupServer(t, tp)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "Volume=/var/run/tailscale/tailscaled.sock:"+tc.socket) ||
 			!strings.Contains(err.Error(), "access.enabled: false") || !strings.Contains(err.Error(), "taproot.yaml") {

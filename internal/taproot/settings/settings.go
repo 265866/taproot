@@ -1,10 +1,12 @@
 // Package settings serves the editable subset of taproot.yaml: the access
-// allowlist, request log retention, the backup schedule, and the ingest poll
-// interval, and the alerts webhook. A change is applied to the running modules first and written to
-// taproot.yaml only after every live setter accepted it.
+// device and address lists, request log retention, the backup schedule, the
+// ingest poll interval, and the alerts webhook. A change is applied to the
+// running modules first and written to taproot.yaml only after every live
+// setter accepted it.
 package settings
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -24,14 +26,15 @@ import (
 
 const defaultPollInterval = 15 * time.Minute
 
-// AccessLists are the access guard's runtime login and admin node lists.
-type AccessLists interface {
-	AllowLogins() []string
-	SetAllowLogins([]string) error
-	AdminNodes() []string
-	SetAdminNodes([]string) error
-	// AdminNodesInclude reports whether a candidate admin-nodes list admits node.
-	AdminNodesInclude(nodes []string, caller access.Identity) bool
+// AccessControl is the access guard's runtime device and address lists, and
+// its view of the tailnet.
+type AccessControl interface {
+	Grants() access.Grants
+	SetGrants(access.Grants) error
+	// ServerNodeID is the server's own stable node ID, or "" while unknown.
+	ServerNodeID() string
+	ReadTailnet(context.Context) (access.Tailnet, error)
+	Reconcile(access.Tailnet) (access.Grants, []access.DeviceGrant, bool)
 }
 
 // RetentionSetter is the request log module's runtime retention.
@@ -60,7 +63,7 @@ type AlertsSetter interface {
 
 // Deps are the modules and paths the settings endpoints read and change.
 type Deps struct {
-	Access        AccessLists
+	Access        AccessControl
 	AccessEnabled bool
 	Logs          RetentionSetter
 	Backups       ScheduleSetter
@@ -143,9 +146,9 @@ func (s *Settings) Routes(r *gin.RouterGroup) {
 }
 
 type accessView struct {
-	Enabled     bool     `json:"enabled"`
-	AllowLogins []string `json:"allowLogins"`
-	AdminNodes  []string `json:"adminNodes"`
+	Enabled   bool                  `json:"enabled"`
+	Devices   []access.DeviceGrant  `json:"devices"`
+	Addresses []access.AddressGrant `json:"addresses"`
 }
 
 type requestLogsView struct {
@@ -205,9 +208,10 @@ type view struct {
 
 // update is the PUT body. Absent sections and fields stay as they are.
 type update struct {
+	// Access replaces whole lists: devices with a permission, and addresses.
 	Access *struct {
-		AllowLogins *[]string `json:"allowLogins"`
-		AdminNodes  *[]string `json:"adminNodes"`
+		Devices   *[]access.DeviceGrant  `json:"devices"`
+		Addresses *[]access.AddressGrant `json:"addresses"`
 	} `json:"access"`
 	RequestLogs *struct {
 		MaxDays         *int      `json:"maxDays"`
@@ -237,6 +241,7 @@ func (s *Settings) current() view {
 		backups.NextRunAt = next.Format(time.RFC3339)
 	}
 	abbreviation, offset := s.now().Zone()
+	grants := s.deps.Access.Grants()
 	var alertsSection *alertsView
 	if s.deps.Alerts != nil {
 		cfg := s.deps.Alerts.Config()
@@ -246,11 +251,7 @@ func (s *Settings) current() view {
 		}
 	}
 	return view{
-		Access: accessView{
-			Enabled:     s.deps.AccessEnabled,
-			AllowLogins: nonNilStrings(s.deps.Access.AllowLogins()),
-			AdminNodes:  nonNilStrings(s.deps.Access.AdminNodes()),
-		},
+		Access: accessView{Enabled: s.deps.AccessEnabled, Devices: grants.Devices, Addresses: grants.Addresses},
 		RequestLogs: requestLogsView{
 			MaxDays: ret.MaxDays, MaxBytes: int64(ret.MaxBytes), ExcludePaths: nonNilStrings(ret.ExcludePaths), KeepUnrouted404: ret.KeepUnrouted404,
 		},
@@ -323,35 +324,23 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 		}
 	}
 
-	if u.Access != nil && u.Access.AllowLogins != nil {
-		logins, err := s.checkLogins(*u.Access.AllowLogins, caller)
-		if err != nil {
+	if a := u.Access; a != nil && (a.Devices != nil || a.Addresses != nil) {
+		before := s.deps.Access.Grants()
+		next := before
+		if a.Devices != nil {
+			next.Devices = *a.Devices
+		}
+		if a.Addresses != nil {
+			next.Addresses = *a.Addresses
+		}
+		if err := s.checkAccess(next, caller); err != nil {
 			return err
 		}
-		before := s.deps.Access.AllowLogins()
-		if !slices.Equal(before, logins) {
-			if err := s.deps.Access.SetAllowLogins(logins); err != nil {
-				return badRequest("invalid_allow_logins", "allow-logins: %v", err)
-			}
-			undo = append(undo, func() { s.restore("allow-logins", s.deps.Access.SetAllowLogins(before)) })
-			edits = append(edits, yamlEdit{path: []string{"access", "allow-logins"}, value: s.deps.Access.AllowLogins()})
+		if err := s.deps.Access.SetGrants(next); err != nil {
+			return badRequest("invalid_access", "%v", err)
 		}
-	}
-
-	if u.Access != nil && u.Access.AdminNodes != nil {
-		if err := s.checkAdminNodes(*u.Access.AdminNodes, caller); err != nil {
-			rollback()
-			return err
-		}
-		before := s.deps.Access.AdminNodes()
-		if err := s.deps.Access.SetAdminNodes(*u.Access.AdminNodes); err != nil {
-			rollback()
-			return badRequest("invalid_admin_nodes", "admin-nodes: %v", err)
-		}
-		if after := s.deps.Access.AdminNodes(); !slices.Equal(before, after) {
-			undo = append(undo, func() { s.restore("admin-nodes", s.deps.Access.SetAdminNodes(before)) })
-			edits = append(edits, yamlEdit{path: []string{"access", "admin-nodes"}, value: nonNilStrings(after)})
-		}
+		undo = append(undo, func() { s.restore("access", s.deps.Access.SetGrants(before)) })
+		edits = append(edits, accessEdits(before, s.deps.Access.Grants())...)
 	}
 
 	if r := u.RequestLogs; r != nil {
@@ -468,55 +457,107 @@ func (s *Settings) apply(u update, caller access.Identity) error {
 	return nil
 }
 
-// checkLogins normalizes the list and refuses one that would lock the caller out.
-// Loopback and trusted-CIDR callers have no login and are admitted regardless.
-func (s *Settings) checkLogins(raw []string, caller access.Identity) ([]string, error) {
-	if !s.deps.AccessEnabled {
-		return nil, &apiError{
-			status: http.StatusConflict, code: "access_disabled",
-			message: "the access guard is disabled in taproot.yaml, so allow-logins has no effect",
-		}
-	}
-	logins := make([]string, 0, len(raw))
-	for _, login := range raw {
-		login = strings.ToLower(strings.TrimSpace(login))
-		if login == "" {
-			return nil, badRequest("invalid_allow_logins", "allow-logins must not contain blank entries")
-		}
-		if !slices.Contains(logins, login) {
-			logins = append(logins, login)
-		}
-	}
-	if len(logins) == 0 {
-		return nil, badRequest("invalid_allow_logins", "allow-logins needs at least one login")
-	}
-	if caller.Login != "" && !slices.Contains(logins, strings.ToLower(caller.Login)) {
-		return nil, &apiError{
-			status: http.StatusConflict, code: "would_lock_out",
-			message: fmt.Sprintf("allow-logins must keep your own login %s", caller.Login),
-		}
-	}
-	return logins, nil
-}
-
-// checkAdminNodes refuses a list that would drop the calling device. Loopback
-// callers are admins whatever the list says.
-func (s *Settings) checkAdminNodes(nodes []string, caller access.Identity) error {
+// checkAccess refuses a change the guard would ignore or that would lock the
+// caller out: the guard is off, the server's own node is given Admin, or the
+// calling device loses Admin. Loopback callers are admins whatever the lists
+// say.
+func (s *Settings) checkAccess(next access.Grants, caller access.Identity) error {
 	if !s.deps.AccessEnabled {
 		return &apiError{
 			status: http.StatusConflict, code: "access_disabled",
-			message: "the access guard is disabled in taproot.yaml, so admin-nodes has no effect",
+			message: "the access guard is disabled in taproot.yaml, so the device and address lists have no effect",
 		}
 	}
-	if caller.Via == access.ViaTailnet && !s.deps.Access.AdminNodesInclude(nodes, caller) {
+	server := s.deps.Access.ServerNodeID()
+	callerAdmin := false
+	for _, d := range next.Devices {
+		id := strings.TrimSpace(d.ID)
+		if server != "" && id == server && d.Admin {
+			return badRequest("server_admin", "the taproot server's own node %s never has Admin", id)
+		}
+		if id == caller.NodeID && d.Admin {
+			callerAdmin = true
+		}
+	}
+	if caller.Via == access.ViaTailnet && !callerAdmin {
 		return &apiError{
 			status: http.StatusConflict, code: "would_lock_out",
-			message: fmt.Sprintf("admin-nodes must keep this device %s", caller.Node),
+			message: fmt.Sprintf("this device (%s, ID %s) must keep Admin", caller.Node, caller.NodeID),
 		}
 	}
 	return nil
 }
 
+// accessEdits are the taproot.yaml edits that turn before into after.
+func accessEdits(before, after access.Grants) []yamlEdit {
+	var edits []yamlEdit
+	if !slices.Equal(before.Devices, after.Devices) {
+		edits = append(edits, yamlEdit{path: []string{"access", "devices"}, value: after.Devices})
+	}
+	if !slices.Equal(before.Addresses, after.Addresses) {
+		edits = append(edits, yamlEdit{path: []string{"access", "addresses"}, value: after.Addresses})
+	}
+	return edits
+}
+
+// sweepInterval is how often taproot reads the tailnet to forget removed
+// devices and refresh device names in taproot.yaml.
+const sweepInterval = 10 * time.Minute
+
+// Start reads the tailnet now and every sweepInterval until ctx ends, and
+// applies what access.Reconcile finds: devices gone for access.ForgetAfter
+// leave access.devices, and names follow the tailnet.
+func (s *Settings) Start(ctx context.Context) {
+	if !s.deps.AccessEnabled {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(sweepInterval)
+		defer ticker.Stop()
+		for {
+			if err := s.sweep(ctx); err != nil && ctx.Err() == nil {
+				log.Warnf("taproot access: update access.devices from the tailnet: %v", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+// sweep reads the tailnet once and writes what Reconcile changes, live and
+// to taproot.yaml together. A failed read changes nothing and is not an
+// error worth logging every interval, since a machine without tailscaled
+// fails every time.
+func (s *Settings) sweep(ctx context.Context) error {
+	tn, err := s.deps.Access.ReadTailnet(ctx)
+	if err != nil {
+		log.Debugf("taproot access: read the tailnet: %v", err)
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next, forgotten, changed := s.deps.Access.Reconcile(tn)
+	if !changed {
+		return nil
+	}
+	before := s.deps.Access.Grants()
+	if err := s.deps.Access.SetGrants(next); err != nil {
+		return err
+	}
+	if edits := accessEdits(before, s.deps.Access.Grants()); len(edits) > 0 {
+		if err := writeYAML(s.deps.ConfigPath, edits); err != nil {
+			s.restore("access", s.deps.Access.SetGrants(before))
+			return fmt.Errorf("write %s: %w", s.deps.ConfigPath, err)
+		}
+	}
+	for _, d := range forgotten {
+		log.Infof("taproot access: forgot device %s (%s), which has not been on the tailnet for %s", d.Name, d.ID, access.ForgetAfter)
+	}
+	return nil
+}
 func (s *Settings) restore(what string, err error) {
 	if err != nil {
 		log.WithError(err).Errorf("taproot settings: could not restore %s after a failed update", what)

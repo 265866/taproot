@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '@/i18n';
 import { ConnectionGateView } from '@/router/ConnectionGate';
-import type { ConnectionFailure, ConnectionStatus } from '@/types';
+import type { ConnectionFailure, ConnectionStatus, DeniedDevice } from '@/types';
 import { classifyConnectionError, useAuthStore } from '@/stores/useAuthStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { purgeLegacyStorage, LEGACY_STORAGE_KEYS } from '@/utils/legacyStorage';
@@ -47,7 +47,7 @@ afterEach(() => {
   useAuthStore.setState({
     connectionStatus: 'disconnected',
     connectionFailure: null,
-    connectionFailureNode: null,
+    connectionFailureDevice: null,
   });
   denial = { error: 'denied' };
 });
@@ -70,21 +70,37 @@ describe('same-origin management connection', () => {
     expect(requestHeader).toBe('1');
   });
 
-  test('names the device to add when the guard says it is outside admin-nodes', async () => {
+  test('keeps the device the guard names when it has no Admin', async () => {
     status = 403;
     denial = {
       error: {
-        code: 'not_admin_node',
-        message: 'this device is not in access.admin-nodes in taproot.yaml',
-        node: 'worker.tailnet-0000.ts.net',
+        code: 'not_admin',
+        message:
+          'alice-work-laptop (alice@github, ID nR9x3eM7CNTRL): this device has no Admin permission.',
+        node: 'alice-work-laptop',
+        nodeId: 'nR9x3eM7CNTRL',
+        login: 'alice@github',
+        proxy: false,
       },
     };
     expect(await connectTo()).toBe(false);
     expect(useAuthStore.getState()).toMatchObject({
       connectionStatus: 'error',
       connectionFailure: 'not_admin',
-      connectionFailureNode: 'worker.tailnet-0000.ts.net',
+      connectionFailureDevice: {
+        node: 'alice-work-laptop',
+        nodeId: 'nR9x3eM7CNTRL',
+        login: 'alice@github',
+        proxy: false,
+      },
     });
+  });
+
+  test('the removed admin-nodes denial is not mistaken for the new one', async () => {
+    status = 403;
+    denial = { error: { code: 'not_admin_node', node: 'worker.tailnet-0000.ts.net' } };
+    expect(await connectTo()).toBe(false);
+    expect(useAuthStore.getState().connectionFailure).toBe('forbidden');
   });
 
   test('a plain guard 403 stays access denied', async () => {
@@ -93,7 +109,7 @@ describe('same-origin management connection', () => {
     expect(await connectTo()).toBe(false);
     expect(useAuthStore.getState()).toMatchObject({
       connectionFailure: 'forbidden',
-      connectionFailureNode: null,
+      connectionFailureDevice: null,
     });
   });
 
@@ -159,7 +175,7 @@ describe('connection gate', () => {
   const render = (
     status: ConnectionStatus,
     failure: ConnectionFailure | null = null,
-    node: string | null = null
+    device: DeniedDevice | null = null
   ) =>
     renderToStaticMarkup(
       createElement(
@@ -167,7 +183,7 @@ describe('connection gate', () => {
         { i18n },
         createElement(
           ConnectionGateView,
-          { status, failure, node, onRetry: () => {} },
+          { status, failure, device, onRetry: () => {} },
           createElement('main', null, 'dashboard-body')
         )
       )
@@ -185,14 +201,41 @@ describe('connection gate', () => {
     expect(html).not.toMatch(/type="password"|<input/);
   });
 
-  test('tells a device outside admin-nodes how to get access', () => {
-    const html = render('error', 'not_admin', 'worker.tailnet-0000.ts.net');
-    expect(html).toContain('worker.tailnet-0000.ts.net');
-    expect(html).toContain('access.admin-nodes in taproot.yaml');
+  test('shows a device without access its name, login, and ID, and what to turn on', () => {
+    const device = {
+      node: 'alice-work-laptop',
+      nodeId: 'nR9x3eM7CNTRL',
+      login: 'alice@github',
+      proxy: false,
+    };
+    const html = render('error', 'not_admin', device);
+    expect(html).toContain('This device can&#x27;t open taproot yet');
+    expect(html).toContain('<strong>alice-work-laptop</strong> has no access to taproot yet');
+    expect(html).toContain('turn on Admin or Proxy');
+    expect(html).toContain('alice-work-laptop · alice@github');
+    expect(html).toContain('<code>nR9x3eM7CNTRL</code>');
+    expect(html).toContain('Try again');
     expect(html).not.toContain('Access denied');
+    expect(html).not.toContain('dashboard-body');
+
+    const proxyOnly = render('error', 'not_admin', { ...device, proxy: true });
+    expect(proxyOnly).toContain('can send model requests');
+    expect(proxyOnly).toContain('turn on Admin for it');
+
     const unnamed = render('error', 'not_admin');
-    expect(unnamed).toContain('access.admin-nodes in taproot.yaml');
-    expect(unnamed).toContain('MagicDNS name');
+    expect(unnamed).toContain('turn on Admin for it');
+    expect(unnamed).not.toContain('connection-gate-device');
+  });
+
+  test('renders a device name as text, never as markup', () => {
+    const html = render('error', 'not_admin', {
+      node: '<img src=x onerror=alert(1)>',
+      nodeId: 'n1',
+      login: '',
+      proxy: false,
+    });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
   });
 
   test('names an unreachable server separately', () => {

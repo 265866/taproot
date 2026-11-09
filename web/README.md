@@ -42,7 +42,7 @@ Removed for good: Quick Start, AI Providers and API-key provider editing, sponso
 
 - `src/features/`: feature-owned pages, components, hooks, types, and logic: `dashboard`, `accounts`, `authFiles` (credential data hooks, the details form, and policy editors under `policy/`), `oauth` (provider sign-in flows), `routing` (OAuth credentials only), `config`, and `plugins`.
 - `accounts` (`#/accounts`) is one page for every account. It composes other features rather than owning their logic: the pool charts and ledger from `taproot-quota`, credential actions from `authFiles`, and sign-in from `oauth`. Its `model.ts` joins taproot's accounts with the credential files; once the file list loads, it decides which accounts exist and which are enabled. `#/quota`, `#/auth-files`, and `#/oauth` redirect there (`LEGACY_REDIRECTS` in `src/router/routes.ts`).
-- `src/features/taproot-{quota,usage,logs,backups,settings}/`: taproot's sections. `taproot-quota` has no page of its own: Accounts renders its pool charts and ledger. It keeps its pure projection model in `model/` and the live provider adapters in `live/`. `taproot-logs` also holds the application log tail (`appLogs/`, the `?tab=app` tab of `#/request-logs`).
+- `src/features/taproot-{quota,usage,logs,backups,access,settings}/`: taproot's sections. `taproot-access` is the Access page: tailnet devices with their Proxy and Admin switches, and addresses without Tailscale. `taproot-quota` has no page of its own: Accounts renders its pool charts and ledger. It keeps its pure projection model in `model/` and the live provider adapters in `live/`. `taproot-logs` also holds the application log tail (`appLogs/`, the `?tab=app` tab of `#/request-logs`).
 - `src/pages/`: route pages outside the feature layout: System, and the OAuth excluded-model and model-alias editors at `#/routing/oauth-excluded` and `#/routing/oauth-model-alias` (Routing lists the rules).
 - `src/components/`, `src/hooks/`, `src/utils/`: shared UI, hooks, and utilities. Feature-specific code stays in its feature.
 - `src/services/api/`: API clients, domain endpoints, and backend data normalization.
@@ -85,7 +85,7 @@ Emails are hidden by default everywhere. Auth file names carry the email (`claud
 
 - A filter field whose value holds an email shows `MaskedValueChip` while emails are hidden. An edit field shows the value masked and read-only until emails are shown (see `AuthFileDetailsForm`).
 - A value that can hold an email goes into the URL through `encodeUrlValue` (`src/utils/urlValue.ts`).
-- The preference lives in `src/stores/usePrivacyStore.ts` and lasts for the session. Pages that show masked values carry `ShowEmailsToggle`. Settings shows Tailscale logins as they are.
+- The preference lives in `src/stores/usePrivacyStore.ts` and lasts for the session. Pages that show masked values carry `ShowEmailsToggle`. Access shows Tailscale logins as they are, because they are what it groups devices by.
 
 The browser never receives or stores the management key. Keep keys, credentials, auth files, request logs, and backups out of fixtures and screenshots.
 

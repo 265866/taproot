@@ -16,7 +16,7 @@ import (
 type Device struct {
 	// ID groups requests: "node:<StableID>" for a tailnet node, "local" for
 	// loopback and the server's own node, "cidr:<address>" for a
-	// trusted-cidrs caller, and "plugin:<plugin ID>" (or "plugins" when the
+	// access.addresses caller, and "plugin:<plugin ID>" (or "plugins" when the
 	// plugin is unknown) for a plugin's in-process request.
 	ID string
 	// Name is for display: the node's MagicDNS name (its first label inside
@@ -138,7 +138,7 @@ func (g *Guard) deviceFor(id Identity) Device {
 }
 
 // DeviceName returns the name to show for a stored device, given its ID and
-// the name stored with it. Trusted-cidrs devices are named here at read time,
+// the name stored with it. access.addresses devices are named here at read time,
 // so history recorded before the server knew an address as its own shows the
 // current name too.
 func (g *Guard) DeviceName(id, stored string) string {
@@ -149,12 +149,12 @@ func (g *Guard) DeviceName(id, stored string) string {
 	return stored
 }
 
-// cidrDeviceName names a trusted-cidrs caller by its address, or, when the
+// cidrDeviceName names an access.addresses caller by its address, or, when the
 // address is one of the server's own, after the server with the address it
 // came from. Only a process on the server host connects from an own address:
 // under rootless Podman, a 127.0.1.1 publish arrives through pasta as the LAN address.
 // The address stays in the name because it is what separates this route from
-// "<server> (local)" and what trusted-cidrs lists.
+// "<server> (local)" and what access.addresses lists.
 func (g *Guard) cidrDeviceName(addr string, self *selfNode) string {
 	a, err := netip.ParseAddr(addr)
 	if err != nil || !g.own.contains(a, g.now()) {

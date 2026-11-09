@@ -2,7 +2,6 @@ import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
-import { IconX } from '@/components/ui/icons';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { NextBackup } from '@/features/taproot-backups/NextBackup';
 import { serverZoneLabel, type ServerZone } from '@/features/taproot-backups/model/schedule';
@@ -16,17 +15,9 @@ import { useConfigStore, useNotificationStore } from '@/stores';
 import { getErrorMessage } from '@/utils/helpers';
 import { formatBytes } from '@/features/taproot-logs/model/format';
 import {
-  accessUpdate,
-  adminNodesUpdate,
   backupsForm,
   backupsUpdate,
   ingestUpdate,
-  entryMatchesNode,
-  normalizeLogin,
-  normalizeNode,
-  ownLogin,
-  ownNode,
-  ownNodeId,
   keepsForever,
   retentionForm,
   retentionUpdate,
@@ -104,8 +95,6 @@ export function TaprootSettingsPage() {
       )}
       {settings && (
         <div className={styles.sections}>
-          <AccessSection settings={settings.access} me={me} save={save} />
-          <AdminNodesSection settings={settings.access} me={me} save={save} />
           <RetentionSection
             settings={settings.requestLogs}
             recording={recording}
@@ -217,231 +206,6 @@ function useDraft<T>(source: T): [T, (next: T) => void, boolean, () => void] {
   const setDraft = (draft: T) => setState({ key, draft });
   const dirty = JSON.stringify(current.draft) !== key;
   return [current.draft, setDraft, dirty, () => setState({ key, draft: source })];
-}
-
-/** A chip list with an add field, shared by the login and admin device lists. */
-function ChipListEditor({
-  items,
-  setItems,
-  adding,
-  setAdding,
-  normalize,
-  isOwn,
-  disabled,
-  labels,
-}: {
-  items: string[];
-  setItems: (items: string[]) => void;
-  adding: string;
-  setAdding: (value: string) => void;
-  normalize: (value: string) => string;
-  isOwn: (item: string) => boolean;
-  disabled: boolean;
-  labels: {
-    list: string;
-    own: string;
-    remove: (item: string) => string;
-    cannotRemoveOwn: string;
-    add: string;
-    addLabel: string;
-    addPlaceholder: string;
-    empty?: string;
-  };
-}) {
-  const inputId = useId();
-  const add = () => {
-    const item = normalize(adding);
-    if (!item) return;
-    if (!items.includes(item)) setItems([...items, item]);
-    setAdding('');
-  };
-  return (
-    <>
-      {items.length === 0 && labels.empty ? (
-        <p className={styles.hint}>{labels.empty}</p>
-      ) : (
-        <ul className={styles.chips} aria-label={labels.list}>
-          {items.map((item) => {
-            const own = isOwn(item);
-            return (
-              <li key={item} className={styles.chip}>
-                <span>{item}</span>
-                {own && <span className={styles.you}>{labels.own}</span>}
-                <button
-                  type="button"
-                  className={styles.chipRemove}
-                  onClick={() => setItems(items.filter((value) => value !== item))}
-                  disabled={own || disabled}
-                  aria-label={labels.remove(item)}
-                  title={own ? labels.cannotRemoveOwn : undefined}
-                >
-                  <IconX size={12} />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <div className={styles.addRow}>
-        <label htmlFor={inputId} className={styles.srOnly}>
-          {labels.addLabel}
-        </label>
-        <input
-          id={inputId}
-          className="input"
-          value={adding}
-          onChange={(event) => setAdding(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              add();
-            }
-          }}
-          placeholder={labels.addPlaceholder}
-          autoComplete="off"
-          spellCheck={false}
-          disabled={disabled}
-        />
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={add}
-          disabled={!adding.trim() || disabled}
-        >
-          {labels.add}
-        </Button>
-      </div>
-    </>
-  );
-}
-
-function AccessSection({
-  settings,
-  me,
-  save,
-}: {
-  settings: TaprootSettings['access'];
-  me: TaprootMe | null;
-  save: Save;
-}) {
-  const { t } = useTranslation();
-  const [logins, setLogins, dirty, reset] = useDraft(settings.allowLogins);
-  const [adding, setAdding] = useState('');
-  const own = ownLogin(me);
-
-  return (
-    <SectionForm
-      id="settings-access"
-      title={t('taproot_settings.access.title')}
-      description={
-        settings.enabled
-          ? t('taproot_settings.access.description')
-          : t('taproot_settings.access.disabled')
-      }
-      dirty={dirty || adding.trim() !== ''}
-      disabled={!settings.enabled}
-      validate={() => accessUpdate(adding.trim() ? [...logins, adding] : logins, me)}
-      save={async (update) => {
-        await save({ access: update });
-        setAdding('');
-      }}
-      onReset={() => {
-        reset();
-        setAdding('');
-      }}
-    >
-      <ChipListEditor
-        items={logins}
-        setItems={setLogins}
-        adding={adding}
-        setAdding={setAdding}
-        normalize={normalizeLogin}
-        isOwn={(login) => login === own}
-        disabled={!settings.enabled}
-        labels={{
-          list: t('taproot_settings.access.list_label'),
-          own: t('taproot_settings.access.you'),
-          remove: (login) => t('taproot_settings.access.remove', { login }),
-          cannotRemoveOwn: t('taproot_settings.access.cannot_remove_self'),
-          add: t('taproot_settings.access.add'),
-          addLabel: t('taproot_settings.access.add_label'),
-          addPlaceholder: t('taproot_settings.access.add_placeholder'),
-        }}
-      />
-      <p className={styles.hint}>
-        {own
-          ? t('taproot_settings.access.own_hint', { login: own })
-          : t('taproot_settings.access.local_hint')}
-      </p>
-    </SectionForm>
-  );
-}
-
-function AdminNodesSection({
-  settings,
-  me,
-  save,
-}: {
-  settings: TaprootSettings['access'];
-  me: TaprootMe | null;
-  save: Save;
-}) {
-  const { t } = useTranslation();
-  const [nodes, setNodes, dirty, reset] = useDraft(settings.adminNodes);
-  const [adding, setAdding] = useState('');
-  const own = ownNode(me);
-  const ownId = ownNodeId(me);
-
-  return (
-    <SectionForm
-      id="settings-admin-nodes"
-      title={t('taproot_settings.admin_nodes.title')}
-      description={
-        settings.enabled
-          ? t('taproot_settings.admin_nodes.description')
-          : t('taproot_settings.admin_nodes.disabled')
-      }
-      dirty={dirty || adding.trim() !== ''}
-      disabled={!settings.enabled}
-      validate={() => adminNodesUpdate(adding.trim() ? [...nodes, adding] : nodes, me)}
-      save={async (update) => {
-        await save({ access: update });
-        setAdding('');
-      }}
-      onReset={() => {
-        reset();
-        setAdding('');
-      }}
-    >
-      <ChipListEditor
-        items={nodes}
-        setItems={setNodes}
-        adding={adding}
-        setAdding={setAdding}
-        normalize={normalizeNode}
-        isOwn={(node) => own !== null && entryMatchesNode(node, own, ownId)}
-        disabled={!settings.enabled}
-        labels={{
-          list: t('taproot_settings.admin_nodes.list_label'),
-          own: t('taproot_settings.admin_nodes.this_device'),
-          remove: (node) => t('taproot_settings.admin_nodes.remove', { node }),
-          cannotRemoveOwn: t('taproot_settings.admin_nodes.cannot_remove_self'),
-          add: t('taproot_settings.admin_nodes.add'),
-          addLabel: t('taproot_settings.admin_nodes.add_label'),
-          addPlaceholder: t('taproot_settings.admin_nodes.add_placeholder'),
-          empty: t('taproot_settings.admin_nodes.empty'),
-        }}
-      />
-      <p className={styles.hint}>
-        {own
-          ? ownId
-            ? t('taproot_settings.admin_nodes.own_hint_id', { node: own, id: ownId })
-            : t('taproot_settings.admin_nodes.own_hint', { node: own })
-          : t('taproot_settings.admin_nodes.local_hint')}
-      </p>
-    </SectionForm>
-  );
 }
 
 export function RetentionSection({

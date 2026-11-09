@@ -1,17 +1,26 @@
 # Taproot settings. Taproot reads this file from beside config.yaml, or from
-# the path in TAPROOT_CONFIG. The dashboard's Settings page edits the access
-# lists, retention, backup schedule, and alerts in place.
+# the path in TAPROOT_CONFIG. The dashboard's Access page edits the device and
+# address lists in place, and its Settings page edits retention, the backup
+# schedule, and alerts.
 access:
-  # Tailscale logins that may use the proxy. List every login explicitly.
-  # `tailscale whois <ip>` or `tailscale status --json` shows a login.
-  allow-logins:
-    - alice@example.com
-  # Devices that may also use the dashboard and the management API, which
-  # hold your OAuth tokens. Pin each device by stable node ID ("id:" plus
-  # the ID from `tailscale status --json`). The server's own node is never
-  # an admin. With this list empty, only loopback inside the container is.
-  admin-nodes:
-    - id:nEXAMPLE1CNTRL
+  # Each device's permissions, by its Tailscale stable ID (`tailscale status
+  # --json` shows it as ID; the Access page shows it too). proxy: true sends
+  # model requests through taproot. admin: true opens the dashboard and the
+  # management API, which hold your OAuth tokens. A device that is not listed
+  # has neither, and the server's own node always has Proxy and never Admin.
+  # Taproot keeps each name in step with the tailnet, and forgets a device
+  # 24 hours after it leaves the tailnet.
+  devices:
+    - id: nEXAMPLE1CNTRL
+      name: laptop
+      proxy: true
+      admin: true
+  # Addresses outside Tailscale that may use the proxy, never the dashboard.
+  # Use single host-local addresses, such as the LAN address a 127.0.1.1
+  # publish arrives from, never a whole LAN.
+  # addresses:
+  #   - cidr: 192.0.2.20/32
+  #     note: agents on the server host
   # tailscale-socket: /var/run/tailscale/tailscaled.sock
 backups:
   # Local time, HH:MM, in the container's TZ. "off" disables the schedule.

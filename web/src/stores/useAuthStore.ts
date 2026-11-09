@@ -6,7 +6,7 @@
  */
 
 import { create } from 'zustand';
-import type { ConnectionFailure, ConnectionStatus } from '@/types';
+import type { ConnectionFailure, ConnectionStatus, DeniedDevice } from '@/types';
 import { apiClient } from '@/services/api/client';
 import { detectApiBaseFromLocation } from '@/utils/connection';
 import { isRecord } from '@/utils/helpers';
@@ -19,7 +19,7 @@ interface AuthStoreState {
   connectionStatus: ConnectionStatus;
   connectionFailure: ConnectionFailure | null;
   /** The refused device, when the failure is `not_admin`. */
-  connectionFailureNode: string | null;
+  connectionFailureDevice: DeniedDevice | null;
   serverVersion: string | null;
   serverBuildDate: string | null;
   supportsPlugin: boolean;
@@ -31,16 +31,23 @@ interface AuthStoreState {
 
 export const classifyConnectionError = (error: unknown): ConnectionFailure => {
   const { status, apiCode } = (error as { status?: unknown; apiCode?: unknown } | null) ?? {};
-  // The access guard's 403 for an allowed account on a device outside access.admin-nodes.
-  if (status === 403 && apiCode === 'not_admin_node') return 'not_admin';
+  // The access guard's 403 for a tailnet device without Admin.
+  if (status === 403 && apiCode === 'not_admin') return 'not_admin';
   return status === 401 || status === 403 ? 'forbidden' : 'unreachable';
 };
 
-/** The device name the guard reports in a `not_admin_node` denial. */
-export const deniedNode = (error: unknown): string | null => {
+/** The device the guard names in a `not_admin` denial. */
+export const deniedDevice = (error: unknown): DeniedDevice | null => {
   const details = (error as { details?: unknown } | null)?.details;
-  const node = isRecord(details) && isRecord(details.error) ? details.error.node : undefined;
-  return typeof node === 'string' && node.trim() ? node.trim() : null;
+  const body = isRecord(details) && isRecord(details.error) ? details.error : null;
+  if (!body || typeof body.node !== 'string' || !body.node.trim()) return null;
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  return {
+    node: body.node.trim(),
+    nodeId: text(body.nodeId),
+    login: text(body.login),
+    proxy: body.proxy === true,
+  };
 };
 
 const initialApiBase = () => (typeof window === 'undefined' ? '' : detectApiBaseFromLocation());
@@ -51,7 +58,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
   apiBase: initialApiBase(),
   connectionStatus: 'disconnected',
   connectionFailure: null,
-  connectionFailureNode: null,
+  connectionFailureDevice: null,
   serverVersion: null,
   serverBuildDate: null,
   supportsPlugin: false,
@@ -65,7 +72,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
         apiBase,
         connectionStatus: 'connecting',
         connectionFailure: null,
-        connectionFailureNode: null,
+        connectionFailureDevice: null,
       });
       useConfigStore.getState().clearCache();
       useModelsStore.getState().clearCache();
@@ -80,7 +87,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
         set({
           connectionStatus: 'error',
           connectionFailure: classifyConnectionError(error),
-          connectionFailureNode: deniedNode(error),
+          connectionFailureDevice: deniedDevice(error),
         });
         return false;
       } finally {
@@ -109,7 +116,7 @@ if (typeof window !== 'undefined') {
     useAuthStore.setState({
       connectionStatus: 'error',
       connectionFailure: 'forbidden',
-      connectionFailureNode: null,
+      connectionFailureDevice: null,
     });
   });
 

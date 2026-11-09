@@ -3,6 +3,7 @@
 # loopback, and optionally captures the README screenshots. Nothing reaches a
 # provider: config.yaml sends every outbound request to a dead loopback proxy,
 # and this script points the proxy variables and usage-refresh overrides there too.
+# A fake tailscaled, served by the demo command, gives the Access page a tailnet.
 #
 #   internal/taproot/demo/run.sh              seed and serve until Ctrl-C
 #   internal/taproot/demo/run.sh --capture    seed, serve, write docs/screenshots/*.png, stop
@@ -25,7 +26,7 @@ while (($#)); do
 	--dir) dir="$2"; shift 2 ;;
 	--deny) deny="$2"; shift 2 ;;
 	--capture) capture=true; shift ;;
-	*) sed -n '2,15p' "$0" >&2; exit 2 ;;
+	*) sed -n '2,16p' "$0" >&2; exit 2 ;;
 	esac
 done
 
@@ -38,9 +39,9 @@ fi
 work="$(mktemp -d)"
 [[ -n "$dir" ]] || dir="$work/data"
 server_pid=""
-tailscaled_pid=""
+tailnet_pid=""
 cleanup() {
-	for pid in "$server_pid" "$tailscaled_pid"; do
+	for pid in "$server_pid" "$tailnet_pid"; do
 		if [[ -n "$pid" ]]; then
 			kill "$pid" 2>/dev/null || true
 			wait "$pid" 2>/dev/null || true
@@ -55,14 +56,15 @@ demo="$work/demo$(go env GOEXE)"
 (cd "$root" && go build -o "$bin" ./cmd/server && go build -o "$demo" ./internal/taproot/demo)
 "$demo" -dir "$dir" -port "$port"
 
-# taproot refuses to start without a tailscaled socket, so a stand-in serves
-# one that answers every call with an error.
-"$demo" -tailscaled "$dir/tailscaled.sock" &
-tailscaled_pid=$!
+# The fake tailnet fills the Access page; the server reads it as tailscaled,
+# and refuses to start until its socket exists.
+"$demo" -dir "$dir" -serve-tailnet >"$work/tailnet.log" 2>&1 &
+tailnet_pid=$!
 for _ in $(seq 1 50); do
 	[[ -e "$dir/tailscaled.sock" ]] && break
 	sleep 0.1
 done
+[[ -e "$dir/tailscaled.sock" ]] || { cat "$work/tailnet.log" >&2; exit 1; }
 
 dead="http://127.0.0.1:9"
 env -u MANAGEMENT_PASSWORD -u TAPROOT_CONFIG \

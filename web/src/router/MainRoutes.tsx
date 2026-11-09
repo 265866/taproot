@@ -44,6 +44,7 @@ const SystemPage = page(pageImports.system, 'SystemPage');
 const TaprootUsagePage = page(pageImports.usage, 'TaprootUsagePage');
 const TaprootLogsPage = page(pageImports.requestLogs, 'TaprootLogsPage');
 const TaprootBackupsPage = page(pageImports.backups, 'TaprootBackupsPage');
+const TaprootAccessPage = page(pageImports.access, 'TaprootAccessPage');
 const TaprootSettingsPage = page(pageImports.settings, 'TaprootSettingsPage');
 
 /** Sends an old address to its new page. */
@@ -79,6 +80,7 @@ const createMainRoutes = (supportsPlugin: boolean) => [
         { path: ROUTES.pluginStore, element: <Navigate to={ROUTES.dashboard} replace /> },
       ]),
   { path: ROUTES.backups, element: <TaprootBackupsPage /> },
+  { path: ROUTES.access, element: <TaprootAccessPage /> },
   { path: ROUTES.settings, element: <TaprootSettingsPage /> },
   { path: ROUTES.system, element: <SystemPage /> },
   { path: '/logs', element: <Navigate to={`${ROUTES.requestLogs}?tab=app`} replace /> },

@@ -88,7 +88,7 @@ By contributing, you agree that your contribution is released under the [MIT Lic
 
 ## Demo data and screenshots
 
-`internal/taproot/demo` seeds a data directory with synthetic accounts, 30 days of usage, quota history, request logs, and backups, all written through taproot's own ingest, request-log, and backup code. The README screenshots come from it.
+`internal/taproot/demo` seeds a data directory with synthetic accounts, 30 days of usage, quota history, request logs, and backups, all written through taproot's own ingest, request-log, and backup code. It also serves a fake tailscaled with a small tailnet, so the Access page has devices. The README screenshots come from it.
 
 ```sh
 bash scripts/taproot/build-web.sh                 # embed the dashboard
@@ -98,5 +98,5 @@ bash internal/taproot/demo/run.sh --capture       # also rewrite docs/screenshot
 
 - **Nothing leaves the machine.** The demo config sends every outbound request to a dead loopback proxy, the quota poller and alerts are off, and the credentials are fake.
 - **Same data every run.** The generator uses a fixed seed, and every timestamp is an offset from a start time computed from the current time, so each run produces the same history shifted to end now.
-- **Privacy check.** Before each screenshot, `capture.ts` refuses the page if it shows an address outside `example.com`, `example.org`, and `100.64.0.x`, or a home-directory path. Pass `--deny a,b` to refuse extra strings, such as your user name. Run it from a directory whose path does not contain your user name, or the Settings page shows that path. On Windows, `subst T: <temp dir>` then `--dir T:/taproot-demo` works.
+- **Privacy check.** Before each screenshot, `capture.ts` refuses the page if it shows an address outside `example.com`, `example.org`, `100.64.0.x`, and the documentation range `192.0.2.x`, or a home-directory path. Pass `--deny a,b` to refuse extra strings, such as your user name. Run it from a directory whose path does not contain your user name, or the Settings page shows that path. On Windows, `subst T: <temp dir>` then `--dir T:/taproot-demo` works.
 - **Read the images** before committing them. `build-web.sh` rewrites `internal/taproot/web/dist/index.html`; restore it with `git checkout` before you commit. The chunks it writes to `internal/taproot/web/dist/assets/` are ignored by git.
