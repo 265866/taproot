@@ -133,6 +133,10 @@ func TestSeed(t *testing.T) {
 		}
 		return n
 	}
+	if got := count(`SELECT COUNT(*) FROM access_requests WHERE dismissed_at IS NULL AND node_id = ? AND name_hint = ? AND client = ? AND count = 7`,
+		danaPC.id, "Dana's PC", "Claude Code"); got != 1 {
+		t.Fatalf("open access requests from dana's PC = %d, want 1", got)
+	}
 	events := count(`SELECT COUNT(*) FROM usage_events`)
 	if got := count(`SELECT SUM(requests) FROM usage_rollup_hourly`); got != events {
 		t.Fatalf("hourly rollup counts %d requests, events table has %d", got, events)

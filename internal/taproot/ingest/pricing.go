@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/265866/taproot/internal/taproot/store"
 )
 
 // Price is one row of the editable price table, in USD per million tokens.
@@ -385,7 +387,7 @@ func replacePrices(ctx context.Context, db *sql.DB, prices []Price, now time.Tim
 	for _, p := range current {
 		old[p.ModelPattern] = p
 	}
-	return withImmediateTx(ctx, db, func(c *sql.Conn) error {
+	return store.WithImmediateTx(ctx, db, func(c *sql.Conn) error {
 		if _, err := c.ExecContext(ctx, `DELETE FROM prices`); err != nil {
 			return fmt.Errorf("clear prices: %w", err)
 		}
@@ -423,7 +425,7 @@ func isShippedSource(source string) bool {
 // shipped seed version.
 func resetPrices(ctx context.Context, db *sql.DB, now time.Time) error {
 	updated := now.UTC().Format(time.RFC3339)
-	return withImmediateTx(ctx, db, func(c *sql.Conn) error {
+	return store.WithImmediateTx(ctx, db, func(c *sql.Conn) error {
 		if _, err := c.ExecContext(ctx, `DELETE FROM prices`); err != nil {
 			return fmt.Errorf("clear prices: %w", err)
 		}

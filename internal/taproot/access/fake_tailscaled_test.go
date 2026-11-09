@@ -44,6 +44,12 @@ type fakePeer struct {
 	os   string
 	// created is when the node joined; zero means long ago.
 	created time.Time
+	// sharee is a device of a person the server is shared with: tailscaled
+	// hides its name and OS, as measured on tailscaled 1.104.2.
+	sharee bool
+	// offline devices report lastSeen.
+	offline  bool
+	lastSeen time.Time
 }
 
 func newFakeTailscaled(t *testing.T, peers map[string]fakePeer) *fakeTailscaled {
@@ -132,8 +138,12 @@ func (f *fakeTailscaled) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name, id := p.nodeName(), stableID(p.node)
-	if p.noName {
+	computed := p.node
+	if p.noName || p.sharee {
 		name = ""
+	}
+	if p.sharee {
+		computed = hiddenHostName
 	}
 	if p.noID {
 		id = ""
@@ -144,11 +154,11 @@ func (f *fakeTailscaled) serve(w http.ResponseWriter, r *http.Request) {
 			"ID":           12345,
 			"StableID":     id,
 			"Name":         name,
-			"ComputedName": p.node,
+			"ComputedName": computed,
 			"User":         777,
 			"Tags":         p.tags(),
 			"Addresses":    []string{addr + "/32"},
-			"Hostinfo":     map[string]any{"Hostname": p.node, "OS": "linux"},
+			"Hostinfo":     map[string]any{"Hostname": computed, "OS": "linux"},
 		},
 		"UserProfile": map[string]any{
 			"ID":            777,
@@ -238,7 +248,7 @@ func (f *fakeTailscaled) serveTailnet(w http.ResponseWriter) {
 			if created.IsZero() {
 				created = time.Date(2025, 3, 1, 9, 0, 0, 0, time.UTC)
 			}
-			peers["nodekey:"+node] = map[string]any{
+			status := map[string]any{
 				"ID":           stableID(node),
 				"PublicKey":    "nodekey:" + node,
 				"HostName":     strings.TrimSuffix(node, "."),
@@ -248,9 +258,15 @@ func (f *fakeTailscaled) serveTailnet(w http.ResponseWriter) {
 				"Tags":         p.tags(),
 				"TailscaleIPs": addrs[node],
 				"Created":      created.Format(time.RFC3339Nano),
-				"Online":       true,
+				"Online":       !p.offline,
+				"LastSeen":     p.lastSeen.Format(time.RFC3339Nano),
 				"ShareeNode":   false,
 			}
+			if p.sharee {
+				status["HostName"], status["DNSName"], status["OS"], status["Tags"] = hiddenHostName, "", "", nil
+				status["Created"], status["ShareeNode"] = "1973-11-11T00:00:00.1Z", true
+			}
+			peers["nodekey:"+node] = status
 		}
 	}
 	f.mu.Unlock()

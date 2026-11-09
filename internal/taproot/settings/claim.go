@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -35,7 +36,7 @@ func (s *Settings) handleClaim(c *gin.Context) {
 	caller, _ := s.identityFrom(c)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	grant, err := s.claim(body.Code, caller)
+	grant, err := s.claim(c.Request.Context(), body.Code, caller)
 	if err != nil {
 		var limited *access.ClaimRateLimitedError
 		if errors.As(err, &limited) {
@@ -53,7 +54,7 @@ func (s *Settings) handleClaim(c *gin.Context) {
 // claim checks the caller and the code, then grants the caller's device Proxy
 // and Admin. Callers that are not a tailnet device are refused before the code
 // is read, so they never count against the attempt limit.
-func (s *Settings) claim(code string, caller access.Identity) (access.DeviceGrant, error) {
+func (s *Settings) claim(ctx context.Context, code string, caller access.Identity) (access.DeviceGrant, error) {
 	if !s.deps.Access.Claimable() {
 		return access.DeviceGrant{}, &apiError{
 			status: http.StatusConflict, code: "claimed",
@@ -78,6 +79,12 @@ func (s *Settings) claim(code string, caller access.Identity) (access.DeviceGran
 			message: "the taproot server's own node never has Admin: open the dashboard from the device that should become its first admin",
 		}
 	}
+	if caller.Outside {
+		return access.DeviceGrant{}, &apiError{
+			status: http.StatusForbidden, code: "claim_own_tailnet_only",
+			message: "only a device in this server's own tailnet can claim it: open the dashboard from one of your own devices",
+		}
+	}
 	name, _, _ := strings.Cut(strings.TrimSuffix(caller.Node, "."), ".")
 	if err := s.deps.Access.CheckClaimCode(code, s.now()); err != nil {
 		if errors.Is(err, access.ErrClaimWrongCode) {
@@ -91,9 +98,15 @@ func (s *Settings) claim(code string, caller access.Identity) (access.DeviceGran
 	}
 
 	grant := access.DeviceGrant{ID: caller.NodeID, Name: name, Proxy: true, Admin: true}
-	devices := slices.DeleteFunc(s.deps.Access.Grants().Devices, func(d access.DeviceGrant) bool { return d.ID == grant.ID })
+	devices := slices.DeleteFunc(s.deps.Access.Grants().Devices, func(d access.DeviceGrant) bool {
+		if d.ID == grant.ID {
+			grant.Label = d.Label
+			return true
+		}
+		return false
+	})
 	devices = append(devices, grant)
-	if err := s.apply(update{Access: &accessUpdate{Devices: &devices}}, caller); err != nil {
+	if err := s.apply(ctx, update{Access: &accessUpdate{Devices: &devices}}, caller); err != nil {
 		return access.DeviceGrant{}, fmt.Errorf("grant %s Admin: %w", grant.ID, err)
 	}
 	log.Infof("taproot access: %s (%s) claimed this server with the setup code and now has Proxy and Admin; the setup code is used up", name, grant.ID)

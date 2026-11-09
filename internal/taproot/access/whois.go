@@ -167,17 +167,29 @@ type statusResponse struct {
 type TailnetDevice struct {
 	// ID is the stable node ID.
 	ID string
-	// Name is the first label of the MagicDNS name, or the device's hostname
-	// when it has none.
+	// Name is the MagicDNS name without the server's tailnet suffix, so a
+	// device in another tailnet keeps its full name, or the device's
+	// hostname when it has no MagicDNS name. It is "" when Tailscale hides
+	// the name, as it does for the devices of a person the server is shared
+	// with.
 	Name string
 	// DNSName is the MagicDNS name without the trailing dot.
 	DNSName string
 	// Login is the owner's login, or "" for a tagged device.
 	Login string
-	Tags  []string
-	OS    string
+	// OwnerName is the owner's display name, or "" for a tagged device.
+	OwnerName string
+	Tags      []string
+	OS        string
 	// Created is when the device joined the tailnet, or zero when unknown.
 	Created time.Time
+	// Outside marks a device outside the server's own tailnet: a device of a
+	// person the server is shared with, or one whose MagicDNS suffix differs
+	// from the server's.
+	Outside bool
+	Online  bool
+	// LastSeen is when the device was last connected, or zero when unknown.
+	LastSeen time.Time
 }
 
 // Tailnet is the server's own node and every peer tailscaled lists.
@@ -194,13 +206,30 @@ type peerStatus struct {
 	UserID   int64
 	Tags     []string
 	Created  string
+	// ShareeNode is true for a device of a person the server's node is
+	// shared with. Tailscale hides its name and OS.
+	ShareeNode bool
+	Online     bool
+	LastSeen   string
 }
 
 type tailnetStatus struct {
 	BackendState string
 	Self         *peerStatus
 	Peer         map[string]*peerStatus
-	User         map[string]struct{ LoginName string }
+	User         map[string]struct{ LoginName, DisplayName string }
+}
+
+// hiddenHostName is the HostName tailscaled reports for a sharee's device,
+// whose real name Tailscale does not reveal.
+const hiddenHostName = "device-of-shared-to-user"
+
+// otherTailnet reports whether the MagicDNS names a and b are both known
+// and have different tailnet suffixes.
+func otherTailnet(a, b string) bool {
+	_, sa, okA := strings.Cut(strings.TrimSuffix(a, "."), ".")
+	_, sb, okB := strings.Cut(strings.TrimSuffix(b, "."), ".")
+	return okA && okB && sa != "" && sb != "" && !strings.EqualFold(sa, sb)
 }
 
 // tailnet returns the server's node and its peers from GET
@@ -211,6 +240,10 @@ func (l *localClient) tailnet(ctx context.Context) (Tailnet, error) {
 	if err != nil {
 		return Tailnet{}, fmt.Errorf("tailscale status: %w", err)
 	}
+	return decodeTailnet(body)
+}
+
+func decodeTailnet(body []byte) (Tailnet, error) {
 	var parsed tailnetStatus
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return Tailnet{}, fmt.Errorf("decode tailscale status: %w", err)
@@ -221,17 +254,28 @@ func (l *localClient) tailnet(ctx context.Context) (Tailnet, error) {
 	if parsed.Self == nil || parsed.Self.ID == "" {
 		return Tailnet{}, errors.New("tailscale status: no self node")
 	}
+	selfDNS := strings.ToLower(strings.TrimSuffix(parsed.Self.DNSName, "."))
+	self := &selfNode{DNSName: selfDNS}
 	device := func(p *peerStatus) TailnetDevice {
-		d := TailnetDevice{ID: p.ID, DNSName: strings.ToLower(strings.TrimSuffix(p.DNSName, ".")), OS: p.OS, Tags: p.Tags}
-		d.Name, _, _ = strings.Cut(d.DNSName, ".")
-		if d.Name == "" {
+		d := TailnetDevice{
+			ID: p.ID, DNSName: strings.ToLower(strings.TrimSuffix(p.DNSName, ".")), OS: p.OS, Tags: p.Tags,
+			Online: p.Online,
+		}
+		d.Name = shortNodeName(d.DNSName, self)
+		if d.Name == "" && p.HostName != hiddenHostName {
 			d.Name = p.HostName
 		}
 		if len(p.Tags) == 0 {
-			d.Login = parsed.User[strconv.FormatInt(p.UserID, 10)].LoginName
+			user := parsed.User[strconv.FormatInt(p.UserID, 10)]
+			d.Login, d.OwnerName = user.LoginName, user.DisplayName
 		}
-		if created, err := time.Parse(time.RFC3339Nano, p.Created); err == nil {
+		d.Outside = p.ShareeNode || otherTailnet(d.DNSName, selfDNS)
+		// A sharee's device reports a placeholder join date from 1973.
+		if created, err := time.Parse(time.RFC3339Nano, p.Created); err == nil && !p.ShareeNode {
 			d.Created = created
+		}
+		if seen, err := time.Parse(time.RFC3339Nano, p.LastSeen); err == nil && seen.Year() > 1 {
+			d.LastSeen = seen
 		}
 		return d
 	}

@@ -46,8 +46,10 @@ export interface ClaimResult {
 /** One access.devices entry: a tailnet device's permissions, by stable ID. */
 export interface DeviceGrant {
   id: string;
-  /** A label; taproot keeps it in step with the tailnet, and it grants nothing. */
+  /** The Tailscale name; taproot keeps it in step with the tailnet, and it grants nothing. */
   name: string;
+  /** The owner's own name for the device; taproot never changes it. */
+  label: string;
   proxy: boolean;
   admin: boolean;
 }
@@ -58,16 +60,26 @@ export interface AddressGrant {
   note: string;
 }
 
-/** A device on the Access page: tailscaled's view joined with its grant. */
+/**
+ * A device on the Access page: tailscaled's view joined with its grant. `name` is empty when
+ * Tailscale hides it, as it does for the devices of a person the server is shared with.
+ */
 export interface AccessDevice extends DeviceGrant {
   /** The MagicDNS name; empty for a device no longer on the tailnet. */
   dnsName: string;
   /** The owner's login; empty for a tagged device and one no longer on the tailnet. */
   login: string;
+  /** The owner's display name, or empty. */
+  ownerName: string;
   tags: string[];
   os: string;
   /** When the device joined the tailnet, or null when unknown. */
   created: string | null;
+  /** Outside the server's own tailnet: shared with or shared in. */
+  outside: boolean;
+  online: boolean;
+  /** When the device was last connected, or null when unknown or online. */
+  lastSeen: string | null;
   /** The taproot server's own node: always Proxy, never Admin. */
   server: boolean;
   /** False for a granted device the last tailnet read did not list. */
@@ -76,10 +88,29 @@ export interface AccessDevice extends DeviceGrant {
   missingSince: string | null;
 }
 
+/** An open access request: a refused device, or one that asked from its browser. */
+export interface AccessRequest {
+  nodeId: string;
+  login: string;
+  ownerName: string;
+  /** The name the device gave itself, else its Tailscale name, else empty. */
+  name: string;
+  /** The program that asked, such as `Claude Code`, or empty. */
+  client: string;
+  firstSeen: string;
+  lastSeen: string;
+  count: number;
+  outside: boolean;
+  /** What the device was refused: `admin` when it opened the dashboard, else `proxy`. */
+  asked: 'proxy' | 'admin';
+}
+
 export interface AccessDevices {
   /** False when access.enabled is false; the lists then have no effect. */
   enabled: boolean;
   devices: AccessDevice[];
+  /** Open requests, newest first. */
+  requests: AccessRequest[];
   addresses: AddressGrant[];
   /** Why tailscaled could not be read; devices then lists only those with a permission. */
   tailnetError?: string;
@@ -499,6 +530,70 @@ async function readError(response: Response): Promise<TaprootApiError> {
   return new TaprootApiError(response.status, code, message, retryAfter);
 }
 
+const record = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+const text = (value: unknown) => (typeof value === 'string' ? value : '');
+const flag = (value: unknown) => value === true;
+const timeOrNull = (value: unknown) => (typeof value === 'string' && value ? value : null);
+
+function normalizeAccessDevice(raw: unknown): AccessDevice {
+  const d = record(raw);
+  return {
+    id: text(d.id),
+    name: text(d.name),
+    label: text(d.label),
+    dnsName: text(d.dnsName),
+    login: text(d.login),
+    ownerName: text(d.ownerName),
+    tags: Array.isArray(d.tags) ? d.tags.filter((t): t is string => typeof t === 'string') : [],
+    os: text(d.os),
+    created: timeOrNull(d.created),
+    outside: flag(d.outside),
+    online: flag(d.online),
+    lastSeen: timeOrNull(d.lastSeen),
+    server: flag(d.server),
+    onTailnet: flag(d.onTailnet),
+    missingSince: timeOrNull(d.missingSince),
+    proxy: flag(d.proxy),
+    admin: flag(d.admin),
+  };
+}
+
+function normalizeAccessRequest(raw: unknown): AccessRequest {
+  const r = record(raw);
+  return {
+    nodeId: text(r.nodeId),
+    login: text(r.login),
+    ownerName: text(r.ownerName),
+    name: text(r.name),
+    client: text(r.client),
+    firstSeen: text(r.firstSeen),
+    lastSeen: text(r.lastSeen),
+    count: typeof r.count === 'number' && Number.isFinite(r.count) ? r.count : 0,
+    outside: flag(r.outside),
+    asked: r.asked === 'admin' ? 'admin' : 'proxy',
+  };
+}
+
+/** Fills fields an older server leaves out, so the page reads one shape. */
+export function normalizeAccessDevices(raw: unknown): AccessDevices {
+  const body = record(raw);
+  const list = (value: unknown) => (Array.isArray(value) ? value : []);
+  const result: AccessDevices = {
+    enabled: flag(body.enabled),
+    devices: list(body.devices).map(normalizeAccessDevice),
+    requests: list(body.requests).map(normalizeAccessRequest),
+    addresses: list(body.addresses).map((a) => ({
+      cidr: text(record(a).cidr),
+      note: text(record(a).note),
+    })),
+    forgetAfterHours: typeof body.forgetAfterHours === 'number' ? body.forgetAfterHours : 24,
+  };
+  if (typeof body.tailnetError === 'string' && body.tailnetError)
+    result.tailnetError = body.tailnetError;
+  return result;
+}
+
 export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof fetch = fetch) {
   const request = async <T>(
     method: 'GET' | 'POST' | 'PUT',
@@ -586,7 +681,19 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
     restoreBackup: (backupId: string) =>
       request<RestoreResult>('POST', `/backups/${id(backupId)}/restore`),
 
-    accessDevices: () => request<AccessDevices>('GET', '/access/devices'),
+    accessDevices: async () =>
+      normalizeAccessDevices(await request<unknown>('GET', '/access/devices')),
+    /**
+     * Asks for access for the calling device, which may name itself. Grants nothing; the server
+     * allows 10 a device an hour (429).
+     */
+    requestAccess: (name: string) =>
+      request<{ status: 'pending' }>('POST', '/access/request', { body: { name } }),
+    dismissRequest: (nodeId: string) =>
+      request<{ dismissed: true }>('POST', `/access/requests/${id(nodeId)}/dismiss`),
+    /** Closes a request after its grant was saved, so the device's later refusals stay quiet. */
+    allowRequest: (nodeId: string) =>
+      request<{ allowed: true }>('POST', `/access/requests/${id(nodeId)}/allow`),
 
     settings: () => request<TaprootSettings>('GET', '/settings'),
     putSettings: (update: TaprootSettingsUpdate) =>

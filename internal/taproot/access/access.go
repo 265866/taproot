@@ -28,9 +28,11 @@
 //     reused and a name can be.
 //
 // Every caller with an identity may load the dashboard page and its chunks,
-// which are static, so a device without Admin sees why the API refuses it.
+// which are static, so a device without Admin can ask for access there.
 // A tailnet device that is refused is told its own name, login, and ID, and
-// which switch to turn on; nobody else gets more than "forbidden".
+// its refusal is recorded as an access request (see requests.go); nobody
+// else gets more than "forbidden". Such a device may also POST to
+// RequestPath, which records a request and grants nothing.
 //
 // While no device has Admin, the server is unclaimed: Setup logs a one-time
 // setup code, and a tailnet device other than the server, without Admin, may
@@ -87,6 +89,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/265866/taproot/internal/logging"
 	"github.com/gin-gonic/gin"
@@ -131,9 +135,12 @@ type DeviceGrant struct {
 	// ID is the device's stable node ID, such as nQ7v2xK8CNTRL (tailscale
 	// status --json shows it as ID). Tailscale never reuses one.
 	ID string `yaml:"id" json:"id"`
-	// Name is a label for people reading the file. Taproot refreshes it from
-	// the tailnet, and it grants nothing.
+	// Name is the device's Tailscale name, for people reading the file.
+	// Taproot refreshes it from the tailnet, and it grants nothing.
 	Name string `yaml:"name,omitempty" json:"name"`
+	// Label is the owner's own name for the device. Taproot never changes
+	// it, and it grants nothing.
+	Label string `yaml:"label,omitempty" json:"label"`
 	// Proxy lets the device send model requests.
 	Proxy bool `yaml:"proxy" json:"proxy"`
 	// Admin lets the device open the dashboard and the management API.
@@ -193,6 +200,10 @@ type Identity struct {
 	// NodeID is the node's stable ID from whois.
 	NodeID string
 	Via    Via
+	// Outside marks a tailnet device outside the server's own tailnet: whois
+	// names no node (Tailscale hides the devices of a person the server is
+	// shared with), or a node in another tailnet.
+	Outside bool
 	// Proxy is true when the caller may reach the proxy surface.
 	Proxy bool
 	// Admin is true when the caller may reach the admin surface.
@@ -240,6 +251,9 @@ type Guard struct {
 	own ownAddrs
 
 	claim setupClaim
+
+	// asks stores access requests; nil until AttachRequests.
+	asks atomic.Pointer[Requests]
 }
 
 // grantSet is Grants checked and indexed for admission.
@@ -349,12 +363,23 @@ func (g *Guard) SetGrants(in Grants) error {
 	return nil
 }
 
+// CheckGrants reports what SetGrants would refuse in, without applying it.
+func CheckGrants(in Grants) error {
+	_, err := newGrantSet(in)
+	return err
+}
+
 func newGrantSet(in Grants) (*grantSet, error) {
 	set := &grantSet{Grants: Grants{Devices: []DeviceGrant{}, Addresses: []AddressGrant{}}, byID: map[string]DeviceGrant{}}
 	seen := map[string]bool{}
 	for _, d := range in.Devices {
 		d.ID = strings.TrimSpace(d.ID)
 		d.Name = strings.TrimSpace(d.Name)
+		label, err := CleanLabel(d.Label)
+		if err != nil {
+			return nil, fmt.Errorf("access.devices: label of device %s: %w", d.ID, err)
+		}
+		d.Label = label
 		// Stable IDs are case-sensitive, so they keep their case.
 		if d.ID == "" || strings.ContainsFunc(d.ID, func(r rune) bool { return r <= ' ' || strings.ContainsRune("/:@", r) }) {
 			return nil, fmt.Errorf("access.devices: invalid device id %q", d.ID)
@@ -390,6 +415,24 @@ func newGrantSet(in Grants) (*grantSet, error) {
 		set.Addresses = append(set.Addresses, AddressGrant{CIDR: prefix.String(), Note: strings.TrimSpace(a.Note)})
 	}
 	return set, nil
+}
+
+// MaxLabelRunes bounds a device label and a requested device name.
+const MaxLabelRunes = 64
+
+// CleanLabel trims a device label or requested name and refuses one that is
+// too long or holds control or format characters. Format characters (Cf)
+// include bidi overrides and zero-width characters, which can make a name
+// read as another.
+func CleanLabel(raw string) (string, error) {
+	label := strings.TrimSpace(raw)
+	if utf8.RuneCountInString(label) > MaxLabelRunes {
+		return "", fmt.Errorf("longer than %d characters", MaxLabelRunes)
+	}
+	if !utf8.ValidString(label) || strings.ContainsFunc(label, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
+		return "", errors.New("holds control or format characters")
+	}
+	return label, nil
 }
 
 // Grants returns a copy of the current device and address lists.
@@ -467,22 +510,37 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		case surf == surfaceProxy && !id.Proxy:
 			reason = "device " + quoteHeader(id.Node) + " (" + id.NodeID + ") has no Proxy"
 			if id.device {
-				denial = g.deviceDenial("no_proxy", id, "this device has no Proxy permission. Turn on Proxy for it on the Access page of taproot's dashboard")
+				denial = g.noProxyDenial(r, id)
+				g.recordRefusal(r, id, AskProxy)
 			}
 		case surf == surfaceAdmin && !id.Admin && !isDashboardShell(r):
 			if id.device && r.Method == http.MethodPost && path == ClaimPath && g.Claimable() {
 				// The settings module checks the code and the caller.
 				break
 			}
+			if id.device && r.Method == http.MethodPost && path == RequestPath {
+				// handleRequest records the request; it grants nothing.
+				if r.Header.Get(RequestHeader) != "1" {
+					reason, denial = "access request without "+RequestHeader, requestHeaderDenial()
+				}
+				break
+			}
 			reason = id.notAdmin
 			if id.noAdminGrant {
-				denial = g.deviceDenial("not_admin", id, "this device has no Admin permission. On a device that has it, turn on Admin for this one on the Access page of taproot's dashboard")
+				self, _ := g.cachedSelf()
+				name := shortNodeName(id.Node, self)
+				denial = deviceDenial("not_admin", id, name, fmt.Sprintf("%s (%s, ID %s): this device has no Admin permission. On a device that has it, turn on Admin for this one on the Access page of taproot's dashboard", cmp.Or(name, "this device"), id.Login, id.NodeID))
 				// The connection gate words its advice by whether the device has Proxy.
 				denial["proxy"] = id.Proxy
-				// While unclaimed, the gate offers the setup code form instead.
-				if g.Claimable() {
+				// Read before this refusal is recorded, so a first visit gets
+				// the gate's request form rather than its sent state.
+				denial["requested"] = g.HasOpenRequest(r.Context(), id.NodeID)
+				// While unclaimed, the gate offers the setup code form instead,
+				// to a device that may claim the server.
+				if g.Claimable() && !id.Outside {
 					denial["claimable"] = true
 				}
+				g.recordRefusal(r, id, AskAdmin)
 			}
 		}
 		if reason == "" && sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
@@ -513,16 +571,33 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 
 // deviceDenial is the 403 body for a tailnet device that lacks a permission.
 // The message names the device, because command-line clients show only it.
-func (g *Guard) deviceDenial(code string, id Identity, message string) gin.H {
-	self, _ := g.cachedSelf()
-	name := shortNodeName(id.Node, self)
+func deviceDenial(code string, id Identity, name, message string) gin.H {
 	return gin.H{
 		"code":    code,
-		"message": fmt.Sprintf("%s (%s, ID %s): %s", cmp.Or(name, "this device"), id.Login, id.NodeID, message),
+		"message": message,
 		"node":    name,
 		"nodeId":  id.NodeID,
 		"login":   id.Login,
 	}
+}
+
+// noProxyDenial is the 403 body for a model request from a device without
+// Proxy. Claude Code prints the message after "Please run /login", which
+// would not help, so the message says so and points at the dashboard on the
+// name the client used, where the device can name itself in a request.
+func (g *Guard) noProxyDenial(r *http.Request, id Identity) gin.H {
+	self, _ := g.cachedSelf()
+	name := shortNodeName(id.Node, self)
+	scheme := "http"
+	// Upstream's buffered connection reports an empty TLS state on plain
+	// http, so net/http sets r.TLS there too; only a handshake means https.
+	if r.TLS != nil && r.TLS.HandshakeComplete {
+		scheme = "https"
+	}
+	// The Host passed the browser checks, so it is one of the server's names.
+	message := fmt.Sprintf("This device needs approval on taproot. Don't run /login. Open %s://%s on this device to name it, or ask the server's admin. (%s, %s, ID %s)",
+		scheme, r.Host, cmp.Or(name, "unnamed device"), id.Login, id.NodeID)
+	return deviceDenial("no_proxy", id, name, message)
 }
 
 // browserGuard runs browserCheck and requires RequestHeader on state-changing
@@ -605,6 +680,7 @@ func (g *Guard) admit(ctx context.Context, remoteAddr string, self func() *selfN
 	id := Identity{
 		Login: p.Login, DisplayName: p.DisplayName, Node: p.Node, NodeID: p.StableID, Via: ViaTailnet,
 		Proxy: grant.Proxy, device: true,
+		Outside: p.Node == "" || (s != nil && otherTailnet(p.Node, s.DNSName)),
 	}
 	switch {
 	case !grant.Admin:
@@ -706,6 +782,9 @@ func (g *Guard) cachedSelf() (*selfNode, bool) {
 func (g *Guard) Routes(r *gin.RouterGroup) {
 	r.GET("/me", g.handleMe)
 	r.GET("/access/devices", g.handleDevices)
+	r.POST("/access/request", g.handleRequest)
+	r.POST("/access/requests/:nodeId/dismiss", g.handleDismiss)
+	r.POST("/access/requests/:nodeId/allow", g.handleAllow)
 }
 
 type meResponse struct {

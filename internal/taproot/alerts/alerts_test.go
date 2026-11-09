@@ -717,3 +717,31 @@ func TestNewWebhookWaitsForItsAnnouncement(t *testing.T) {
 		}
 	}
 }
+
+// An access request posts one Info card naming the device, its login, and
+// its client, with the text escaped; nothing goes out while alerts are off.
+func TestAccessRequestMessage(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake)
+	h.svc.AccessRequested(AccessRequest{NodeID: "ndanaCNTRL", Name: "Dana's *PC*", Login: "dana@example.com", Client: "Claude Code", At: t0})
+	h.svc.AccessRequested(AccessRequest{NodeID: "nbobCNTRL", Login: "bob@example.org", At: t0})
+	titles := h.titles(t, 2)
+	if titles[0] != "Access requested" || titles[1] != "Access requested" {
+		t.Fatalf("titles = %q", titles)
+	}
+	named, unnamed := decodeCard(t, h.fake.bodies[0]), decodeCard(t, h.fake.bodies[1])
+	if named.description != `**Dana's \*PC\*** (dana@example.com) asked for access to taproot. Allow or deny it under Requests on the Access page.` ||
+		!strings.Contains(named.details, "**Client** Claude Code") || !strings.Contains(named.details, "**Device ID** ndanaCNTRL") {
+		t.Fatalf("named card = %+v", named)
+	}
+	if !strings.HasPrefix(unnamed.description, "**A device** (bob@example.org) asked") || strings.Contains(unnamed.details, "Client") {
+		t.Fatalf("unnamed card = %+v", unnamed)
+	}
+
+	off := false
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	h.svc.AccessRequested(AccessRequest{NodeID: "ncarolCNTRL", Login: "carol@example.org", At: t0})
+	h.titles(t, 2)
+}

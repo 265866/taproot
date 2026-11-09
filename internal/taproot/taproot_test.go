@@ -446,7 +446,7 @@ func TestNewDeviceRefusedUntilSwitchOn(t *testing.T) {
 	admin := func() *httptest.ResponseRecorder {
 		return f.do(req{remote: newIP, path: "/v0/management/auth-files/download?name=claude-x.json", headers: sameOrigin})
 	}
-	if rec := proxy(); guardCode(rec) != "no_proxy" || !strings.Contains(rec.Body.String(), "new-laptop") || !strings.Contains(rec.Body.String(), "Turn on Proxy") {
+	if rec := proxy(); guardCode(rec) != "no_proxy" || !strings.Contains(rec.Body.String(), "new-laptop") || !strings.Contains(rec.Body.String(), "Don't run /login") {
 		t.Fatalf("new device proxy = %d %s, want no_proxy naming it", rec.Code, rec.Body)
 	}
 	if rec := admin(); guardCode(rec) != "not_admin" || strings.Contains(rec.Body.String(), refreshToken) {
@@ -696,7 +696,7 @@ func TestSetupStartsWithoutDevices(t *testing.T) {
 func TestSettingsOutputLoadsStrictly(t *testing.T) {
 	f := newServer(t)
 	body := `{
-		"access": {"devices": [{"id": "nExample1CNTRL", "name": "laptop", "proxy": true, "admin": true}, {"id": "nExample2CNTRL", "proxy": true}], "addresses": [{"cidr": "192.0.2.10", "note": "agents: on the host"}]},
+		"access": {"devices": [{"id": "ndesktopCNTRL", "name": "desktop", "label": "Desk: main", "proxy": true, "admin": true}, {"id": "nExample2CNTRL", "proxy": true}], "addresses": [{"cidr": "192.0.2.10", "note": "agents: on the host"}]},
 		"requestLogs": {"maxDays": -1, "maxBytes": -1, "excludePaths": ["HEAD /api/*"], "keepUnrouted404": true},
 		"backups": {"dailyAt": "04:30", "keep": 3},
 		"ingest": {"pollInterval": "5m"},
@@ -714,7 +714,7 @@ func TestSettingsOutputLoadsStrictly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig of the settings output: %v\n%s", err, written)
 	}
-	if len(tp.Access.Devices) != 2 || tp.Access.Devices[0] != (access.DeviceGrant{ID: "nExample1CNTRL", Name: "laptop", Proxy: true, Admin: true}) ||
+	if len(tp.Access.Devices) != 2 || tp.Access.Devices[0] != (access.DeviceGrant{ID: "ndesktopCNTRL", Name: "desktop", Label: "Desk: main", Proxy: true, Admin: true}) ||
 		tp.Access.Devices[1] != (access.DeviceGrant{ID: "nExample2CNTRL", Proxy: true}) ||
 		len(tp.Access.Addresses) != 1 || tp.Access.Addresses[0] != (access.AddressGrant{CIDR: "192.0.2.10/32", Note: "agents: on the host"}) ||
 		tp.RequestLogs.MaxDays != -1 || tp.RequestLogs.MaxBytes != -1 || !tp.RequestLogs.KeepUnrouted404 || len(tp.RequestLogs.ExcludePaths) != 1 ||

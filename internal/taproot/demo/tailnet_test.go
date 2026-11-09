@@ -63,6 +63,38 @@ func TestDemoTailnet(t *testing.T) {
 	if tn.Self.ID != serverNode.id || len(tn.Peers) != len(tailnetDevices) {
 		t.Fatalf("tailnet = self %s, %d peers", tn.Self.ID, len(tn.Peers))
 	}
+	// The mess the Access page has to handle: hidden sharee devices, a
+	// device from another tailnet, and devices idle for weeks.
+	byID := map[string]access.TailnetDevice{}
+	for _, d := range tn.Peers {
+		byID[d.ID] = d
+	}
+	for _, id := range []string{"nDANA0001CNTRL", "nDANA0002CNTRL", "nDANA0003CNTRL"} {
+		if d := byID[id]; d.Name != "" || !d.Outside || d.Login != danaLogin || d.OwnerName != "dana" || d.OS != "" {
+			t.Errorf("sharee device %s = %+v", id, d)
+		}
+	}
+	if d := byID["nDANA0001CNTRL"]; !d.Online {
+		t.Errorf("dana's PC is offline")
+	}
+	if d := byID["nDANA0003CNTRL"]; d.Online || testStart.Sub(d.LastSeen) != 40*day {
+		t.Errorf("dana's third device = %+v, want last seen 40 days ago", d)
+	}
+	if d := byID["nALIMBP01CNTRL"]; d.Name != "alice-mbp.tailnet-1111.ts.net" || !d.Outside {
+		t.Errorf("shared-in device = %+v", d)
+	}
+	if d := byID["nOLDTAB01CNTRL"]; d.Outside || d.Online || testStart.Sub(d.LastSeen) != 45*day {
+		t.Errorf("idle device = %+v", d)
+	}
+	var label string
+	for _, d := range cfg.Access.Devices {
+		if d.ID == "nALIMBP01CNTRL" {
+			label = d.Label
+		}
+	}
+	if label != "Work laptop" {
+		t.Errorf("alice-mbp label = %q", label)
+	}
 
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -90,5 +122,13 @@ func TestDemoTailnet(t *testing.T) {
 	}
 	if code("192.0.2.20", "/v1/models") != http.StatusOK {
 		t.Error("the demo address does not reach the proxy")
+	}
+	// whois names no node for a sharee's device, so the refusal cannot either.
+	r := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	r.RemoteAddr, r.Host = danaPC.ip+":40000", "server:8399"
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, r)
+	if !strings.Contains(w.Body.String(), `"node":""`) || !strings.Contains(w.Body.String(), "unnamed device, "+danaLogin) {
+		t.Errorf("sharee refusal = %d %s", w.Code, w.Body)
 	}
 }

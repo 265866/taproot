@@ -119,6 +119,31 @@ describe('same-origin management connection', () => {
     expect(useAuthStore.getState().connectionFailureDevice?.claimable).toBe(false);
   });
 
+  test('keeps whether the device already asked, and a sharee device that has no name', async () => {
+    status = 403;
+    denial = {
+      error: {
+        code: 'not_admin',
+        message:
+          'this device (dana@example.com, ID nDANA0001CNTRL): this device has no Admin permission.',
+        node: '',
+        nodeId: 'nDANA0001CNTRL',
+        login: 'dana@example.com',
+        proxy: false,
+        requested: true,
+      },
+    };
+    expect(await connectTo()).toBe(false);
+    expect(useAuthStore.getState().connectionFailureDevice).toEqual({
+      node: '',
+      nodeId: 'nDANA0001CNTRL',
+      login: 'dana@example.com',
+      proxy: false,
+      claimable: false,
+      requested: true,
+    });
+  });
+
   test('the removed admin-nodes denial is not mistaken for the new one', async () => {
     status = 403;
     denial = { error: { code: 'not_admin_node', node: 'worker.tailnet-0000.ts.net' } };
@@ -198,7 +223,8 @@ describe('connection gate', () => {
   const render = (
     status: ConnectionStatus,
     failure: ConnectionFailure | null = null,
-    device: DeniedDevice | null = null
+    device: DeniedDevice | null = null,
+    defaultName = ''
   ) =>
     renderToStaticMarkup(
       createElement(
@@ -206,7 +232,7 @@ describe('connection gate', () => {
         { i18n },
         createElement(
           ConnectionGateView,
-          { status, failure, device, onRetry: () => {} },
+          { status, failure, device, defaultName, onRetry: () => {} },
           createElement('main', null, 'dashboard-body')
         )
       )
@@ -224,49 +250,61 @@ describe('connection gate', () => {
     expect(html).not.toMatch(/type="password"|<input/);
   });
 
-  test('shows a device without access its name, login, and ID, and what to turn on', () => {
-    const device = {
-      node: 'alice-work-laptop',
-      nodeId: 'nR9x3eM7CNTRL',
-      login: 'alice@github',
-      proxy: false,
-      claimable: false,
-    };
-    const html = render('error', 'not_admin', device);
-    expect(html).toContain('This device can&#x27;t open taproot yet');
-    expect(html).toContain('<strong>alice-work-laptop</strong> has no access to taproot yet');
-    expect(html).toContain('turn on Admin or Proxy');
-    expect(html).toContain('alice-work-laptop · alice@github');
-    expect(html).toContain('<code>nR9x3eM7CNTRL</code>');
-    expect(html).toContain('Try again');
+  const refused: DeniedDevice = {
+    node: 'alice-work-laptop',
+    nodeId: 'nR9x3eM7CNTRL',
+    login: 'alice@github',
+    proxy: false,
+    claimable: false,
+    requested: false,
+  };
+
+  test('asks a device without access to request it, with a name guessed from the browser', () => {
+    const html = render('error', 'not_admin', refused, 'Windows PC');
+    expect(html).toContain('This device doesn&#x27;t have access yet.');
+    expect(html).toMatch(/<input[^>]*value="Windows PC"/);
+    expect(html).toContain('Request access');
+    expect(html).not.toContain('Request sent');
     expect(html).not.toContain('Access denied');
     expect(html).not.toContain('dashboard-body');
+    // A sharee's device has no name and gets the same form.
+    expect(render('error', 'not_admin', { ...refused, node: '' }, '')).toMatch(
+      /<input[^>]*value=""/
+    );
+  });
 
-    const proxyOnly = render('error', 'not_admin', { ...device, proxy: true });
-    expect(proxyOnly).toContain('can send model requests');
-    expect(proxyOnly).toContain('turn on Admin for it');
+  test('a device with Proxy asks for the dashboard, with the same name field', () => {
+    const html = render('error', 'not_admin', { ...refused, proxy: true }, 'Mac');
+    expect(html).toContain('This device can use the proxy but not the dashboard.');
+    expect(html).toContain('Request dashboard access');
+    expect(html).toMatch(/<input[^>]*value="Mac"/);
+    expect(html).not.toContain('doesn&#x27;t have access yet');
+    // Once it asked, it sees the sent state like any other request.
+    const sent = render('error', 'not_admin', { ...refused, proxy: true, requested: true });
+    expect(sent).toContain('Request sent.');
+    expect(sent).not.toContain('Request dashboard access');
+  });
 
+  test('a device that already asked sees its request as sent, and can check or rename', () => {
+    const html = render('error', 'not_admin', { ...refused, requested: true }, 'Mac');
+    expect(html).toContain(
+      'Request sent. You&#x27;ll have access once the server&#x27;s admin allows it.'
+    );
+    expect(html).toContain('Check again');
+    expect(html).toContain('Change name');
+    expect(html).not.toContain('Request access');
+  });
+
+  test('without a named device the gate still says what to turn on', () => {
     const unnamed = render('error', 'not_admin');
     expect(unnamed).toContain('turn on Admin for it');
-    expect(unnamed).not.toContain('connection-gate-device');
+    expect(unnamed).toContain('Try again');
   });
 
   test('renders a device name as text, never as markup', () => {
-    const html = render('error', 'not_admin', {
-      node: '<img src=x onerror=alert(1)>',
-      nodeId: 'n1',
-      login: '',
-      proxy: false,
-      claimable: false,
-    });
-    expect(html).not.toContain('<img');
-    expect(html).toContain('&lt;img');
-
     const claim = render('error', 'not_admin', {
+      ...refused,
       node: '<img src=x onerror=alert(1)>',
-      nodeId: 'n1',
-      login: '',
-      proxy: false,
       claimable: true,
     });
     expect(claim).not.toContain('<img');
@@ -280,6 +318,7 @@ describe('connection gate', () => {
       login: 'alice@github',
       proxy: false,
       claimable: true,
+      requested: false,
     });
     expect(html).toContain('Set up taproot');
     expect(html).toContain(
@@ -295,6 +334,13 @@ describe('connection gate', () => {
     expect(html).not.toContain('Try again');
     expect(html).not.toContain('can&#x27;t open taproot yet');
     expect(html).not.toContain('dashboard-body');
+  });
+
+  test('a device without a name never gets the setup code form', () => {
+    const html = render('error', 'not_admin', { ...refused, node: '', claimable: true });
+    expect(html).not.toContain('Set up taproot');
+    expect(html).not.toContain('This device, ,');
+    expect(html).toContain('This device doesn&#x27;t have access yet.');
   });
 
   test('names an unreachable server separately', () => {

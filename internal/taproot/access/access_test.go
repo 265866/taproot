@@ -129,9 +129,8 @@ func assertDeviceDenied(t *testing.T, rec *httptest.ResponseRecorder, code, node
 	if body.Error.Node != node || body.Error.NodeID != nodeID || body.Error.Login != login {
 		t.Fatalf("%s names %q %q %q, want %q %q %q", code, body.Error.Node, body.Error.NodeID, body.Error.Login, node, nodeID, login)
 	}
-	want := map[string]string{"no_proxy": "turn on Proxy", "not_admin": "turn on Admin"}[code]
-	if !strings.Contains(body.Error.Message, node) || !strings.Contains(body.Error.Message, nodeID) || !strings.Contains(strings.ToLower(body.Error.Message), strings.ToLower(want)) ||
-		!strings.Contains(body.Error.Message, "Access page") {
+	want := map[string]string{"no_proxy": "Open http://", "not_admin": "turn on Admin for this one on the Access page"}[code]
+	if !strings.Contains(body.Error.Message, node) || !strings.Contains(body.Error.Message, nodeID) || !strings.Contains(body.Error.Message, want) {
 		t.Fatalf("%s message %q does not name the device and the switch", code, body.Error.Message)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/265866/taproot/internal/auth/codex"
+	"github.com/265866/taproot/internal/taproot/store"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/265866/taproot/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
@@ -39,7 +40,7 @@ func (i *Ingest) refreshAccounts(ctx context.Context) error {
 		return nil
 	}
 	now := i.now().UnixMilli()
-	return withImmediateTx(ctx, i.db.DB, func(c *sql.Conn) error {
+	return store.WithImmediateTx(ctx, i.db.DB, func(c *sql.Conn) error {
 		present := map[string]bool{}
 		for _, a := range auths {
 			if a == nil {

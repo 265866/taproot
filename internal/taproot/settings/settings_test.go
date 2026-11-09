@@ -98,13 +98,15 @@ func (f *fakeAccess) Reconcile(tn access.Tailnet) (access.Grants, []access.Devic
 }
 
 type fixture struct {
-	path    string
-	guard   *access.Guard
-	access  *fakeAccess
-	logs    *reqlog.Logs
-	backups *backup.Backups
-	s       *Settings
-	engine  *gin.Engine
+	path   string
+	guard  *access.Guard
+	access *fakeAccess
+	// requests is the guard's access request store.
+	requests *access.Requests
+	logs     *reqlog.Logs
+	backups  *backup.Backups
+	s        *Settings
+	engine   *gin.Engine
 	// caller is the identity handlers see; the zero value is a loopback caller.
 	caller access.Identity
 }
@@ -147,6 +149,8 @@ func newFixture(t *testing.T, opt options) *fixture {
 	if f.backups, err = backup.New(cfg.Backups, db, backup.Paths{TaprootFile: f.path, DataDir: dataDir}); err != nil {
 		t.Fatal(err)
 	}
+	f.requests = access.NewRequests(db, nil)
+	f.guard.AttachRequests(f.requests)
 	f.access = &fakeAccess{Guard: f.guard}
 	f.s, err = New(Deps{
 		Access: f.access, AccessEnabled: opt.accessEnabled == nil || *opt.accessEnabled,

@@ -6,23 +6,8 @@ import { taprootApi } from '@/services/api/taproot';
 import { useAuthStore } from '@/stores';
 import type { ConnectionFailure, ConnectionStatus, DeniedDevice } from '@/types';
 import { ClaimScreen } from './ClaimScreen';
-
-const NAME_SLOT = '\u0000';
-
-/**
- * Renders a translated sentence with the device name in bold where the slot was. The name comes
- * from the server, so it is rendered as text, never parsed as markup.
- */
-function withStrongName(sentence: string, name: string) {
-  const [before, ...rest] = sentence.split(NAME_SLOT);
-  return (
-    <>
-      {before}
-      <strong>{name}</strong>
-      {rest.join(name)}
-    </>
-  );
-}
+import { browserDeviceName } from './deviceGuess';
+import { RequestAccessScreen } from './RequestAccessScreen';
 
 interface ConnectionGateViewProps {
   status: ConnectionStatus;
@@ -34,6 +19,10 @@ interface ConnectionGateViewProps {
   claim?: (code: string) => Promise<unknown>;
   /** Runs after a successful claim. */
   onClaimed?: () => void;
+  /** Asks for access for a device without Admin on a claimed server. */
+  requestAccess?: (name: string) => Promise<unknown>;
+  /** The request form's starting name; defaults to a guess from the browser. */
+  defaultName?: string;
   children: ReactElement;
 }
 
@@ -44,27 +33,35 @@ export function ConnectionGateView({
   onRetry,
   claim = taprootApi.claim,
   onClaimed = onRetry,
+  requestAccess = taprootApi.requestAccess,
+  defaultName,
   children,
 }: ConnectionGateViewProps) {
   const { t } = useTranslation();
 
   if (status === 'connected') return children;
 
-  if (status === 'error' && failure === 'not_admin' && device?.claimable) {
+  // A device without a name is outside the tailnet and cannot claim.
+  if (status === 'error' && failure === 'not_admin' && device?.claimable && device.node) {
     return <ClaimScreen node={device.node} claim={claim} onClaimed={onClaimed} />;
+  }
+
+  if (status === 'error' && failure === 'not_admin' && device) {
+    return (
+      <RequestAccessScreen
+        requested={device.requested}
+        proxy={device.proxy}
+        defaultName={defaultName ?? browserDeviceName()}
+        request={requestAccess}
+        onCheck={onRetry}
+      />
+    );
   }
 
   if (status === 'error') {
     const key = failure ?? 'unreachable';
-    const named = key === 'not_admin' && device;
-    const body = named
-      ? withStrongName(
-          t(device.proxy ? 'connection_gate.not_admin_body' : 'connection_gate.no_access_body', {
-            node: NAME_SLOT,
-          }),
-          device.node
-        )
-      : key === 'not_admin'
+    const body =
+      key === 'not_admin'
         ? t('connection_gate.not_admin_body_unnamed')
         : t(`connection_gate.${key}_body`);
     return (
@@ -72,17 +69,6 @@ export function ConnectionGateView({
         <div className="connection-gate-card">
           <h1 className="connection-gate-title">{t(`connection_gate.${key}_title`)}</h1>
           <p className="connection-gate-body">{body}</p>
-          {named && (
-            <dl className="connection-gate-device">
-              <dt>{t('connection_gate.this_device')}</dt>
-              <dd>{[device.node, device.login].filter(Boolean).join(' · ')}</dd>
-              {device.nodeId && (
-                <dd>
-                  <code>{device.nodeId}</code>
-                </dd>
-              )}
-            </dl>
-          )}
           <Button variant="secondary" onClick={onRetry}>
             {t('connection_gate.retry')}
           </Button>
