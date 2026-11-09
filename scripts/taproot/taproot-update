@@ -14,7 +14,10 @@
 #
 #   TAPROOT_IMAGE           Image repository (ghcr.io/265866/taproot).
 #   TAPROOT_TRACK           Tag to follow, such as 0.2: patch releases arrive,
-#                           a new minor version never does.
+#                           a new minor version never does. A version track
+#                           also binds the signature check: 0.2 accepts only
+#                           an image signed for a taproot-v0.2.<patch> tag,
+#                           and 0.2.1 only one signed for taproot-v0.2.1.
 #   TAPROOT_UNIT            systemd user unit that runs taproot (taproot.service).
 #   TAPROOT_CONTAINER       Container name the unit runs (taproot).
 #   TAPROOT_LOCAL_TAG       Local tag the unit's quadlet runs
@@ -35,9 +38,9 @@ set -euo pipefail
 # ensure_cosign pins the SHA-256 of this release's cosign-linux-<arch> files.
 readonly COSIGN_VERSION=v3.1.4
 # Releases are signed keylessly by release.yml on a taproot-v* tag of this
-# repository. The Fulcio certificate names that workflow, so the identity, not
-# a key, is what the signature is checked against.
-readonly IDENTITY_REGEXP='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v'
+# repository. The Fulcio certificate names that workflow and the exact tag, so
+# the identity, not a key, is what the signature is checked against.
+readonly IDENTITY_PREFIX='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v'
 readonly OIDC_ISSUER=https://token.actions.githubusercontent.com
 readonly WORKFLOW_REPOSITORY=265866/taproot
 readonly HEALTH_INTERVAL=2
@@ -108,10 +111,24 @@ previous_tag="${local_tag%:*}:previous"
 [[ $health_timeout =~ ^[1-9][0-9]*$ ]] || die "TAPROOT_HEALTH_TIMEOUT must be a number of seconds: $health_timeout"
 [[ -n $unit && -n $container ]] || die "TAPROOT_UNIT and TAPROOT_CONTAINER must not be empty"
 
+# The signature must name the release line the track follows, so a track tag
+# moved to a prerelease or another minor version does not verify.
+if [[ $track =~ ^[0-9]+\.[0-9]+$ ]]; then
+	identity="$IDENTITY_PREFIX${track//./\\.}\.[0-9]+\$"
+elif [[ $track =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+	identity="$IDENTITY_PREFIX${track//./\\.}\$"
+else
+	identity=$IDENTITY_PREFIX
+fi
+
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/taproot-update"
 # A release that failed its health check is not tried again until the track
 # moves to another digest; deleting this file retries it.
 failed_file="$state_dir/${unit//\//_}.failed"
+# A run writes this before it moves the local tag and removes it once the new
+# release is healthy or rolled back, so the next run finishes a run that was
+# killed in between: "digest new-id previous-id older-id", "-" for none.
+pending_file="$state_dir/${unit//\//_}.pending"
 
 exec 9>"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/taproot-update-${unit//\//_}.lock"
 flock -n 9 || die "another taproot-update is running for $unit"
@@ -128,7 +145,10 @@ resolve_digest() {
 	[[ $host == docker.io ]] && api=registry-1.docker.io
 	url="https://$api/v2/$repository/manifests/$track"
 	local accept='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
-	curl -sS -I --max-time 30 -H "Accept: $accept" -o "$work/headers" "$url" || return 1
+	# The retries cover a timer run that starts before the network is up after
+	# boot. Without --fail, an HTTP answer such as 404 is not retried; only
+	# the transient ones (408, 429, 5xx) are.
+	curl -sS -I --max-time 30 --retry 10 --retry-delay 15 --retry-all-errors -H "Accept: $accept" -o "$work/headers" "$url" || return 1
 	status=$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' "$work/headers")
 	if [[ $status == 401 ]]; then
 		challenge=$(tr -d '\r' <"$work/headers" | sed -n 's/^[Ww][Ww][Ww]-[Aa]uthenticate: *[Bb]earer *//p')
@@ -194,7 +214,7 @@ ensure_cosign() {
 
 verify() {
 	if "$cosign" verify \
-		--certificate-identity-regexp "$IDENTITY_REGEXP" \
+		--certificate-identity-regexp "$identity" \
 		--certificate-oidc-issuer "$OIDC_ISSUER" \
 		--certificate-github-workflow-repository "$WORKFLOW_REPOSITORY" \
 		"$image@$1" >"$work/verify" 2>&1; then
@@ -207,23 +227,98 @@ verify() {
 image_id() { podman image inspect --format '{{.Id}}' "$1" 2>/dev/null || true; }
 
 # wait_healthy waits until the container runs the given image and the health
-# URL answers, for at most the health timeout.
+# URL answers. It stops trying once the health timeout has passed.
 wait_healthy() {
-	local want=$1 attempts i state
-	attempts=$(((health_timeout + HEALTH_INTERVAL - 1) / HEALTH_INTERVAL))
-	for ((i = 0; i < attempts; i++)); do
+	local want=$1 deadline state
+	deadline=$(($(date +%s) + health_timeout))
+	while :; do
 		state=$(podman container inspect --format '{{.State.Running}} {{.Image}}' "$container" 2>/dev/null || true)
 		if [[ $state == "true $want" ]] && curl -fsS -o /dev/null --max-time "$HEALTH_INTERVAL" "$health_url" 2>/dev/null; then
 			return 0
 		fi
+		(($(date +%s) < deadline)) || return 1
 		sleep "$HEALTH_INTERVAL"
 	done
-	return 1
 }
 
 restart() {
 	systemctl --user restart "$unit" || log "systemctl --user restart $unit failed"
 }
+
+# remove_unused removes an image that no tag or container uses any more.
+# podman refuses, and this ignores, an image that something still uses.
+remove_unused() {
+	[[ -n $1 && $1 != "$current_id" && $1 != "$new_id" ]] || return 0
+	podman image rm "$1" >/dev/null 2>&1 || true
+}
+
+# finish_update waits for the unit, restarted at $started, to be healthy on
+# the new image, and rolls back when it is not.
+finish_update() {
+	if wait_healthy "$new_id"; then
+		rm -f -- "$failed_file" "$pending_file"
+		remove_unused "$old_previous_id"
+		log "updated $unit to $target ($image:$track); healthy within $((SECONDS - started)) s of the restart"
+		exit 0
+	fi
+	log "$unit did not become healthy on $target within ${health_timeout} s"
+	roll_back
+}
+
+# roll_back records the new release as failed, restores the image that ran
+# before it, and exits nonzero.
+roll_back() {
+	mkdir -p "$state_dir"
+	printf '%s\n' "$digest" >"$failed_file"
+	if [[ -z $current_id ]]; then
+		rm -f -- "$pending_file"
+		die "there is no previous image to roll $unit back to from $target"
+	fi
+	log "rolling back $unit to $current_id"
+	podman tag "$current_id" "$local_tag"
+	if [[ -n $old_previous_id ]]; then
+		podman tag "$old_previous_id" "$previous_tag"
+	elif [[ -n $(image_id "$previous_tag") ]]; then
+		podman untag "$current_id" "$previous_tag"
+	fi
+	restart
+	if wait_healthy "$current_id"; then
+		rm -f -- "$pending_file"
+		podman image rm "$new_id" >/dev/null 2>&1 || true
+		die "rolled back $unit to $current_id after $target failed its health check; it will not be tried again (delete $failed_file to retry)"
+	fi
+	rm -f -- "$pending_file"
+	log "$unit is not healthy after the rollback to $current_id either; check it now (journalctl --user -u $unit)"
+	exit 2
+}
+
+# A run killed after it moved the local tag, by a shutdown or a stopped
+# service, left a release that never passed its health check: check it now.
+if [[ -s $pending_file ]]; then
+	read -r digest new_id current_id old_previous_id <"$pending_file" || true
+	[[ $current_id != - ]] || current_id=""
+	[[ $old_previous_id != - ]] || old_previous_id=""
+	target="$image@$digest"
+	tagged=$(image_id "$local_tag")
+	if $check; then
+		log "a run stopped before $target passed its health check; the next run checks it and rolls back if it fails"
+		exit 0
+	elif ! systemctl --user is-active --quiet "$unit"; then
+		log "a run stopped before $target passed its health check; $unit is not running, so it starts on $local_tag next time"
+		rm -f -- "$pending_file"
+	elif [[ -n $new_id && $tagged == "$new_id" ]]; then
+		log "a run stopped before $target passed its health check; checking it now"
+		started=$SECONDS
+		[[ $(podman container inspect --format '{{.Image}}' "$container" 2>/dev/null || true) == "$new_id" ]] || restart
+		finish_update
+	elif [[ -n $current_id && $tagged == "$current_id" && -r $failed_file && $(<"$failed_file") == "$digest" ]]; then
+		log "a run stopped while rolling back from $target; finishing the rollback"
+		roll_back
+	else
+		log "discarding the record of an unfinished update to $target; $local_tag does not point to it"
+		rm -f -- "$pending_file"
+	fi
+fi
 
 digest=$(resolve_digest) || die "could not resolve $image:$track"
 target="$image@$digest"
@@ -250,7 +345,7 @@ if $check; then
 fi
 
 ensure_cosign
-verify "$digest" || die "refusing $target: its signature does not verify as a taproot release from $WORKFLOW_REPOSITORY"
+verify "$digest" || die "refusing $target: its signature does not verify as a taproot release of $image:$track from $WORKFLOW_REPOSITORY"
 log "verified $target as a taproot release"
 
 podman pull -q "$target" >/dev/null || die "could not pull $target"
@@ -262,19 +357,15 @@ if [[ $new_id == "$current_id" ]]; then
 fi
 
 old_previous_id=$(image_id "$previous_tag")
+mkdir -p "$state_dir"
+printf '%s %s %s %s\n' "$digest" "$new_id" "${current_id:--}" "${old_previous_id:--}" >"$pending_file"
 if [[ -n $current_id ]]; then
 	podman tag "$current_id" "$previous_tag"
 fi
 podman tag "$new_id" "$local_tag"
 
-# remove_unused removes an image that no tag or container uses any more.
-# podman refuses, and this ignores, an image that something still uses.
-remove_unused() {
-	[[ -n $1 && $1 != "$current_id" && $1 != "$new_id" ]] || return 0
-	podman image rm "$1" >/dev/null 2>&1 || true
-}
-
 if ! systemctl --user is-active --quiet "$unit"; then
+	rm -f -- "$pending_file"
 	log "tagged $target as $local_tag; $unit is not running, so it starts on the new image next time"
 	remove_unused "$old_previous_id"
 	exit 0
@@ -283,29 +374,4 @@ fi
 log "restarting $unit on $target"
 started=$SECONDS
 restart
-if wait_healthy "$new_id"; then
-	rm -f -- "$failed_file"
-	remove_unused "$old_previous_id"
-	log "updated $unit to $target ($image:$track); healthy within $((SECONDS - started)) s of the restart"
-	exit 0
-fi
-
-mkdir -p "$state_dir"
-printf '%s\n' "$digest" >"$failed_file"
-if [[ -z $current_id ]]; then
-	die "$unit did not become healthy on $target within ${health_timeout} s, and there is no previous image to roll back to"
-fi
-log "$unit did not become healthy on $target within ${health_timeout} s; rolling back to $current_id"
-podman tag "$current_id" "$local_tag"
-if [[ -n $old_previous_id ]]; then
-	podman tag "$old_previous_id" "$previous_tag"
-else
-	podman untag "$current_id" "$previous_tag"
-fi
-restart
-if wait_healthy "$current_id"; then
-	podman image rm "$new_id" >/dev/null 2>&1 || true
-	die "rolled back $unit to $current_id after $target failed its health check; it will not be tried again (delete $failed_file to retry)"
-fi
-log "$unit is not healthy after the rollback to $current_id either; check it now (journalctl --user -u $unit)"
-exit 2
+finish_update

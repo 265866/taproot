@@ -221,15 +221,20 @@ podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current
 systemctl --user restart taproot
 ```
 
-To check the signature before you tag it, run `cosign verify` (cosign 3), or `gh attestation verify oci://ghcr.io/265866/taproot:0.2 --repo 265866/taproot` for the build provenance:
+To check the signature first, verify the digest you pulled rather than the tag, which can move between the pull and the check. Run `cosign verify` (cosign 3), or `gh attestation verify "oci://$ref" --repo 265866/taproot` for the build provenance, and tag only the verified digest:
 
 ```sh
-cosign verify ghcr.io/265866/taproot:0.2 \
-  --certificate-identity-regexp '^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v' \
+podman pull ghcr.io/265866/taproot:0.2
+ref=$(podman image inspect --format '{{index .RepoDigests 0}}' ghcr.io/265866/taproot:0.2)
+cosign verify "$ref" \
+  --certificate-identity-regexp '^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v0\.2\.[0-9]+$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
+podman tag "$ref" localhost/taproot:current
 ```
 
-With rootless Podman and the [quadlet](examples/taproot/taproot.container), [`scripts/taproot/taproot-update`](scripts/taproot/taproot-update) can do this every night at about 04:00. It follows one release line, such as `0.2`, so patch releases install and a new minor version never does. It installs a release only when cosign verifies that taproot's release workflow signed it, pulls before it restarts (about half a second without service, measured), and rolls back when the new release does not answer `/healthz` within two minutes.
+The identity names the release line, so an image signed for a prerelease or another minor version does not pass.
+
+With rootless Podman and the [quadlet](examples/taproot/taproot.container), [`scripts/taproot/taproot-update`](scripts/taproot/taproot-update) can do this every night at about 04:00. It follows one release line, such as `0.2`, so patch releases install and a new minor version never does. It installs a release only when cosign verifies that taproot's release workflow signed it for a tag on that line, pulls before it restarts (about half a second without service, measured), and rolls back when the new release does not answer `/healthz` within two minutes.
 
 1. Install the script, its settings, and its units:
 

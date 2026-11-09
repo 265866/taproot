@@ -5,23 +5,28 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// fakeHostTools stands in for podman, systemctl, curl, cosign, and sleep, so
-// taproot-update runs against a simulated host and registry. Its state is a
-// directory of small files (FAKE_STATE):
+// fakeHostTools stands in for podman, systemctl, curl, cosign, date, and
+// sleep, so taproot-update runs against a simulated host, registry, and clock.
+// Its state is a directory of small files (FAKE_STATE):
 //
 //	track          digest the registry's track tag points to
 //	registry/<d>   image ID that pulling digest <d> yields
-//	signed/<d>     present when digest <d> carries a valid release signature
+//	signed/<d>     certificate identity of digest <d>'s signature, if signed
+//	identity       identity regexp of the last cosign verify
+//	clock          seconds that date +%s prints; sleep and a hung curl add to it
 //	tags/<ref>     image ID a local tag points to
 //	digests/<id>   repository digests of image <id>, one per line
 //	running        image ID the container runs
 //	active         present while the unit is active
 //	healthy/<id>   present when the container answers health checks on <id>
+//	hang/<id>      present when health checks on <id> hang until curl times out
 //	stuck          present when a restart fails and leaves the container as is
+//	kill           present when the next restart kills taproot-update first
 //	calls          one line per state-changing call, in order
 const fakeHostTools = `#!/usr/bin/env bash
 set -u
@@ -45,7 +50,10 @@ podman)
 		fi ;;
 	"container inspect")
 		[[ -f $s/running ]] || exit 125
-		echo "true $(cat "$s/running")" ;;
+		case $4 in
+		*State.Running*) echo "true $(cat "$s/running")" ;;
+		*) cat "$s/running" ;;
+		esac ;;
 	"pull -q")
 		ref=$3 d=${3#*@}
 		call "podman pull $ref"
@@ -70,6 +78,11 @@ systemctl)
 	is-active) [[ -f $s/active ]] ;;
 	restart)
 		call "systemctl restart $3"
+		if [[ -f $s/kill ]]; then
+			rm "$s/kill"
+			kill -9 "$PPID"
+			exit 1
+		fi
 		[[ -f $s/stuck ]] && exit 1
 		cp "$s/tags/$(key localhost/taproot:current)" "$s/running" ;;
 	*) echo "fake systemctl: unexpected $*" >&2; exit 99 ;;
@@ -80,7 +93,7 @@ curl)
 		case $1 in
 		-o) out=$2; shift ;;
 		-H) [[ $2 == Authorization:* ]] && auth=true; shift ;;
-		--max-time | --data-urlencode) shift ;;
+		--max-time | --data-urlencode | --retry | --retry-delay) shift ;;
 		-I) head=true ;;
 		-*) ;;
 		*) url=$1 ;;
@@ -96,6 +109,10 @@ curl)
 	elif [[ $url == https://registry.example.com/token ]]; then
 		echo '{"token":"t"}' >"$out"
 	elif [[ $url == http://127.0.0.1:18417/healthz ]]; then
+		if [[ -f $s/running && -f $s/hang/$(cat "$s/running") ]]; then
+			echo $(($(cat "$s/clock") + 2)) >"$s/clock"
+			exit 28
+		fi
 		[[ -f $s/running && -f $s/healthy/$(cat "$s/running") ]] || exit 7
 	elif [[ $url == https://github.com/sigstore/cosign/* ]]; then
 		call "download $url"
@@ -104,11 +121,18 @@ curl)
 		echo "fake curl: unexpected $url" >&2; exit 99
 	fi ;;
 cosign)
-	ref=${*: -1}
+	ref=${*: -1} re=""
 	call "cosign verify $ref"
+	args=("$@")
+	for ((i = 0; i < $#; i++)); do
+		[[ ${args[i]} == --certificate-identity-regexp ]] && re=${args[i + 1]}
+	done
+	printf '%s\n' "$re" >"$s/identity"
 	[[ $* == *"--certificate-github-workflow-repository 265866/taproot"* ]] || exit 98
-	[[ -f $s/signed/$(key "${ref#*@}") ]] || { echo "no matching signatures" >&2; exit 1; } ;;
-sleep) ;;
+	san=$(cat "$s/signed/$(key "${ref#*@}")" 2>/dev/null) || { echo "no matching signatures" >&2; exit 1; }
+	[[ $san =~ $re ]] || { echo "expected SAN value to match regex" >&2; exit 1; } ;;
+date) cat "$s/clock" ;;
+sleep) echo $(($(cat "$s/clock") + $1)) >"$s/clock" ;;
 esac
 `
 
@@ -119,6 +143,7 @@ const (
 	idNew     = "4e30000000000000000000000000000000000000000000000000000000000000"
 	idOlder   = "01de000000000000000000000000000000000000000000000000000000000000"
 	image     = "registry.example.com/265866/taproot"
+	sanPrefix = "https://github.com/265866/taproot/.github/workflows/release.yml@refs/tags/taproot-v"
 )
 
 type updateHost struct {
@@ -144,7 +169,7 @@ func newUpdateHost(t *testing.T) *updateHost {
 	if err := os.Chmod(filepath.Join(bin, "fake"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"podman", "systemctl", "curl", "cosign", "sleep"} {
+	for _, name := range []string{"podman", "systemctl", "curl", "cosign", "date", "sleep"} {
 		if err := os.Symlink("fake", filepath.Join(bin, name)); err != nil {
 			t.Fatal(err)
 		}
@@ -159,13 +184,15 @@ func newUpdateHost(t *testing.T) *updateHost {
 		"XDG_STATE_HOME="+filepath.Join(dir, "xdg-state"),
 		"XDG_DATA_HOME="+filepath.Join(dir, "xdg-data"),
 		"XDG_RUNTIME_DIR="+dir,
+		"TMPDIR="+dir,
 	)
 
 	h.write("state/track", digestNew)
 	h.write("state/registry/"+key(digestOld), idOld)
 	h.write("state/registry/"+key(digestNew), idNew)
-	h.write("state/signed/"+key(digestOld), "")
-	h.write("state/signed/"+key(digestNew), "")
+	h.write("state/signed/"+key(digestOld), sanPrefix+"0.2.0")
+	h.write("state/signed/"+key(digestNew), sanPrefix+"0.2.1")
+	h.write("state/clock", "1000")
 	h.write("state/tags/"+key("localhost/taproot:current"), idOld)
 	h.write("state/tags/"+key("localhost/taproot:previous"), idOlder)
 	h.write("state/digests/"+idOld, image+"@"+digestOld+"\n")
@@ -364,7 +391,7 @@ func TestUpdateRollsBackAFailedHealthCheck(t *testing.T) {
 	const idNext = "3e70000000000000000000000000000000000000000000000000000000000000"
 	h.write("state/track", digestNext)
 	h.write("state/registry/"+key(digestNext), idNext)
-	h.write("state/signed/"+key(digestNext), "")
+	h.write("state/signed/"+key(digestNext), sanPrefix+"0.2.2")
 	h.write("state/healthy/"+idNext, "")
 	out, code, _ = h.run()
 	if code != 0 {
@@ -514,6 +541,158 @@ func TestUpdateAcceptsTheExampleSettings(t *testing.T) {
 	}
 	wantCalls(t, calls)
 	wantOutput(t, out, "would update taproot.service from "+idOld+" to ghcr.io/265866/taproot@"+digestNew)
+}
+
+// The signature must name the release line the track follows, so a track tag
+// moved to another minor version or a prerelease does not install.
+func TestUpdateBindsTheSignatureToTheTrack(t *testing.T) {
+	const line02 = `^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v0\.2\.[0-9]+$`
+	for _, tc := range []struct {
+		name, track, signedFor, identity string
+		applies                          bool
+	}{
+		{"patch on the line", "0.2", "0.2.1", line02, true},
+		{"next minor", "0.2", "0.3.0", line02, false},
+		{"older minor", "0.2", "0.1.4", line02, false},
+		{"prerelease on the line", "0.2", "0.2.1-rc.1", line02, false},
+		{"exact version", "0.2.1", "0.2.1", "", true},
+		{"other patch for an exact version", "0.2.1", "0.2.2", "", false},
+		{"exact prerelease", "0.2.0-rc.2", "0.2.0-rc.2", "", true},
+		{"other tag accepts any release", "latest", "0.3.0", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newUpdateHost(t)
+			h.setConfig("COSIGN=cosign\nTAPROOT_TRACK=" + tc.track + "\n")
+			h.write("state/signed/"+key(digestNew), sanPrefix+tc.signedFor)
+			out, code, calls := h.run()
+			if tc.identity != "" {
+				if got := h.read("state/identity"); got != tc.identity {
+					t.Fatalf("identity regexp = %s, want %s", got, tc.identity)
+				}
+			}
+			if tc.applies {
+				if code != 0 || h.read("state/running") != idNew {
+					t.Fatalf("exit %d, running %s; want the update applied:\n%s", code, h.read("state/running"), out)
+				}
+				return
+			}
+			if code != 1 {
+				t.Fatalf("exit %d, want 1:\n%s", code, out)
+			}
+			wantCalls(t, calls, "cosign verify "+image+"@"+digestNew)
+			wantOutput(t, out, "refusing", "expected SAN value to match regex")
+		})
+	}
+}
+
+// The health timeout is a deadline: a health URL that hangs until curl gives
+// up must not stretch the wait before a rollback.
+func TestUpdateHealthTimeoutIsADeadline(t *testing.T) {
+	h := newUpdateHost(t)
+	h.write("state/hang/"+idNew, "")
+	out, code, _ := h.run()
+	if code != 1 {
+		t.Fatalf("exit %d, want 1:\n%s", code, out)
+	}
+	wantOutput(t, out, "rolled back")
+	// TAPROOT_HEALTH_TIMEOUT is 10 s; the rollback answers at once. One last
+	// check after the deadline may add a sleep and a curl timeout.
+	if waited := atoi(t, h.read("state/clock")) - 1000; waited < 10 || waited > 14 {
+		t.Fatalf("waited %d s for health with a 10 s timeout", waited)
+	}
+}
+
+// A run killed between moving the local tag and the health check, by a
+// shutdown or a stopped service, is finished by the next run.
+func TestUpdateFinishesAnInterruptedRun(t *testing.T) {
+	target := image + "@" + digestNew
+	interrupt := func(t *testing.T) *updateHost {
+		t.Helper()
+		h := newUpdateHost(t)
+		h.write("state/kill", "")
+		if out, code, _ := h.run(); code == 0 {
+			t.Fatalf("the interrupted run exited 0:\n%s", out)
+		}
+		if got := h.tag("localhost/taproot:current"); got != idNew {
+			t.Fatalf("current tag = %s after the interrupted run, want %s", got, idNew)
+		}
+		return h
+	}
+
+	t.Run("unhealthy after a reboot", func(t *testing.T) {
+		h := interrupt(t)
+		h.write("state/running", idNew) // the unit started on the new tag at boot
+		h.remove("state/healthy/" + idNew)
+		out, code, calls := h.run()
+		if code != 1 {
+			t.Fatalf("exit %d, want 1:\n%s", code, out)
+		}
+		wantCalls(t, calls,
+			"podman tag "+idOld+" localhost/taproot:current",
+			"podman tag "+idOlder+" localhost/taproot:previous",
+			"systemctl restart taproot-update-test.service",
+			"podman image rm "+idNew,
+		)
+		wantOutput(t, out, "a run stopped before "+target+" passed its health check", "rolled back")
+		if got := h.read("state/running"); got != idOld {
+			t.Fatalf("running %s, want %s", got, idOld)
+		}
+		out, code, calls = h.run()
+		if code != 0 {
+			t.Fatalf("rerun exit %d:\n%s", code, out)
+		}
+		wantCalls(t, calls)
+		wantOutput(t, out, "skipping "+target)
+	})
+
+	t.Run("healthy after a reboot", func(t *testing.T) {
+		h := interrupt(t)
+		h.write("state/running", idNew)
+		out, code, calls := h.run()
+		if code != 0 {
+			t.Fatalf("exit %d:\n%s", code, out)
+		}
+		wantCalls(t, calls, "podman image rm "+idOlder)
+		wantOutput(t, out, "updated taproot-update-test.service to "+target)
+		out, code, calls = h.run()
+		if code != 0 {
+			t.Fatalf("rerun exit %d:\n%s", code, out)
+		}
+		wantCalls(t, calls)
+		wantOutput(t, out, "is already "+target)
+	})
+
+	t.Run("killed before the restart", func(t *testing.T) {
+		h := interrupt(t)
+		out, code, calls := h.run()
+		if code != 0 {
+			t.Fatalf("exit %d:\n%s", code, out)
+		}
+		wantCalls(t, calls, "systemctl restart taproot-update-test.service", "podman image rm "+idOlder)
+		if got := h.read("state/running"); got != idNew {
+			t.Fatalf("running %s, want %s", got, idNew)
+		}
+	})
+
+	t.Run("unit stopped since", func(t *testing.T) {
+		h := interrupt(t)
+		h.remove("state/active")
+		out, code, calls := h.run()
+		if code != 0 {
+			t.Fatalf("exit %d:\n%s", code, out)
+		}
+		wantCalls(t, calls)
+		wantOutput(t, out, "is not running, so it starts on localhost/taproot:current next time", "is already "+target)
+	})
+}
+
+func atoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 // TestUpdateScriptIsShellcheckClean runs shellcheck when it is installed, as
