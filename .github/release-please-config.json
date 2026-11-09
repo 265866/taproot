@@ -7,6 +7,8 @@
   "bump-minor-pre-major": true,
   "draft": true,
   "force-tag-creation": true,
+  "skip-changelog": true,
+  "pull-request-header": "The release notes are this pull request's CHANGELOG.md section, which the release-please workflow writes from taproot's own commits. The list below is release-please's, and also counts upstream commits that a sync merged.",
   "pull-request-title-pattern": "chore: release${component} ${version}",
   "changelog-sections": [
     { "type": "feat", "section": "Added" },

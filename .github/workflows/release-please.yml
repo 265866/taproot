@@ -1,12 +1,12 @@
 name: release-please
 
 # On every push to main, release-please opens or updates the release PR, which
-# bumps the version in .github/.release-please-manifest.json and adds the
-# release's section to CHANGELOG.md from Conventional Commit messages. When the
-# push merged that PR, it tags taproot-vX.Y.Z on the merge commit and creates
-# a draft release instead, and the release job builds and publishes it. A tag
-# created with GITHUB_TOKEN starts no workflow, so the tag's push event never
-# runs release.yml; this workflow calls it.
+# bumps the version in .github/.release-please-manifest.json, and the
+# changelog job adds the release's section to CHANGELOG.md on the PR's branch.
+# When the push merged that PR, release-please tags taproot-vX.Y.Z on the
+# merge commit and creates a draft release instead, and the release job builds
+# and publishes it. A tag created with GITHUB_TOKEN starts no workflow, so the
+# tag's push event never runs release.yml; this workflow calls it.
 on:
   push:
     branches: [main]
@@ -16,6 +16,10 @@ permissions: {}
 concurrency:
   group: release-please
   cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   release-please:
@@ -28,12 +32,51 @@ jobs:
     outputs:
       release-created: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
+      pr-created: ${{ steps.release.outputs.prs_created }}
+      pr: ${{ steps.release.outputs.pr }}
     steps:
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
+
+  # release-please reads the whole history, so it would list every upstream
+  # commit a sync merged as taproot's (skip-changelog keeps it out of
+  # CHANGELOG.md). This job writes the section from taproot's own commits.
+  # It runs only when release-please rewrote the PR's branch from main, so a
+  # note moved into the section by hand stays until main moves again.
+  changelog:
+    needs: release-please
+    if: needs.release-please.outputs.pr-created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      BRANCH: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Write the release's CHANGELOG.md section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(jq -er '."."' .github/.release-please-manifest.json)"
+          previous="$(git show origin/main:.github/.release-please-manifest.json | jq -er '."."')"
+          blob="$(git rev-parse HEAD:CHANGELOG.md)"
+          scripts/taproot/release-changelog.sh "$version" "$previous" origin/main CHANGELOG.md
+          git diff -- CHANGELOG.md
+          if git diff --quiet -- CHANGELOG.md; then
+            exit 0
+          fi
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/CHANGELOG.md" \
+            -f branch="$BRANCH" -f sha="$blob" \
+            -f message="chore: write the changelog for taproot $version" \
+            -f content="$(base64 -w 0 CHANGELOG.md)" > /dev/null
 
   release:
     needs: release-please
