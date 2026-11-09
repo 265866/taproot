@@ -15,6 +15,7 @@
 
 .segment {
   border: 0;
+  @include touch-target;
   background: none;
   cursor: pointer;
   padding: 5px 12px;

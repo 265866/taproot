@@ -51,6 +51,12 @@
   box-shadow: none;
 }
 
+@media (pointer: coarse) {
+  .triggerSm {
+    height: 40px;
+  }
+}
+
 .triggerText {
   overflow: hidden;
   text-overflow: ellipsis;
