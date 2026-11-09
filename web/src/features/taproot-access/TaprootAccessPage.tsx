@@ -153,7 +153,9 @@ export function TaprootAccessPage() {
           <div className={styles.table} role="table" aria-label={t('taproot_access.title')}>
             <div className={`${styles.row} ${styles.head}`} role="row">
               <span role="columnheader">{t('taproot_access.column_device')}</span>
-              <span role="columnheader">{t('taproot_access.column_id')}</span>
+              <span role="columnheader" className={styles.id}>
+                {t('taproot_access.column_id')}
+              </span>
               <span role="columnheader">{t('taproot_access.proxy')}</span>
               <span role="columnheader">{t('taproot_access.admin')}</span>
             </div>
