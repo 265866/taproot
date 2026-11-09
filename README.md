@@ -211,6 +211,46 @@ All screenshots use synthetic demo data from `internal/taproot/demo` (see [CONTR
 | [<img src="docs/screenshots/backups.png" width="420" alt="Backups">](docs/screenshots/backups.png)<br>**Backups:** scheduled and manual snapshots | [<img src="docs/screenshots/settings.png" width="420" alt="Settings">](docs/screenshots/settings.png)<br>**Settings:** retention and backup schedule |
 | [<img src="docs/screenshots/access.png" width="420" alt="Access">](docs/screenshots/access.png)<br>**Access:** every tailnet device by owner, with its Proxy and Admin switches | [<img src="docs/screenshots/accounts-light.png" width="420" alt="Accounts, light theme">](docs/screenshots/accounts-light.png)<br>**Light theme** |
 
+## Automatic updates (optional)
+
+Taproot never updates itself. By default you update by hand: read the release notes ([Stability and upgrades](docs/stability.md) says why), pull the release, tag it as the image your unit runs, and restart.
+
+```sh
+podman pull ghcr.io/265866/taproot:0.2
+podman tag ghcr.io/265866/taproot:0.2 localhost/taproot:current
+systemctl --user restart taproot
+```
+
+To check the signature before you tag it, run `cosign verify` (cosign 3), or `gh attestation verify oci://ghcr.io/265866/taproot:0.2 --repo 265866/taproot` for the build provenance:
+
+```sh
+cosign verify ghcr.io/265866/taproot:0.2 \
+  --certificate-identity-regexp '^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+With rootless Podman and the [quadlet](examples/taproot/taproot.container), [`scripts/taproot/taproot-update`](scripts/taproot/taproot-update) can do this every night at about 04:00. It follows one release line, such as `0.2`, so patch releases install and a new minor version never does. It installs a release only when cosign verifies that taproot's release workflow signed it, pulls before it restarts (about half a second without service, measured), and rolls back when the new release does not answer `/healthz` within two minutes.
+
+1. Install the script, its settings, and its units:
+
+   ```sh
+   mkdir -p ~/.local/bin ~/.config/systemd/user
+   install -m 0755 scripts/taproot/taproot-update ~/.local/bin/
+   cp examples/taproot/taproot-update.env ~/.config/
+   cp examples/taproot/taproot-update.service examples/taproot/taproot-update.timer ~/.config/systemd/user/
+   ```
+
+2. In `~/.config/taproot-update.env`, set `TAPROOT_HEALTH_URL` to the address in the quadlet's `PublishPort=`.
+3. See what it would do, then start the timer:
+
+   ```sh
+   ~/.local/bin/taproot-update --check
+   systemctl --user daemon-reload
+   systemctl --user enable --now taproot-update.timer
+   ```
+
+`journalctl --user -u taproot-update` shows each run. The first run downloads cosign v3.1.4 to `~/.local/share/taproot-update/` and checks it against a pinned SHA-256. On a new install, run `~/.local/bin/taproot-update` once before you start taproot, and it verifies, pulls, and tags the release for you. To move to a new minor version, read its release notes, then change `TAPROOT_TRACK`.
+
 ## Configuration reference
 
 Every key in `taproot.yaml` is optional, but without a device with `admin: true` only loopback reaches the dashboard. An unknown key stops the server at startup, and so do the removed `access.allow-logins`, `access.admin-nodes`, and `access.trusted-cidrs`, with a message naming what replaces them. A relative `data-dir` resolves against the directory of `config.yaml`.

@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+# taproot-update: move a rootless Podman taproot install to the newest signed
+# release on one image tag, and roll back when the new release fails its
+# health check. It runs on the host, outside taproot, and is optional; see
+# "Automatic updates (optional)" in README.md and examples/taproot.
+#
+# Usage: taproot-update [--check] [--config FILE]
+#
+#   --check        Report what an update would do, without installing cosign,
+#                  pulling, retagging, or restarting anything.
+#   --config FILE  Settings file (default: $XDG_CONFIG_HOME/taproot-update.env).
+#
+# Settings, as KEY=VALUE lines (examples/taproot/taproot-update.env):
+#
+#   TAPROOT_IMAGE           Image repository (ghcr.io/265866/taproot).
+#   TAPROOT_TRACK           Tag to follow, such as 0.2: patch releases arrive,
+#                           a new minor version never does.
+#   TAPROOT_UNIT            systemd user unit that runs taproot (taproot.service).
+#   TAPROOT_CONTAINER       Container name the unit runs (taproot).
+#   TAPROOT_LOCAL_TAG       Local tag the unit's quadlet runs
+#                           (localhost/taproot:current). The image it replaces
+#                           is tagged <repository>:previous.
+#   TAPROOT_HEALTH_URL      URL that answers 2xx once taproot serves, such as
+#                           http://100.64.0.1:8317/healthz. Required.
+#   TAPROOT_HEALTH_TIMEOUT  Seconds to wait for health after a restart (120).
+#   COSIGN                  A cosign binary to use instead of the pinned
+#                           release this script downloads.
+#
+# Exit status: 0 when up to date, updated, or (with --check) an update would
+# apply; 1 on an error or a refused or rolled-back update; 2 when the rollback
+# also failed its health check.
+
+set -euo pipefail
+
+# ensure_cosign pins the SHA-256 of this release's cosign-linux-<arch> files.
+readonly COSIGN_VERSION=v3.1.4
+# Releases are signed keylessly by release.yml on a taproot-v* tag of this
+# repository. The Fulcio certificate names that workflow, so the identity, not
+# a key, is what the signature is checked against.
+readonly IDENTITY_REGEXP='^https://github\.com/265866/taproot/\.github/workflows/release\.yml@refs/tags/taproot-v'
+readonly OIDC_ISSUER=https://token.actions.githubusercontent.com
+readonly WORKFLOW_REPOSITORY=265866/taproot
+readonly HEALTH_INTERVAL=2
+
+log() { printf 'taproot-update: %s\n' "$*" >&2; }
+die() {
+	log "$*"
+	exit 1
+}
+
+check=false
+config="${XDG_CONFIG_HOME:-$HOME/.config}/taproot-update.env"
+while (($#)); do
+	case $1 in
+	--check) check=true ;;
+	--config)
+		(($# >= 2)) || die "--config needs a file"
+		config=$2
+		shift
+		;;
+	-h | --help)
+		sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"
+		exit 0
+		;;
+	*) die "unknown argument $1 (see --help)" ;;
+	esac
+	shift
+done
+
+image=ghcr.io/265866/taproot
+track=""
+unit=taproot.service
+container=taproot
+local_tag=localhost/taproot:current
+health_url=""
+health_timeout=120
+cosign=""
+
+[[ -r $config ]] || die "cannot read settings file $config"
+while IFS= read -r line || [[ -n $line ]]; do
+	line=${line%$'\r'}
+	[[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+	[[ $line =~ ^[[:space:]]*([A-Z_]+)=(.*)$ ]] || die "$config: not a KEY=VALUE line: $line"
+	key=${BASH_REMATCH[1]}
+	value=${BASH_REMATCH[2]}
+	if [[ $value =~ ^\"(.*)\"$ || $value =~ ^\'(.*)\'$ ]]; then
+		value=${BASH_REMATCH[1]}
+	fi
+	case $key in
+	TAPROOT_IMAGE) image=$value ;;
+	TAPROOT_TRACK) track=$value ;;
+	TAPROOT_UNIT) unit=$value ;;
+	TAPROOT_CONTAINER) container=$value ;;
+	TAPROOT_LOCAL_TAG) local_tag=$value ;;
+	TAPROOT_HEALTH_URL) health_url=$value ;;
+	TAPROOT_HEALTH_TIMEOUT) health_timeout=$value ;;
+	COSIGN) cosign=$value ;;
+	*) die "$config: unknown setting $key" ;;
+	esac
+done <"$config"
+
+[[ $image =~ ^(localhost|[a-z0-9-]+\.[a-z0-9.-]+|[a-z0-9.-]+:[0-9]+)(:[0-9]+)?/[a-z0-9._/-]+$ ]] || die "TAPROOT_IMAGE must be a repository with its registry host, such as ghcr.io/265866/taproot: $image"
+[[ $track =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || die "TAPROOT_TRACK must be an image tag, such as 0.2: '$track'"
+[[ $local_tag =~ ^[^@]+:[A-Za-z0-9_][A-Za-z0-9_.-]*$ && ${local_tag##*:} != *"/"* ]] || die "TAPROOT_LOCAL_TAG must name a tag, such as localhost/taproot:current: $local_tag"
+previous_tag="${local_tag%:*}:previous"
+[[ $previous_tag != "$local_tag" ]] || die "TAPROOT_LOCAL_TAG cannot end in :previous, which holds the image it replaces"
+[[ -n $health_url ]] || die "TAPROOT_HEALTH_URL is not set"
+[[ $health_timeout =~ ^[1-9][0-9]*$ ]] || die "TAPROOT_HEALTH_TIMEOUT must be a number of seconds: $health_timeout"
+[[ -n $unit && -n $container ]] || die "TAPROOT_UNIT and TAPROOT_CONTAINER must not be empty"
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/taproot-update"
+# A release that failed its health check is not tried again until the track
+# moves to another digest; deleting this file retries it.
+failed_file="$state_dir/${unit//\//_}.failed"
+
+exec 9>"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/taproot-update-${unit//\//_}.lock"
+flock -n 9 || die "another taproot-update is running for $unit"
+
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+
+# resolve_digest prints the digest the track tag points to, read from the
+# registry's manifest endpoint with an anonymous pull token. For an image
+# index that is the index digest, which the release signs.
+resolve_digest() {
+	local host=${image%%/*} repository=${image#*/} api url status challenge realm service scope token digest
+	api=$host
+	[[ $host == docker.io ]] && api=registry-1.docker.io
+	url="https://$api/v2/$repository/manifests/$track"
+	local accept='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
+	curl -sS -I --max-time 30 -H "Accept: $accept" -o "$work/headers" "$url" || return 1
+	status=$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' "$work/headers")
+	if [[ $status == 401 ]]; then
+		challenge=$(tr -d '\r' <"$work/headers" | sed -n 's/^[Ww][Ww][Ww]-[Aa]uthenticate: *[Bb]earer *//p')
+		realm=$(sed -n 's/.*realm="\([^"]*\)".*/\1/p' <<<"$challenge")
+		service=$(sed -n 's/.*service="\([^"]*\)".*/\1/p' <<<"$challenge")
+		scope=$(sed -n 's/.*scope="\([^"]*\)".*/\1/p' <<<"$challenge")
+		[[ -n $realm ]] || {
+			log "$url asked for authentication without a bearer realm"
+			return 1
+		}
+		curl -fsS --max-time 30 -G --data-urlencode "service=$service" --data-urlencode "scope=$scope" -o "$work/token" "$realm" || return 1
+		token=$(sed -n 's/.*"\(access_\)\{0,1\}token" *: *"\([^"]*\)".*/\2/p' "$work/token" | head -n 1)
+		[[ -n $token ]] || {
+			log "$realm returned no token"
+			return 1
+		}
+		curl -sS -I --max-time 30 -H "Accept: $accept" -H "Authorization: Bearer $token" -o "$work/headers" "$url" || return 1
+		status=$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' "$work/headers")
+	fi
+	if [[ $status != 200 ]]; then
+		log "$url answered HTTP ${status:-?}"
+		return 1
+	fi
+	digest=$(tr -d '\r' <"$work/headers" | sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest: *//p')
+	[[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || {
+		log "$url returned no usable digest: '$digest'"
+		return 1
+	}
+	printf '%s\n' "$digest"
+}
+
+# ensure_cosign sets cosign to a verified binary, downloading the pinned
+# release into the user's data directory when it is missing. It returns 1
+# under --check when the binary would have to be downloaded.
+ensure_cosign() {
+	[[ -n $cosign ]] && return 0
+	local arch sum dir
+	case $(uname -m) in
+	x86_64 | amd64) arch=amd64 sum=424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa ;;
+	aarch64 | arm64) arch=arm64 sum=ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2 ;;
+	*) die "no pinned cosign for $(uname -m); set COSIGN to a cosign binary" ;;
+	esac
+	dir="${XDG_DATA_HOME:-$HOME/.local/share}/taproot-update"
+	cosign="$dir/cosign-$COSIGN_VERSION-linux-$arch"
+	if [[ -x $cosign ]]; then
+		[[ $(sha256sum "$cosign" | cut -d' ' -f1) == "$sum" ]] && return 0
+		$check && die "$cosign does not match its pinned SHA-256; run without --check to replace it"
+		log "$cosign does not match its pinned SHA-256; downloading it again"
+	fi
+	if $check; then
+		log "cosign $COSIGN_VERSION is not installed yet; an update would download it to $cosign"
+		return 1
+	fi
+	mkdir -p "$dir"
+	log "downloading cosign $COSIGN_VERSION for linux-$arch"
+	curl -fsSL --max-time 600 -o "$work/cosign" "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-$arch" ||
+		die "could not download cosign $COSIGN_VERSION"
+	[[ $(sha256sum "$work/cosign" | cut -d' ' -f1) == "$sum" ]] ||
+		die "the downloaded cosign $COSIGN_VERSION does not match its pinned SHA-256; refusing to use it"
+	chmod 0755 "$work/cosign"
+	mv -f -- "$work/cosign" "$cosign"
+}
+
+verify() {
+	if "$cosign" verify \
+		--certificate-identity-regexp "$IDENTITY_REGEXP" \
+		--certificate-oidc-issuer "$OIDC_ISSUER" \
+		--certificate-github-workflow-repository "$WORKFLOW_REPOSITORY" \
+		"$image@$1" >"$work/verify" 2>&1; then
+		return 0
+	fi
+	sed 's/^/  cosign: /' "$work/verify" >&2
+	return 1
+}
+
+image_id() { podman image inspect --format '{{.Id}}' "$1" 2>/dev/null || true; }
+
+# wait_healthy waits until the container runs the given image and the health
+# URL answers, for at most the health timeout.
+wait_healthy() {
+	local want=$1 attempts i state
+	attempts=$(((health_timeout + HEALTH_INTERVAL - 1) / HEALTH_INTERVAL))
+	for ((i = 0; i < attempts; i++)); do
+		state=$(podman container inspect --format '{{.State.Running}} {{.Image}}' "$container" 2>/dev/null || true)
+		if [[ $state == "true $want" ]] && curl -fsS -o /dev/null --max-time "$HEALTH_INTERVAL" "$health_url" 2>/dev/null; then
+			return 0
+		fi
+		sleep "$HEALTH_INTERVAL"
+	done
+	return 1
+}
+
+restart() {
+	systemctl --user restart "$unit" || log "systemctl --user restart $unit failed"
+}
+
+digest=$(resolve_digest) || die "could not resolve $image:$track"
+target="$image@$digest"
+
+current_id=$(image_id "$local_tag")
+current_digests=$(podman image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$local_tag" 2>/dev/null || true)
+if [[ -n $current_id ]] && grep -qxF -- "$target" <<<"$current_digests"; then
+	log "$local_tag is already $target ($image:$track); nothing to do"
+	exit 0
+fi
+if [[ -r $failed_file && $(<"$failed_file") == "$digest" ]]; then
+	log "skipping $target: it failed its health check before; delete $failed_file to try it again"
+	exit 0
+fi
+
+if $check; then
+	if ensure_cosign; then
+		verify "$digest" || die "would refuse $target: its signature does not verify as a taproot release"
+		log "would update $unit from ${current_id:-nothing} to $target ($image:$track); the signature verifies"
+	else
+		log "would update $unit from ${current_id:-nothing} to $target ($image:$track) once its signature verifies"
+	fi
+	exit 0
+fi
+
+ensure_cosign
+verify "$digest" || die "refusing $target: its signature does not verify as a taproot release from $WORKFLOW_REPOSITORY"
+log "verified $target as a taproot release"
+
+podman pull -q "$target" >/dev/null || die "could not pull $target"
+new_id=$(image_id "$target")
+[[ -n $new_id ]] || die "pulled $target but cannot find its image"
+if [[ $new_id == "$current_id" ]]; then
+	log "$target is the image $local_tag already runs; nothing to do"
+	exit 0
+fi
+
+old_previous_id=$(image_id "$previous_tag")
+if [[ -n $current_id ]]; then
+	podman tag "$current_id" "$previous_tag"
+fi
+podman tag "$new_id" "$local_tag"
+
+# remove_unused removes an image that no tag or container uses any more.
+# podman refuses, and this ignores, an image that something still uses.
+remove_unused() {
+	[[ -n $1 && $1 != "$current_id" && $1 != "$new_id" ]] || return 0
+	podman image rm "$1" >/dev/null 2>&1 || true
+}
+
+if ! systemctl --user is-active --quiet "$unit"; then
+	log "tagged $target as $local_tag; $unit is not running, so it starts on the new image next time"
+	remove_unused "$old_previous_id"
+	exit 0
+fi
+
+log "restarting $unit on $target"
+started=$SECONDS
+restart
+if wait_healthy "$new_id"; then
+	rm -f -- "$failed_file"
+	remove_unused "$old_previous_id"
+	log "updated $unit to $target ($image:$track); healthy within $((SECONDS - started)) s of the restart"
+	exit 0
+fi
+
+mkdir -p "$state_dir"
+printf '%s\n' "$digest" >"$failed_file"
+if [[ -z $current_id ]]; then
+	die "$unit did not become healthy on $target within ${health_timeout} s, and there is no previous image to roll back to"
+fi
+log "$unit did not become healthy on $target within ${health_timeout} s; rolling back to $current_id"
+podman tag "$current_id" "$local_tag"
+if [[ -n $old_previous_id ]]; then
+	podman tag "$old_previous_id" "$previous_tag"
+else
+	podman untag "$current_id" "$previous_tag"
+fi
+restart
+if wait_healthy "$current_id"; then
+	podman image rm "$new_id" >/dev/null 2>&1 || true
+	die "rolled back $unit to $current_id after $target failed its health check; it will not be tried again (delete $failed_file to retry)"
+fi
+log "$unit is not healthy after the rollback to $current_id either; check it now (journalctl --user -u $unit)"
+exit 2
