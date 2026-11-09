@@ -313,11 +313,10 @@ jobs:
           # Storage records exist only for organization-owned repositories.
           create-storage-record: false
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
-      # Podman reads signatures only from the registry's sha256-<digest>.sig
-      # tags, which cosign 3 writes only in its legacy format. --recursive also
-      # signs each platform's image, which Podman checks after it picks one
-      # from the index. Podman cannot yet check a keyless signature's workflow
-      # identity; see "Releases" in internal/taproot/DESIGN.md.
+      # The legacy format stores the signature under the registry's
+      # sha256-<digest>.sig tag, which verifiers that read only tag-based
+      # signatures need. --recursive also signs each platform's image. See
+      # "Releases" in internal/taproot/DESIGN.md.
       - name: Sign the image
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
