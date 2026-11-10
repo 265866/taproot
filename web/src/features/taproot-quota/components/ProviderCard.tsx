@@ -191,10 +191,10 @@ export function ProviderCard(props: ProviderCardProps) {
               <div>
                 <dt>{t('taproot_quota.stats.next_reset')}</dt>
                 <dd>
-                  {projection.nextReset
+                  {pool.nextReset
                     ? t('taproot_quota.stats.reset_value', {
-                        gain: percent(projection.nextReset.gain),
-                        time: formatMoment(projection.nextReset.t, now, locale),
+                        gain: percent(pool.nextReset.gain),
+                        time: formatMoment(pool.nextReset.t, now, locale),
                       })
                     : t('taproot_quota.stats.none')}
                 </dd>

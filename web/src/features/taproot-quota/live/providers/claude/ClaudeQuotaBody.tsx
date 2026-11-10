@@ -5,7 +5,12 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ClaudeQuotaState } from '@/types';
-import { buildResetDisplay, formatQuotaResetTime, resolveResetMs } from '@/utils/quota';
+import {
+  buildResetDisplay,
+  formatInstantShort,
+  formatQuotaResetTime,
+  resolveResetMs,
+} from '@/utils/quota';
 import { useNow } from '@/hooks/useNow';
 import { planValueClassForTier, resolveClaudeCardTier } from '../../cardTier';
 import { QuotaMeter } from '../../components/QuotaMeter';
@@ -16,6 +21,7 @@ import type { QuotaBodyProps } from '../../types';
 export function ClaudeQuotaBody({
   quota,
   classes,
+  readAt,
   planItems,
   afterPlan,
 }: QuotaBodyProps<ClaudeQuotaState>) {
@@ -56,7 +62,9 @@ export function ClaudeQuotaBody({
       {quota.stale && (
         <div role="status" className={classes.codexResetCreditsError}>
           {t('claude_quota.stale_snapshot', {
-            time: quota.observedAt ? new Date(quota.observedAt).toLocaleString(language) : '--',
+            time: quota.observedAt
+              ? formatInstantShort(Date.parse(quota.observedAt), language)
+              : '--',
           })}
         </div>
       )}
@@ -123,7 +131,8 @@ export function ClaudeQuotaBody({
           formatQuotaResetTime(balance.resetsAt ?? undefined),
           resolveResetMs([balance.resetsAt]),
           now,
-          language
+          language,
+          readAt
         );
         return (
           <div key={balance.key} className={classes.quotaRow}>
@@ -172,7 +181,8 @@ export function ClaudeQuotaBody({
             window.resetLabel,
             window.resetAtMs,
             now,
-            i18n.resolvedLanguage
+            i18n.resolvedLanguage,
+            readAt
           );
 
           const soon = window.id === soonestRowId;

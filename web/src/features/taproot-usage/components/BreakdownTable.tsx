@@ -117,7 +117,7 @@ export function BreakdownTable({ rows, groupBy, labelFor, colorFor, onViewReques
                       ) : (
                         <i className={styles.swatch} aria-hidden="true" />
                       )}
-                      {onViewRequests && row.key !== NONE_GROUP ? (
+                      {onViewRequests && (row.key !== NONE_GROUP || groupBy === 'device') ? (
                         <button
                           type="button"
                           className={`${styles.linkButton} ${groupBy === 'session' ? styles.mono : ''}`}

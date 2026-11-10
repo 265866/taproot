@@ -229,7 +229,10 @@ describe('OAuth attempt lifecycle', () => {
           results.push(result);
           return result === 'wait';
         },
-        () => errors++,
+        () => {
+          errors++;
+          return false;
+        },
         3000
       );
     expect(attempt.isPolling()).toBe(false);
@@ -283,7 +286,10 @@ describe('OAuth attempt lifecycle', () => {
           results++;
           return false;
         },
-        () => errors++,
+        () => {
+          errors++;
+          return false;
+        },
         3000
       );
       tick();

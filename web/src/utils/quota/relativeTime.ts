@@ -11,6 +11,7 @@
  * testable and the caller decides how often it ticks (see `useNow`).
  */
 
+import i18next from 'i18next';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '@/utils/time/durations';
 
 export interface RelativeTimeParts {
@@ -74,25 +75,38 @@ export function formatRelativeInstant(targetMs: number, nowMs: number, locale?: 
 }
 
 /**
- * Absolute instant in the shape every quota row already uses (`MM-DD HH:mm`,
- * browser-local, 24-hour). Kept in one place so the reset labels baked at fetch
- * time and the ones formatted at render time can never drift apart.
+ * How long ago `atMs` was, such as `5 minutes ago`, or null under a minute. The shared clock
+ * ticks once a minute, so a fresh instant can sit ahead of `nowMs`; it never reads as future.
  */
-export function formatInstantShort(ms: number): string {
+export function formatElapsed(atMs: number, nowMs: number, locale?: string): string | null {
+  if (nowMs - atMs < MINUTE_MS) return null;
+  return formatRelativeInstant(atMs, nowMs, locale);
+}
+
+/**
+ * Absolute instant in the shape every quota row and the ledger use (`11/10, 2:38 AM`), in the
+ * app's language unless the caller passes one. Kept in one place so the reset labels baked at
+ * fetch time and the ones formatted at render time can never drift apart.
+ */
+export function formatInstantShort(
+  ms: number,
+  locale: string | undefined = i18next.resolvedLanguage
+): string {
   if (!Number.isFinite(ms)) return '-';
-  return new Date(ms).toLocaleString(undefined, {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
+  return new Intl.DateTimeFormat(locale, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
     minute: '2-digit',
-    hour12: false,
-  });
+  }).format(ms);
 }
 
 export interface ResetDisplay {
   absolute: string;
   /** Null when no usable instant was available — render the absolute half alone. */
   relative: string | null;
+  /** The instant fell between the read and `nowMs`: the values beside it predate this reset. */
+  resetSinceRead: boolean;
 }
 
 /**
@@ -105,13 +119,16 @@ export interface ResetDisplay {
  * pre-existing rendering — which is what a store entry cached by an older
  * build, with no `resetAtMs` field, will hit.
  *
+ * `readAtMs` is passed only for a quota window's reset, so an expiry never reads as a reset.
+ *
  * Returns null when there is nothing worth rendering at all.
  */
 export function buildResetDisplay(
   absoluteLabel: string | undefined | null,
   atMs: number | undefined | null,
   nowMs: number,
-  locale?: string
+  locale?: string,
+  readAtMs?: number
 ): ResetDisplay | null {
   const trimmed = typeof absoluteLabel === 'string' ? absoluteLabel.trim() : '';
   const absolute = trimmed && trimmed !== '-' ? trimmed : null;
@@ -120,7 +137,9 @@ export function buildResetDisplay(
   if (absolute === null && usableMs === null) return null;
 
   return {
-    absolute: absolute ?? formatInstantShort(usableMs as number),
+    absolute: absolute ?? formatInstantShort(usableMs as number, locale),
     relative: usableMs === null ? null : formatRelativeInstant(usableMs, nowMs, locale),
+    resetSinceRead:
+      usableMs !== null && readAtMs !== undefined && readAtMs < usableMs && usableMs <= nowMs,
   };
 }

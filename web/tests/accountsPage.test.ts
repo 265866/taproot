@@ -236,8 +236,6 @@ const renderSheet = (
           handleDelete: noop,
         },
         models,
-        excluded: {},
-        onLoadExcluded: noop,
         editor,
         onCopyText: noop,
         onClose: noop,

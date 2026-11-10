@@ -31,6 +31,8 @@ export interface QuotaCardState {
   status: 'idle' | 'loading' | 'success' | 'error';
   error?: string;
   errorStatus?: number;
+  /** When the shown values were read from the provider, epoch ms. */
+  readAt?: number;
 }
 
 export interface QuotaAdapter {

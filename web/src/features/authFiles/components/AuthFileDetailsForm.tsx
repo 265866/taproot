@@ -18,6 +18,7 @@ import { MAX_CREDENTIAL_WEIGHT } from '@/utils/credentialWeight';
 import { AuthFileExcludedModelsField } from './AuthFileExcludedModelsField';
 import { AuthFilePolicyFields } from './AuthFilePolicyFields';
 import { readCredentialPolicy } from '../credentialPolicy';
+import { maskCredentialSecrets } from '../secretMask';
 import styles from './AuthFileDetailsForm.module.scss';
 
 /** Fields the API boundary derives on read. The info view shows the backend's own shape only. */
@@ -54,6 +55,9 @@ export function AuthFileDetailsForm(props: AuthFileDetailsFormProps) {
   const shown = (value: string) => (hides(value) ? mask(value) : value);
   const hiddenHint = (value: string, hint?: string) =>
     hides(value) ? t('common.email_hidden_field') : hint;
+  // The raw credential holds its access and refresh tokens. Privacy mode is for screen sharing,
+  // so it hides them along with the emails.
+  const shownRaw = (text: string) => (showEmails ? text : maskCredentialSecrets(mask(text)));
 
   const handleSettingsLinkClick = useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
@@ -107,7 +111,12 @@ export function AuthFileDetailsForm(props: AuthFileDetailsFormProps) {
           {editor.error && <div className={styles.error}>{mask(editor.error)}</div>}
           <div className={styles.jsonWrapper}>
             <label className={styles.label}>{t('auth_files.prefix_proxy_info_label')}</label>
-            <textarea className={styles.textarea} rows={8} readOnly value={mask(displayInfoText)} />
+            <textarea
+              className={styles.textarea}
+              rows={8}
+              readOnly
+              value={shownRaw(displayInfoText)}
+            />
           </div>
           <div className={styles.jsonWrapper}>
             <label className={styles.label}>
@@ -116,9 +125,17 @@ export function AuthFileDetailsForm(props: AuthFileDetailsFormProps) {
                 : t('auth_files.prefix_proxy_invalid_content_label')}
             </label>
             {editor.json ? (
-              <textarea className={styles.textarea} rows={10} readOnly value={mask(previewText)} />
+              <textarea
+                className={styles.textarea}
+                rows={10}
+                readOnly
+                value={shownRaw(previewText)}
+              />
             ) : (
-              <pre className={styles.invalidPreview}>{mask(invalidContentPreview)}</pre>
+              <pre className={styles.invalidPreview}>{shownRaw(invalidContentPreview)}</pre>
+            )}
+            {!showEmails && (
+              <p className={styles.secretsHint}>{t('auth_files.secrets_hidden_hint')}</p>
             )}
           </div>
           {editor.json && (
@@ -209,6 +226,7 @@ export function AuthFileDetailsForm(props: AuthFileDetailsFormProps) {
               )}
               <AuthFileExcludedModelsField
                 fileName={editor.fileName}
+                provider={editor.providerKey}
                 value={editor.excludedModelsText}
                 disabled={disableControls || editor.saving || !editor.json}
                 onChange={(value) => onChange('excludedModelsText', value)}

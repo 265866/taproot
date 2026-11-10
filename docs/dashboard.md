@@ -4,7 +4,7 @@ Taproot serves its dashboard at `/` on the proxy port, such as `http://<server>:
 
 ## Pages
 
-- **Dashboard:** recent requests and their success rate, the number of credentials and models, and the server's version and runtime settings.
+- **Dashboard:** upstream requests over the last 3 hours 20 minutes and their success rate, today's cost and pooled quota, the number of credentials and models, and the server's version and runtime settings. The numbers come from taproot's usage records, so a restart does not reset them, and the page rereads them every 30 seconds while it is open. A request that fails over to another account counts once per account it tried.
 - **Accounts:** pool charts, the quota ledger, credentials, and sign-in. See [Accounts](accounts.md).
 - **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
 - **Request Logs:** search and view stored requests. The application log is a tab here.

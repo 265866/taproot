@@ -204,6 +204,7 @@ export function AddAccount({
           state={flows.states[dialogCard.id] ?? {}}
           text={(suffix) => flows.providerText(dialogCard.id, suffix)}
           supportsCallback={supportsManualCallback(dialogCard)}
+          callbackRequired={dialogCard.kind === 'builtin'}
           onStart={() => void flows.startAuth(dialogCard.id)}
           onCallbackChange={(value) => flows.setCallbackInput(dialogCard.id, value)}
           onCallbackSubmit={() => void flows.submitCallback(dialogCard.id)}

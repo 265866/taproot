@@ -7,14 +7,12 @@ import type { TFunction } from 'i18next';
 import type { AuthFileItem, XaiBillingSummary, XaiQuotaState } from '@/types';
 import { apiCallApi, getApiCallErrorMessage } from '@/services/api';
 import {
-  XAI_API_CHAT_URL,
   XAI_API_ME_URL,
   XAI_API_REQUEST_HEADERS,
   XAI_BILLING_MONTHLY_URL,
   XAI_BILLING_WEEKLY_URL,
   XAI_SETTINGS_URL,
   XAI_USER_URL,
-  XAI_PAID_HEALTH_MODEL,
   XAI_REQUEST_HEADERS,
   normalizeStringValue,
   parseXaiBillingPayload,
@@ -26,6 +24,7 @@ import {
   isDisabledAuthFile,
   isPaidXaiAuthFile,
   isXaiFile,
+  readXaiPaidBlock,
 } from '@/utils/quota';
 import { normalizeAuthIndex } from '@/utils/authIndex';
 import type { QuotaProviderData } from '../types';
@@ -101,52 +100,34 @@ const requestXaiBilling = async (
   return buildXaiBillingSummary(payload?.config);
 };
 
-const requestXaiPaidHealth = async (authIndex: string): Promise<XaiBillingSummary> => {
-  const [profileRequest, chatRequest] = await Promise.allSettled([
-    apiCallApi.request(
-      {
-        authIndex,
-        method: 'GET',
-        url: XAI_API_ME_URL,
-        header: XAI_API_REQUEST_HEADERS,
-      },
-      { timeout: XAI_PAID_HEALTH_REQUEST_TIMEOUT_MS }
-    ),
-    apiCallApi.request(
-      {
-        authIndex,
-        method: 'POST',
-        url: XAI_API_CHAT_URL,
-        header: {
-          ...XAI_API_REQUEST_HEADERS,
-          'Content-Type': 'application/json',
-        },
-        data: JSON.stringify({
-          model: XAI_PAID_HEALTH_MODEL,
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-          stream: false,
-        }),
-      },
-      { timeout: XAI_PAID_HEALTH_REQUEST_TIMEOUT_MS }
-    ),
-  ]);
+/** xAI answered the profile read and refuses this credential's API requests. */
+class XaiPaidBlockedError extends Error {}
 
-  if (chatRequest.status === 'rejected') throw chatRequest.reason;
-  if (chatRequest.value.statusCode < 200 || chatRequest.value.statusCode >= 300) {
-    throw createStatusError(
-      getApiCallErrorMessage(chatRequest.value),
-      chatRequest.value.statusCode
-    );
+/**
+ * A paid API credential has no quota totals to read. Its profile read proves the credential
+ * works without spending tokens, unlike a chat request, unless the profile says xAI blocks it.
+ */
+const requestXaiPaidHealth = async (
+  authIndex: string,
+  t: TFunction
+): Promise<XaiBillingSummary> => {
+  const result = await apiCallApi.request(
+    {
+      authIndex,
+      method: 'GET',
+      url: XAI_API_ME_URL,
+      header: XAI_API_REQUEST_HEADERS,
+    },
+    { timeout: XAI_PAID_HEALTH_REQUEST_TIMEOUT_MS }
+  );
+  if (result.statusCode < 200 || result.statusCode >= 300) {
+    throw createStatusError(getApiCallErrorMessage(result), result.statusCode);
   }
-
-  const profile =
-    profileRequest.status === 'fulfilled' &&
-    profileRequest.value.statusCode >= 200 &&
-    profileRequest.value.statusCode < 300
-      ? profileRequest.value.body
-      : null;
-  return buildXaiPaidHealthSummary(profile);
+  const block = readXaiPaidBlock(result.body);
+  if (block) {
+    throw new XaiPaidBlockedError(t(`xai_quota.paid_${block}`));
+  }
+  return buildXaiPaidHealthSummary(result.body);
 };
 
 const readJsonRecord = (result: { statusCode: number; body?: unknown; bodyText?: string }) => {
@@ -209,7 +190,7 @@ const fetchXaiQuota = async (file: AuthFileItem, t: TFunction): Promise<XaiBilli
   }
 
   if (isPaidXaiAuthFile(file)) {
-    return requestXaiPaidHealth(authIndex);
+    return requestXaiPaidHealth(authIndex, t);
   }
 
   const requestHeader = buildXaiRequestHeaders(file);
@@ -228,8 +209,9 @@ const fetchXaiQuota = async (file: AuthFileItem, t: TFunction): Promise<XaiBilli
       : new Error(t('xai_quota.empty_data'));
 
   try {
-    return await requestXaiPaidHealth(authIndex);
-  } catch {
+    return await requestXaiPaidHealth(authIndex, t);
+  } catch (error) {
+    if (error instanceof XaiPaidBlockedError) throw error;
     // Preserve the original free billing error when neither account mode can be queried.
     throw billingError;
   }

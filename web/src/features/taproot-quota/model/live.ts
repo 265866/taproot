@@ -2,17 +2,25 @@
 
 import type { AuthFileItem } from '@/types';
 import { normalizeAuthIndex } from '@/utils/authIndex';
+import { normalizeOAuthProviderKey } from '@/utils/providerKeys';
 import { classifyQuotaFiles, type QuotaFileEntry } from '../live/logic';
 
-const lower = (value: unknown) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+const providerKey = (value: unknown) =>
+  typeof value === 'string' ? normalizeOAuthProviderKey(value) : '';
 
 /**
- * The provider key an auth file's live entry belongs to. /accounts stores the credential's own
- * provider, so the file's provider wins over the adapter type (an xAI file may say `grok`).
+ * The provider key an auth file's live entry belongs to, in the canonical form the provider
+ * groups use (`grok` is `xai`, `muse` is `meta`). The file's provider wins over the adapter type,
+ * because /accounts stores the credential's own provider.
  */
 export function liveProviderKey(entry: QuotaFileEntry): string {
   const file = entry.file;
-  return lower(file.provider) || lower(file.type) || lower(file.quotaProvider) || entry.type;
+  return (
+    providerKey(file.provider) ||
+    providerKey(file.type) ||
+    providerKey(file.quotaProvider) ||
+    entry.type
+  );
 }
 
 export function liveEntriesByProvider(files: AuthFileItem[]): Map<string, QuotaFileEntry[]> {

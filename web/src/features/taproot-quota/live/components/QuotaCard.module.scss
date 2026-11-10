@@ -235,6 +235,13 @@
   flex-wrap: wrap;
 }
 
+.readAt {
+  margin-right: auto;
+  align-self: center;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
 /* 安静描边药丸（与凭证卡图标动作同族：hover 才显色块） */
 .actionPill {
   display: inline-flex;

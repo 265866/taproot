@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ProviderStatusBar } from '@/components/providers/ProviderStatusBar';
 import { Button } from '@/components/ui/Button';
@@ -70,8 +70,6 @@ export interface AccountSheetProps {
   refresh: QuotaRefresh;
   actions: FileActions;
   models: UseAuthFilesModelsResult;
-  excluded: Record<string, string[]>;
-  onLoadExcluded: () => void;
   editor: UseAuthFilesPrefixProxyEditorResult;
   onCopyText: (text: string) => void;
   onClose: () => void;
@@ -102,8 +100,6 @@ export function AccountSheet(props: AccountSheetProps) {
     refresh,
     actions,
     models,
-    excluded,
-    onLoadExcluded,
     editor,
     onCopyText,
     onClose,
@@ -116,6 +112,16 @@ export function AccountSheet(props: AccountSheetProps) {
   const editing = Boolean(file && editorState?.fileName === file.name);
   const dirty = editing && editor.prefixProxyDirty;
   const saving = editing && editorState?.saving === true;
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const { openPrefixProxyEditor } = editor;
+
+  // An open Advanced section always shows the editor. A save closes the editor, so this also
+  // reloads it with the saved values.
+  useEffect(() => {
+    if (!open || !advancedOpen || !file || editing || disableControls) return;
+    if (isRuntimeOnlyAuthFile(file)) return;
+    void openPrefixProxyEditor(file);
+  }, [advancedOpen, disableControls, editing, file, open, openPrefixProxyEditor]);
 
   const confirmDiscard = useCallback((): boolean | Promise<boolean> => {
     if (!dirty || saving) return true;
@@ -350,7 +356,6 @@ export function AccountSheet(props: AccountSheetProps) {
             label={t('auth_files.models_button')}
             onToggle={(event) => {
               if (!event.currentTarget.open) return;
-              onLoadExcluded();
               if (!models.modelsOpen || models.modelsFileName !== file.name) {
                 void models.showModels(file);
               }
@@ -358,11 +363,9 @@ export function AccountSheet(props: AccountSheetProps) {
           >
             {models.modelsOpen && models.modelsFileName === file.name && (
               <AuthFileModelsList
-                fileType={models.modelsFileType}
                 loading={models.modelsLoading}
                 error={models.modelsError}
                 models={models.modelsList}
-                excluded={excluded}
                 onCopyText={onCopyText}
               />
             )}
@@ -414,9 +417,8 @@ export function AccountSheet(props: AccountSheetProps) {
             className={styles.collapsible}
             label={t('accounts.sheet.advanced')}
             hint={t('accounts.sheet.advanced_hint')}
-            onToggle={(event) => {
-              if (event.currentTarget.open && !editing) void editor.openPrefixProxyEditor(file);
-            }}
+            open={advancedOpen}
+            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
           >
             {editing && editorState ? (
               <AuthFileDetailsForm

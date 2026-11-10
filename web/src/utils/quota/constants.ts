@@ -89,8 +89,6 @@ export const XAI_BILLING_MONTHLY_URL = 'https://cli-chat-proxy.grok.com/v1/billi
 export const XAI_USER_URL = 'https://cli-chat-proxy.grok.com/v1/user?include=subscription';
 export const XAI_SETTINGS_URL = 'https://cli-chat-proxy.grok.com/v1/settings';
 export const XAI_API_ME_URL = 'https://api.x.ai/v1/me';
-export const XAI_API_CHAT_URL = 'https://api.x.ai/v1/chat/completions';
-export const XAI_PAID_HEALTH_MODEL = 'grok-4.5';
 // Keep aligned with the backend fallback; Grok rejects versions older than 1.0.13.
 export const XAI_GROK_CLIENT_VERSION = '1.0.46';
 export const XAI_GROK_USER_AGENT = `grok-pager/${XAI_GROK_CLIENT_VERSION} grok-shell/${XAI_GROK_CLIENT_VERSION} (macos; aarch64)`;

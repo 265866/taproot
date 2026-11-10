@@ -54,3 +54,14 @@ export function sessionRequestsLabel(s: Pick<UsageSession, 'requests' | 'truncat
   const count = s.requests.toLocaleString();
   return s.truncated ? `${count}+` : count;
 }
+
+/**
+ * A short session label: the client prefix and the first 8 characters of the ID after it
+ * (`claude · 277b56d2`), which tell sessions apart where the first 8 characters of `claude:<uuid>`
+ * would not.
+ */
+export function sessionLabel(sessionId: string): string {
+  const colon = sessionId.indexOf(':');
+  if (colon <= 0) return sessionId.slice(0, 12);
+  return `${sessionId.slice(0, colon)} · ${sessionId.slice(colon + 1, colon + 9)}`;
+}

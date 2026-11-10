@@ -9,7 +9,6 @@ import {
   ledgerColumns,
   matchesSearch,
   nextRecovery,
-  relativeParts,
   remainingPercent,
   resetBlockReason,
   sortLedgerRows,
@@ -307,16 +306,6 @@ describe('search and sort', () => {
     expect(ids(sortLedgerRows(rows, 'most_remaining'))).toEqual(['c', 'a', 'e', 'd', 'b']);
     expect(ids(sortLedgerRows(rows, 'least_remaining'))).toEqual(['d', 'a', 'e', 'c', 'b']);
     expect(ids(rows)).toEqual(['e', 'd', 'c', 'b', 'a']);
-  });
-});
-
-describe('relativeParts', () => {
-  test('rounds down to the largest whole unit', () => {
-    expect(relativeParts(8 * H + 58 * M)).toEqual({ value: 8, unit: 'hour' });
-    expect(relativeParts(D + 13 * H)).toEqual({ value: 1, unit: 'day' });
-    expect(relativeParts(4 * D + 9 * H)).toEqual({ value: 4, unit: 'day' });
-    expect(relativeParts(45 * M + 30_000)).toEqual({ value: 45, unit: 'minute' });
-    expect(relativeParts(20_000)).toEqual({ value: 1, unit: 'minute' });
   });
 });
 
