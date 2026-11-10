@@ -349,7 +349,7 @@ const (
 func (t *track) failed(now time.Time) {
 	delay := retryMax
 	if t.Failures < 5 {
-		delay = min(retryFirst<<t.Failures, retryMax)
+		delay = retryFirst << t.Failures
 	}
 	t.RetryAt, t.Failures = now.Add(delay), t.Failures+1
 }

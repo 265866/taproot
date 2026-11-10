@@ -57,8 +57,8 @@ func isWeekly(w Window) bool {
 		return w.Name == "seven_day"
 	case "codex":
 		weekSeconds := int64(week / time.Second)
-		return w.PeriodSeconds == weekSeconds && (w.Name == "codex_primary" || w.Name == "codex_secondary") ||
-			w.PeriodSeconds == 0 && w.Name == "codex_secondary"
+		return (w.PeriodSeconds == weekSeconds && (w.Name == "codex_primary" || w.Name == "codex_secondary")) ||
+			(w.PeriodSeconds == 0 && w.Name == "codex_secondary")
 	}
 	return false
 }

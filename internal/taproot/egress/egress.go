@@ -49,21 +49,15 @@ func (p *Proxy) globalURL() string {
 // the token never leaves from an address the operator routed away from.
 func (p *Proxy) Client(a *coreauth.Auth) (*http.Client, error) {
 	setting, raw := "global", p.globalURL()
-	if a != nil {
-		if own := strings.TrimSpace(a.ProxyURL); own != "" {
-			setting, raw = "credential", own
-		}
+	if own := strings.TrimSpace(a.ProxyURL); own != "" {
+		setting, raw = "credential", own
 	}
 	if raw == "" {
 		return &http.Client{}, nil
 	}
 	t, _, err := proxyutil.BuildHTTPTransport(raw)
 	if err != nil {
-		fields := log.Fields{"setting": setting}
-		if a != nil {
-			fields["auth_index"] = a.Index
-		}
-		log.WithFields(fields).WithError(err).Warn("taproot: invalid proxy-url; not sending the provider request")
+		log.WithFields(log.Fields{"setting": setting, "auth_index": a.Index}).WithError(err).Warn("taproot: invalid proxy-url; not sending the provider request")
 		return nil, fmt.Errorf("invalid %s proxy-url: %w", setting, err)
 	}
 	return &http.Client{Transport: t}, nil
