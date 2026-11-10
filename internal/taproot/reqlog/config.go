@@ -80,7 +80,14 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
+// maxRetentionDays is the most days a time.Duration holds; more would
+// overflow the age cutoff into the future and drop every record.
+const maxRetentionDays = int(math.MaxInt64 / int64(24*time.Hour))
+
 func (c Config) validate() error {
+	if c.MaxDays > maxRetentionDays {
+		return fmt.Errorf("max-days must be at most %d, got %d", maxRetentionDays, c.MaxDays)
+	}
 	for _, raw := range c.ExcludePaths {
 		if _, err := parseExcludeRule(raw); err != nil {
 			return err
