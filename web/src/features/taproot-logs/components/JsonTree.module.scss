@@ -67,6 +67,16 @@
   color: var(--text-secondary);
 }
 
+.duplicate {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--amber-10);
+  color: var(--amber-text);
+  font-size: 11px;
+  font-style: normal;
+}
+
 .colon,
 .mark {
   color: var(--text-tertiary);
@@ -83,11 +93,12 @@
 }
 
 .string {
-  color: var(--provider-claude);
+  color: var(--text-primary);
 }
 
 .number {
-  color: var(--provider-codex);
+  color: var(--accent-text);
+  font-weight: 600;
 }
 
 .boolean,

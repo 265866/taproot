@@ -157,7 +157,8 @@ describe('Request Logs body', () => {
 describe('Request Logs formatted JSON', () => {
   test('masks parsed keys and values, so escapes in the raw text never matter', async () => {
     const { JsonTree } = await import('../src/features/taproot-logs/components/JsonTree');
-    const value = JSON.parse(
+    const { parseJsonValue } = await import('../src/features/taproot-logs/model/jsonValue');
+    const value = parseJsonValue(
       '{"to":"\u003czebrafinch.alpha@mail.example.com\u003e","quokkabeta@example.com":1}'
     );
     const hidden = renderToStaticMarkup(createElement(JsonTree, { value }));

@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import '../src/i18n/index';
 import { BodyViewer } from '../src/features/taproot-logs/components/BodyViewer';
 import { JsonTree } from '../src/features/taproot-logs/components/JsonTree';
+import { parseJsonValue } from '../src/features/taproot-logs/model/jsonValue';
 import { COLLAPSE_BYTES, TEXT_CHUNK } from '../src/features/taproot-logs/model/body';
 
 // Claude Code resends the whole conversation, so bodies of tens of megabytes are normal. These
@@ -49,7 +50,7 @@ describe('request log body rendering stays bounded', () => {
 
 describe('JSON tree renders only open containers', () => {
   test('a long message list stays one collapsed line', () => {
-    const value = JSON.parse(conversation(5000, 10)) as unknown;
+    const value = parseJsonValue(conversation(5000, 10));
     const html = renderToStaticMarkup(createElement(JsonTree, { value }));
     expect(html).toContain('5000 items');
     expect(html).toContain('claude-sonnet-4-5');
@@ -58,7 +59,7 @@ describe('JSON tree renders only open containers', () => {
   });
 
   test('an open container shows one page of children and counts the rest', () => {
-    const value = Array.from({ length: 250 }, (_, i) => i * 7);
+    const value = parseJsonValue(JSON.stringify(Array.from({ length: 250 }, (_, i) => i * 7)));
     const html = renderToStaticMarkup(createElement(JsonTree, { value }));
     expect(html).toContain('>693<'); // 99 * 7, the last child on the first page
     expect(html).not.toContain('>700<'); // 100 * 7, first child of the second page
@@ -66,7 +67,9 @@ describe('JSON tree renders only open containers', () => {
   });
 
   test('long strings are cut with a count of what is hidden', () => {
-    const html = renderToStaticMarkup(createElement(JsonTree, { value: { s: 'z'.repeat(1000) } }));
+    const html = renderToStaticMarkup(
+      createElement(JsonTree, { value: parseJsonValue(JSON.stringify({ s: 'z'.repeat(1000) })) })
+    );
     expect(html.match(/z{100,}/)?.[0].length).toBe(600);
     expect(html).toContain('400 more characters');
   });

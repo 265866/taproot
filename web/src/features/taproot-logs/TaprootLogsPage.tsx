@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { REFRESH_STARTED, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
@@ -13,7 +14,13 @@ import { RequestLogFilters } from './components/RequestLogFilters';
 import { RequestLogTable } from './components/RequestLogTable';
 import { StorageStats } from './components/StorageStats';
 import { useRequestLogs } from './hooks/useRequestLogs';
-import { parseQuery, writeQuery, type RequestLogQuery } from './model/query';
+import {
+  encodePlainValues,
+  parseQuery,
+  writeQuery,
+  type DetailState,
+  type RequestLogQuery,
+} from './model/query';
 import styles from './TaprootLogsPage.module.scss';
 
 type Tab = 'requests' | 'app';
@@ -97,12 +104,20 @@ function RequestLogsView({
   // loaded pages survive the round trip.
   const queryKey = JSON.stringify(parseQuery(params));
   const query = useMemo<RequestLogQuery>(() => JSON.parse(queryKey) as RequestLogQuery, [queryKey]);
-  const logs = useRequestLogs(query);
+  const logs = useRequestLogs(query, !requestId);
   const { mask } = useEmailMask();
   const [statsKey, setStatsKey] = useState(0);
   const [accounts, setAccounts] = useState<TaprootAccount[]>([]);
   const lastOpened = useRef<string | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const openedFromList = (location.state as DetailState | null)?.fromList === true;
+
+  useEffect(() => {
+    const encoded = encodePlainValues(params);
+    if (encoded) setParams(encoded, { replace: true });
+  }, [params, setParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,10 +181,15 @@ function RequestLogsView({
     [params]
   );
 
+  // A detail opened from the list closes by going back, so the browser's Back does not reopen it.
   const closeDetail = () => {
+    if (openedFromList) {
+      navigate(-1);
+      return;
+    }
     const next = new URLSearchParams(params);
     next.delete('requestId');
-    setParams(next);
+    setParams(next, { replace: true });
   };
 
   const showSession = (sessionId: string) => {
@@ -219,19 +239,24 @@ function RequestLogsView({
         models={models}
       />
       {logs.error && (
-        <div className="error-box" role="alert">
-          {mask(t('taproot_logs.list.load_failed', { message: logs.error }))}
+        <div className={`error-box ${styles.loadError}`} role="alert">
+          <span>{mask(t('taproot_logs.list.load_failed', { message: logs.error }))}</span>
+          <Button variant="secondary" size="sm" onClick={logs.reload} loading={logs.loading}>
+            {t('taproot_logs.list.retry')}
+          </Button>
         </div>
       )}
-      {logs.loaded && logs.rows.length === 0 && !logs.error ? (
-        <EmptyState
-          title={t('taproot_logs.list.empty_title')}
-          description={t('taproot_logs.list.empty_description')}
-        />
-      ) : !logs.loaded ? (
+      {!logs.loaded ? (
         <div className={styles.loading} role="status">
           {t('taproot_logs.list.loading')}
         </div>
+      ) : logs.rows.length === 0 ? (
+        !logs.error && (
+          <EmptyState
+            title={t('taproot_logs.list.empty_title')}
+            description={t('taproot_logs.list.empty_description')}
+          />
+        )
       ) : (
         <div aria-busy={logs.loading}>
           <RequestLogTable
@@ -240,6 +265,7 @@ function RequestLogsView({
             accountLabel={accountLabel}
             hasMore={!!logs.nextCursor}
             loading={logs.loading}
+            error={logs.moreError}
             onLoadMore={logs.loadMore}
           />
         </div>

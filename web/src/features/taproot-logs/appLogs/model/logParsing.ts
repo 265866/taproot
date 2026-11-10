@@ -223,26 +223,20 @@ export const parseLogLine = (raw: string): ParsedLogLine => {
       }
     }
 
-    // latency
-    const latencyIndex = segments.findIndex((segment) => LOG_LATENCY_REGEX.test(segment));
+    // Latency and client IP are fields of their own in a gin access line. An address or a
+    // duration inside message text, such as a failed dial to an upstream, is neither.
+    const latencyIndex = segments.findIndex(
+      (segment) => !!segment && extractLatency(segment) === segment.replace(/\s+/g, '')
+    );
     if (latencyIndex >= 0) {
-      const extracted = extractLatency(segments[latencyIndex]);
-      if (extracted) {
-        latency = extracted;
-        if (segments[latencyIndex].replace(/\s+/g, '') === extracted) {
-          consumed.add(latencyIndex);
-        }
-      }
+      latency = extractLatency(segments[latencyIndex]);
+      consumed.add(latencyIndex);
     }
 
-    // ip
-    const ipIndex = segments.findIndex((segment) => Boolean(extractIp(segment)));
+    const ipIndex = segments.findIndex((segment) => !!segment && extractIp(segment) === segment);
     if (ipIndex >= 0) {
-      const extracted = extractIp(segments[ipIndex]);
-      if (extracted) {
-        ip = extracted;
-        if (segments[ipIndex] === extracted) consumed.add(ipIndex);
-      }
+      ip = segments[ipIndex];
+      consumed.add(ipIndex);
     }
 
     // method + path
@@ -278,11 +272,6 @@ export const parseLogLine = (raw: string): ParsedLogLine => {
     message = segments.filter((_, index) => !consumed.has(index)).join(' | ');
   } else {
     statusCode = detectHttpStatusCode(remaining);
-
-    const extracted = extractLatency(remaining);
-    if (extracted) latency = extracted;
-
-    ip = extractIp(remaining);
 
     const parsed = extractHttpMethodAndPath(remaining);
     method = parsed.method;

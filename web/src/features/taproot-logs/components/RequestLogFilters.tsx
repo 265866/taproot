@@ -1,7 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MaskedValueChip } from '@/components/common/MaskedValueChip';
-import { useHidesValue } from '@/hooks/useEmailMask';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { IconSearch, IconX } from '@/components/ui/icons';
@@ -12,6 +11,7 @@ import {
   DEFAULT_QUERY,
   type RequestLogQuery,
 } from '../model/query';
+import { useMaskableField, type MaskableField } from '../hooks/useMaskableField';
 import styles from './RequestLogFilters.module.scss';
 
 const DEBOUNCE_MS = 300;
@@ -24,6 +24,7 @@ function DebouncedInput({
   placeholder,
   list,
   icon,
+  field,
 }: {
   value: string;
   onCommit: (value: string) => void;
@@ -31,6 +32,7 @@ function DebouncedInput({
   placeholder: string;
   list?: string;
   icon?: boolean;
+  field?: MaskableField;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(value);
@@ -40,8 +42,12 @@ function DebouncedInput({
     const timer = window.setTimeout(() => onCommit(draft), DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [draft, value, onCommit]);
+  const clear = () => {
+    setDraft('');
+    onCommit('');
+  };
   return (
-    <div className={styles.field}>
+    <div className={styles.field} {...field?.fieldProps}>
       {icon && <IconSearch size={15} className={styles.fieldIcon} aria-hidden="true" />}
       <input
         className={`input ${styles.input} ${icon ? styles.withIcon : ''}`}
@@ -54,7 +60,10 @@ function DebouncedInput({
             onCommit('');
           }
         }}
-        onBlur={() => draft !== value && onCommit(draft)}
+        onBlur={() => {
+          if (draft !== value) onCommit(draft);
+        }}
+        autoFocus={field?.autoFocus}
         aria-label={label}
         placeholder={placeholder}
         list={list}
@@ -65,10 +74,7 @@ function DebouncedInput({
         <button
           type="button"
           className={styles.clear}
-          onClick={() => {
-            setDraft('');
-            onCommit('');
-          }}
+          {...(field?.clearButtonProps(clear) ?? { onClick: clear })}
           aria-label={t('taproot_logs.filters.clear_field', { field: label })}
         >
           <IconX size={14} />
@@ -76,6 +82,27 @@ function DebouncedInput({
       )}
     </div>
   );
+}
+
+/** A text field whose value can hold an email, shown masked while emails are hidden. */
+function MaskableInput(props: {
+  value: string;
+  onCommit: (value: string) => void;
+  label: string;
+  placeholder: string;
+  icon?: boolean;
+}) {
+  const field = useMaskableField(props.value);
+  if (field.masked) {
+    return (
+      <MaskedValueChip
+        value={props.value}
+        label={props.label}
+        onClear={field.clearToInput(() => props.onCommit(''))}
+      />
+    );
+  }
+  return <DebouncedInput {...props} field={field} />;
 }
 
 export function RequestLogFilters({
@@ -91,7 +118,6 @@ export function RequestLogFilters({
 }) {
   const { t } = useTranslation();
   const modelListId = useId();
-  const hideSession = useHidesValue(query.sessionId);
   const set = <K extends keyof RequestLogQuery>(key: K, value: RequestLogQuery[K]) =>
     onChange({ ...query, [key]: value });
   const active = activeFilterCount(query);
@@ -106,7 +132,7 @@ export function RequestLogFilters({
   return (
     <div className={styles.filters} role="search" aria-label={t('taproot_logs.filters.label')}>
       <div className={styles.search}>
-        <DebouncedInput
+        <MaskableInput
           value={query.q}
           onCommit={(value) => set('q', value)}
           label={t('taproot_logs.filters.search')}
@@ -167,20 +193,12 @@ export function RequestLogFilters({
         </datalist>
       </div>
       <div className={styles.small}>
-        {hideSession ? (
-          <MaskedValueChip
-            value={query.sessionId}
-            label={t('taproot_logs.filters.session')}
-            onClear={() => set('sessionId', '')}
-          />
-        ) : (
-          <DebouncedInput
-            value={query.sessionId}
-            onCommit={(value) => set('sessionId', value)}
-            label={t('taproot_logs.filters.session')}
-            placeholder={t('taproot_logs.filters.session')}
-          />
-        )}
+        <MaskableInput
+          value={query.sessionId}
+          onCommit={(value) => set('sessionId', value)}
+          label={t('taproot_logs.filters.session')}
+          placeholder={t('taproot_logs.filters.session')}
+        />
       </div>
       {active > 0 && (
         <Button variant="ghost" size="sm" onClick={() => onChange(DEFAULT_QUERY)}>
