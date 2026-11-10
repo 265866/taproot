@@ -333,6 +333,22 @@ describe('UpdatedAgo', () => {
     expect(compact).toContain('>2 min ago<');
     expect(render(createElement(UpdatedAgo, { updatedAt: null, now: NOW }))).toBe('');
   });
+
+  test('reserves the width of its widest usual text, so ticking never shifts the header', () => {
+    const sizer = (html: string) =>
+      /<span[^>]*aria-hidden="true"[^>]*>([^<]*)<\/span>/.exec(html)?.[1];
+    for (const ago of [0, 8_000, 12_000, 59_000, 600_000]) {
+      const html = render(
+        createElement(UpdatedAgo, { updatedAt: NOW - ago, intervalMs: 30_000, now: NOW })
+      );
+      // The same hidden text at every age: it sets the width, the shown text overlays it.
+      expect(sizer(html)).toBe('updated 88 min ago · refreshes every 30 s');
+    }
+    const compact = render(
+      createElement(UpdatedAgo, { updatedAt: NOW - 8_000, compact: true, now: NOW })
+    );
+    expect(sizer(compact)).toBe('88 min ago');
+  });
 });
 
 describe('PageHeader', () => {
