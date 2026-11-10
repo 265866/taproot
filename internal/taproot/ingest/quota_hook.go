@@ -15,6 +15,8 @@ type QuotaObservation struct {
 	ResetsAt    time.Time
 	Status      string
 	ObservedAt  time.Time
+	// PeriodSeconds is the window's length, or 0 when unknown.
+	PeriodSeconds int64
 	// AccountWide is false for model- and feature-scoped windows.
 	AccountWide bool
 }
@@ -22,7 +24,8 @@ type QuotaObservation struct {
 func exportObservation(o observation) QuotaObservation {
 	return QuotaObservation{
 		AuthIndex: o.AuthIndex, Provider: o.Provider, Window: o.Window, Utilization: o.Utilization,
-		ResetsAt: o.ResetsAt, Status: o.Status, ObservedAt: o.ObservedAt, AccountWide: accountWideWindow(o.Window),
+		ResetsAt: o.ResetsAt, Status: o.Status, ObservedAt: o.ObservedAt, PeriodSeconds: o.PeriodSeconds,
+		AccountWide: accountWideWindow(o.Window),
 	}
 }
 

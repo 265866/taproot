@@ -30,6 +30,9 @@ const (
 	settle       = 2 * time.Minute
 	// grantInterval is how often one Claude account's reset grants are read.
 	grantInterval = 3 * time.Hour
+	// grantMaxAge drops grants that failed reads left unrefreshed, so a grant
+	// redeemed since the last read does not keep warning.
+	grantMaxAge = 2 * grantInterval
 	// OriginEnv points deliveries at a local fake Discord for end-to-end tests.
 	OriginEnv = "TAPROOT_ALERTS_DISCORD_ORIGIN"
 )
@@ -53,8 +56,11 @@ type authLister interface {
 
 type quotaKey struct{ authIndex, window string }
 
+// grantRead is the last read attempt of one account's grants, and the
+// grants from the last successful read.
 type grantRead struct {
 	at     time.Time
+	readAt time.Time
 	grants []Grant
 }
 
@@ -360,7 +366,9 @@ func (s *Service) snapshot(now time.Time, accounts []Account) Snapshot {
 	s.quotaMu.Unlock()
 	s.grantMu.Lock()
 	for idx, r := range s.grantReads {
-		snap.Grants[idx] = r.grants
+		if now.Sub(r.readAt) < grantMaxAge {
+			snap.Grants[idx] = r.grants
+		}
 	}
 	s.grantMu.Unlock()
 	return snap
@@ -457,7 +465,8 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 		if r, ok := s.grantReads[idx]; !ok || now.Sub(r.at) >= grantInterval {
 			due = append(due, a)
 			// Record the attempt now so a failure waits a full interval too.
-			s.grantReads[idx] = grantRead{at: now, grants: r.grants}
+			r.at = now
+			s.grantReads[idx] = r
 		}
 	}
 	for idx := range s.grantReads {
@@ -487,7 +496,7 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 			}
 			s.grantMu.Lock()
 			if r, ok := s.grantReads[idx]; ok {
-				s.grantReads[idx] = grantRead{at: r.at, grants: grants}
+				s.grantReads[idx] = grantRead{at: r.at, readAt: r.at, grants: grants}
 			}
 			s.grantMu.Unlock()
 		}

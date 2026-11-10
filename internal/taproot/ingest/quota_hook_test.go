@@ -30,7 +30,7 @@ func TestQuotaHookPublishesCommittedObservations(t *testing.T) {
 		t.Fatalf("published %+v, want one observation", got)
 	}
 	o := got[0]
-	if o.AuthIndex != "auth-a" || o.Window != "five_hour" || o.Utilization != 1 || o.Status != "rejected" || !o.ResetsAt.Equal(reset) || !o.AccountWide {
+	if o.AuthIndex != "auth-a" || o.Window != "five_hour" || o.Utilization != 1 || o.Status != "rejected" || !o.ResetsAt.Equal(reset) || !o.AccountWide || o.PeriodSeconds != 5*3600 {
 		t.Fatalf("observation = %+v", o)
 	}
 
@@ -44,7 +44,7 @@ func TestQuotaHookPublishesCommittedObservations(t *testing.T) {
 	}
 
 	latest, err := i.LatestQuota(context.Background())
-	if err != nil || len(latest) != 1 || latest[0].AuthIndex != "auth-a" || !latest[0].ResetsAt.Equal(reset) || latest[0].Provider != "claude" {
+	if err != nil || len(latest) != 1 || latest[0].AuthIndex != "auth-a" || !latest[0].ResetsAt.Equal(reset) || latest[0].Provider != "claude" || latest[0].PeriodSeconds != 5*3600 {
 		t.Fatalf("latest = %+v, err = %v", latest, err)
 	}
 }

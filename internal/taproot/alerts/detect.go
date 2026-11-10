@@ -100,8 +100,9 @@ func Conditions(s Snapshot) map[string]Condition {
 		accounts[a.AuthIndex] = a
 	}
 
-	// limitedUntil is, per account, the earliest reset of an account-wide
-	// window that is at its limit; the zero time means limited with no known reset.
+	// limitedUntil is, per account, when it is usable again: the latest reset
+	// of its account-wide windows at their limit. The zero time means one of
+	// those windows has no known reset.
 	limitedUntil := map[string]time.Time{}
 	limited := map[string]bool{}
 	for _, o := range s.Quota {
@@ -157,16 +158,21 @@ func Conditions(s Snapshot) map[string]Condition {
 }
 
 // atLimit reports whether a window blocks traffic now. A window whose reset
-// has passed is usable again even before a new observation arrives.
+// has passed is usable again even before a new observation arrives. With no
+// reset known, a window of known length has reset one period after the
+// reading at the latest.
 func atLimit(o ingest.QuotaObservation, now time.Time) bool {
 	if o.Status != "rejected" && o.Utilization < 1 {
 		return false
 	}
-	return o.ResetsAt.IsZero() || o.ResetsAt.After(now)
+	if !o.ResetsAt.IsZero() {
+		return o.ResetsAt.After(now)
+	}
+	return o.PeriodSeconds <= 0 || o.ObservedAt.Add(time.Duration(o.PeriodSeconds)*time.Second).After(now)
 }
 
 func limitCondition(key string, a Account, o ingest.QuotaObservation) Condition {
-	window := windowLabel(o.Window)
+	window := windowLabel(o)
 	scope := ""
 	if !o.AccountWide {
 		scope = " Other models on this account still work."
@@ -517,11 +523,39 @@ var windowLabels = map[string]string{
 	"codex_secondary":            "weekly",
 }
 
-func windowLabel(w string) string {
-	if l, ok := windowLabels[w]; ok {
+// windowLabel names o's window. Codex names windows by header slot, and
+// either slot can hold the 5-hour, weekly, or monthly window, so a Codex
+// window of known length is named by its length.
+func windowLabel(o ingest.QuotaObservation) string {
+	if rest, ok := strings.CutPrefix(o.Window, "codex_"); ok {
+		if period := periodLabel(o.PeriodSeconds); period != "" {
+			limit := rest
+			for _, slot := range []string{"primary", "secondary"} {
+				if cut, found := strings.CutSuffix(limit, slot); found && (cut == "" || strings.HasSuffix(cut, "_")) {
+					limit = strings.TrimSuffix(cut, "_")
+					break
+				}
+			}
+			return strings.TrimSpace(period + " " + strings.ReplaceAll(limit, "_", " "))
+		}
+	}
+	if l, ok := windowLabels[o.Window]; ok {
 		return l
 	}
-	return strings.ReplaceAll(strings.TrimPrefix(w, "codex_"), "_", " ")
+	return strings.ReplaceAll(strings.TrimPrefix(o.Window, "codex_"), "_", " ")
+}
+
+func periodLabel(seconds int64) string {
+	const day = 24 * 3600
+	switch {
+	case seconds == 5*3600:
+		return "5-hour"
+	case seconds == 7*day:
+		return "weekly"
+	case seconds >= 28*day && seconds <= 31*day:
+		return "monthly"
+	}
+	return ""
 }
 
 // discordTime renders in each reader's own time zone, with a relative hint.

@@ -349,3 +349,49 @@ func TestDetectorBacksOffRepeatedFailures(t *testing.T) {
 		t.Fatalf("waits = %v, want %v", waits, want)
 	}
 }
+
+func TestCodexWindowsAreNamedByLength(t *testing.T) {
+	const day = 24 * 3600
+	for _, tc := range []struct {
+		window string
+		period int64
+		want   string
+	}{
+		{"codex_primary", 7 * day, "weekly"},
+		{"codex_primary", 5 * 3600, "5-hour"},
+		{"codex_secondary", 30 * day, "monthly"},
+		{"codex_primary", 0, "5-hour"},
+		{"codex_secondary", 0, "weekly"},
+		{"codex_code_review_secondary", 7 * day, "weekly code review"},
+		{"codex_bengalfox", 5 * 3600, "5-hour bengalfox"},
+		{"codex_bengalfox_primary", 0, "bengalfox primary"},
+		{"seven_day_opus", 7 * day, "weekly Opus"},
+	} {
+		if got := windowLabel(ingest.QuotaObservation{Window: tc.window, PeriodSeconds: tc.period}); got != tc.want {
+			t.Errorf("%s (%d s) = %q, want %q", tc.window, tc.period, got, tc.want)
+		}
+	}
+	o := obs("c1", "codex", "codex_primary", 1, 6*24*time.Hour, "rejected")
+	o.PeriodSeconds = 7 * day
+	c := Conditions(Snapshot{Now: t0, Accounts: []Account{{AuthIndex: "c1", Provider: "codex", Label: "free"}}, Quota: []ingest.QuotaObservation{o}})["limit:c1:codex_primary"]
+	if c.Alert.Title != "Codex account hit its weekly limit" {
+		t.Fatalf("title = %q", c.Alert.Title)
+	}
+}
+
+// A limit with no known reset ends one window length after the reading at
+// the latest, so it cannot hold an alert open forever.
+func TestLimitWithUnknownResetEndsAfterItsPeriod(t *testing.T) {
+	o := obs("a", "claude", "five_hour", 1, 0, "rejected")
+	o.PeriodSeconds = 5 * 3600
+	unknownLength := obs("b", "claude", "five_hour", 1, 0, "rejected")
+	snap := func(at time.Duration) []string {
+		return keys(Conditions(Snapshot{Now: t0.Add(at), Accounts: []Account{claude("a"), claude("b")}, Quota: []ingest.QuotaObservation{o, unknownLength}}))
+	}
+	if got := snap(4 * time.Hour); !slices.Equal(got, []string{"limit:a:five_hour", "limit:b:five_hour", "pool:claude"}) {
+		t.Fatalf("within the period: %v", got)
+	}
+	if got := snap(5 * time.Hour); !slices.Equal(got, []string{"limit:b:five_hour"}) {
+		t.Fatalf("after the period: %v", got)
+	}
+}
