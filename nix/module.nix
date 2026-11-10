@@ -285,7 +285,8 @@ in
         # Restarts also cover a start before tailscaled has assigned the address.
         Restart = "always";
         RestartSec = 5;
-        # Long-running streams get time to finish on stop.
+        # Taproot closes its connections at once on stop, so streams in flight
+        # are cut, not drained. This only bounds a stop that hangs.
         TimeoutStopSec = 45;
         UMask = "0077";
 
