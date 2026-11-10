@@ -44,6 +44,8 @@ type Pool struct {
 	LastsPastReset  bool          `json:"lastsPastReset"`
 	// cooling holds the cooling slots, for the attention detail.
 	cooling []PoolAccount
+	// percentLeft is PercentLeft before rounding, for thresholds.
+	percentLeft float64
 }
 
 // PoolAccount is one slot of a pool bar.
@@ -166,7 +168,8 @@ func buildPools(accounts []Account, latest []ingest.QuotaObservation, history []
 			lines = append(lines, recordedAccount(in.series, nowMs-float64(burnWindow.Milliseconds()), nowMs))
 		}
 		if p.EnabledAccounts > 0 {
-			p.PercentLeft = round1(100 * p.LeftNow / float64(p.EnabledAccounts))
+			p.percentLeft = 100 * p.LeftNow / float64(p.EnabledAccounts)
+			p.PercentLeft = round1(p.percentLeft)
 			p.BurnPctPerHour = round1(100 * drainAt(sumPolylines(lines), nowMs, float64(burnWindow.Milliseconds())) / float64(p.EnabledAccounts))
 		}
 		if r := projectPool(serveLater, nowMs, end, 0, 0).nextReset; r != nil {

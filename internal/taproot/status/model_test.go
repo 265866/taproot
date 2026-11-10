@@ -124,6 +124,8 @@ func TestVerdictFailureRateThresholds(t *testing.T) {
 		{"4.9% failed", 1000, 49, verdictNormal, "Serving normally"},
 		{"5.0% failed", 1000, 50, verdictDegrade, "Degraded: 5% of requests failing in the last 15 min"},
 		{"6% failed", 100, 6, verdictDegrade, "Degraded: 6% of requests failing in the last 15 min"},
+		{"29 of 100 failed", 100, 29, verdictDegrade, "Degraded: 29% of requests failing in the last 15 min"},
+		{"57 of 100 failed", 100, 57, verdictDown, "Down: 57% of requests failing in the last 15 min"},
 		{"49.9% failed", 1000, 499, verdictDegrade, "Degraded: 49% of requests failing in the last 15 min"},
 		{"50% failed", 20, 10, verdictDown, "Down: 50% of requests failing in the last 15 min"},
 		{"all failed", 40, 40, verdictDown, "Down: 100% of requests failing in the last 15 min"},
@@ -396,12 +398,12 @@ func TestAttentionPoolUnderFifteenPercent(t *testing.T) {
 	for _, c := range []struct {
 		left float64
 		want bool
-	}{{0.15, false}, {0.14, true}} {
+	}{{0.15, false}, {0.1496, true}, {0.14, true}} {
 		// Two accounts, each with c.left left, no burn: the percentage alone decides.
 		_, att, _ := scene{auths: []*coreauth.Auth{a, b}, latest: []ingest.QuotaObservation{weekly(a, 1-c.left, 9*time.Hour), weekly(b, 1-c.left, 9*time.Hour)}}.eval()
 		it, ok := findItem(att, "pool_low")
 		if ok != c.want {
-			t.Errorf("%.0f%% left: item found %t, want %t", c.left*100, ok, c.want)
+			t.Errorf("%.2f%% left: item found %t, want %t", c.left*100, ok, c.want)
 		}
 		if ok && it.Title != "Codex pool is under 15%" {
 			t.Errorf("title = %q", it.Title)
@@ -443,6 +445,7 @@ func TestAttentionBackups(t *testing.T) {
 		{"the last scheduled run failed", backupState{scheduled: true, last: t0.Add(-20 * time.Hour), run: failedRun, hasRun: true}, "The last scheduled backup failed"},
 		{"a backup after the failed run settles it", backupState{scheduled: true, last: t0.Add(-time.Hour), run: failedRun, hasRun: true}, ""},
 		{"the last run succeeded", backupState{scheduled: true, last: t0.Add(-10 * time.Hour), run: backup.Run{At: t0.Add(-10 * time.Hour)}, hasRun: true}, ""},
+		{"90 days old", backupState{scheduled: true, last: t0.Add(-90 * 24 * time.Hour)}, "Last backup was 90 days ago"},
 		{"stale and failed", backupState{scheduled: true, last: t0.Add(-31 * time.Hour), run: failedRun, hasRun: true}, "Last backup was 31 h ago"},
 	}
 	for _, c := range cases {

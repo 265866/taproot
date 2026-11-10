@@ -52,7 +52,8 @@ type Item struct {
 
 // Subject is what an item is about.
 type Subject struct {
-	// Type is account, provider, device, backups, alerts, or tailscaled.
+	// Type is account, provider, device, access, backups, alerts, or
+	// tailscaled.
 	Type string `json:"type"`
 	ID   string `json:"id"`
 }
@@ -61,7 +62,8 @@ type Subject struct {
 type Action struct {
 	// Type is sign_in (target: provider), enable (auth index),
 	// review_access (node ID), backup_now, open_settings (section),
-	// open_accounts (provider), or docs (URL).
+	// open_accounts (provider), open_logs (the server's app log), or docs
+	// (URL).
 	Type   string `json:"type"`
 	Target string `json:"target"`
 }
@@ -110,10 +112,19 @@ type attentionInputs struct {
 	backup     backupState
 	alerts     alerts.DeliveryHealth
 	tailscaled *tailscaledDown
+	// unreadable holds the optional sources that could not be read, by
+	// sourceAccess or sourceBackups.
+	unreadable map[string]error
 	// firstSeen returns when an item was first listed, for items whose
 	// start the data does not say.
 	firstSeen func(id string) time.Time
 }
+
+// The optional sources an evaluation reads; see unreadableItem.
+const (
+	sourceAccess  = "access requests"
+	sourceBackups = "backups"
+)
 
 func attention(in attentionInputs) Attention {
 	var items []Item
@@ -141,7 +152,12 @@ func attention(in attentionInputs) Attention {
 	for _, r := range in.requests {
 		add(requestItem(r))
 	}
-	if it, ok := backupItem(in.backup, in.now); ok {
+	if err := in.unreadable[sourceAccess]; err != nil {
+		add(unreadableItem(sourceAccess, err))
+	}
+	if err := in.unreadable[sourceBackups]; err != nil {
+		add(unreadableItem(sourceBackups, err))
+	} else if it, ok := backupItem(in.backup, in.now); ok {
 		add(it)
 	}
 	if h := in.alerts; h.Active && h.Failures > 0 {
@@ -185,9 +201,9 @@ func attention(in attentionInputs) Attention {
 		switch {
 		case strings.HasPrefix(it.Kind, "account_"), it.Kind == "pool_low":
 			out.Counts.Accounts++
-		case it.Kind == "access_request", it.Kind == "tailscaled_down":
+		case it.Kind == "access_request", it.Kind == "tailscaled_down", it.ID == "unreadable:access":
 			out.Counts.Access++
-		case it.Kind == "backup_overdue":
+		case it.Kind == "backup_overdue", it.ID == "unreadable:backups":
 			out.Counts.Backups++
 		}
 	}
@@ -255,7 +271,7 @@ func poolItem(p Pool, now time.Time) (Item, bool) {
 		return it, true
 	}
 	runsOutFirst := p.RunsOutAt != nil && !p.LastsPastReset
-	if !runsOutFirst && p.PercentLeft >= lowPercent {
+	if !runsOutFirst && p.percentLeft >= lowPercent {
 		return Item{}, false
 	}
 	it.Severity = SeverityAtRisk
@@ -317,6 +333,25 @@ func requestItem(r access.AccessRequest) Item {
 	}
 }
 
+// unreadableItem reports an optional source the server could not read: its
+// items cannot be listed, so the list would look clearer than it is.
+func unreadableItem(source string, err error) Item {
+	it := Item{
+		Kind: "source_unreadable", Severity: SeverityAtRisk,
+		Detail: fmt.Sprintf("Reading them failed: %s.", strings.TrimSuffix(clip(err.Error()), ".")),
+		Action: Action{Type: "open_logs"},
+	}
+	switch source {
+	case sourceAccess:
+		it.ID, it.Title, it.Subject = "unreadable:access", "Can't read the access requests", Subject{Type: "access"}
+		it.Detail += " Devices asking for access are not listed here."
+	default:
+		it.ID, it.Title, it.Subject = "unreadable:backups", "Can't check the backups", Subject{Type: "backups"}
+		it.Detail += " An overdue or failed backup is not listed here."
+	}
+	return it
+}
+
 func backupItem(b backupState, now time.Time) (Item, bool) {
 	if !b.scheduled {
 		return Item{}, false
@@ -341,7 +376,7 @@ func backupItem(b backupState, now time.Time) (Item, bool) {
 	case stale && b.last.IsZero():
 		it.Title = "No backup yet"
 	case stale:
-		it.Title = fmt.Sprintf("Last backup was %d h ago", int(now.Sub(b.last)/time.Hour))
+		it.Title = fmt.Sprintf("Last backup was %s ago", roughly(now.Sub(b.last)))
 	default:
 		it.Title = "The last scheduled backup failed"
 	}

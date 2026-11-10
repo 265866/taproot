@@ -2,7 +2,6 @@ package status
 
 import (
 	"fmt"
-	"math"
 	"strings"
 	"time"
 )
@@ -119,7 +118,7 @@ func verdict(pools []Pool, accounts []Account, window RequestWindow, recent map[
 	}
 	if window.Requests >= minSample {
 		rate := float64(window.Failed) / float64(window.Requests)
-		msg := fmt.Sprintf("%d%% of requests failing in the last 15 min", int(math.Floor(rate*100)))
+		msg := fmt.Sprintf("%d%% of requests failing in the last 15 min", window.Failed*100/window.Requests)
 		switch {
 		case rate >= downRate:
 			st.Reasons = append(st.Reasons, Reason{Code: "failure_rate", State: verdictDown, Message: msg})

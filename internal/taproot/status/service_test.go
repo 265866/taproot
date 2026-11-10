@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/265866/taproot/internal/taproot/ingest"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
 type fakeUsage struct {
@@ -37,19 +40,22 @@ func (f *fakeUsage) ClientRequestCounts(_ context.Context, from, to time.Time) (
 	return f.counts(from, to), nil
 }
 
-type fakeRequests struct{ open []access.AccessRequest }
+type fakeRequests struct {
+	open []access.AccessRequest
+	err  error
+}
 
 func (f *fakeRequests) OpenRequests(context.Context) ([]access.AccessRequest, error) {
-	return f.open, nil
+	return f.open, f.err
 }
 
-type fakeBackups struct{}
+type fakeBackups struct{ listErr error }
 
-func (fakeBackups) List() ([]backup.Entry, error) { return nil, nil }
-func (fakeBackups) LastScheduledRun(context.Context) (backup.Run, bool, error) {
+func (f *fakeBackups) List() ([]backup.Entry, error) { return nil, f.listErr }
+func (*fakeBackups) LastScheduledRun(context.Context) (backup.Run, bool, error) {
 	return backup.Run{}, false, nil
 }
-func (fakeBackups) NextRun() (time.Time, bool) { return time.Time{}, false }
+func (*fakeBackups) NextRun() (time.Time, bool) { return time.Time{}, true }
 
 type fakeAlerts struct{}
 
@@ -64,6 +70,7 @@ type serviceFixture struct {
 	clock    time.Time
 	failed   int64
 	requests *fakeRequests
+	backups  *fakeBackups
 	usage    *fakeUsage
 	engine   *gin.Engine
 }
@@ -71,11 +78,11 @@ type serviceFixture struct {
 func newServiceFixture(t *testing.T) *serviceFixture {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	f := &serviceFixture{clock: t0, requests: &fakeRequests{}}
+	f := &serviceFixture{clock: t0, requests: &fakeRequests{}, backups: &fakeBackups{}}
 	f.usage = &fakeUsage{counts: func(from, to time.Time) ingest.RequestCounts {
 		return ingest.RequestCounts{Requests: 100, Failed: f.failed, ByProvider: map[string]int64{"claude": 100}}
 	}}
-	svc, err := New(Deps{Usage: f.usage, Requests: f.requests, Backups: fakeBackups{}, Alerts: fakeAlerts{}})
+	svc, err := New(Deps{Usage: f.usage, Requests: f.requests, Backups: f.backups, Alerts: fakeAlerts{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,5 +192,53 @@ func TestPoolsEndpointAndErrors(t *testing.T) {
 		if code := f.get(t, path, nil); code != http.StatusInternalServerError {
 			t.Errorf("%s with a failing source = %d, want 500", path, code)
 		}
+	}
+}
+
+// Access requests and backups are optional sources: when one cannot be read,
+// the verdict and pools still answer, and Needs you says what it cannot list.
+func TestUnreadableSourceKeepsTheVerdict(t *testing.T) {
+	f := newServiceFixture(t)
+	logs := &strings.Builder{}
+	log.SetOutput(logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	f.requests.err = errors.New("database is locked")
+	f.backups.listErr = errors.New("open /data/backups: permission denied")
+	var st Status
+	if code := f.get(t, "/api/status", &st); code != http.StatusOK || st.State != verdictNormal {
+		t.Fatalf("status = %d %+v, want 200 and normal", code, st)
+	}
+	var pools struct{ Pools []Pool }
+	if code := f.get(t, "/api/pools", &pools); code != http.StatusOK || len(pools.Pools) != 1 {
+		t.Fatalf("pools = %d %+v", code, pools)
+	}
+	var att Attention
+	if code := f.get(t, "/api/attention", &att); code != http.StatusOK {
+		t.Fatalf("attention = %d", code)
+	}
+	ids := map[string]Item{}
+	for _, it := range att.Items {
+		ids[it.ID] = it
+	}
+	acc, bk := ids["unreadable:access"], ids["unreadable:backups"]
+	if acc.Title != "Can't read the access requests" || acc.Action.Type != "open_logs" || !strings.Contains(acc.Detail, "database is locked") {
+		t.Errorf("access item = %+v", acc)
+	}
+	if bk.Title != "Can't check the backups" || !strings.Contains(bk.Detail, "permission denied") || len(att.Items) != 2 {
+		t.Errorf("items = %+v, want the two unreadable sources and no overdue backup", att.Items)
+	}
+	if att.Counts.Access != 1 || att.Counts.Backups != 1 {
+		t.Errorf("counts = %+v", att.Counts)
+	}
+	if n := strings.Count(logs.String(), "read access requests"); n != 1 {
+		t.Errorf("logged the access failure %d times over three reads, want once:\n%s", n, logs)
+	}
+
+	f.requests.err, f.backups.listErr = nil, nil
+	if f.get(t, "/api/attention", &att); len(att.Items) != 0 {
+		t.Errorf("after the sources read again: %+v", att.Items)
+	}
+	if !strings.Contains(logs.String(), "access requests read again") {
+		t.Errorf("recovery not logged:\n%s", logs)
 	}
 }

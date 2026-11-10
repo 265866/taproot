@@ -71,12 +71,15 @@ type Service struct {
 	tsMu       sync.Mutex
 	tailscaled *tailscaledDown
 
-	// trackMu guards the start times this process has seen: the verdict's
-	// and each listed item's.
-	trackMu   sync.Mutex
-	state     string
-	stateFrom time.Time
-	seen      map[string]time.Time
+	// trackMu runs one evaluation at a time, each at a later instant than
+	// the last, so the start times this process has seen (the verdict's and
+	// each listed item's) only move forward. It also guards the sources the
+	// last evaluation could not read, so each failure is logged once.
+	trackMu    sync.Mutex
+	state      string
+	stateFrom  time.Time
+	seen       map[string]time.Time
+	unreadable map[string]string
 }
 
 // New prepares the service.
@@ -84,7 +87,7 @@ func New(deps Deps) (*Service, error) {
 	if deps.Usage == nil || deps.Requests == nil || deps.Backups == nil || deps.Alerts == nil {
 		return nil, errors.New("status needs ingest, access requests, backups, and alerts")
 	}
-	s := &Service{deps: deps, now: time.Now, seen: map[string]time.Time{}}
+	s := &Service{deps: deps, now: time.Now, seen: map[string]time.Time{}, unreadable: map[string]string{}}
 	s.startedAt = s.now()
 	return s, nil
 }
@@ -155,8 +158,12 @@ type evaluation struct {
 	pools     []Pool
 }
 
-// evaluate reads every source and judges them at one instant.
+// evaluate reads every source and judges them at one instant. Quota and
+// client requests are essential; a failure to read the access requests or
+// the backups becomes a Needs-you item, so the verdict and pools still show.
 func (s *Service) evaluate(ctx context.Context) (evaluation, error) {
+	s.trackMu.Lock()
+	defer s.trackMu.Unlock()
 	now := s.now().UTC()
 	latest, err := s.deps.Usage.LatestQuota(ctx)
 	if err != nil {
@@ -174,14 +181,20 @@ func (s *Service) evaluate(ctx context.Context) (evaluation, error) {
 	if err != nil {
 		return evaluation{}, err
 	}
+	failed := map[string]error{}
 	requests, err := s.deps.Requests.OpenRequests(ctx)
 	if err != nil {
-		return evaluation{}, err
+		failed[sourceAccess] = err
 	}
 	bs, err := s.backupState(ctx)
 	if err != nil {
-		return evaluation{}, err
+		failed[sourceBackups] = err
 	}
+	// A request whose client left fails every read; it judges nothing.
+	if errCtx := ctx.Err(); errCtx != nil {
+		return evaluation{}, errCtx
+	}
+	s.noteUnreadable(failed)
 	s.tsMu.Lock()
 	ts := s.tailscaled
 	s.tsMu.Unlock()
@@ -194,8 +207,6 @@ func (s *Service) evaluate(ctx context.Context) (evaluation, error) {
 		rw.FailureRate = &rate
 	}
 
-	s.trackMu.Lock()
-	defer s.trackMu.Unlock()
 	st := verdict(pools, accounts, rw, hour.ByProvider, now)
 	if st.State != s.state {
 		s.state, s.stateFrom = st.State, now
@@ -204,7 +215,7 @@ func (s *Service) evaluate(ctx context.Context) (evaluation, error) {
 	listed := map[string]bool{}
 	att := attention(attentionInputs{
 		now: now, accounts: accounts, pools: pools, recent: hour.ByProvider, requests: requests,
-		backup: bs, alerts: s.deps.Alerts.DeliveryHealth(), tailscaled: ts,
+		backup: bs, alerts: s.deps.Alerts.DeliveryHealth(), tailscaled: ts, unreadable: failed,
 		firstSeen: func(id string) time.Time {
 			listed[id] = true
 			if t, ok := s.seen[id]; ok {
@@ -220,6 +231,23 @@ func (s *Service) evaluate(ctx context.Context) (evaluation, error) {
 		}
 	}
 	return evaluation{status: st, attention: att, pools: pools}, nil
+}
+
+// noteUnreadable logs each source that newly fails, or fails differently,
+// and each that reads again. The caller holds trackMu.
+func (s *Service) noteUnreadable(failed map[string]error) {
+	for source, err := range failed {
+		if s.unreadable[source] != err.Error() {
+			s.unreadable[source] = err.Error()
+			log.WithError(err).Warnf("taproot status: read %s", source)
+		}
+	}
+	for source := range s.unreadable {
+		if failed[source] == nil {
+			delete(s.unreadable, source)
+			log.Infof("taproot status: %s read again", source)
+		}
+	}
 }
 
 func (s *Service) authList() []*coreauth.Auth {
