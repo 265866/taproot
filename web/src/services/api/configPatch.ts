@@ -1,5 +1,7 @@
 import { isMap as isYamlMap, parseDocument } from 'yaml';
+import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
+import { ifMatchHeaders } from './configFile';
 
 export interface ConfigPatchPlan {
   patch: Record<string, unknown>;
@@ -236,10 +238,21 @@ export function hasConfigPatchChanges(plan: ConfigPatchPlan): boolean {
   );
 }
 
+/**
+ * With an ETag, the first write is conditional: a 412 means config.yaml changed after the
+ * preview and nothing was written. Later writes cannot be, since each write changes the ETag.
+ */
 export async function applyConfigPatch(
   plan: ConfigPatchPlan,
-  connectionRevision: number
+  connectionRevision: number,
+  etag?: string | null
 ): Promise<void> {
+  let firstWrite = true;
+  const writeConfig = (): [AxiosRequestConfig] | [] => {
+    const conditional = firstWrite && Boolean(etag);
+    firstWrite = false;
+    return conditional ? [{ headers: ifMatchHeaders(etag) }] : [];
+  };
   const checkConnection = () => {
     if (apiClient.getConnectionRevision() !== connectionRevision) {
       throw new Error('Connection changed while saving configuration');
@@ -251,7 +264,7 @@ export async function applyConfigPatch(
   checkConnection();
   if (Object.keys(plan.patch).length) {
     try {
-      await apiClient.patch('/config', plan.patch);
+      await apiClient.patch('/config', plan.patch, ...writeConfig());
     } finally {
       checkConnection();
     }
@@ -259,7 +272,7 @@ export async function applyConfigPatch(
   for (const url of emptyMapUrls) {
     checkConnection();
     try {
-      await apiClient.put(url, {});
+      await apiClient.put(url, {}, ...writeConfig());
     } finally {
       checkConnection();
     }
@@ -267,7 +280,7 @@ export async function applyConfigPatch(
   for (const url of urls) {
     checkConnection();
     try {
-      await apiClient.delete(url);
+      await apiClient.delete(url, ...writeConfig());
     } catch (error: unknown) {
       if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 404) {
         throw error;

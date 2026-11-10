@@ -42,6 +42,7 @@
     "visual_mode_save_blocked": "Cannot save from visual mode until the YAML syntax is fixed",
     "source_changes_before_visual": "Save or discard your unsaved source edits before switching to visual mode.",
     "precise_save_incomplete": "The precise save did not finish; some changes may already be applied. Your draft is retained. Save again to review the remaining server differences.",
+    "visual_write_failed": "Could not apply your edits to config.yaml ({{message}}). Your edits are kept; switch to Source to make this change by hand.",
     "concurrent_list_conflict": "The server list {{path}} changed after your draft baseline. Saving was blocked to avoid overwriting those changes. Your draft is retained; note your edits, then reload the configuration and reconcile them.",
     "precise_save_recovery_required": "Could not read back the save result. Editing is paused. Save again to recover the draft baseline, or reload the configuration.",
     "visual_mode_latest_yaml_invalid": "The latest server configuration contains invalid YAML. Review it in source mode before saving visual changes: {{message}}",
@@ -54,7 +55,10 @@
     "diff": {
       "title": "Review Changes",
       "confirm": "Confirm Save",
-      "no_changes": "No changes detected"
+      "no_changes": "No changes detected",
+      "notice_server_changed": "config.yaml changed on the server while this review was open. The diff now compares your edits with the latest version. Check it before you confirm.",
+      "notice_rebased": "config.yaml changed on the server since you started editing. Your edits were reapplied to the latest version. Check the diff before you confirm.",
+      "notice_conflict": "config.yaml changed on the server since you started editing, and those changes touch lines you edited. Saving replaces the whole file with your draft, so removed lines in this diff can include another person's changes. Confirm only to overwrite them; otherwise cancel, copy your edits, and reload."
     },
     "visual": {
       "serverExtras": {
