@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -73,8 +74,7 @@ func Open(ctx context.Context, cfg Config, dataDir string) (*DB, error) {
 	// data dir mounted, so SQLite's temp-file search (TMPDIR, /var/tmp, /tmp)
 	// may find nowhere to spill sorts and GROUP BYs. Taproot's temp structures
 	// are bounded by query results, not by table size.
-	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"
-	sqlDB, err := sql.Open("sqlite", dsn)
+	sqlDB, err := sql.Open("sqlite", fileURI(path, "_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"))
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
@@ -89,6 +89,17 @@ func Open(ctx context.Context, cfg Config, dataDir string) (*DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+// fileURI is SQLite's URI for path with query. Each path segment is escaped,
+// so a '?', '#', or '%' in a directory name stays part of the path instead of
+// starting the query, ending the path, or being decoded.
+func fileURI(path, query string) string {
+	segments := strings.Split(filepath.ToSlash(path), "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return "file:" + strings.Join(segments, "/") + "?" + query
 }
 
 // Path returns the database file path.
@@ -145,7 +156,7 @@ func CheckFile(ctx context.Context, path string) error {
 		return err
 	}
 	// immutable: the file is a private copy, so a stray -wal beside it is ignored.
-	sqlDB, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?mode=ro&immutable=1")
+	sqlDB, err := sql.Open("sqlite", fileURI(path, "mode=ro&immutable=1"))
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
