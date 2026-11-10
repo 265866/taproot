@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -44,10 +45,11 @@ oauth:
     auth-dir: %q
 `
 
-// taprootYAML turns off everything that reads from a provider or posts
-// elsewhere: the idle-account poller and alerts (no webhook, so no
-// reset-grant reads either). The tailscaled socket is the demo's fake
-// tailnet (serveTailnet), never a real one; the server listens on loopback
+// taprootYAML turns off the idle-account poller, which reads from providers.
+// Alerts are on with a fake webhook, so the Dashboard shows failing
+// deliveries: run.sh points their origin, like every other outbound
+// request, at the dead loopback proxy. The tailscaled socket is the demo's
+// fake tailnet (serveTailnet), never a real one; the server listens on loopback
 // only, so every caller is loopback and the tailnet only fills the Access
 // page.
 const taprootYAML = `data-dir: taproot
@@ -59,6 +61,8 @@ backups:
 request-logs:
   max-days: 14
   max-bytes: 20GiB
+alerts:
+  discord-webhook: https://discord.com/api/webhooks/000000000000000000/demo-webhook-token-not-real
 `
 
 // tailnetSocket is where the demo's fake tailscaled listens for a demo in dir.
@@ -108,6 +112,12 @@ func writeAuthFiles(authDir string, accounts []*demoAccount, start time.Time) er
 			meta["id_token"] = fakeIDToken(a, accountID, start)
 			a.fileName = codex.CredentialFileName(a.email, a.plan, fmt.Sprintf("%08x", n), true)
 		}
+		if a.signedOut > 0 {
+			meta["expired"] = start.Add(-a.signedOut).UTC().Format(time.RFC3339)
+			if err := claimRefresh(authDir, meta["refresh_token"].(string)); err != nil {
+				return err
+			}
+		}
 		raw, err := json.MarshalIndent(meta, "", "  ")
 		if err != nil {
 			return fmt.Errorf("encode %s: %w", a.email, err)
@@ -117,6 +127,19 @@ func writeAuthFiles(authDir string, accounts []*demoAccount, start time.Time) er
 			return fmt.Errorf("write %s: %w", a.fileName, err)
 		}
 		a.authIndex = authIndex(path, a.provider, meta)
+	}
+	return nil
+}
+
+// claimRefresh signs a Codex account out without contacting OpenAI: it
+// records a claim on the refresh token in upstream's refresh journal, with
+// no receipt, which is how upstream marks a refresh whose outcome is
+// unknown. Its expired access token makes the server refresh at start, and
+// upstream never sends a claimed token again, so the account needs sign-in.
+func claimRefresh(authDir, refreshToken string) error {
+	key := fmt.Sprintf("%x", sha256.Sum256([]byte(codex.ClientID+"\x00"+refreshToken)))
+	if err := os.MkdirAll(filepath.Join(authDir, ".codex-refresh", key), 0o700); err != nil {
+		return fmt.Errorf("claim refresh token: %w", err)
 	}
 	return nil
 }
