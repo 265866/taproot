@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	// The zone tests need tzdata on hosts that do not ship it.
@@ -724,6 +725,31 @@ func TestWriteYAMLHandlesNullSections(t *testing.T) {
 	}
 }
 
+// A directory sync that fails after the rename does not fail the write: the
+// file is already replaced, and some filesystems cannot sync a directory.
+func TestReplaceFileSurvivesFailedDirectorySync(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not sync directories")
+	}
+	orig := syncFile
+	t.Cleanup(func() { syncFile = orig })
+	path := filepath.Join(t.TempDir(), "taproot.yaml")
+	for _, errno := range []syscall.Errno{syscall.EINVAL, syscall.EIO} {
+		syncFile = func(f *os.File) error { return &os.PathError{Op: "sync", Path: f.Name(), Err: errno} }
+		body := "backups:\n  keep: " + errno.Error() + "\n"
+		if err := replaceFile(path, []byte(body), 0o600); err != nil {
+			t.Errorf("%v: replaceFile = %v, want nil", errno, err)
+		}
+		if raw, _ := os.ReadFile(path); string(raw) != body {
+			t.Errorf("%v: file %q", errno, raw)
+		}
+	}
+	syncFile = func(*os.File) error { return syscall.EINVAL }
+	if err := syncDir(t.TempDir()); err != nil {
+		t.Errorf("syncDir with EINVAL = %v, want nil", err)
+	}
+}
+
 func TestFormatting(t *testing.T) {
 	for d, want := range map[time.Duration]string{
 		0: "0", 15 * time.Minute: "15m", 90 * time.Minute: "1h30m", 2 * time.Hour: "2h", 45 * time.Second: "45s",
@@ -806,5 +832,74 @@ func TestStaleAccessCopyCannotUndoAChange(t *testing.T) {
 	}
 	if code, _, body := put(`{"access": {"devices": [], "device": {"id": "nbobCNTRL", "proxy": true}}}`); code != http.StatusBadRequest || errorCode(t, body) != "invalid_access" {
 		t.Errorf("devices and device together = %d %s", code, body)
+	}
+}
+
+// taproot.yaml never ignores a key, so PUT refuses a field it does not know
+// instead of answering 200 and changing nothing.
+func TestPutRefusesUnknownFields(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	before := f.file(t)
+	for _, body := range []string{
+		`{"backups": {"daily-at": "03:00", "keep": 5}}`,
+		`{"backup": {"keep": 5}}`,
+		`{"access": {"devices": [{"id": "nlaptopCNTRL", "proxy": true, "admin": true, "owner": "x"}]}}`,
+	} {
+		code, _, resp := f.do(t, http.MethodPut, body)
+		if code != http.StatusBadRequest || errorCode(t, resp) != "invalid_body" {
+			t.Fatalf("PUT %s = %d %s", body, code, resp)
+		}
+	}
+	if f.file(t) != before {
+		t.Fatalf("taproot.yaml changed:\n%s", f.file(t))
+	}
+	if _, keep := f.backups.Schedule(); keep != 3 {
+		t.Fatalf("keep = %d after refused updates", keep)
+	}
+}
+
+// After a restore replaced taproot.yaml, settings must not write the running
+// state over it before the restart that applies it.
+func TestPutRefusedWhileARestoreWaitsForRestart(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	e, err := f.backups.Create(context.Background(), backup.ReasonManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, body := f.do(t, http.MethodPut, `{"backups": {"keep": 5}}`)
+	if code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	if _, err := f.backups.Restore(context.Background(), e.ID, backup.RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	restored := f.file(t)
+	if !strings.Contains(restored, "keep: 3") {
+		t.Fatalf("restored taproot.yaml = %s", restored)
+	}
+
+	code, _, body = f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nlaptopCNTRL", "proxy": true, "admin": true}, {"id": "nphoneCNTRL", "proxy": true}]}}`)
+	if code != http.StatusConflict || errorCode(t, body) != "restart_pending" {
+		t.Fatalf("PUT after restore = %d %s", code, body)
+	}
+	if got := f.access.Grants().Devices; len(got) != 1 {
+		t.Fatalf("live devices changed: %+v", got)
+	}
+	if f.file(t) != restored {
+		t.Fatalf("taproot.yaml changed after the restore:\n%s", f.file(t))
+	}
+
+	// The sweep leaves the restored device list alone too.
+	renamed := laptop
+	renamed.Name = "alice-laptop"
+	f.access.tailnet = &access.Tailnet{}
+	f.access.reconcile = func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool) {
+		return access.Grants{Devices: []access.DeviceGrant{renamed}}, nil, true
+	}
+	if err := f.s.sweep(t.Context()); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if f.file(t) != restored || !slices.Equal(f.guard.Grants().Devices, []access.DeviceGrant{laptop}) {
+		t.Fatalf("the sweep changed state after the restore:\n%s", f.file(t))
 	}
 }

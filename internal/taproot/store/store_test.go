@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -198,5 +199,44 @@ func TestCheckFileReportsMissingColumnsWithoutChangingTheFile(t *testing.T) {
 	_ = raw.Close()
 	if objects != 1 {
 		t.Fatalf("CheckFile left %d schema objects, want only the original table", objects)
+	}
+}
+
+// A data dir whose name holds URI syntax still opens the file Path names,
+// with the pragmas applied.
+func TestOpenEscapesPathInURI(t *testing.T) {
+	ctx := context.Background()
+	for _, name := range []string{"a#b", "a?b", "a%20b", "a b", "a&b=c"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			db, err := Open(ctx, Config{}, filepath.Join(root, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = db.Close() }()
+			if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS uritest (v INTEGER)`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(db.Path()); err != nil {
+				t.Fatalf("database is not at Path(): %v", err)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != name {
+				t.Fatalf("data dir parent holds %v, want only %q", entries, name)
+			}
+			var mode string
+			if err := db.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&mode); err != nil {
+				t.Fatal(err)
+			}
+			if mode != "wal" {
+				t.Fatalf("journal_mode = %s, want wal", mode)
+			}
+			if err := CheckFile(ctx, db.Path()); err != nil {
+				t.Fatalf("CheckFile: %v", err)
+			}
+		})
 	}
 }
