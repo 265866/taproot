@@ -1,6 +1,6 @@
 // Package taproot wires the fork's additions into the upstream server through
-// server options, so upstream files stay untouched apart from one call in
-// cmd/server/main.go.
+// server options. The few upstream edits it needs, most of them calls in
+// cmd/server/main.go, are listed under "Upstream boundary" in DESIGN.md.
 package taproot
 
 import (
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -82,7 +83,24 @@ func parseConfig(raw []byte, path string) (Config, error) {
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
-	return cfg, nil
+	// Only the first document is read, so a second one would be ignored without a word.
+	for {
+		var doc yaml.Node
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return cfg, nil
+		}
+		if err != nil {
+			return cfg, fmt.Errorf("parse %s: %w", path, err)
+		}
+		if !emptyDocument(&doc) {
+			return cfg, fmt.Errorf("parse %s: it holds more than one YAML document (a line with only ---); merge them into one", path)
+		}
+	}
+}
+
+func emptyDocument(doc *yaml.Node) bool {
+	return len(doc.Content) == 0 || (len(doc.Content) == 1 && doc.Content[0].Tag == "!!null")
 }
 
 // restoreCheck reads a backup's taproot.yaml the way setup will on the next
@@ -111,7 +129,11 @@ func restoreCheck(tpPath, upstreamConfigPath string) func([]byte) (backup.NextSt
 
 // ConfigPath returns taproot.yaml's location: TAPROOT_CONFIG, otherwise beside config.yaml.
 func ConfigPath(upstreamConfigPath string) string {
-	if p := os.Getenv("TAPROOT_CONFIG"); p != "" {
+	return taprootConfigPath(upstreamConfigPath, os.Getenv)
+}
+
+func taprootConfigPath(upstreamConfigPath string, getenv func(string) string) string {
+	if p := getenv("TAPROOT_CONFIG"); p != "" {
 		return p
 	}
 	return filepath.Join(filepath.Dir(upstreamConfigPath), "taproot.yaml")
@@ -145,18 +167,50 @@ func CheckServerMode(homeMode, tuiMode, standalone bool) error {
 	return nil
 }
 
-// Setup opens taproot's modules and returns the server options that mount them.
-// It must run before the service is built, because the access guard prepares
+// RestartExitCode is the exit status after a restore asks taproot to restart
+// (EX_TEMPFAIL). It is not 0 so that every restart policy, systemd's
+// Restart=on-failure and Docker's on-failure included, starts taproot again.
+const RestartExitCode = 75
+
+// Setup opens taproot's modules and returns the server options that mount them,
+// and shutdown, which main calls once the server has stopped. shutdown writes the
+// request-log records and usage events still queued, then exits with
+// RestartExitCode when a restore asked for a restart.
+// Setup must run before the service is built, because the access guard prepares
 // the management secret that the management handler reads at construction.
-func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) ([]api.ServerOption, error) {
-	opts, _, err := setup(ctx, cfg, upstreamConfigPath)
-	return opts, err
+func Setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (_ []api.ServerOption, shutdown func(), _ error) {
+	opts, m, err := setup(ctx, cfg, upstreamConfigPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return opts, func() {
+		m.stop()
+		if m.backups.RestartRequested() {
+			log.Infof("taproot: exiting with status %d so the supervisor restarts taproot to finish the restore", RestartExitCode)
+			os.Exit(RestartExitCode)
+		}
+	}, nil
 }
 
-// setup is Setup that also returns stop, which cancels the background work
-// and waits for the request-log writer and compactor. The writer saves queued
-// records to new files as it stops, so delete a data dir only after stop.
-func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (_ []api.ServerOption, stop func(), _ error) {
+// modules is what shutdown needs of a running setup.
+type modules struct {
+	cancel  context.CancelFunc
+	logs    *reqlog.Logs
+	usage   *ingest.Ingest
+	backups *backup.Backups
+}
+
+// stop cancels the background work and waits for the request-log writer and
+// compactor and for ingest's writer, which save the records still queued as
+// they stop. Delete a data dir only after stop.
+func (m *modules) stop() {
+	m.cancel()
+	m.logs.Close()
+	m.usage.Wait()
+}
+
+// setup is Setup without the restart exit, for tests.
+func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) ([]api.ServerOption, *modules, error) {
 	tpPath := ConfigPath(upstreamConfigPath)
 	if _, err := os.Stat(tpPath); errors.Is(err, os.ErrNotExist) {
 		if abs, errAbs := filepath.Abs(tpPath); errAbs == nil {
@@ -241,10 +295,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	stop = func() {
-		cancel()
-		logs.Close()
-	}
+	running := &modules{cancel: cancel, logs: logs, usage: usage, backups: backups}
 	usage.Start(ctx)
 	logs.Start(ctx)
 	backups.Start(ctx)
@@ -256,7 +307,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 
 	opts := []api.ServerOption{
 		// The guard must run first so the dashboard is access-checked too.
-		api.WithMiddleware(guard.Middleware(), web.Middleware(), accounts.middleware()),
+		api.WithMiddleware(guard.Middleware(), web.Middleware(), apiNotFound(), accounts.middleware()),
 		api.WithRouterConfigurator(func(engine *gin.Engine, h *handlers.BaseAPIHandler, _ *config.Config) {
 			if h != nil {
 				usage.AttachAuthManager(h.AuthManager)
@@ -276,7 +327,22 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if factory := logs.LoggerFactory(); factory != nil {
 		opts = append(opts, api.WithRequestLoggerFactory(factory))
 	}
-	return opts, stop, nil
+	return opts, running, nil
+}
+
+// apiNotFound answers a request under APIPrefix that matches no route, or
+// matches one only under another method, with taproot's JSON error. gin runs
+// global middleware before its no-route handler, which upstream sets to an
+// empty 404, and leaves FullPath empty for such a request.
+func apiNotFound() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		p := c.Request.URL.Path
+		if c.FullPath() != "" || (p != APIPrefix && !strings.HasPrefix(p, APIPrefix+"/")) {
+			c.Next()
+			return
+		}
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "not_found", "message": "no endpoint " + c.Request.Method + " " + p}})
+	}
 }
 
 // dashboardURL is where a tailnet device opens the dashboard: the server's

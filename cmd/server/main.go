@@ -838,7 +838,7 @@ func main() {
 			// Start the main proxy service
 			// Taproot opens its data dir only here, where the server actually starts:
 			// never for login, plugin command-line, or TUI client runs beside a live server.
-			taprootOptions, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
+			taprootOptions, shutdownTaproot, errTaproot := taproot.Setup(context.Background(), cfg, configFilePath)
 			if errTaproot != nil {
 				log.Errorf("taproot setup failed: %v", errTaproot)
 				os.Exit(1)
@@ -848,6 +848,7 @@ func main() {
 			misc.StartAntigravityVersionUpdater(context.Background())
 			registry.SetLocalModelCatalogs(localModel)
 			cmd.StartServiceWithPluginHost(cfg, configFilePath, password, pluginHost, serverOptions...)
+			shutdownTaproot()
 		}
 	}
 }

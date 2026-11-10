@@ -21,6 +21,8 @@ A backup holds `config.yaml`, `taproot.yaml`, the database, the credential files
 
 A restore keeps where this server keeps its files: `data-dir` and `store.path` in `taproot.yaml`, and `oauth.auth-dir` in `config.yaml` (or the older top-level `auth-dir`, in whichever form the current file uses), stay as they are now. It refuses a backup whose `taproot.yaml` this release would not start with, such as one with a key that a later release renamed, and changes nothing. From the dashboard, it also refuses a backup that would take Admin from the device you restore it on. After a restore, settings, backups, and further restores wait until taproot restarts.
 
+A restore finishes with a restart. Taproot exits with status 75, and the database from the backup takes effect when its supervisor starts it again. Every shipped example restarts it (`Restart=always`, `--restart unless-stopped`), and so does a restart policy that restarts only failures, such as systemd's `Restart=on-failure`. Without a supervisor, start taproot again yourself.
+
 ## The two configuration files
 
 - `config.yaml` is CLIProxyAPI's configuration. On the first start, taproot writes [`examples/taproot/config.yaml`](../examples/taproot/config.yaml), the minimal configuration for taproot, with `oauth.auth-dir` moved beside the file. CLIProxyAPI ignores keys it does not know, so a taproot setting in `config.yaml` has no effect.

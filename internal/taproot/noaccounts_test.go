@@ -117,7 +117,7 @@ func TestNoAccountsFollowsAChangedStatus(t *testing.T) {
 
 // Before the server attaches its auth manager, nothing is rewritten.
 func TestNoAccountsWithoutManager(t *testing.T) {
-	if (&noAccounts{}).poolEmpty() {
-		t.Fatal("poolEmpty() = true without an auth manager")
+	if msg, ok := (&noAccounts{}).message("gpt-5"); ok {
+		t.Fatalf("message() = %q without an auth manager, want none", msg)
 	}
 }

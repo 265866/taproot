@@ -63,11 +63,13 @@ access:
 `
 
 // writeDefaultConfig writes config.yaml at configPath, and taproot.yaml where
-// Setup will look for it, when config.yaml does not exist. It never replaces
-// an existing file: a missing config.yaml beside an existing taproot.yaml gets
-// only config.yaml. An existing config.yaml means a deployment, so nothing is
-// written and Setup's check for taproot.yaml still applies.
-func writeDefaultConfig(configPath string) error {
+// Setup will look for it (getenv reads TAPROOT_CONFIG), when config.yaml does
+// not exist. It never replaces an existing file: a missing config.yaml beside
+// an existing taproot.yaml gets only config.yaml. An existing config.yaml
+// means a deployment, so nothing is written and Setup's check for
+// taproot.yaml still applies. taproot.yaml is written first, so the next run
+// completes a run that failed between the two writes.
+func writeDefaultConfig(configPath string, getenv func(string) string) error {
 	if _, err := os.Stat(configPath); err == nil {
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -81,13 +83,7 @@ func writeDefaultConfig(configPath string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
-	authLine := "    auth-dir: " + strconv.Quote(filepath.ToSlash(filepath.Join(dir, "auths"))) + "\n"
-	if err := createFile(abs, strings.Replace(exampleConfigYAML, exampleAuthDirLine, authLine, 1)); err != nil {
-		return err
-	}
-	log.Infof("taproot: %s did not exist, so taproot wrote a default config there", abs)
-
-	tpPath := ConfigPath(abs)
+	tpPath := taprootConfigPath(abs, getenv)
 	if errMkdir := os.MkdirAll(filepath.Dir(tpPath), 0o700); errMkdir != nil {
 		return fmt.Errorf("create %s: %w", filepath.Dir(tpPath), errMkdir)
 	}
@@ -99,6 +95,12 @@ func writeDefaultConfig(configPath string) error {
 	default:
 		log.Infof("taproot: wrote %s with no devices; the server starts unclaimed and logs a setup code", tpPath)
 	}
+
+	authLine := "    auth-dir: " + strconv.Quote(filepath.ToSlash(filepath.Join(dir, "auths"))) + "\n"
+	if err := createFile(abs, strings.Replace(exampleConfigYAML, exampleAuthDirLine, authLine, 1)); err != nil {
+		return err
+	}
+	log.Infof("taproot: %s did not exist, so taproot wrote a default config there", abs)
 	return nil
 }
 

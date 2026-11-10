@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/access"
@@ -135,8 +136,12 @@ type Backups struct {
 	identityFrom func(*gin.Context) (access.Identity, bool)
 	// restart asks the process to exit gracefully so a supervisor restarts it.
 	// It is nil where the process cannot signal itself.
-	restart func() error
+	restart          func() error
+	restartRequested atomic.Bool
 }
+
+// RestartRequested reports whether a restore asked the process to restart.
+func (b *Backups) RestartRequested() bool { return b.restartRequested.Load() }
 
 // New prepares the module.
 func New(cfg Config, db *store.DB, paths Paths) (*Backups, error) {

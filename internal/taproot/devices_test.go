@@ -98,11 +98,11 @@ func newProxyServer(t *testing.T, upstream string, trusted ...string) http.Handl
 	cfg := &config.Config{}
 	cfg.Port = 8317
 	cfg.AuthDir = authDir
-	opts, stop, err := setup(ctx, cfg, configPath)
+	opts, running, err := setup(ctx, cfg, configPath)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	t.Cleanup(stop)
+	t.Cleanup(running.stop)
 
 	manager := auth.NewManager(nil, nil, nil)
 	manager.RegisterExecutor(executor.NewClaudeExecutor(cfg))

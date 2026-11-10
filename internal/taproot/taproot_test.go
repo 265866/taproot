@@ -155,11 +155,11 @@ func setupServer(t *testing.T, tp string) (fixture, error) {
 	cfg := &config.Config{}
 	cfg.Port = 8317
 	cfg.AuthDir = authDir
-	opts, stop, err := setup(context.Background(), cfg, configPath)
+	opts, running, err := setup(context.Background(), cfg, configPath)
 	if err != nil {
 		return fixture{}, err
 	}
-	t.Cleanup(stop)
+	t.Cleanup(running.stop)
 	auths := auth.NewManager(nil, nil, nil)
 	srv := api.NewServer(cfg, auths, sdkaccess.NewManager(), configPath, opts...)
 	return fixture{h: srv.Handler(), taprootYAML: taprootYAML, auths: auths}, nil
@@ -767,5 +767,66 @@ request-logs:
 	}
 	if _, err := LoadConfig(empty); err != nil {
 		t.Fatalf("comment-only taproot.yaml: %v", err)
+	}
+}
+
+// Only the first YAML document would be read, so a file with a second one is
+// refused rather than loaded with that document ignored.
+func TestLoadConfigRefusesASecondDocument(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name, content string
+		ok            bool
+	}{
+		{"leading marker", "---\ndata-dir: a\n", true},
+		{"trailing marker", "data-dir: a\n---\n", true},
+		{"end marker", "data-dir: a\n...\n", true},
+		{"second document", "data-dir: a\n---\naccess:\n  enabled: false\n", false},
+		{"unknown key in the second document", "data-dir: a\n---\nbogus-key: 1\n", false},
+	} {
+		path := filepath.Join(dir, strings.ReplaceAll(tc.name, " ", "-")+".yaml")
+		if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadConfig(path)
+		if tc.ok && err != nil {
+			t.Errorf("%s: LoadConfig = %v, want success", tc.name, err)
+		}
+		if !tc.ok && (err == nil || !strings.Contains(err.Error(), "more than one YAML document")) {
+			t.Errorf("%s: LoadConfig = %v, want the more-than-one-document error", tc.name, err)
+		}
+	}
+}
+
+// A request under the API prefix that matches no route, or matches one only
+// under another method, gets the API's JSON error rather than an empty 404.
+func TestUnknownAPIPathsAnswerJSON(t *testing.T) {
+	f := newServer(t)
+	headers := map[string]string{"X-Taproot-Request": "1"}
+	for _, r := range []req{
+		{path: "/taproot/api/v1/nope"},
+		{path: "/taproot/api/v1"},
+		{method: http.MethodDelete, path: "/taproot/api/v1/backups"},
+		{method: http.MethodPut, path: "/taproot/api/v1/me"},
+		{method: http.MethodHead, path: "/taproot/api/v1/settings"},
+	} {
+		r.remote, r.headers = adminIP, headers
+		rec := f.do(r)
+		var body struct {
+			Error struct{ Code, Message string }
+		}
+		if rec.Code != http.StatusNotFound || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Error.Code != "not_found" || !strings.Contains(body.Error.Message, r.path) {
+			t.Errorf("%s %s = %d %q, want 404 with error code not_found", r.method, r.path, rec.Code, rec.Body)
+		}
+	}
+	// Known routes and paths outside the prefix are untouched, and the guard still answers first.
+	if rec := f.do(req{remote: adminIP, path: "/taproot/api/v1/me"}); rec.Code != http.StatusOK {
+		t.Errorf("GET /taproot/api/v1/me = %d, want 200", rec.Code)
+	}
+	if rec := f.do(req{remote: adminIP, path: "/taproot/api/v1x"}); rec.Code != http.StatusNotFound || rec.Body.Len() != 0 {
+		t.Errorf("GET /taproot/api/v1x = %d %q, want upstream's empty 404", rec.Code, rec.Body)
+	}
+	if rec := f.do(req{remote: "203.0.113.9", path: "/taproot/api/v1/nope"}); !isGuardDenial(rec) {
+		t.Errorf("GET /taproot/api/v1/nope from a stranger = %d, want the guard's 403", rec.Code)
 	}
 }
