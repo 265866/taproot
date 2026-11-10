@@ -33,10 +33,18 @@ type requestLogger struct {
 
 	// streams holds writers that may still hold budget. Upstream's Finalize
 	// skips Close when request-log was switched off mid-stream, so SetEnabled
-	// releases what those writers hold.
-	streamsMu sync.Mutex
-	streams   map[*streamWriter]struct{}
+	// releases what those writers hold. It also returns early without Close
+	// when reading a spooled section fails, so LogStreamingRequest releases
+	// the budget of writers idle for streamIdleLimit.
+	streamsMu  sync.Mutex
+	streams    map[*streamWriter]struct{}
+	lastExpiry time.Time
 }
+
+// streamIdleLimit is how long a stream writer may go without a call before
+// its buffered body is dropped and its budget released. A Close that still
+// comes stores the record, marked truncated.
+const streamIdleLimit = 30 * time.Minute
 
 var (
 	_ logging.RequestLogger      = (*requestLogger)(nil)
@@ -68,6 +76,26 @@ func (l *requestLogger) trackStream(w *streamWriter) {
 		l.streams = make(map[*streamWriter]struct{})
 	}
 	l.streams[w] = struct{}{}
+}
+
+// expireIdleStreams releases the budget of writers idle past
+// streamIdleLimit, at most once a minute.
+func (l *requestLogger) expireIdleStreams() {
+	now := l.now()
+	l.streamsMu.Lock()
+	if now.Sub(l.lastExpiry) < time.Minute {
+		l.streamsMu.Unlock()
+		return
+	}
+	l.lastExpiry = now
+	live := make([]*streamWriter, 0, len(l.streams))
+	for w := range l.streams {
+		live = append(live, w)
+	}
+	l.streamsMu.Unlock()
+	for _, w := range live {
+		w.expireIfIdle(now)
+	}
 }
 
 func (l *requestLogger) untrackStream(w *streamWriter) {
@@ -145,6 +173,7 @@ func (l *requestLogger) LogStreamingRequest(url, method string, headers map[stri
 	if !l.IsEnabled() {
 		return &logging.NoOpStreamingLogWriter{}, nil
 	}
+	now := l.now()
 	w := &streamWriter{
 		logger: l,
 		c: capture{
@@ -153,10 +182,12 @@ func (l *requestLogger) LogStreamingRequest(url, method string, headers map[stri
 			requestHeaders: redactHeaders(headers),
 			requestBody:    body,
 			requestID:      requestID,
-			requestTime:    l.now(),
+			requestTime:    now,
 			streaming:      true,
 		},
+		lastActive: now,
 	}
+	l.expireIdleStreams()
 	l.trackStream(w)
 	// A switch-off between the check above and tracking would miss w.
 	if !l.IsEnabled() {
@@ -203,15 +234,19 @@ func mergeSource(payload []byte, source *logging.FileBodySource) []byte {
 // budget as they arrive; once it is exhausted the rest of the body is skipped
 // and the record notes the truncation.
 type streamWriter struct {
-	logger    *requestLogger
-	mu        sync.Mutex
-	c         capture
-	chunks    bytes.Buffer
-	reserved  int64
-	truncated int64
-	apiReqSrc *logging.FileBodySource
-	apiResSrc *logging.FileBodySource
-	closed    bool
+	logger     *requestLogger
+	mu         sync.Mutex
+	c          capture
+	chunks     bytes.Buffer
+	reserved   int64
+	truncated  int64
+	apiReqSrc  *logging.FileBodySource
+	apiResSrc  *logging.FileBodySource
+	closed     bool
+	lastActive time.Time
+	// expired is set once expireIfIdle released the budget; later chunks
+	// count as truncated, since nothing would release them again.
+	expired bool
 }
 
 func (w *streamWriter) WriteChunkAsync(chunk []byte) {
@@ -220,7 +255,8 @@ func (w *streamWriter) WriteChunkAsync(chunk []byte) {
 	if w.closed || len(chunk) == 0 {
 		return
 	}
-	if w.truncated > 0 || !w.logger.engine.budget.reserve(int64(len(chunk))) {
+	w.lastActive = w.logger.now()
+	if w.expired || w.truncated > 0 || !w.logger.engine.budget.reserve(int64(len(chunk))) {
 		w.truncated += int64(len(chunk))
 		return
 	}
@@ -345,6 +381,23 @@ func (w *streamWriter) Close() error {
 	c.finishedAt = l.now()
 	l.engine.submit(&c)
 	return nil
+}
+
+// expireIfIdle drops the buffered body of a writer idle since before
+// now-streamIdleLimit and returns its budget. Its record survives, marked
+// truncated, if Close still comes.
+func (w *streamWriter) expireIfIdle(now time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed || now.Sub(w.lastActive) < streamIdleLimit {
+		return
+	}
+	w.expired = true
+	w.logger.untrackStream(w)
+	w.logger.engine.budget.release(w.reserved)
+	w.truncated += int64(w.chunks.Len())
+	w.reserved = 0
+	w.chunks = bytes.Buffer{}
 }
 
 // abandon drops the record and returns its budget without storing anything.

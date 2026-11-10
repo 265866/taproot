@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/logging"
 )
 
 // restoreSnapshot stops the harness, replaces its database with snapshot the
@@ -448,5 +449,53 @@ func TestAPISectionCredentialsAreRedacted(t *testing.T) {
 	}
 	if strings.Contains(d.Request.URL, "wxyz") {
 		t.Fatalf("detail URL %q keeps part of the key", d.Request.URL)
+	}
+}
+
+// TestIdleStreamReleasesBudget covers upstream's Finalize returning early,
+// without Close, when it cannot read a spooled section: the writer would keep
+// its share of the queue budget for as long as the process runs.
+func TestIdleStreamReleasesBudget(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	start := h.clock.now()
+	open := func(id string) logging.StreamingLogWriter {
+		w, err := lg.LogStreamingRequest("/v1/messages", "POST", nil, []byte(`{"model":"m"}`), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = w.WriteStatus(200, map[string][]string{"Content-Type": {"text/event-stream"}})
+		return w
+	}
+	leaked, busy := open("leaked"), open("busy")
+	leaked.WriteChunkAsync(bytes.Repeat([]byte("c"), 64<<10))
+	busy.WriteChunkAsync([]byte("data: 1\n\n"))
+
+	h.clock.set(start.Add(streamIdleLimit - time.Minute))
+	busy.WriteChunkAsync([]byte("data: 2\n\n"))
+	h.clock.set(start.Add(streamIdleLimit + time.Minute))
+	_ = open("next")
+	if used := h.logs.engine.budget.used.Load(); used != 2*int64(len("data: 1\n\n")) {
+		t.Fatalf("budget after the idle stream expired: %d bytes, want only the busy stream's", used)
+	}
+
+	// A Close that still comes stores the record, marked truncated.
+	leaked.WriteChunkAsync([]byte("late"))
+	if err := leaked.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := busy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+	d, err := h.logs.Get(context.Background(), "leaked", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Meta.Dropped != "response truncated" || strings.Contains(d.Response.Body, "ccc") {
+		t.Fatalf("expired stream stored as dropped=%q with a %d-byte body", d.Meta.Dropped, len(d.Response.Body))
+	}
+	if d, err := h.logs.Get(context.Background(), "busy", true); err != nil || d.Response.Body != "data: 1\n\ndata: 2\n\n" {
+		t.Fatalf("busy stream: %v", err)
 	}
 }
