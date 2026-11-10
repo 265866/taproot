@@ -16,9 +16,25 @@ const HOME_PATH = /[A-Za-z]:\\Users\\|\/Users\/|\/home\/|\/var\/home\/|\/root\//
 // users pass (tailnet.go and traffic.go).
 const DEMO_GITHUB_LOGINS = new Set(['alice@github', 'bob@github', 'carol@github']);
 const DEMO_TAILNETS = ['tailnet-0000.ts.net', 'tailnet-1111.ts.net'];
-// The demo's stable IDs, such as nLAPTOP01CNTRL, are upper case and digits.
-// Real ones mix upper and lower case.
-const DEMO_STABLE_ID = /^n[A-Z0-9]+CNTRL$/;
+// The stable IDs of tailnet.go's devices; privacy.test.ts keeps the two in step.
+export const DEMO_STABLE_IDS = new Set([
+  'nALIMBP01CNTRL',
+  'nBOBLAP01CNTRL',
+  'nBOBPHN01CNTRL',
+  'nCAROLIP1CNTRL',
+  'nCIRUN001CNTRL',
+  'nDANA0001CNTRL',
+  'nDANA0002CNTRL',
+  'nDANA0003CNTRL',
+  'nDESKTOP1CNTRL',
+  'nLAPTOP01CNTRL',
+  'nOLDLAP01CNTRL',
+  'nOLDTAB01CNTRL',
+  'nPHONE001CNTRL',
+  'nSERVER01CNTRL',
+  'nWORKLAP1CNTRL',
+  'nWORKSTN1CNTRL',
+]);
 
 /** Returns every piece of text that is not one of the demo's synthetic values. */
 export function privacyProblems(text: string, deny: string[] = []): string[] {
@@ -44,7 +60,7 @@ export function privacyProblems(text: string, deny: string[] = []): string[] {
     if (!DEMO_TAILNETS.some((t) => name === t || name.endsWith(`.${t}`))) problems.push(`name ${m}`);
   }
   for (const m of text.match(STABLE_ID) ?? []) {
-    if (!DEMO_STABLE_ID.test(m)) problems.push(`node ${m}`);
+    if (!DEMO_STABLE_IDS.has(m)) problems.push(`node ${m}`);
   }
   if (HOME_PATH.test(text)) problems.push('a home directory path');
   const lower = text.toLowerCase();

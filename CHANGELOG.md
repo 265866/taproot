@@ -2,6 +2,10 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## Unreleased
+
+- NixOS: `services.taproot.settings.server.host` must now be a literal Tailscale address, an IPv4 address in 100.64.0.0/10 or a bracketed IPv6 address in fd7a:115c:a1e0::/48. A configuration that set it to a MagicDNS name, a LAN address, or another IPv4 address no longer evaluates. Remove that setting and set `services.taproot.tailscale.address` to the output of `tailscale ip -4` instead.
+
 ## [0.3.0](https://github.com/265866/taproot/compare/taproot-v0.2.0...taproot-v0.3.0) (2026-11-09)
 
 ### Added

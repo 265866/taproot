@@ -24,6 +24,8 @@ import (
 //	running        image ID the container runs
 //	active         present while the unit is active
 //	crashloop      present while the unit, not active, waits to restart a crash
+//	deactivating   number of times the unit answers "deactivating" before the
+//	               state above, as it does while a stop or crash cleans up
 //	healthy/<id>   present when the container answers health checks on <id>
 //	hang/<id>      present when health checks on <id> hang until curl times out
 //	stuck          present when a restart fails and leaves the container as is
@@ -77,7 +79,10 @@ podman)
 systemctl)
 	case $2 in
 	show)
-		if [[ -f $s/active ]]; then echo active
+		if [[ -f $s/deactivating && $(cat "$s/deactivating") -gt 0 ]]; then
+			echo $(($(cat "$s/deactivating") - 1)) >"$s/deactivating"
+			echo deactivating
+		elif [[ -f $s/active ]]; then echo active
 		elif [[ -f $s/crashloop ]]; then echo activating
 		else echo inactive
 		fi ;;
@@ -540,25 +545,56 @@ func TestUpdateOnlyRetagsAStoppedUnit(t *testing.T) {
 }
 
 // A unit that waits to restart after a crash is not "active", but it is not
-// stopped either: the update restarts it and checks its health.
+// stopped either: the update restarts it and checks its health. Between
+// crashes it is "deactivating" for a moment, and the update waits that out.
 func TestUpdateRestartsACrashLoopingUnit(t *testing.T) {
+	for name, deactivating := range map[string]string{
+		"waiting to restart":            "0",
+		"cleaning up after a crash":     "3",
+		"deactivating past the timeout": "1000",
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newUpdateHost(t)
+			h.remove("state/active")
+			h.write("state/crashloop", "")
+			h.write("state/deactivating", deactivating)
+			h.remove("state/running")
+			out, code, calls := h.run()
+			if code != 0 {
+				t.Fatalf("exit %d:\n%s", code, out)
+			}
+			wantCalls(t, calls,
+				"cosign verify "+image+"@"+digestNew,
+				"podman pull "+image+"@"+digestNew,
+				"podman tag "+idOld+" localhost/taproot:previous",
+				"podman tag "+idNew+" localhost/taproot:current",
+				"systemctl restart taproot-update-test.service",
+				"podman image rm "+idOlder,
+			)
+			wantOutput(t, out, "updated taproot-update-test.service to "+image+"@"+digestNew)
+		})
+	}
+}
+
+// A unit someone is stopping is "deactivating" until its container is gone;
+// once it settles to "inactive", the update only retags.
+func TestUpdateWaitsForAStoppingUnitToSettle(t *testing.T) {
 	h := newUpdateHost(t)
 	h.remove("state/active")
-	h.write("state/crashloop", "")
-	h.remove("state/running")
+	h.write("state/deactivating", "3")
 	out, code, calls := h.run()
 	if code != 0 {
 		t.Fatalf("exit %d:\n%s", code, out)
 	}
-	wantCalls(t, calls,
-		"cosign verify "+image+"@"+digestNew,
-		"podman pull "+image+"@"+digestNew,
-		"podman tag "+idOld+" localhost/taproot:previous",
-		"podman tag "+idNew+" localhost/taproot:current",
-		"systemctl restart taproot-update-test.service",
-		"podman image rm "+idOlder,
-	)
-	wantOutput(t, out, "updated taproot-update-test.service to "+image+"@"+digestNew)
+	for _, c := range calls {
+		if strings.HasPrefix(c, "systemctl") {
+			t.Fatalf("restarted a stopped unit: %q", calls)
+		}
+	}
+	wantOutput(t, out, "is not running, so it starts on the new image next time")
+	if waited := atoi(t, h.read("state/clock")) - 1000; waited != 3 {
+		t.Fatalf("waited %d s for the unit to settle, want 3", waited)
+	}
 }
 
 func TestUpdateRejectsBadSettings(t *testing.T) {
@@ -743,6 +779,7 @@ func TestUpdateFinishesAnInterruptedRun(t *testing.T) {
 		h := interrupt(t)
 		h.remove("state/active")
 		h.write("state/crashloop", "")
+		h.write("state/deactivating", "2")
 		h.remove("state/running")
 		h.remove("state/healthy/" + idNew)
 		out, code, calls := h.run()

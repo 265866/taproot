@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { privacyProblems } from './privacy';
+import { readFileSync } from 'node:fs';
+import { DEMO_STABLE_IDS, privacyProblems } from './privacy';
 
 describe('privacyProblems', () => {
   test('passes the demo synthetic values', () => {
@@ -30,8 +31,15 @@ describe('privacyProblems', () => {
     expect(privacyProblems('server.tail1234.ts.net')).toEqual(['name server.tail1234.ts.net']);
   });
 
-  test('flags stable IDs that are not synthetic', () => {
+  test('flags stable IDs that are not the demo devices', () => {
     expect(privacyProblems('n4mpg2UJbY11CNTRL')).toEqual(['node n4mpg2UJbY11CNTRL']);
+    expect(privacyProblems('nABCDEF12CNTRL')).toEqual(['node nABCDEF12CNTRL']);
+  });
+
+  test('allows exactly the stable IDs of tailnet.go', () => {
+    const source = readFileSync(new URL('./tailnet.go', import.meta.url), 'utf8');
+    const ids = new Set(source.match(/\bn[A-Za-z0-9]{4,}CNTRL\b/g));
+    expect([...DEMO_STABLE_IDS].sort()).toEqual([...ids].sort());
   });
 
   test('flags home directories', () => {

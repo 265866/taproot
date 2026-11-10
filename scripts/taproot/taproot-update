@@ -49,6 +49,8 @@ readonly IDENTITY_PREFIX='^https://github\.com/265866/taproot/\.github/workflows
 readonly OIDC_ISSUER=https://token.actions.githubusercontent.com
 readonly WORKFLOW_REPOSITORY=265866/taproot
 readonly HEALTH_INTERVAL=2
+# Taproot exits at once on SIGTERM and podman kills it 10 s later at most.
+readonly STOP_SETTLE_SECONDS=15
 
 log() { printf 'taproot-update: %s\n' "$*" >&2; }
 die() {
@@ -251,14 +253,18 @@ restart() {
 	systemctl --user restart "$unit" || log "systemctl --user restart $unit failed"
 }
 
-# unit_stopped succeeds when someone stopped the unit. A unit that crashed and
-# waits to restart is "activating", and one that gave up restarting is
-# "failed"; neither is stopped, and is-active would call both inactive.
+# unit_stopped succeeds when someone stopped the unit. is-active cannot tell:
+# a crash-looping unit passes through "deactivating" while ExecStopPost
+# removes the container, then waits to restart as "activating", and one that
+# hit its start limit is "failed". None of those is stopped. A "deactivating"
+# unit gets STOP_SETTLE_SECONDS to settle.
 unit_stopped() {
-	case $(systemctl --user show -p ActiveState --value "$unit" 2>/dev/null) in
-	inactive | deactivating | "") return 0 ;;
-	*) return 1 ;;
-	esac
+	local state waited=0
+	while state=$(systemctl --user show -p ActiveState --value "$unit" 2>/dev/null || true) &&
+		[[ $state == deactivating ]] && ((waited++ < STOP_SETTLE_SECONDS)); do
+		sleep 1
+	done
+	[[ $state == inactive || -z $state ]]
 }
 
 # remove_unused removes an image that no tag or container uses any more.
