@@ -64,7 +64,7 @@
     "self_named": "named by the device",
     "tailscale_name": "Tailscale name {{name}}",
     "request_id": "ID {{id}}",
-    "denied": "Request denied",
+    "denied": "Request denied. It reopens if the device asks again.",
     "addresses": "Addresses without Tailscale",
     "no_id": "No ID",
     "add_address": "Add an address",
