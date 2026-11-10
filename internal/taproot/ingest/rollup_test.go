@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -84,7 +85,8 @@ func sameTotals(a, b Totals) bool {
 		ptr(a.TTFTP50Ms, b.TTFTP50Ms) && ptr(a.TTFTP95Ms, b.TTFTP95Ms) &&
 		a.Requests == b.Requests && a.Failures == b.Failures && a.InputTokens == b.InputTokens && a.OutputTokens == b.OutputTokens &&
 		a.ReasoningTokens == b.ReasoningTokens && a.CacheReadTokens == b.CacheReadTokens && a.CacheWriteTokens == b.CacheWriteTokens &&
-		a.CacheWrite5mTokens == b.CacheWrite5mTokens && a.CacheWrite1hTokens == b.CacheWrite1hTokens
+		a.CacheWrite5mTokens == b.CacheWrite5mTokens && a.CacheWrite1hTokens == b.CacheWrite1hTokens &&
+		slices.Equal(a.UnpricedModels, b.UnpricedModels)
 }
 
 // requireRollupMatchesRaw checks every grouping reads the same totals,

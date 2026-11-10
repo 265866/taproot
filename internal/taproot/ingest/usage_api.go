@@ -30,6 +30,8 @@ type Totals struct {
 	LatencyP95Ms       *float64 `json:"latencyP95Ms"`
 	TTFTP50Ms          *float64 `json:"ttftP50Ms"`
 	TTFTP95Ms          *float64 `json:"ttftP95Ms"`
+	// UnpricedModels used tokens but match no price, so CostUSD leaves them out.
+	UnpricedModels []string `json:"unpricedModels,omitempty"`
 }
 
 // agg accumulates rows. Tokens stay per model so cost can be priced at the
@@ -66,8 +68,11 @@ func (a *agg) totals(pb *priceBook) Totals {
 		out.CacheWrite1hTokens += t.CacheWrite1h
 		if usd, ok := pb.cost(model, *t); ok {
 			out.CostUSD += usd
+		} else if *t != (tokenSums{}) {
+			out.UnpricedModels = append(out.UnpricedModels, model)
 		}
 	}
+	sort.Strings(out.UnpricedModels)
 	out.LatencyP50Ms, out.LatencyP95Ms = a.lat.percentile(0.5), a.lat.percentile(0.95)
 	out.TTFTP50Ms, out.TTFTP95Ms = a.ttft.percentile(0.5), a.ttft.percentile(0.95)
 	return out

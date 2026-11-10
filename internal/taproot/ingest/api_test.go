@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -458,5 +459,30 @@ func TestResetPricesRestoresShippedRowsAndRepricesHistory(t *testing.T) {
 	call(t, r, http.MethodGet, summaryPath, nil, &summary)
 	if summary.Totals.CostUSD != shippedCost {
 		t.Fatalf("cost after reset %v, want the shipped-price cost %v", summary.Totals.CostUSD, shippedCost)
+	}
+}
+
+func TestUsageSummaryNamesUnpricedModels(t *testing.T) {
+	i, r, clock := newAPI(t)
+	ctx := context.Background()
+	for n, model := range []string{"claude-opus-5-5", "unpriced-model", "unpriced-model", "no-tokens-model"} {
+		rec := usage.Record{RequestID: fmt.Sprint(n), Provider: "claude", Model: model, AuthIndex: "auth-a",
+			RequestedAt: clock.t.Add(-time.Hour), Latency: time.Second, Detail: usage.Detail{InputTokens: 1000}}
+		if model == "no-tokens-model" {
+			rec.Detail, rec.Failed = usage.Detail{}, true
+		}
+		i.HandleUsage(ctx, rec)
+	}
+	mustFlush(t, i)
+	var resp struct {
+		Totals Totals `json:"totals"`
+	}
+	call(t, r, http.MethodGet, "/api/usage/summary"+q("from", rfc(clock.t.Add(-2*time.Hour)), "to", rfc(clock.t), "bucket", "1h"), nil, &resp)
+	if resp.Totals.Requests != 4 || strings.Join(resp.Totals.UnpricedModels, ",") != "unpriced-model" || math.Abs(resp.Totals.CostUSD-1000*4/1e6) > 1e-12 {
+		t.Fatalf("totals %+v", resp.Totals)
+	}
+	raw, err := json.Marshal(Totals{})
+	if err != nil || strings.Contains(string(raw), "unpricedModels") {
+		t.Fatalf("priced totals carry unpricedModels: %s", raw)
 	}
 }
