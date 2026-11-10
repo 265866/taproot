@@ -5,6 +5,8 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 ## Unreleased
 
 - `access.addresses` refuses an entry in Tailscale's ranges (`100.64.0.0/10` and `fd7a:115c:a1e0::/48`) or a wider range that includes one, such as `0.0.0.0/0`, and taproot no longer starts with one. Such an entry gave every tailnet device it covered Proxy and took Admin from admin devices. Before you update, replace it in `taproot.yaml` with the addresses outside Tailscale that need the proxy, and turn on Proxy for the tailnet devices that need it on the Access page. If you added `0.0.0.0/0` or `::/0` to open the proxy to every caller, set `access.enabled: false` instead, and remove the entry, because taproot refuses it even while access is disabled.
+- `taproot.yaml` must hold one YAML document. Taproot used to read only the first document after a `---` line and ignore the rest; it now refuses to start with a second one. Merge them into one before you update.
+- After a restore, taproot exits with status 75 so that its supervisor restarts it; a normal stop still exits 0. The shipped units and compose file restart on any exit. If your own unit or monitor treats a non-zero exit as a failure, allow 75.
 
 ## [0.3.0](https://github.com/265866/taproot/compare/taproot-v0.2.0...taproot-v0.3.0) (2026-11-09)
 

@@ -140,8 +140,13 @@ func TestUnknownProviderSaysWhatThePoolLacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("no account for the model", func(model, provider string) string {
-		if provider == "" {
+		switch provider {
+		case "":
 			return "no enabled account serves model " + model + ": check the model name, or add an account that serves it on the taproot dashboard's Accounts page"
+		case "Claude":
+			// An enabled Claude account exists, so the model name is the
+			// likelier cause.
+			return "no enabled Claude account serves model " + model + ": check the model name; the pool's Claude accounts do not list it"
 		}
 		return "no enabled " + provider + " account serves model " + model + ": add or enable one on the taproot dashboard's Accounts page"
 	})

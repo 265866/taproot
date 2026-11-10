@@ -71,6 +71,9 @@ func handleArgs(fs *flag.FlagSet, args []string, stdout io.Writer, exit func(int
 		return
 	}
 	path := values["config"]
+	if f := fs.Lookup("config"); path == "" && f != nil {
+		path = f.DefValue
+	}
 	if path == "" {
 		if !discoverRun(values) && missing("config.yaml") {
 			log.Error("taproot: no --config flag, and no config.yaml in the working directory. Run taproot --config <dir>/config.yaml: on its first start taproot writes a default config.yaml and taproot.yaml in <dir>.")

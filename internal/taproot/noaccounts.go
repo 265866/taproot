@@ -51,6 +51,9 @@ func (n *noAccounts) message(model string) (string, bool) {
 		return "every account is disabled: enable one on the taproot dashboard's Accounts page, then retry model " + model, true
 	}
 	if provider := modelProvider(model); provider != "" {
+		if slices.ContainsFunc(auths, func(a *coreauth.Auth) bool { return !a.Disabled && strings.EqualFold(a.Provider, provider) }) {
+			return "no enabled " + provider + " account serves model " + model + ": check the model name; the pool's " + provider + " accounts do not list it", true
+		}
 		return "no enabled " + provider + " account serves model " + model + ": add or enable one on the taproot dashboard's Accounts page", true
 	}
 	return "no enabled account serves model " + model + ": check the model name, or add an account that serves it on the taproot dashboard's Accounts page", true
