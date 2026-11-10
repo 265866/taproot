@@ -123,6 +123,15 @@ export function resolveWindow(
 }
 
 /**
+ * The Requests table's selection: its range, its filters, and the page shown. The page counts
+ * because rows from another page do not answer the one on screen; its cursor does not, since a
+ * refresh of the same page gets a fresh cursor.
+ */
+export function requestsSelection(rangeSelection: string, filterSelection: string, page: number) {
+  return `${rangeSelection}|${filterSelection}|${page}`;
+}
+
+/**
  * A range query's key, and the selection its data answers: the range as chosen, without the
  * anchor time and refresh count that a refresh or a tab switch moves under an unchanged choice.
  */

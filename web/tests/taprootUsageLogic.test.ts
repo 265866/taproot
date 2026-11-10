@@ -13,6 +13,7 @@ import {
   parseLocalDate,
   presetWindow,
   rangeQuery,
+  requestsSelection,
   resolveWindow,
   summaryZone,
   todayWindow,
@@ -749,5 +750,18 @@ describe('query state after a failure', () => {
     const custom = (from: string, to: string) =>
       rangeQuery('custom', from, to, presetWindow('7d', at), 0).selection;
     expect(custom('2026-11-01', '2026-11-07')).not.toBe(custom('2026-11-02', '2026-11-07'));
+  });
+
+  test('rows from another Requests page are not current for the page shown', () => {
+    const page1 = requestsSelection('24h', 'a|m|||', 0);
+    const page2 = requestsSelection('24h', 'a|m|||', 1);
+    expect(page2).not.toBe(page1);
+    const loaded = settleQuery(null, 'k|', page1, { data: 'rows', at: 1000 });
+    // Older failed: page 1's rows stay, but they do not answer page 2.
+    const older = settleQuery(loaded, 'k|c2', page2, { error: new Error('x') });
+    expect(queryView(older, page2, 'k|c2')).toMatchObject({ data: 'rows', current: false });
+    // A failed refresh of the same page keeps them current.
+    const refreshed = settleQuery(loaded, 'k2|', page1, { error: new Error('x') });
+    expect(queryView(refreshed, page1, 'k2|').current).toBe(true);
   });
 });

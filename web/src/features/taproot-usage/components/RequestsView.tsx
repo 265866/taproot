@@ -11,7 +11,7 @@ import {
 } from '@/services/api/taproot';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
 import type { FailedFilter } from '../hooks/useUsageParams';
-import { toIso, type TimeWindow } from '../logic/range';
+import { requestsSelection, toIso, type TimeWindow } from '../logic/range';
 import { DASH, formatDateTime, formatMs, formatTokens, formatUSDPrecise } from '../logic/format';
 import { deviceFilterKey } from '../logic/devices';
 import { QueryError } from './QueryError';
@@ -76,25 +76,26 @@ export function RequestsView({
 
   useEffect(() => setSessionDraft(filters.session), [filters.session]);
 
-  const query = useTaprootQuery(`${filterKey}|${cursor ?? ''}`, () =>
-    taprootApi.usageEvents({
-      from: toIso(window.fromMs),
-      to: toIso(window.toMs),
-      authIndex: filters.account || undefined,
-      model: filters.model || undefined,
-      sessionId: filters.session || undefined,
-      deviceId: filters.device || undefined,
-      failed: filters.failed === '' ? undefined : filters.failed === 'true',
-      cursor,
-      limit: PAGE_SIZE,
-    }),
-    `${rangeSelection}|${filterSelection}`
+  const query = useTaprootQuery(
+    `${filterKey}|${cursor ?? ''}`,
+    () =>
+      taprootApi.usageEvents({
+        from: toIso(window.fromMs),
+        to: toIso(window.toMs),
+        authIndex: filters.account || undefined,
+        model: filters.model || undefined,
+        sessionId: filters.session || undefined,
+        deviceId: filters.device || undefined,
+        failed: filters.failed === '' ? undefined : filters.failed === 'true',
+        cursor,
+        limit: PAGE_SIZE,
+      }),
+    requestsSelection(rangeSelection, filterSelection, current.page)
   );
   const events = query.data?.events ?? [];
   // Only a page that answers this exact request may page on: a cursor from another filter, window,
   // or page would page through the wrong results.
-  const nextCursor =
-    query.loading || query.error ? null : (query.data?.nextCursor ?? null);
+  const nextCursor = query.loading || query.error ? null : (query.data?.nextCursor ?? null);
 
   const accountOptions = useMemo(() => {
     const keys = accounts.map((a) => a.authIndex);
