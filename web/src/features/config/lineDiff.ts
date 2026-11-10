@@ -41,7 +41,10 @@ function diffLines(a: readonly string[], b: readonly string[]): LineChange[] {
   if (encodedA === null || encodedB === null) {
     return a.length || b.length ? [{ fromA: 0, toA: a.length, fromB: 0, toB: b.length }] : [];
   }
-  return diff(encodedA, encodedB).map(({ fromA, toA, fromB, toB }) => ({ fromA, toA, fromB, toB }));
+  // diff() can leave a change emptied by its prefix and suffix trimming; it changes nothing.
+  return diff(encodedA, encodedB)
+    .filter(({ fromA, toA, fromB, toB }) => toA > fromA || toB > fromB)
+    .map(({ fromA, toA, fromB, toB }) => ({ fromA, toA, fromB, toB }));
 }
 
 const splitLines = (text: string): string[] => text.split('\n');
@@ -102,6 +105,8 @@ interface UnifiedLine {
   oldNum: number | null;
   newNum: number | null;
   text: string;
+  /** The file ends with this line and no newline after it. */
+  noNewline?: boolean;
 }
 
 interface Hunk {
@@ -120,18 +125,32 @@ export interface UnifiedDiff {
 
 const DIFF_CONTEXT_LINES = 3;
 
+interface FileLines {
+  lines: string[];
+  /** Diff keys: a last line without a final newline differs from the same line with one. */
+  keys: string[];
+  noNewline: boolean;
+}
+
 // The empty string after a final newline is not a line of the file.
-const fileLines = (text: string): string[] => {
+const fileLines = (text: string): FileLines => {
   const lines = splitLines(text);
-  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  return lines;
+  const noNewline = lines[lines.length - 1] !== '';
+  if (!noNewline) lines.pop();
+  const keys = [...lines];
+  if (noNewline) keys[keys.length - 1] += '\n';
+  return { lines, keys, noNewline };
 };
 
 /** A unified diff whose hunks merge when their context would overlap or touch. */
 export function computeUnifiedDiff(original: string, modified: string): UnifiedDiff {
-  const oldLines = fileLines(original);
-  const newLines = fileLines(modified);
-  const changes = diffLines(oldLines, newLines);
+  const oldFile = fileLines(original);
+  const newFile = fileLines(modified);
+  const oldLines = oldFile.lines;
+  const newLines = newFile.lines;
+  const changes = diffLines(oldFile.keys, newFile.keys);
+  const noNewlineOld = (line: number) => oldFile.noNewline && line === oldLines.length - 1;
+  const noNewlineNew = (line: number) => newFile.noNewline && line === newLines.length - 1;
   const hunks: Hunk[] = [];
   let additions = 0;
   let deletions = 0;
@@ -154,17 +173,35 @@ export function computeUnifiedDiff(original: string, modified: string): UnifiedD
     let b = startB;
     const pushContext = (until: number) => {
       for (; a < until; a += 1, b += 1) {
-        lines.push({ type: 'context', oldNum: a + 1, newNum: b + 1, text: oldLines[a] });
+        lines.push({
+          type: 'context',
+          oldNum: a + 1,
+          newNum: b + 1,
+          text: oldLines[a],
+          ...(noNewlineOld(a) && { noNewline: true }),
+        });
       }
     };
     for (let index = first; index <= last; index += 1) {
       const change = changes[index];
       pushContext(change.fromA);
       for (let line = change.fromA; line < change.toA; line += 1) {
-        lines.push({ type: 'deletion', oldNum: line + 1, newNum: null, text: oldLines[line] });
+        lines.push({
+          type: 'deletion',
+          oldNum: line + 1,
+          newNum: null,
+          text: oldLines[line],
+          ...(noNewlineOld(line) && { noNewline: true }),
+        });
       }
       for (let line = change.fromB; line < change.toB; line += 1) {
-        lines.push({ type: 'addition', oldNum: null, newNum: line + 1, text: newLines[line] });
+        lines.push({
+          type: 'addition',
+          oldNum: null,
+          newNum: line + 1,
+          text: newLines[line],
+          ...(noNewlineNew(line) && { noNewline: true }),
+        });
       }
       deletions += change.toA - change.fromA;
       additions += change.toB - change.fromB;

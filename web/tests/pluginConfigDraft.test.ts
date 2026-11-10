@@ -1,4 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nextProvider } from 'react-i18next';
+import { createInstance } from 'i18next';
+import { SecretFieldInput } from '../src/features/plugins/components/SecretFieldInput';
+import { en } from '../src/i18n/resources';
 import {
   buildPluginConfigDraft,
   buildPluginConfigPatch,
@@ -109,5 +115,60 @@ describe('plugin secret fields', () => {
       expect(isSecretPluginField(field(name))).toBe(false);
     }
     expect(isSecretPluginField(field('token_limit', 'integer'))).toBe(false);
+  });
+
+  test('matches whole name segments, including camelCase and dotted names', () => {
+    for (const name of [
+      'accessToken',
+      'APIKey',
+      'x-api-key',
+      'auth.token',
+      'clientSecret',
+      'apikey',
+      'DB_PASSWORD',
+      'service_credentials',
+    ]) {
+      expect(isSecretPluginField(field(name))).toBe(true);
+    }
+    for (const name of ['max_tokens', 'tokenizer', 'secretariat', 'passwords_policy', 'monkey']) {
+      expect(isSecretPluginField(field(name))).toBe(false);
+    }
+  });
+
+  test('leaves names that point at a secret or count something readable', () => {
+    for (const name of [
+      'api_key_env',
+      'secret_name',
+      'credentials_file',
+      'private_key_path',
+      'token_url',
+      'token_limit',
+      'apiKeyEnv',
+    ]) {
+      expect(isSecretPluginField(field(name))).toBe(false);
+    }
+  });
+});
+
+describe('masked plugin field', () => {
+  test('starts hidden and offers a named show/hide toggle', async () => {
+    const i18n = createInstance();
+    await i18n.init({ lng: 'en', resources: { en: { translation: en } } });
+    const markup = renderToStaticMarkup(
+      createElement(
+        I18nextProvider,
+        { i18n },
+        createElement(SecretFieldInput, {
+          id: 'plugin-field-api_key',
+          label: 'api_key',
+          value: 'sk-example',
+          onChange: () => {},
+        })
+      )
+    );
+    expect(markup).toContain('type="password"');
+    expect(markup).toContain('aria-label="Show api_key"');
+    expect(markup).toContain('aria-pressed="false"');
+    expect(markup).toContain('aria-controls="plugin-field-api_key"');
   });
 });

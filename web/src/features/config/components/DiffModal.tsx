@@ -138,7 +138,14 @@ export function DiffModal({
                       <span className={styles.linePrefix}>
                         {line.type === 'deletion' ? '-' : line.type === 'addition' ? '+' : ' '}
                       </span>
-                      <code className={styles.lineText}>{mask(line.text) || ' '}</code>
+                      <code className={styles.lineText}>
+                        {mask(line.text) || ' '}
+                        {line.noNewline ? (
+                          <span className={styles.noNewline}>
+                            {t('config_management.diff.no_newline')}
+                          </span>
+                        ) : null}
+                      </code>
                     </div>
                   ))}
                 </div>

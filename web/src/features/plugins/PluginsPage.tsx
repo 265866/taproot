@@ -41,6 +41,7 @@ import {
 } from './pluginResources';
 import { isPollAbort, waitForPluginState } from './pluginPolling';
 import { getPluginLogo } from './pluginLogo';
+import { SecretFieldInput } from './components/SecretFieldInput';
 import styles from './PluginsPage.module.scss';
 
 type PluginRuntimeWaitStatus = 'ready' | 'globalDisabled' | 'timeout';
@@ -491,15 +492,14 @@ export function PluginsPage() {
       );
     }
 
+    const TextInput = isSecretPluginField(field) ? SecretFieldInput : Input;
     return (
-      <Input
+      <TextInput
         key={field.name}
         id={`plugin-field-${field.name}`}
         label={field.name}
         value={textValue}
         onChange={handleFieldTextChange(field.name)}
-        type={isSecretPluginField(field) ? 'password' : undefined}
-        autoComplete={isSecretPluginField(field) ? 'off' : undefined}
         inputMode={fieldType === 'integer' || fieldType === 'number' ? 'decimal' : undefined}
         hint={field.description || undefined}
         error={errorText || undefined}

@@ -37,6 +37,8 @@
     "enabled_hint": "Controls the enabled field for this plugin instance under plugins.configs.",
     "priority": "Priority",
     "config_fields": "Config fields",
+    "show_value": "Show {{name}}",
+    "hide_value": "Hide {{name}}",
     "no_config_fields": "This plugin does not declare visual config fields.",
     "select_placeholder": "Select",
     "array_item_placeholder": "Enter array item",

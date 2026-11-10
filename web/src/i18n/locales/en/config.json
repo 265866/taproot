@@ -56,6 +56,7 @@
       "title": "Review Changes",
       "confirm": "Confirm Save",
       "no_changes": "No changes detected",
+      "no_newline": "No newline at end of file",
       "notice_server_changed": "config.yaml changed on the server while this review was open. The diff now compares your edits with the latest version. Check it before you confirm.",
       "notice_rebased": "config.yaml changed on the server since you started editing. Your edits were reapplied to the latest version. Check the diff before you confirm.",
       "notice_conflict": "config.yaml changed on the server since you started editing, and those changes touch lines you edited. Saving replaces the whole file with your draft, so removed lines in this diff can include another person's changes. Confirm only to overwrite them; otherwise cancel, copy your edits, and reload."

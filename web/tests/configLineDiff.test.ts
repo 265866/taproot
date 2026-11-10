@@ -40,6 +40,36 @@ describe('computeUnifiedDiff', () => {
     ]);
   });
 
+  test('shows adding or removing only the final newline', () => {
+    const removed = computeUnifiedDiff('debug: false\nport: 8317\n', 'debug: false\nport: 8317');
+    expect({ additions: removed.additions, deletions: removed.deletions }).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
+    expect(removed.hunks[0].lines).toEqual([
+      { type: 'context', oldNum: 1, newNum: 1, text: 'debug: false' },
+      { type: 'deletion', oldNum: 2, newNum: null, text: 'port: 8317' },
+      { type: 'addition', oldNum: null, newNum: 2, text: 'port: 8317', noNewline: true },
+    ]);
+
+    const added = computeUnifiedDiff('port: 8317', 'port: 8317\n');
+    expect(added.hunks[0].lines.map((line) => [line.type, line.noNewline ?? false])).toEqual([
+      ['deletion', true],
+      ['addition', false],
+    ]);
+  });
+
+  test('keeps the no-newline mark on an unchanged last line', () => {
+    const { hunks } = computeUnifiedDiff('a\nb', 'A\nb');
+    expect(hunks[0].lines.at(-1)).toEqual({
+      type: 'context',
+      oldNum: 2,
+      newNum: 2,
+      text: 'b',
+      noNewline: true,
+    });
+  });
+
   test('reports no hunks for equal text', () => {
     expect(computeUnifiedDiff('a: 1\n', 'a: 1\n').hunks).toEqual([]);
   });
@@ -85,6 +115,15 @@ describe('mergeLines', () => {
     const theirs = lines('routing:', '  strategy: round-robin', 'debug: false', '# end');
     expect(mergeLines(base, mine, theirs)).toBe(
       lines('# top', 'routing:', '  strategy: round-robin', 'debug: false', '# end')
+    );
+  });
+
+  test('ignores the empty changes diff() can leave behind', () => {
+    const numbered = Array.from({ length: 9 }, (_, index) => `l${index}`);
+    const mine = ['l1', 'mx0', 'l3', 'l4', 'l5', 'l6', 'l8'].join('\n');
+    const theirs = numbered.filter((line) => line !== 'l5').join('\n');
+    expect(mergeLines(numbered.join('\n'), mine, theirs)).toBe(
+      ['l1', 'mx0', 'l3', 'l4', 'l6', 'l8'].join('\n')
     );
   });
 

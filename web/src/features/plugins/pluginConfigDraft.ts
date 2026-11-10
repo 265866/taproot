@@ -24,10 +24,39 @@ export const normalizePluginConfigFieldType = (field: PluginConfigField): string
   field.type.trim().toLowerCase();
 
 // The plugin API has no secret field type, so mask by name, as a password manager would.
-const SECRET_FIELD_NAME = /secret|token|password|passwd|credential|api[-_]?key|private[-_]?key/i;
+// Whole name segments only, so max_tokens and tokenizer stay readable.
+const SECRET_SEGMENTS = new Set([
+  'secret',
+  'token',
+  'password',
+  'passwd',
+  'credential',
+  'credentials',
+  'apikey',
+]);
+const KEY_QUALIFIERS = new Set(['api', 'private']);
+// A name ending in one of these holds a reference to a secret or a number, not the secret itself.
+const NON_SECRET_SUFFIXES = new Set(['env', 'file', 'path', 'name', 'url', 'limit']);
 
-export const isSecretPluginField = (field: PluginConfigField): boolean =>
-  normalizePluginConfigFieldType(field) === 'string' && SECRET_FIELD_NAME.test(field.name);
+const fieldNameSegments = (name: string): string[] =>
+  name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[\s_.-]+/)
+    .filter(Boolean);
+
+export const isSecretPluginField = (field: PluginConfigField): boolean => {
+  if (normalizePluginConfigFieldType(field) !== 'string') return false;
+  const segments = fieldNameSegments(field.name);
+  if (segments.length === 0 || NON_SECRET_SUFFIXES.has(segments[segments.length - 1])) {
+    return false;
+  }
+  return segments.some(
+    (segment, index) =>
+      SECRET_SEGMENTS.has(segment) || (segment === 'key' && KEY_QUALIFIERS.has(segments[index - 1]))
+  );
+};
 
 const stringifyJSONValue = (value: unknown): string => {
   if (value === undefined || value === null) return '';
