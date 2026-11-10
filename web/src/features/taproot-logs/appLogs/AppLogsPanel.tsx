@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -28,10 +28,12 @@ import { REFRESH_STARTED, outcomeFromError, useHeaderRefresh } from '@/hooks/use
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { MaskedValueChip } from '@/components/common/MaskedValueChip';
+import { useMaskableField } from '../hooks/useMaskableField';
 import { logsApi, responseDataToText, type ErrorLogFile } from '@/services/api/logs';
 import { taprootApi } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
-import { INITIAL_VISIBLE_LINES } from './model/logBuffer';
+import { INITIAL_VISIBLE_LINES, formatUtcOffset } from './model/logBuffer';
 import { useLogStream } from './hooks/useLogStream';
 import { copyToClipboard } from '@/utils/clipboard';
 import { getErrorMessage } from '@/utils/helpers';
@@ -40,6 +42,7 @@ import { createLogParserCache, searchLogEntries, filterLogEntries } from './mode
 import { Select } from '@/components/ui/Select';
 import { formatUnixTimestamp } from '@/utils/format';
 import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
+import { decodeUrlValue, encodeUrlValue } from '@/utils/urlValue';
 import { HTTP_METHODS, STATUS_GROUPS, type LogState } from './model/logTypes';
 import { createLogRequestGuard } from './model/logRequests';
 import { errorLogViewerReducer } from './model/errorLogViewer';
@@ -51,6 +54,10 @@ import styles from './AppLogsPanel.module.scss';
 const INITIAL_DISPLAY_LINES = INITIAL_VISIBLE_LINES;
 
 type TabType = 'logs' | 'errors';
+
+const LOG_TAB_PARAM = 'logTab';
+/** Encoded with `encodeUrlValue`, because a search can hold an email. */
+const LOG_SEARCH_PARAM = 'logQ';
 
 /**
  * The application log tail and upstream's error log files, carried over from the previous logs
@@ -66,9 +73,39 @@ export function AppLogsPanel() {
   const config = useConfigStore((state) => state.config);
   const requestLogEnabled = config?.requestLog ?? false;
 
-  const [activeTab, setActiveTab] = useState<TabType>('logs');
-  const [searchQuery, setSearchQuery] = useState('');
+  // The sub-tab and the search live in the URL, so opening a request from a line and going back
+  // returns to the same view.
+  const [params, setParams] = useSearchParams();
+  const activeTab: TabType = params.get(LOG_TAB_PARAM) === 'errors' ? 'errors' : 'logs';
+  const setActiveTab = (tab: TabType) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tab === 'errors') next.set(LOG_TAB_PARAM, 'errors');
+        else next.delete(LOG_TAB_PARAM);
+        return next;
+      },
+      { replace: true }
+    );
+  const [searchQuery, setSearchQuery] = useState(() =>
+    decodeUrlValue(params.get(LOG_SEARCH_PARAM) ?? '')
+  );
+  const searchField = useMaskableField(searchQuery);
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const urlSearch = params.get(LOG_SEARCH_PARAM) ?? '';
+  useEffect(() => {
+    const encoded = encodeUrlValue(deferredSearchQuery);
+    if (encoded === urlSearch) return;
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (encoded) next.set(LOG_SEARCH_PARAM, encoded);
+        else next.delete(LOG_SEARCH_PARAM);
+        return next;
+      },
+      { replace: true }
+    );
+  }, [deferredSearchQuery, urlSearch, setParams]);
   const [hideManagementLogs, setHideManagementLogs] = useLocalStorage(
     'logsPage.hideManagementLogs',
     true
@@ -110,6 +147,7 @@ export function AppLogsPanel() {
     lastUpdated,
     catchingUp,
     wasReset,
+    serverOffset,
     loading,
     clearingLogs,
     error,
@@ -124,6 +162,11 @@ export function AppLogsPanel() {
     isFollowing: () => isNearBottom(logViewerRef.current),
     onFollow: () => requestScrollToBottom(),
   });
+
+  const serverTimeLabel =
+    serverOffset === null
+      ? t('taproot_logs.app.server_time')
+      : t('taproot_logs.app.server_time_offset', { offset: formatUtcOffset(serverOffset) });
 
   const disableControls = connectionStatus !== 'connected';
   const refreshDisabled = disableControls || loading || clearingLogs || cpaNeedsFileLogging;
@@ -347,6 +390,40 @@ export function AppLogsPanel() {
     filters.pathFilterSet,
   ]);
   const parsedVisibleLines = filteredParsedLines.slice(logState.visibleFrom);
+  const filterKey = JSON.stringify([
+    trimmedSearchQuery,
+    hideManagementLogs,
+    levelFilter,
+    filters.methodFilters,
+    filters.statusFilters,
+    filters.pathFilters,
+  ]);
+  // One tab stop for the whole list: the active line, which the arrow keys move.
+  const [activeLineId, setActiveLineId] = useState<number | null>(null);
+  const focusLineId = parsedVisibleLines.some((line) => line.id === activeLineId)
+    ? activeLineId
+    : (parsedVisibleLines[parsedVisibleLines.length - 1]?.id ?? null);
+  const moveLineFocus = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const row = event.target as HTMLElement;
+    if (!row.dataset.logId) return;
+    if (event.key === 'c' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const line = parsedVisibleLines.find((entry) => String(entry.id) === row.dataset.logId);
+      if (line) void copyLogLine(line.raw);
+      return;
+    }
+    const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-log-id]'));
+    const index = rows.indexOf(row);
+    const target = {
+      ArrowDown: rows[index + 1],
+      ArrowUp: rows[index - 1],
+      Home: rows[0],
+      End: rows[rows.length - 1],
+    }[event.key];
+    if (!target) return;
+    event.preventDefault();
+    setActiveLineId(Number(target.dataset.logId));
+    target.focus();
+  };
 
   const {
     canLoadMore,
@@ -367,6 +444,7 @@ export function AppLogsPanel() {
     hasStructuredFilters: filters.hasStructuredFilters,
     showRawLogs,
     wrapLogs,
+    filterKey,
   });
 
   const copyLogLine = async (raw: string) => {
@@ -470,6 +548,7 @@ export function AppLogsPanel() {
                   </>
                 )}
               </div>
+              <div className={styles.serverTime}>{serverTimeLabel}</div>
               <div className={styles.bufferStatus}>
                 {t('taproot_logs.app.buffer_scope', {
                   count: logBuffer.buffer.length,
@@ -501,29 +580,38 @@ export function AppLogsPanel() {
             )}
 
             <div className={styles.filters}>
-              <div className={styles.searchWrapper}>
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t('taproot_logs.app.search_placeholder')}
-                  aria-label={t('taproot_logs.app.search_placeholder')}
-                  className={styles.searchInput}
-                  rightElement={
-                    searchQuery ? (
-                      <button
-                        type="button"
-                        className={styles.searchClear}
-                        onClick={() => setSearchQuery('')}
-                        title={t('taproot_logs.app.clear_search')}
-                        aria-label={t('taproot_logs.app.clear_search')}
-                      >
-                        <IconX size={16} />
-                      </button>
-                    ) : (
-                      <IconSearch size={16} className={styles.searchIcon} />
-                    )
-                  }
-                />
+              <div className={styles.searchWrapper} {...searchField.fieldProps}>
+                {searchField.masked ? (
+                  <MaskedValueChip
+                    value={searchQuery}
+                    label={t('taproot_logs.app.search_placeholder')}
+                    onClear={searchField.clearToInput(() => setSearchQuery(''))}
+                  />
+                ) : (
+                  <Input
+                    autoFocus={searchField.autoFocus}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t('taproot_logs.app.search_placeholder')}
+                    aria-label={t('taproot_logs.app.search_placeholder')}
+                    className={styles.searchInput}
+                    rightElement={
+                      searchQuery ? (
+                        <button
+                          type="button"
+                          className={styles.searchClear}
+                          {...searchField.clearButtonProps(() => setSearchQuery(''))}
+                          title={t('taproot_logs.app.clear_search')}
+                          aria-label={t('taproot_logs.app.clear_search')}
+                        >
+                          <IconX size={16} />
+                        </button>
+                      ) : (
+                        <IconSearch size={16} className={styles.searchIcon} />
+                      )
+                    }
+                  />
+                )}
               </div>
 
               <Select
@@ -787,7 +875,7 @@ export function AppLogsPanel() {
                     .filter(Boolean)
                     .join(' ')}
                   onScroll={handleLogScroll}
-                  tabIndex={0}
+                  tabIndex={showRawLogs ? 0 : -1}
                   role="region"
                   aria-label={t('taproot_logs.app.log_content')}
                   aria-busy={loading}
@@ -827,8 +915,14 @@ export function AppLogsPanel() {
                       ))}
                     </pre>
                   ) : (
-                    <div className={styles.logList}>
+                    <div
+                      className={styles.logList}
+                      role="grid"
+                      aria-label={t('taproot_logs.app.log_content')}
+                      onKeyDown={moveLineFocus}
+                    >
                       {parsedVisibleLines.map((line) => {
+                        const stop = line.id === focusLineId ? 0 : -1;
                         const rowClassNames = [styles.logRow];
                         if (line.level === 'warn') rowClassNames.push(styles.rowWarn);
                         if (line.level === 'error' || line.level === 'fatal')
@@ -838,15 +932,25 @@ export function AppLogsPanel() {
                             key={line.id}
                             data-log-id={line.id}
                             className={rowClassNames.join(' ')}
+                            role="row"
+                            tabIndex={stop}
+                            aria-label={mask(line.raw)}
+                            aria-keyshortcuts="c"
+                            aria-description={t('taproot_logs.app.double_click_copy_hint')}
+                            onFocus={() => setActiveLineId(line.id)}
                             onDoubleClick={() => {
                               void copyLogLine(line.raw);
                             }}
-                            title={t('taproot_logs.app.double_click_copy_hint', {
-                              defaultValue: 'Double-click to copy',
-                            })}
+                            title={t('taproot_logs.app.double_click_copy_hint')}
                           >
-                            <div className={styles.timestamp}>{line.timestamp || ''}</div>
-                            <div className={styles.rowMain}>
+                            <div
+                              className={styles.timestamp}
+                              role="gridcell"
+                              title={serverTimeLabel}
+                            >
+                              {line.timestamp || ''}
+                            </div>
+                            <div className={styles.rowMain} role="gridcell">
                               {line.level && (
                                 <span
                                   className={[
@@ -876,6 +980,7 @@ export function AppLogsPanel() {
                                 <button
                                   type="button"
                                   className={[styles.badge, styles.requestIdBadge].join(' ')}
+                                  tabIndex={stop}
                                   title={t('taproot_logs.app.view_request', { id: line.requestId })}
                                   aria-label={t('taproot_logs.app.view_request', {
                                     id: line.requestId,
@@ -926,6 +1031,7 @@ export function AppLogsPanel() {
                                 variant="ghost"
                                 size="sm"
                                 className={styles.copyButton}
+                                tabIndex={stop}
                                 title={t('taproot_logs.app.copy_line')}
                                 onClick={() => void copyLogLine(line.raw)}
                                 aria-label={t('taproot_logs.app.copy_line')}

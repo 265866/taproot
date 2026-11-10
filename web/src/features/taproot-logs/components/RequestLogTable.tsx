@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/Button';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import type { RequestLogMeta } from '@/services/api/taproot';
 import { formatBytes, formatDurationMs, shortSessionId, statusTone } from '../model/format';
+import type { DetailState } from '../model/query';
 import styles from './RequestLogTable.module.scss';
+
+const DETAIL_STATE: DetailState = { fromList: true };
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   month: 'short',
@@ -21,6 +24,7 @@ export function RequestLogTable({
   accountLabel,
   hasMore,
   loading,
+  error,
   onLoadMore,
 }: {
   rows: RequestLogMeta[];
@@ -28,25 +32,34 @@ export function RequestLogTable({
   accountLabel: (authIndex: string) => string;
   hasMore: boolean;
   loading: boolean;
+  /** Why the last page failed; while set, only the Retry button loads more. */
+  error: string;
   onLoadMore: () => void;
 }) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const sentinel = useRef<HTMLDivElement>(null);
+  const loadMore = useRef(onLoadMore);
+  useEffect(() => {
+    loadMore.current = onLoadMore;
+  }, [onLoadMore]);
+  const autoLoad = hasMore && !error;
 
   // Loads the next page as the end of the list scrolls into view; the button stays for keyboards.
+  // A new observer reports at once while the end is in view, so it is rebuilt only when a page
+  // arrives or a failure clears, never for each attempt.
   useEffect(() => {
     const node = sentinel.current;
-    if (!node || !hasMore || typeof IntersectionObserver === 'undefined') return;
+    if (!node || !autoLoad || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) onLoadMore();
+        if (entries.some((entry) => entry.isIntersecting)) loadMore.current();
       },
       { rootMargin: '400px 0px' }
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, onLoadMore]);
+  }, [autoLoad, rows.length]);
 
   return (
     <div className={styles.wrap}>
@@ -80,7 +93,11 @@ export function RequestLogTable({
               </td>
               <td className={styles.request}>
                 {/* The link covers the row (see .rowLink), so the whole row opens the detail. */}
-                <Link className={styles.rowLink} to={detailHref(row.requestId)}>
+                <Link
+                  className={styles.rowLink}
+                  to={detailHref(row.requestId)}
+                  state={DETAIL_STATE}
+                >
                   <span className={styles.method}>{row.method}</span> {mask(row.path)}
                 </Link>
                 {(row.streaming || row.errorOnly || row.dropped) && (
@@ -116,9 +133,16 @@ export function RequestLogTable({
       </table>
       <div ref={sentinel} className={styles.footer}>
         {hasMore ? (
-          <Button variant="secondary" size="sm" onClick={onLoadMore} loading={loading}>
-            {t('taproot_logs.list.load_more')}
-          </Button>
+          <>
+            {error && (
+              <span className={styles.moreError} role="alert">
+                {mask(t('taproot_logs.list.load_more_failed', { message: error }))}
+              </span>
+            )}
+            <Button variant="secondary" size="sm" onClick={onLoadMore} loading={loading}>
+              {t(error ? 'taproot_logs.list.retry' : 'taproot_logs.list.load_more')}
+            </Button>
+          </>
         ) : (
           <span className={styles.end}>{t('taproot_logs.list.end', { count: rows.length })}</span>
         )}

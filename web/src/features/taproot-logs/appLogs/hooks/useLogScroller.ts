@@ -23,6 +23,12 @@ export const getLogAnchorAdjustment = (
   return row ? row.offset - anchor.offset : null;
 };
 
+/**
+ * A missing anchor is evicted only when the buffer has moved past it. Otherwise it is filtered
+ * out or outside the shown window, and the history is still there.
+ */
+export const isLogAnchorEvicted = (anchorId: number, bufferStart: number) => anchorId < bufferStart;
+
 export const countPendingLogLines = (ids: readonly number[], lastSeenId: number | null) =>
   lastSeenId === null ? 0 : ids.filter((id) => id > lastSeenId).length;
 
@@ -53,6 +59,8 @@ interface UseLogScrollerOptions {
   hasStructuredFilters: boolean;
   showRawLogs: boolean;
   wrapLogs?: boolean;
+  /** Changes when the search or a filter changes; the view then starts again at the latest line. */
+  filterKey?: string;
 }
 
 interface UseLogScrollerReturn {
@@ -78,6 +86,7 @@ export function useLogScroller(options: UseLogScrollerOptions): UseLogScrollerRe
     hasStructuredFilters,
     showRawLogs,
     wrapLogs = false,
+    filterKey = '',
   } = options;
 
   const logViewerRef = useRef<HTMLDivElement | null>(null);
@@ -89,6 +98,7 @@ export function useLogScroller(options: UseLogScrollerOptions): UseLogScrollerRe
   const lastScrollTopRef = useRef(0);
   const newestIdRef = useRef<number | null>(null);
   const previousBufferStartRef = useRef(bufferStart);
+  const previousFilterKeyRef = useRef(filterKey);
   const pendingScrollToBottomRef = useRef(false);
   const pendingPrependScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const canLoadMore = logState.visibleFrom > 0;
@@ -161,8 +171,12 @@ export function useLogScroller(options: UseLogScrollerOptions): UseLogScrollerRe
 
   useLayoutEffect(() => {
     const node = logViewerRef.current;
-    const reset = bufferStart < previousBufferStartRef.current || logState.buffer.length === 0;
+    const reset =
+      bufferStart < previousBufferStartRef.current ||
+      logState.buffer.length === 0 ||
+      filterKey !== previousFilterKeyRef.current;
     previousBufferStartRef.current = bufferStart;
+    previousFilterKeyRef.current = filterKey;
     if (reset) {
       anchorRef.current = null;
       newestIdRef.current = null;
@@ -188,7 +202,7 @@ export function useLogScroller(options: UseLogScrollerOptions): UseLogScrollerRe
         const adjustment = getLogAnchorAdjustment(anchor, rows);
         if (adjustment !== null) {
           node.scrollTop += adjustment;
-        } else {
+        } else if (isLogAnchorEvicted(anchor.id, bufferStart)) {
           setHistoryEvicted(true);
         }
       } else if (prepend) {
@@ -208,6 +222,7 @@ export function useLogScroller(options: UseLogScrollerOptions): UseLogScrollerRe
     anchorRef.current = findVisibleLogAnchor(readLogRows(node));
   }, [
     bufferStart,
+    filterKey,
     loading,
     logState.buffer,
     logState.visibleFrom,
