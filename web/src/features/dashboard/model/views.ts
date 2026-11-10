@@ -1,5 +1,7 @@
+import type { TFunction } from 'i18next';
 import type { StatusTone } from '@/components/ui/status';
 import type { Pool, RequestTotals } from '@/services/api/taprootStatus';
+import { formatAccounts, formatClock } from './format';
 
 /** The verdict's thresholds, applied to the window: 5% of at least 20 warns, 50% is down. */
 export function failedTone(
@@ -26,4 +28,17 @@ export function runsOutView(
     key: pool.nextReset ? 'dashboard.pools.runs_out_before_reset' : 'dashboard.pools.runs_out_at',
     atMs,
   };
+}
+
+/**
+ * "0.4 waiting on 1 cooling account until 9:41 PM"; a cooling account with no quota left to give
+ * back reads "1 account cooling until 9:41 PM" rather than "0 waiting".
+ */
+export function waitingText(waiting: Pool['waitingAccounts'], nowMs: number, t: TFunction): string {
+  const left = formatAccounts(waiting.left);
+  const until = waiting.until ? formatClock(Date.parse(waiting.until), nowMs) : null;
+  const key = left === '0' ? 'dashboard.pools.cooling' : 'dashboard.pools.waiting';
+  return until
+    ? t(`${key}_until`, { left, count: waiting.count, time: until })
+    : t(key, { left, count: waiting.count });
 }

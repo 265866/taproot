@@ -24,10 +24,17 @@ export interface ChartModel {
   rateMax: number;
   /** Where "now" falls inside the last bucket, 0..1; null when the window has ended. */
   nowFraction: number | null;
-  /** Bars that start a local day, for hourly and finer buckets. */
-  dayStarts: number[];
+  /** Where each local day starts, for hourly and finer buckets. */
+  dayStarts: DayStart[];
   /** Bars that carry an x-axis label. */
   labelled: number[];
+}
+
+export interface DayStart {
+  /** The local midnight. */
+  dayMs: number;
+  /** Its x position in bars from the left edge: 20 is bar 20's left edge, 19.5 its middle. */
+  at: number;
 }
 
 const Y_INTERVALS = 4;
@@ -48,25 +55,44 @@ export function rateAxisMax(rates: Array<number | null>): number {
   return RATE_TOPS.find((top) => peak <= top) ?? 1;
 }
 
-const isLocalMidnight = (ms: number) => {
+const localMidnight = (ms: number) => {
   const d = new Date(ms);
-  return d.getHours() === 0 && d.getMinutes() === 0;
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+/**
+ * Where local days start among the bars. The server aligns hourly buckets to UTC hours, so in a
+ * zone such as India's (+5:30) midnight falls inside a bar rather than at one's edge.
+ */
+function dayStartsOf(bars: ChartBar[]): DayStart[] {
+  const out: DayStart[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    const dayMs = localMidnight(bars[i].startMs);
+    if (dayMs <= bars[i - 1].startMs) continue;
+    const bar = bars[i - 1];
+    out.push({ dayMs, at: i - 1 + (dayMs - bar.startMs) / (bar.endMs - bar.startMs) });
+  }
+  return out;
+}
+
+/** Every `every`th bar, counted back from the newest. */
+const everyFromNewest = (n: number, every: number) => {
+  const out: number[] = [];
+  for (let i = n - 1; i >= 0; i -= every) out.unshift(i);
+  return out;
 };
 
 /**
  * Which bars get an x label: at most `maxLabels`, on round local times (every 3 hours rather than
- * every 5th bar) for hourly and 5-minute buckets, and counted back from the newest for days.
+ * every 5th bar) for hourly and 5-minute buckets, and counted back from the newest for days and
+ * for zones whose hours start at a half or quarter hour, where no bar starts on a round time.
  */
 export function labelledBars(bars: ChartBar[], bucket: UsageBucket, maxLabels: number): number[] {
   const n = bars.length;
   if (n === 0) return [];
   const limit = Math.max(1, maxLabels);
-  if (bucket === '1d') {
-    const every = Math.ceil(n / limit);
-    const out: number[] = [];
-    for (let i = n - 1; i >= 0; i -= every) out.unshift(i);
-    return out;
-  }
+  if (bucket === '1d') return everyFromNewest(n, Math.ceil(n / limit));
   const unitMinutes = bucket === '1h' ? 60 : 5;
   const steps = bucket === '1h' ? [1, 2, 3, 4, 6, 12, 24] : [1, 2, 3, 6, 12];
   const at = (step: number) =>
@@ -76,6 +102,10 @@ export function labelledBars(bars: ChartBar[], bucket: UsageBucket, maxLabels: n
       // The first bar starts before the window, so it gets no label of its own.
       return onStep && (index > 0 || n === 1) ? [index] : [];
     });
+  if (at(1).length === 0) {
+    const every = steps.find((step) => Math.ceil(n / step) <= limit) ?? Math.ceil(n / limit);
+    return everyFromNewest(n, every).filter((index) => index > 0 || n === 1);
+  }
   for (const step of steps) {
     const labels = at(step);
     if (labels.length <= limit) return labels;
@@ -118,10 +148,7 @@ export function chartModel(
     yTicks: Array.from({ length: Y_INTERVALS + 1 }, (_, i) => (yMax * i) / Y_INTERVALS),
     rateMax: rateAxisMax(bars.map((b) => b.rate)),
     nowFraction,
-    dayStarts:
-      options.bucket === '1d'
-        ? []
-        : bars.flatMap((bar, index) => (index > 0 && isLocalMidnight(bar.startMs) ? [index] : [])),
+    dayStarts: options.bucket === '1d' ? [] : dayStartsOf(bars),
     labelled: labelledBars(bars, options.bucket, options.maxLabels),
   };
 }
@@ -131,9 +158,11 @@ const minuteFormat = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute:
 const weekdayFormat = new Intl.DateTimeFormat('en-US', { weekday: 'short' });
 const dayFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
 
-/** An x-axis label: "6 AM", "4:35 AM", "Mon", or "Nov 3". */
+/** An x-axis label: "6 AM", "6:30 AM" where hours start on the half hour, "Mon", or "Nov 3". */
 export function tickLabel(startMs: number, bucket: UsageBucket, barCount: number): string {
-  if (bucket === '1h') return hourFormat.format(startMs);
+  if (bucket === '1h') {
+    return (new Date(startMs).getMinutes() === 0 ? hourFormat : minuteFormat).format(startMs);
+  }
   if (bucket === '5m') return minuteFormat.format(startMs);
   return barCount <= 8 ? weekdayFormat.format(startMs) : dayFormat.format(startMs);
 }

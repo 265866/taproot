@@ -1,5 +1,5 @@
 import { useShowEmails } from '@/stores/usePrivacyStore';
-import { maskEmails } from '@/utils/emailMask';
+import { maskAccountName, maskEmails } from '@/utils/emailMask';
 
 const reveal = (text: string): string => text;
 
@@ -7,9 +7,18 @@ const reveal = (text: string): string => text;
  * The dashboard-wide email preference. `mask` is for display only: search, filters, API calls,
  * copy, and download keep the real values.
  */
-export function useEmailMask(): { showEmails: boolean; mask: (text: string) => string } {
+export function useEmailMask(): {
+  showEmails: boolean;
+  mask: (text: string) => string;
+  /** For an account's short name, such as a pool bar's label; see `maskAccountName`. */
+  maskName: (name: string) => string;
+} {
   const showEmails = useShowEmails();
-  return { showEmails, mask: showEmails ? reveal : maskEmails };
+  return {
+    showEmails,
+    mask: showEmails ? reveal : maskEmails,
+    maskName: showEmails ? reveal : maskAccountName,
+  };
 }
 
 /**

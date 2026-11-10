@@ -223,10 +223,19 @@
 .code {
   margin: 0;
   padding: 9px 10px;
-  overflow: auto;
   color: var(--text-primary);
   font-family: $font-mono;
   font-size: var(--fs-caption);
   line-height: 1.55;
-  white-space: pre;
+  // Wrapped rather than scrolled: a phone cut the lines off with no sign there was more. Copy
+  // takes the text, not the layout.
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  max-width: 620px;
+  margin: 6px 0 0;
+  color: var(--status-warning-text);
+  font-size: var(--fs-meta);
 }

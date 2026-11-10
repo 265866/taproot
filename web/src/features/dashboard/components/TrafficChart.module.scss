@@ -7,20 +7,23 @@
 }
 
 .body {
+  container-type: inline-size;
   padding: var(--space-3) var(--space-3) 0;
 }
 
+// The chart turns compact by the plot's own width (COMPACT_WIDTH in TrafficChart.tsx), never by
+// the viewport's, so the reserved height always matches the drawn one.
 .plot {
   position: relative;
   min-height: 210px;
   border-radius: var(--radius-md);
 
   &:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
-  @media (max-width: $breakpoint-mobile) {
+  @container (width < 560px) {
     min-height: 170px;
   }
 }
@@ -72,12 +75,13 @@
   fill: var(--bg-hover);
 }
 
+// Every bar keeps 3:1 against the card, the running one too: the hatched backdrop, not a faded
+// fill, says it is still running.
 .barOk {
-  fill: var(--viz-success);
-  opacity: 0.82;
+  fill: var(--viz-success-mark);
 
   .partial & {
-    opacity: 0.45;
+    opacity: 0.85;
   }
 }
 
@@ -85,7 +89,7 @@
   fill: var(--viz-failure);
 
   .partial & {
-    opacity: 0.75;
+    opacity: 0.9;
   }
 }
 
@@ -195,7 +199,7 @@
 }
 
 .swatchOk {
-  background: var(--viz-success);
+  background: var(--viz-success-mark);
 }
 
 .swatchFailed {
@@ -239,12 +243,46 @@
 
 .tableToggle {
   margin: var(--space-2) calc(-1 * var(--space-3)) 0;
-  border-top: 1px solid var(--border-color);
+
+  > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    margin: 0 var(--space-3);
+    border-radius: 2px;
+    color: var(--text-secondary);
+    font-size: var(--fs-meta);
+    list-style: none;
+    cursor: pointer;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &:hover {
+      color: var(--text-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    svg {
+      transition: transform var(--dur-hover) var(--ease-out-strong);
+    }
+  }
+
+  &[open] > summary svg {
+    transform: rotate(180deg);
+  }
 }
 
 .tableScroll {
   max-height: 320px;
   overflow: auto;
+  border-top: 1px solid var(--border-color);
 }
 
 .table {

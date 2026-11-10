@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Collapsible } from '@/components/ui/Collapsible';
+import { IconChevronDown } from '@/components/ui/icons';
 import { Section } from '@/components/ui/Section';
 import type { UsageBucket } from '@/services/api/taproot';
 import type { Read, WindowSummary } from '../hooks/useDashboardData';
@@ -18,7 +18,7 @@ import { formatCount, formatShare } from '../model/format';
 import styles from './TrafficChart.module.scss';
 
 const PAD = { left: 30, right: 38, top: 16, bottom: 22 };
-const COMPACT_WIDTH = 560;
+export const COMPACT_WIDTH = 560;
 
 /**
  * Tracks an element's content width; 0 until it has laid out (and under server rendering). A
@@ -44,11 +44,11 @@ const pct = (share: number) => `${Math.round(share * 1000) / 10}%`;
 
 interface TrafficChartProps {
   summary: Read<WindowSummary>;
-  nowMs: number;
   onRetry: () => void;
 }
 
-export function TrafficChart({ summary, nowMs, onRetry }: TrafficChartProps) {
+/** The window's traffic, drawn as of the summary's end, so "now" and the partial bar match it. */
+export function TrafficChart({ summary, onRetry }: TrafficChartProps) {
   const { t } = useTranslation();
   const [plotRef, width] = useWidth<HTMLDivElement>();
   const data = summary.data;
@@ -67,11 +67,11 @@ export function TrafficChart({ summary, nowMs, onRetry }: TrafficChartProps) {
         ? chartModel(data.summary.buckets, {
             bucket: data.range.bucket,
             bucketMs: data.range.bucketMs,
-            nowMs,
+            nowMs: data.range.toMs,
             maxLabels: compact ? 4 : 8,
           })
         : null,
-    [data, nowMs, compact]
+    [data, compact]
   );
 
   const legend = data ? <Legend summary={data} model={model} /> : null;
@@ -128,7 +128,11 @@ export function TrafficChart({ summary, nowMs, onRetry }: TrafficChartProps) {
             ) : null}
           </div>
           <div className={styles.legendNarrow}>{legend}</div>
-          <Collapsible className={styles.tableToggle} label={t('dashboard.traffic.table_toggle')}>
+          <details className={styles.tableToggle}>
+            <summary>
+              {t('dashboard.traffic.table_toggle')}
+              <IconChevronDown size={14} aria-hidden="true" />
+            </summary>
             <div className={styles.tableScroll}>
               <table className={styles.table}>
                 <caption className="visually-hidden">{chartSummary(model, bucket, t)}</caption>
@@ -155,7 +159,7 @@ export function TrafficChart({ summary, nowMs, onRetry }: TrafficChartProps) {
                 </tbody>
               </table>
             </div>
-          </Collapsible>
+          </details>
         </div>
       ) : null}
     </Section>
@@ -406,14 +410,14 @@ function ChartSvg({
         />
       ) : null}
 
-      {model.dayStarts.map((index) => {
-        const x = PAD.left + index * bw;
+      {model.dayStarts.map((day) => {
+        const x = PAD.left + day.at * bw;
         return (
-          <g key={`day-${index}`}>
+          <g key={`day-${day.dayMs}`}>
             <line x1={x} x2={x} y1={PAD.top} y2={PAD.top + innerH} className={styles.dayLine} />
             {!compact ? (
               <text x={x + 4} y={PAD.top + 9} className={styles.dayLabel}>
-                {dayStartLabel(model.bars[index].startMs)}
+                {dayStartLabel(day.dayMs)}
               </text>
             ) : null}
           </g>

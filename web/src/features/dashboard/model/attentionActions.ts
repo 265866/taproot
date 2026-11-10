@@ -97,3 +97,30 @@ export function itemCategoryKey(item: AttentionItem): string {
       return 'dashboard.needs.category_other';
   }
 }
+
+/** An inline fix's state, kept by item ID, so its result outlives the item it fixed. */
+export type FixRun = { title: string } & (
+  | { kind: 'running' }
+  | { kind: 'done'; message: string; at: number }
+  | { kind: 'failed'; message: string }
+);
+
+/** How long a fix's result stays in the rail after its item is gone. */
+export const RESULT_TTL_MS = 10 * 60_000;
+
+/**
+ * The results to show for fixes whose item is gone: done, and finished within `RESULT_TTL_MS` of
+ * `nowMs`. An item still listed shows its result beside its own button instead.
+ */
+export function resolvedResults(
+  runs: Record<string, FixRun>,
+  items: Pick<AttentionItem, 'id'>[],
+  nowMs: number
+): Array<[string, Extract<FixRun, { kind: 'done' }>]> {
+  const listed = new Set(items.map((item) => item.id));
+  return Object.entries(runs).flatMap(([id, run]) =>
+    run.kind === 'done' && !listed.has(id) && nowMs - run.at < RESULT_TTL_MS
+      ? [[id, run] as [string, typeof run]]
+      : []
+  );
+}

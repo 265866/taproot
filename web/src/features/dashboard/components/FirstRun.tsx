@@ -5,6 +5,7 @@ import { TaprootMark } from '@/components/common/TaprootMark';
 import { IconArrowRight, IconCheck } from '@/components/ui/icons';
 import { copyToClipboard } from '@/utils/clipboard';
 import {
+  addressHint,
   claudeCodeSnippet,
   codexSnippet,
   setupSteps,
@@ -21,10 +22,12 @@ interface FirstRunProps {
   guardOff: boolean;
   /** The server's address as this browser reaches it. */
   baseUrl: string;
+  /** A caveat for that address; see `addressHint`. */
+  hint: ReturnType<typeof addressHint>;
 }
 
 /** The main column before the first account and request: three steps that tick themselves off. */
-export function FirstRun({ facts, guardOff, baseUrl }: FirstRunProps) {
+export function FirstRun({ facts, guardOff, baseUrl, hint }: FirstRunProps) {
   const { t } = useTranslation();
   const headingId = useId();
   const steps = setupSteps(facts);
@@ -47,7 +50,7 @@ export function FirstRun({ facts, guardOff, baseUrl }: FirstRunProps) {
           <Step key={step.id} step={step} number={index + 1}>
             {step.id === 'account' ? <AccountStep done={step.state === 'done'} /> : null}
             {step.id === 'client' ? (
-              <ClientStep done={step.state === 'done'} baseUrl={baseUrl} />
+              <ClientStep done={step.state === 'done'} baseUrl={baseUrl} hint={hint} />
             ) : null}
             {step.id === 'devices' ? (
               <DevicesStep done={step.state === 'done'} guardOff={guardOff} />
@@ -128,13 +131,22 @@ function AccountStep({ done }: { done: boolean }) {
   );
 }
 
-function ClientStep({ done, baseUrl }: { done: boolean; baseUrl: string }) {
+function ClientStep({
+  done,
+  baseUrl,
+  hint,
+}: {
+  done: boolean;
+  baseUrl: string;
+  hint: FirstRunProps['hint'];
+}) {
   const { t } = useTranslation();
   return (
     <>
       <p className={styles.text}>
         {t(done ? 'dashboard.setup.client_done' : 'dashboard.setup.client_text')}
       </p>
+      {hint ? <p className={styles.hint}>{t(`dashboard.setup.address_${hint}`)}</p> : null}
       <div className={styles.snippets}>
         <Snippet title={t('dashboard.setup.claude_code_title')} code={claudeCodeSnippet(baseUrl)} />
         <Snippet title={t('dashboard.setup.codex_title')} code={codexSnippet(baseUrl)} />

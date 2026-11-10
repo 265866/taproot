@@ -66,6 +66,19 @@ export function windowRange(window: DashboardWindow, nowMs: number): WindowRange
   };
 }
 
+/**
+ * The failures among `rows` (the newest few, newest first) that started inside the window. The
+ * window ends now, so they are also the window's newest failures.
+ */
+export function failuresInWindow<T extends { ts: string }>(
+  rows: T[],
+  window: DashboardWindow,
+  nowMs: number
+): T[] {
+  const fromMs = nowMs - SPECS[window].durationMs;
+  return rows.filter((row) => Date.parse(row.ts) >= fromMs);
+}
+
 /** The browser's IANA zone, which daily buckets start at the midnight of. */
 export function browserTimeZone(): string | undefined {
   try {

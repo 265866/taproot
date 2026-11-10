@@ -4,6 +4,7 @@ import type { RequestBucket } from '@/services/api/taprootStatus';
 import {
   DEFAULT_WINDOW,
   WINDOW_STORAGE_KEY,
+  failuresInWindow,
   readStoredWindow,
   storeWindow,
   windowCaption,
@@ -23,10 +24,12 @@ import {
   chartModel,
   chartSummary,
   labelledBars,
+  tickLabel,
   niceMax,
   rateAxisMax,
 } from '@/features/dashboard/model/chart';
 import {
+  addressHint,
   claudeCodeSnippet,
   codexSnippet,
   devicesApproved,
@@ -37,6 +40,14 @@ import {
 import { failedTone, runsOutView } from '@/features/dashboard/model/views';
 import { modelProvider, providerColor, providerLabel } from '@/features/dashboard/model/providers';
 import type { AccessDevices } from '@/services/api/taproot';
+import { normalizePools } from '@/services/api/taprootStatus';
+import { waitingText } from '@/features/dashboard/model/views';
+import {
+  RESULT_TTL_MS,
+  resolvedResults,
+  type FixRun,
+} from '@/features/dashboard/model/attentionActions';
+import { maskAccountName, maskEmails } from '@/utils/emailMask';
 
 const t = i18n.t.bind(i18n);
 const HOUR = 3_600_000;
@@ -133,13 +144,24 @@ describe('formatting', () => {
 
   test('relative times', () => {
     const now = local(2026, 11, 10, 4, 36);
-    expect(formatIn(now + 20 * HOUR, now, t)).toBe('in 20 h');
-    expect(formatIn(now + 45 * MIN, now, t)).toBe('in 45 min');
+    expect(formatIn(now + 20 * HOUR, now, t)).toBe('in about 20 h');
+    expect(formatIn(now + 45 * MIN, now, t)).toBe('in about 45 min');
+    expect(formatIn(now + 30_000, now, t)).toBe('in about a minute');
     expect(formatIn(now - MIN, now, t)).toBe('now');
     expect(formatAge(now - 44 * MIN, now, t)).toBe('44m ago');
     expect(formatAge(now - 2 * HOUR, now, t)).toBe('2h ago');
     expect(formatAge(now - 3 * 24 * HOUR, now, t)).toBe('3d ago');
     expect(formatAge(now, now, t)).toBe('just now');
+  });
+
+  test('"in about" rounds down, as the server\'s attention text does', () => {
+    const now = local(2026, 11, 10, 4, 36);
+    // The server's `roughly` says "in about 19 h" here; rounding would say 20.
+    expect(formatIn(now + 19 * HOUR + 59 * MIN, now, t)).toBe('in about 19 h');
+    expect(formatIn(now + 2 * HOUR + 39 * MIN, now, t)).toBe('in about 2 h 30 min');
+    expect(formatIn(now + 9 * HOUR + 5 * MIN, now, t)).toBe('in about 9 h');
+    expect(formatIn(now + 59 * MIN + 59_000, now, t)).toBe('in about 59 min');
+    expect(formatIn(now + 71 * HOUR, now, t)).toBe('in about 2 days');
   });
 
   test('providers: names, and colors for identity only', () => {
@@ -236,7 +258,8 @@ describe('the traffic chart', () => {
       Array.from({ length: 25 }, () => [1, 0] as [number, number])
     );
     const model = chartModel(bars, { bucket: '1h', bucketMs: HOUR, nowMs: now, maxLabels: 8 });
-    expect(model.dayStarts).toEqual([20]);
+    expect(model.dayStarts.map((d) => d.at)).toEqual([20]);
+    expect(model.dayStarts[0].dayMs).toBe(local(2026, 11, 10));
     const hours = model.labelled.map((i) => new Date(model.bars[i].startMs).getHours());
     expect(hours.length).toBeLessThanOrEqual(8);
     expect(hours.every((h) => h % 3 === 0)).toBe(true);
@@ -349,5 +372,156 @@ describe('the first-run checklist', () => {
     );
     expect(codexSnippet(base)).toContain('base_url = "http://tailnet-0000.ts.net:8317/v1"');
     expect(codexSnippet(base)).toContain('wire_api = "responses"');
+  });
+});
+
+describe('zones whose hours start at a half or quarter hour', () => {
+  const inZone = (zone: string, run: () => void) => {
+    const previous = process.env.TZ;
+    process.env.TZ = zone;
+    try {
+      run();
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  };
+  // The server aligns hourly buckets to UTC hours, whatever the browser's zone.
+  const utcHours = (count: number): RequestBucket[] =>
+    Array.from({ length: count }, (_, i) => ({
+      t: new Date(Date.UTC(2026, 10, 9, 6 + i)).toISOString(),
+      requests: 1,
+      failed: 0,
+      failureRate: 0,
+    }));
+  const nowMs = Date.UTC(2026, 10, 10, 6, 20);
+
+  // Where midnight falls inside its bar: a bar starts at :30 local in India and :45 in Nepal.
+  for (const [zone, fraction] of [
+    ['Asia/Kolkata', 0.5],
+    ['Asia/Kathmandu', 0.25],
+  ] as const) {
+    test(`${zone}: the 24-hour chart still has x labels and a day line at midnight`, () => {
+      inZone(zone, () => {
+        for (const maxLabels of [8, 4]) {
+          const model = chartModel(utcHours(25), {
+            bucket: '1h',
+            bucketMs: HOUR,
+            nowMs,
+            maxLabels,
+          });
+          expect(model.labelled.length).toBeGreaterThan(1);
+          expect(model.labelled.length).toBeLessThanOrEqual(maxLabels);
+          // Counted back from the newest bar, at an even step.
+          expect(model.labelled.at(-1)).toBe(24);
+          const steps = model.labelled.slice(1).map((v, i) => v - model.labelled[i]);
+          expect(new Set(steps).size).toBe(1);
+        }
+        const model = chartModel(utcHours(25), {
+          bucket: '1h',
+          bucketMs: HOUR,
+          nowMs,
+          maxLabels: 8,
+        });
+        expect(model.dayStarts).toHaveLength(1);
+        const day = model.dayStarts[0];
+        expect(new Date(day.dayMs).getHours()).toBe(0);
+        expect(day.at % 1).toBeCloseTo(fraction, 5);
+        const bar = model.bars[Math.floor(day.at)];
+        expect(day.dayMs - bar.startMs).toBe(fraction * HOUR);
+        // A label names the bar's own start, minutes included.
+        expect(tickLabel(model.bars[24].startMs, '1h', 25)).toMatch(/:\d\d/);
+      });
+    });
+  }
+});
+
+describe('recent failures follow the window', () => {
+  test('only failures that started inside the window', () => {
+    const now = Date.UTC(2026, 10, 10, 12);
+    const rows = [5, 30, 90, 600, 2000].map((m) => ({ ts: new Date(now - m * MIN).toISOString() }));
+    expect(failuresInWindow(rows, '1h', now)).toEqual(rows.slice(0, 2));
+    expect(failuresInWindow(rows, '24h', now)).toEqual(rows.slice(0, 4));
+    expect(failuresInWindow(rows, '7d', now)).toEqual(rows);
+    expect(failuresInWindow([], '7d', now)).toEqual([]);
+  });
+});
+
+describe('inline fix results', () => {
+  const done = (at: number): FixRun => ({
+    kind: 'done',
+    title: 'Backups',
+    message: 'Backed up',
+    at,
+  });
+
+  test('show while their item is gone, for ten minutes', () => {
+    const now = Date.UTC(2026, 11, 10, 12);
+    const runs = { backup: done(now), other: done(now) };
+    expect(resolvedResults(runs, [{ id: 'other' }], now).map(([id]) => id)).toEqual(['backup']);
+    expect(resolvedResults(runs, [], now + RESULT_TTL_MS - 1)).toHaveLength(2);
+    expect(resolvedResults(runs, [], now + RESULT_TTL_MS)).toEqual([]);
+    expect(RESULT_TTL_MS).toBe(10 * MIN);
+  });
+
+  test('running and failed fixes are not results', () => {
+    const runs: Record<string, FixRun> = {
+      a: { kind: 'running', title: 'A' },
+      b: { kind: 'failed', title: 'B', message: 'no' },
+    };
+    expect(resolvedResults(runs, [], 0)).toEqual([]);
+  });
+});
+
+describe('the pools note on cooling accounts', () => {
+  const pool = (left: number, until: string | null) =>
+    normalizePools({
+      pools: [{ provider: 'claude', waitingAccounts: { count: 1, left, until } }],
+    }).pools[0].waitingAccounts;
+  const now = local(2026, 11, 10, 4, 36);
+  const until = new Date(local(2026, 11, 10, 6, 0)).toISOString();
+
+  test('names the quota waiting when there is some', () => {
+    expect(waitingText(pool(0.4, until), now, t)).toBe(
+      '0.4 waiting on 1 cooling account until 6:00 AM'
+    );
+    expect(waitingText(pool(0.4, null), now, t)).toBe('0.4 waiting on 1 cooling account');
+  });
+
+  test('says the account is cooling when what it holds rounds to nothing', () => {
+    expect(waitingText(pool(0.001, until), now, t)).toBe('1 account cooling until 6:00 AM');
+    expect(waitingText(pool(0, null), now, t)).toBe('1 account cooling');
+  });
+});
+
+describe('account names mask like their addresses', () => {
+  test("a pool label masks as its address's local part does", () => {
+    const address = maskEmails('dana@example.com');
+    expect(maskAccountName('dana')).toBe(address.slice(0, address.indexOf('@')));
+    expect(maskAccountName('dana')).not.toContain('ana');
+    expect(maskAccountName('anthropic1')).toBe('an•••1');
+    // A name that holds an address masks the address.
+    expect(maskAccountName('alice@example.com')).toBe(maskEmails('alice@example.com'));
+    expect(maskAccountName('')).toBe('');
+  });
+});
+
+describe('the first-run address hint', () => {
+  const at = (url: string) => {
+    const u = new URL(url);
+    return { protocol: u.protocol, hostname: u.hostname, port: u.port };
+  };
+  test('loopback works only on the server', () => {
+    expect(addressHint(at('http://localhost:8317/'))).toBe('loopback');
+    expect(addressHint(at('http://127.0.0.1:8317/'))).toBe('loopback');
+    expect(addressHint(at('http://[::1]:8317/'))).toBe('loopback');
+  });
+  test('https on the default port is most likely a proxy', () => {
+    expect(addressHint(at('https://server.tailnet-0000.ts.net/'))).toBe('proxy');
+  });
+  test("the server's own address needs no hint", () => {
+    expect(addressHint(at('http://server:8317/'))).toBeNull();
+    expect(addressHint(at('http://100.64.0.1:8317/'))).toBeNull();
+    expect(addressHint(at('https://server.tailnet-0000.ts.net:8443/'))).toBeNull();
   });
 });

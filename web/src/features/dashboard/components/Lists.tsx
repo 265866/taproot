@@ -9,7 +9,7 @@ import type { Read, WindowSummary } from '../hooks/useDashboardData';
 import { formatClock, formatCost, formatCount } from '../model/format';
 import { failedLogsLink, requestLogLink, usageDevicesLink, usageModelsLink } from '../model/links';
 import { modelProvider, providerColor } from '../model/providers';
-import type { DashboardWindow } from '../model/window';
+import { failuresInWindow, type DashboardWindow } from '../model/window';
 import styles from './Main.module.scss';
 
 function ArrowLink({ to, children }: { to: string; children: string }) {
@@ -23,6 +23,20 @@ function ArrowLink({ to, children }: { to: string; children: string }) {
 
 const deviceLabel = (request: Pick<ClientRequest, 'deviceName' | 'deviceId'>, unknown: string) =>
   request.deviceName || request.deviceId || unknown;
+
+/**
+ * A failure's error. A row with a log opens it, and the log has the whole error; a row without one
+ * expands in place, so the text never needs a hover.
+ */
+function ErrorText({ text, expandable }: { text: string; expandable: boolean }) {
+  if (!text) return <>—</>;
+  if (!expandable) return <span className={styles.errorLine}>{text}</span>;
+  return (
+    <details className={styles.errorDetails}>
+      <summary>{text}</summary>
+    </details>
+  );
+}
 
 /** The last five failed client requests; each opens its log, and the header opens the list. */
 export function RecentFailures({
@@ -41,9 +55,8 @@ export function RecentFailures({
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const navigate = useNavigate();
-  const rows = failures.data;
-  const windowFailed =
-    summary.data?.range.window === timeWindow ? summary.data.summary.totals.failed : null;
+  const rows = failures.data ? failuresInWindow(failures.data, timeWindow, nowMs) : null;
+  const windowFailed = summary.data?.summary.totals.failed ?? null;
   const unknown = t('dashboard.failures.unknown_device');
   const errorText = (row: ClientRequest) => mask(row.errorMessage || row.errorCode || '');
 
@@ -67,11 +80,25 @@ export function RecentFailures({
     >
       {rows ? (
         rows.length === 0 ? (
-          <p className={styles.emptyRow}>{t('dashboard.failures.none')}</p>
+          <p className={styles.emptyRow}>
+            {t(
+              failures.data?.length
+                ? 'dashboard.failures.none_in_window'
+                : 'dashboard.failures.none'
+            )}
+          </p>
         ) : (
           <>
             <div className={styles.wideOnly}>
               <DataTable className={styles.failureTable}>
+                <colgroup>
+                  <col className={styles.colTime} />
+                  <col className={styles.colDevice} />
+                  <col className={styles.colModel} />
+                  <col className={styles.colStatus} />
+                  <col />
+                  <col className={styles.colAttempts} />
+                </colgroup>
                 <thead>
                   <tr>
                     <DataTableHead>{t('dashboard.failures.time')}</DataTableHead>
@@ -106,15 +133,15 @@ export function RecentFailures({
                             <span title={t('dashboard.failures.no_log')}>{time}</span>
                           )}
                         </DataTableCell>
-                        <DataTableCell>{mask(deviceLabel(row, unknown))}</DataTableCell>
-                        <DataTableCell mono muted>
+                        <DataTableCell truncate>{mask(deviceLabel(row, unknown))}</DataTableCell>
+                        <DataTableCell mono muted truncate>
                           {row.model || '—'}
                         </DataTableCell>
                         <DataTableCell>
                           <StatusPill>{row.status || '—'}</StatusPill>
                         </DataTableCell>
-                        <DataTableCell muted truncate title={errorText(row)}>
-                          {errorText(row) || '—'}
+                        <DataTableCell muted className={styles.errorCell}>
+                          <ErrorText text={errorText(row)} expandable={!to} />
                         </DataTableCell>
                         <DataTableCell numeric muted>
                           {row.attempts ?? '—'}
@@ -128,10 +155,12 @@ export function RecentFailures({
             <ul className={styles.narrowOnly}>
               {rows.map((row, index) => {
                 const time = formatClock(Date.parse(row.ts), nowMs);
+                const device = mask(deviceLabel(row, unknown));
+                const error = errorText(row);
                 const content = (
                   <>
                     <span className={styles.failureWho}>
-                      {mask(deviceLabel(row, unknown))}
+                      {device}
                       {row.model ? (
                         <>
                           {' · '}
@@ -140,14 +169,26 @@ export function RecentFailures({
                       ) : null}
                     </span>
                     <StatusPill>{row.status || '—'}</StatusPill>
-                    <span className={styles.failureMeta}>{errorText(row) || '—'}</span>
-                    <span className={styles.failureMeta}>{time}</span>
+                    <span className={styles.failureMeta}>
+                      <ErrorText text={error} expandable={!row.requestId} />
+                    </span>
+                    <span className={styles.failureTime}>{time}</span>
                   </>
                 );
                 return (
                   <li key={`${row.ts}-${index}`}>
                     {row.requestId ? (
-                      <Link className={styles.failureRow} to={requestLogLink(row.requestId)}>
+                      <Link
+                        className={styles.failureRow}
+                        to={requestLogLink(row.requestId)}
+                        aria-label={t('dashboard.failures.row_label', {
+                          time,
+                          device,
+                          model: row.model || t('dashboard.top.no_model'),
+                          status: row.status || '—',
+                          error: error || '—',
+                        })}
+                      >
                         {content}
                       </Link>
                     ) : (
@@ -233,7 +274,11 @@ export function TopLists({
       <Section
         title={t('dashboard.top.devices')}
         caption={caption}
-        action={<ArrowLink to={usageDevicesLink(timeWindow)}>{t('dashboard.top.usage')}</ArrowLink>}
+        action={
+          <ArrowLink to={usageDevicesLink(timeWindow)}>
+            {t('dashboard.top.usage_devices')}
+          </ArrowLink>
+        }
         loading={!data}
         error={summary.error}
         onRetry={onRetry}
@@ -254,7 +299,9 @@ export function TopLists({
       <Section
         title={t('dashboard.top.models')}
         caption={caption}
-        action={<ArrowLink to={usageModelsLink(timeWindow)}>{t('dashboard.top.usage')}</ArrowLink>}
+        action={
+          <ArrowLink to={usageModelsLink(timeWindow)}>{t('dashboard.top.usage_models')}</ArrowLink>
+        }
         loading={!data}
         error={summary.error}
         onRetry={onRetry}

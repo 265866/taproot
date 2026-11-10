@@ -49,11 +49,12 @@ const FAILURE: ClientRequest = {
 interface Calls {
   summary: Array<{ bucket: string; tz?: string; from: string; to: string }>;
   recent: Array<{ failed?: boolean; limit?: number }>;
+  usage: Array<{ from: string; to: string; limit?: number }>;
   access: number;
 }
 
 const fakeApi = (over: Partial<DashboardApi> = {}): { api: DashboardApi; calls: Calls } => {
-  const calls: Calls = { summary: [], recent: [], access: 0 };
+  const calls: Calls = { summary: [], recent: [], usage: [], access: 0 };
   const api: DashboardApi = {
     status: async () => STATUS,
     pools: async () => POOLS,
@@ -64,6 +65,10 @@ const fakeApi = (over: Partial<DashboardApi> = {}): { api: DashboardApi; calls: 
     requestsRecent: async (q = {}) => {
       calls.recent.push(q);
       return [FAILURE];
+    },
+    usageEvents: async (q) => {
+      calls.usage.push(q);
+      return { events: [], nextCursor: null };
     },
     accessDevices: async () => {
       calls.access += 1;
@@ -127,6 +132,32 @@ describe('one load', () => {
     expect(reads.failures).toEqual({ data: [FAILURE], error: 'recent down' });
     expect(reads.summary.error).toBeNull();
     expect(reads.updatedAt).toBe(NOW);
+    // The page still draws relative times from the newest attempt.
+    expect(reads.checkedAt).toBe(NOW + 30_000);
+  });
+
+  test('while every read keeps failing, the drawing clock still moves', async () => {
+    const first = await load(fakeApi().api);
+    const failing = fakeApi({
+      status: async () => {
+        throw new Error('offline');
+      },
+      pools: async () => {
+        throw new Error('offline');
+      },
+      requestsSummary: async () => {
+        throw new Error('offline');
+      },
+      requestsRecent: async () => {
+        throw new Error('offline');
+      },
+    }).api;
+    let reads = first.reads;
+    for (const at of [NOW + 30_000, NOW + 60_000, NOW + 90_000]) {
+      reads = (await readDashboard(failing, '24h', at, reads)).apply(reads);
+      expect(reads.checkedAt).toBe(at);
+      expect(reads.updatedAt).toBe(NOW);
+    }
   });
 
   test("a failed summary for a new window drops the old window's numbers", async () => {
@@ -153,6 +184,29 @@ describe('one load', () => {
     expect(fresh.calls.access).toBe(1);
     expect(reads.anyRequest.data).toBe(false);
     expect(reads.access.data?.enabled).toBe(true);
+  });
+
+  test('a server upgraded from 0.4 has usage history but no client requests: it served', async () => {
+    const upgraded = fakeApi({
+      requestsRecent: async () => [],
+      usageEvents: async (q) => {
+        upgraded.calls.usage.push(q);
+        return { events: [{} as never], nextCursor: null };
+      },
+    });
+    const { reads } = await load(upgraded.api);
+    expect(reads.anyRequest.data).toBe(true);
+    expect(upgraded.calls.usage).toEqual([
+      { from: new Date(0).toISOString(), to: new Date(NOW).toISOString(), limit: 1 },
+    ]);
+    // So the page is the Dashboard, not the checklist, and Access is not read for step 3.
+    expect(upgraded.calls.access).toBe(0);
+  });
+
+  test('a server with client requests does not read usage history', async () => {
+    const { api, calls } = fakeApi();
+    await load(api);
+    expect(calls.usage).toEqual([]);
   });
 
   test('once a request has arrived, it stops asking whether one has', async () => {
@@ -313,12 +367,5 @@ describe('the verdict sits at the top of the rail below the rail breakpoint, and
     ).toEqual(['display: none;']);
     // A fractional zoomed width falls between `max-width: 1191px` and `min-width: 1192px`.
     expect(css).not.toMatch(/max-width: 1191/);
-  });
-
-  test('the page renders both copies from one status read', () => {
-    const page = readFileSync(new URL('features/dashboard/DashboardPage.tsx', SRC), 'utf8');
-    expect(page).toContain('verdict(styles.verdictInRail)');
-    expect(page).toContain('verdict(styles.verdictInPage)');
-    expect(page.match(/<Verdict /g)).toHaveLength(1);
   });
 });

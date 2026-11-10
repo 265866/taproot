@@ -16,7 +16,13 @@ import { useEmailMask } from '@/hooks/useEmailMask';
 import type { Attention, AttentionItem } from '@/services/api/taprootStatus';
 import { getErrorMessage } from '@/utils/helpers';
 import { formatFileSize } from '@/utils/format';
-import { itemAction, itemCategoryKey, type ItemAction } from '../model/attentionActions';
+import {
+  itemAction,
+  itemCategoryKey,
+  resolvedResults,
+  type FixRun,
+  type ItemAction,
+} from '../model/attentionActions';
 import { formatAge } from '../model/format';
 import { AccountGoneError, backupNow, enableAccount } from '../model/inlineActions';
 import styles from './Rail.module.scss';
@@ -53,13 +59,10 @@ export function NeedsYou({
   const headingId = useId();
   // Kept here rather than in each item: a fix that works removes its item on the next read, and
   // the result must outlive it.
-  const [runs, setRuns] = useState<Record<string, RunState & { title: string }>>({});
+  const [runs, setRuns] = useState<Record<string, FixRun>>({});
   const { data, error } = attention;
   const items = data?.items ?? [];
-  const listed = new Set(items.map((item) => item.id));
-  const resolved = Object.entries(runs).filter(
-    ([id, run]) => run.kind === 'done' && !listed.has(id)
-  );
+  const resolved = resolvedResults(runs, items, nowMs);
   const blocking = items.some((item) => item.severity === 'blocking');
 
   const runInline = async (item: AttentionItem, task: () => Promise<string>) => {
@@ -67,7 +70,7 @@ export function NeedsYou({
     setRuns((prev) => ({ ...prev, [item.id]: { kind: 'running', title } }));
     try {
       const message = await task();
-      setRuns((prev) => ({ ...prev, [item.id]: { kind: 'done', message, title } }));
+      setRuns((prev) => ({ ...prev, [item.id]: { kind: 'done', message, title, at: Date.now() } }));
       await onChanged();
     } catch (failure: unknown) {
       const message =
@@ -94,8 +97,7 @@ export function NeedsYou({
         <IconCheckCircle2 size={16} />
       </span>
       <p className={styles.itemDetail} role="status" tabIndex={-1} ref={focusIfFocusWasLost}>
-        <span className={styles.resolvedTitle}>{run.title}</span>{' '}
-        {run.kind === 'done' ? run.message : null}
+        <span className={styles.resolvedTitle}>{run.title}</span> {run.message}
       </p>
     </li>
   ));
@@ -223,11 +225,7 @@ function NeedItem({
   );
 }
 
-type RunState =
-  | { kind: 'idle' }
-  | { kind: 'running' }
-  | { kind: 'done'; message: string }
-  | { kind: 'failed'; message: string };
+type RunState = { kind: 'idle' } | FixRun;
 
 const IDLE: RunState = { kind: 'idle' };
 

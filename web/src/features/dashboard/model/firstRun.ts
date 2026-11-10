@@ -56,6 +56,20 @@ export function proxyBaseUrl(location: Pick<Location, 'origin'>): string {
   return location.origin.replace(/\/+$/, '');
 }
 
+/**
+ * A caveat for the address the snippets use. Loopback works only on the server itself. An https
+ * address on the default port is most likely a proxy such as `tailscale serve`, which taproot
+ * cannot tell apart from loopback (docs/troubleshooting.md).
+ */
+export function addressHint(
+  location: Pick<Location, 'protocol' | 'hostname' | 'port'>
+): 'loopback' | 'proxy' | null {
+  const host = location.hostname.replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host === '::1' || /^127\./.test(host)) return 'loopback';
+  if (location.protocol === 'https:' && location.port === '') return 'proxy';
+  return null;
+}
+
 export function claudeCodeSnippet(baseUrl: string): string {
   return `export ANTHROPIC_BASE_URL="${baseUrl}"\nexport ANTHROPIC_AUTH_TOKEN="taproot"  # any value`;
 }

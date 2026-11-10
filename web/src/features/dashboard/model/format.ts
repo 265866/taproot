@@ -82,14 +82,26 @@ export function formatClock(atMs: number, nowMs: number): string {
   return dateTime.format(atMs);
 }
 
-/** "in 20 h", "in 45 min", "in 3 d"; "now" once it has passed. */
+/**
+ * "in about 19 h", "in about 2 h 30 min", "in about 45 min"; "now" once it has passed. It rounds
+ * down as the server's attention text does (`roughly` in internal/taproot/status), so the rail
+ * never says "in 20 h" beside an item saying "in about 19 h".
+ */
 export function formatIn(atMs: number, nowMs: number, t: TFunction): string {
-  const minutes = Math.round((atMs - nowMs) / 60_000);
-  if (minutes <= 0) return t('dashboard.time.now');
+  const ms = atMs - nowMs;
+  if (ms <= 0) return t('dashboard.time.now');
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return t('dashboard.time.in_a_minute');
   if (minutes < 60) return t('dashboard.time.in_minutes', { count: minutes });
-  const hours = Math.round(minutes / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours < 10) {
+    const tens = Math.floor((minutes % 60) / 10) * 10;
+    return tens === 0
+      ? t('dashboard.time.in_hours', { count: hours })
+      : t('dashboard.time.in_hours_minutes', { hours, minutes: tens });
+  }
   if (hours < 48) return t('dashboard.time.in_hours', { count: hours });
-  return t('dashboard.time.in_days', { count: Math.round(hours / 24) });
+  return t('dashboard.time.in_days', { count: Math.floor(hours / 24) });
 }
 
 /** "44m ago", "2h ago", "3d ago": an item's age in the rail's compact form. */

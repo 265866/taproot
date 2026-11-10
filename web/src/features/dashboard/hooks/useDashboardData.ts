@@ -44,12 +44,20 @@ export interface DashboardReads {
   pools: Read<Pools>;
   summary: Read<WindowSummary>;
   failures: Read<ClientRequest[]>;
-  /** Whether any client request ever arrived; first-run step 2. */
+  /**
+   * Whether the server ever served a client: a client request, or usage history from before
+   * client requests were recorded (an upgraded server). First-run step 2.
+   */
   anyRequest: Read<boolean>;
   /** Read only while the setup checklist shows, for step 3. */
   access: Read<AccessDevices>;
-  /** When a read last succeeded in full, in epoch milliseconds. */
+  /** When a read last succeeded in full, in epoch milliseconds: the freshness stamp. */
   updatedAt: number | null;
+  /**
+   * When the last read finished, failed or not: the clock the page draws relative times with, so
+   * "in 20 min" keeps moving while a read keeps failing.
+   */
+  checkedAt: number | null;
 }
 
 export const initialReads: DashboardReads = {
@@ -60,13 +68,37 @@ export const initialReads: DashboardReads = {
   anyRequest: EMPTY,
   access: EMPTY,
   updatedAt: null,
+  checkedAt: null,
 };
 
 /** The API calls one load makes; tests pass their own. */
 export type DashboardApi = Pick<
   typeof taprootApi,
-  'status' | 'pools' | 'requestsSummary' | 'requestsRecent' | 'accessDevices'
+  'status' | 'pools' | 'requestsSummary' | 'requestsRecent' | 'usageEvents' | 'accessDevices'
 >;
+
+const EPOCH = new Date(0).toISOString();
+
+/**
+ * Whether the server ever served a client. Taproot 0.4 recorded no client requests, so a server
+ * upgraded from it has none until its next request; its usage history says it served.
+ */
+async function everServed(api: DashboardApi, nowMs: number): Promise<boolean> {
+  if ((await api.requestsRecent({ limit: 1 })).length > 0) return true;
+  const usage = await api.usageEvents({ from: EPOCH, to: new Date(nowMs).toISOString(), limit: 1 });
+  return usage.events.length > 0;
+}
+
+/**
+ * The summary for `timeWindow`, or a loading one while the window's first read runs: another
+ * window's numbers answer a different question, so no section shows them under the new label.
+ */
+export function windowSummary(
+  read: Read<WindowSummary>,
+  timeWindow: DashboardWindow
+): Read<WindowSummary> {
+  return read.data && read.data.range.window !== timeWindow ? EMPTY : read;
+}
 
 const settle = <T>(previous: Read<T>, result: PromiseSettledResult<T>): Read<T> =>
   result.status === 'fulfilled'
@@ -96,10 +128,8 @@ export async function readDashboard(
       tz: range.bucket === '1d' ? browserTimeZone() : undefined,
     }),
     api.requestsRecent({ failed: true, limit: 5 }),
-    // Once a request arrived, the answer stays yes; the newest request is a 0.3 ms read anyway.
-    knownServed
-      ? Promise.resolve(true)
-      : api.requestsRecent({ limit: 1 }).then((requests) => requests.length > 0),
+    // Once the server has served, the answer stays yes.
+    knownServed ? Promise.resolve(true) : everServed(api, nowMs),
   ]);
 
   const firstRun =
@@ -129,6 +159,7 @@ export async function readDashboard(
         anyRequest: settle(reads.anyRequest, anyRequest),
         access: access ? settle(reads.access, access[0]) : reads.access,
         updatedAt: error ? reads.updatedAt : nowMs,
+        checkedAt: nowMs,
       };
     },
   };

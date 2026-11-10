@@ -16,7 +16,7 @@ import type { Pool, PoolAccount, Pools } from '@/services/api/taprootStatus';
 import type { Read } from '../hooks/useDashboardData';
 import { formatAccounts, formatClock, formatIn, formatPercent } from '../model/format';
 import { accountsLink } from '../model/links';
-import { runsOutView } from '../model/views';
+import { runsOutView, waitingText } from '../model/views';
 import { providerColor, providerLabel } from '../model/providers';
 import styles from './Rail.module.scss';
 
@@ -156,18 +156,7 @@ function PoolCard({ pool, nowMs }: { pool: Pool; nowMs: number }) {
       {pool.waitingAccounts.count > 0 ? (
         <p className={styles.note} data-tone="warning">
           <IconClock size={13} />
-          <span>
-            {pool.waitingAccounts.until
-              ? t('dashboard.pools.waiting_until', {
-                  left: formatAccounts(pool.waitingAccounts.left),
-                  count: pool.waitingAccounts.count,
-                  time: formatClock(Date.parse(pool.waitingAccounts.until), nowMs),
-                })
-              : t('dashboard.pools.waiting', {
-                  left: formatAccounts(pool.waitingAccounts.left),
-                  count: pool.waitingAccounts.count,
-                })}
-          </span>
+          <span>{waitingText(pool.waitingAccounts, nowMs, t)}</span>
         </p>
       ) : null}
       <dl className={styles.facts}>
@@ -230,8 +219,8 @@ function RunsOut({ pool, nowMs }: { pool: Pool; nowMs: number }) {
 
 function Slot({ account, color, nowMs }: { account: PoolAccount; color: string; nowMs: number }) {
   const { t } = useTranslation();
-  const { mask } = useEmailMask();
-  const label = mask(account.label);
+  const { maskName } = useEmailMask();
+  const label = maskName(account.label);
   const pct = formatPercent(account.percentLeft);
   const stateWord = account.state === 'serving' ? '' : t(STATE_KEYS[account.state]);
   const until =

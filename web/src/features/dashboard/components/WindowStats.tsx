@@ -15,6 +15,9 @@ import styles from './Main.module.scss';
 
 const DASH = '—';
 
+/** The last good numbers, kept through a failed read; the chart below shows the error and Retry. */
+const isStale = (summary: Read<WindowSummary>) => summary.data !== null && summary.error !== null;
+
 export function WindowControl({
   value,
   onChange,
@@ -22,10 +25,10 @@ export function WindowControl({
 }: {
   value: DashboardWindow;
   onChange: (value: DashboardWindow) => void;
-  summary: WindowSummary | null;
+  summary: Read<WindowSummary>;
 }) {
   const { t } = useTranslation();
-  const range = summary?.range.window === value ? summary.range : null;
+  const range = summary.data?.range.window === value ? summary.data.range : null;
   const zone = browserTimeZone();
   return (
     <div className={styles.controls}>
@@ -48,6 +51,11 @@ export function WindowControl({
             })
           : ' '}
       </span>
+      {isStale(summary) ? (
+        <span className={styles.stale} title={t('console.stale_hint')}>
+          {t('console.stale')}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -56,6 +64,7 @@ export function StatTiles({ summary }: { summary: Read<WindowSummary> }) {
   const { t } = useTranslation();
   const totals = summary.data?.summary.totals ?? null;
   const loading = !totals && !summary.error;
+  const stale = isStale(summary);
   const unread = t('dashboard.stats.unread');
 
   const latency = totals ? formatLatency(totals.medianLatencyMs) : null;
@@ -63,56 +72,59 @@ export function StatTiles({ summary }: { summary: Read<WindowSummary> }) {
   const unpriced = totals?.unpricedModels ?? [];
 
   return (
-    <StatGroup label={t('dashboard.stats.label')}>
-      <StatTile
-        loading={loading}
-        label={t('dashboard.stats.requests')}
-        value={totals ? formatCount(totals.requests) : DASH}
-        sub={totals ? t('dashboard.stats.retries', { count: totals.retries }) : unread}
-      />
-      <StatTile
-        loading={loading}
-        label={t('dashboard.stats.failed')}
-        value={totals ? formatCount(totals.failed) : DASH}
-        tone={totals ? failedTone(totals) : undefined}
-        sub={
-          totals
-            ? totals.requests > 0
-              ? t('dashboard.stats.failed_share', { share: formatShare(totals.failureRate) })
-              : t('dashboard.stats.no_requests')
-            : unread
-        }
-      />
-      <StatTile
-        loading={loading}
-        label={t('dashboard.stats.latency')}
-        value={latency ?? DASH}
-        sub={
-          totals
-            ? ttft
-              ? t('dashboard.stats.first_token', { value: ttft })
-              : t('dashboard.stats.no_first_token')
-            : unread
-        }
-      />
-      <StatTile
-        loading={loading}
-        label={t('dashboard.stats.cost')}
-        value={totals ? formatCost(totals.costUSD) : DASH}
-        sub={
-          totals ? (
-            unpriced.length > 0 ? (
-              <span title={unpriced.join(', ')}>
-                {t('dashboard.stats.unpriced', { count: unpriced.length })}
-              </span>
+    <div className={styles.tiles} data-stale={stale || undefined}>
+      <StatGroup label={t('dashboard.stats.label')}>
+        <StatTile
+          loading={loading}
+          label={t('dashboard.stats.requests')}
+          value={totals ? formatCount(totals.requests) : DASH}
+          sub={totals ? t('dashboard.stats.retries', { count: totals.retries }) : unread}
+        />
+        <StatTile
+          loading={loading}
+          label={t('dashboard.stats.failed')}
+          value={totals ? formatCount(totals.failed) : DASH}
+          tone={totals ? failedTone(totals) : undefined}
+          sub={
+            totals
+              ? totals.requests > 0
+                ? t('dashboard.stats.failed_share', { share: formatShare(totals.failureRate) })
+                : t('dashboard.stats.no_requests')
+              : unread
+          }
+        />
+        <StatTile
+          loading={loading}
+          label={t('dashboard.stats.latency')}
+          value={latency ?? DASH}
+          sub={
+            totals
+              ? ttft
+                ? t('dashboard.stats.first_token', { value: ttft })
+                : t('dashboard.stats.no_first_token')
+              : unread
+          }
+        />
+        <StatTile
+          loading={loading}
+          label={t('dashboard.stats.cost')}
+          value={totals ? formatCost(totals.costUSD) : DASH}
+          sub={
+            totals ? (
+              unpriced.length > 0 ? (
+                <details className={styles.unpriced}>
+                  <summary>{t('dashboard.stats.unpriced', { count: unpriced.length })}</summary>
+                  <span>{t('dashboard.stats.unpriced_list', { models: unpriced.join(', ') })}</span>
+                </details>
+              ) : (
+                t('dashboard.stats.not_a_bill')
+              )
             ) : (
-              t('dashboard.stats.not_a_bill')
+              unread
             )
-          ) : (
-            unread
-          )
-        }
-      />
-    </StatGroup>
+          }
+        />
+      </StatGroup>
+    </div>
   );
 }

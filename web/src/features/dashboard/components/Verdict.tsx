@@ -8,6 +8,7 @@ import {
   IconArrowRight,
   IconCheckCircle2,
   IconCircleAlert,
+  IconClock,
   IconXCircle,
 } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
@@ -45,7 +46,7 @@ export function Verdict({ status, onRetry, className }: VerdictProps) {
     return (
       <section className={rootClass} aria-labelledby={headingId} aria-busy={!status.error}>
         <span className={styles.icon} data-state="unknown">
-          {status.error ? <IconCircleAlert size={22} /> : <IconCheckCircle2 size={22} />}
+          {status.error ? <IconCircleAlert size={22} /> : <IconClock size={22} />}
         </span>
         <div className={styles.body}>
           <h2 id={headingId} className={styles.headline}>

@@ -26,8 +26,16 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding-top: var(--space-4);
+}
+
+// On first run on a narrow screen, the rail follows the checklist, inside the page's gutter.
+.railAfter {
+  margin: 0 calc(-1 * var(--console-gutter));
   border-top: 1px solid var(--border-color);
+
+  @media (max-width: $breakpoint-mobile) {
+    margin: 0 (-$spacing-md);
+  }
 }
 
 // One verdict shows at a time (see DashboardPage): the rail's copy below the rail breakpoint, where
@@ -56,5 +64,12 @@
 
   .page .verdictInPage {
     display: flex;
+  }
+
+  // The verdict sits above the window here; below this width the rail's last hairline already
+  // separates them, so a second rule would double it.
+  .windowBlock {
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border-color);
   }
 }

@@ -35,11 +35,17 @@
   min-height: 24px;
   color: var(--text-secondary);
   font-size: var(--fs-meta);
+  border-radius: 2px;
   text-decoration: none;
   white-space: nowrap;
 
   &:hover {
     color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
   }
 }
 
@@ -81,8 +87,72 @@
   }
 }
 
-.failureTable td:nth-child(5) {
-  max-width: 260px;
+// Fixed layout: the Error column takes what the others leave and cuts its text, so the table
+// never grows wider than its card.
+.failureTable {
+  table-layout: fixed;
+}
+
+.colTime {
+  width: 84px;
+}
+
+.colDevice {
+  width: 16%;
+}
+
+.colModel {
+  width: 22%;
+}
+
+.colStatus {
+  width: 72px;
+}
+
+.colAttempts {
+  width: 84px;
+}
+
+.failureTable td {
+  max-width: none;
+}
+
+.errorCell {
+  overflow: hidden;
+}
+
+.errorLine {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// A row without a log has nowhere else to read its error, so it opens in place.
+.errorDetails {
+  min-width: 0;
+
+  summary {
+    overflow: hidden;
+    border-radius: 2px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &::marker {
+      color: var(--text-tertiary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  }
+
+  &[open] summary {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .clickableRow {
@@ -101,6 +171,12 @@
 
   &:hover {
     color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 
@@ -123,6 +199,11 @@ a.failureRow:hover {
   background: var(--bg-hover);
 }
 
+a.failureRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .failureWho {
   min-width: 0;
   overflow: hidden;
@@ -135,7 +216,11 @@ a.failureRow:hover {
   overflow: hidden;
   color: var(--text-secondary);
   font-size: var(--fs-meta);
-  text-overflow: ellipsis;
+}
+
+.failureTime {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
   white-space: nowrap;
 }
 
@@ -143,13 +228,10 @@ a.failureRow:hover {
 
 .two {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-
-  @media (max-width: $breakpoint-tablet) {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--console-gap);
-  }
+  // Side by side only while each table has room for its three columns; the main column narrows
+  // when the rail sits beside it, whatever the window's width.
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: var(--console-gap) var(--space-4);
 }
 
 .shareCell {
@@ -196,4 +278,45 @@ a.failureRow:hover {
   width: 8px;
   height: 8px;
   border-radius: 2px;
+}
+
+// The tiles keep their last numbers through a failed read, dimmed and tagged.
+.tiles {
+  min-width: 0;
+
+  &[data-stale] [role='group'] {
+    opacity: 0.6;
+  }
+}
+
+.stale {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+  font-size: var(--fs-tag);
+  font-weight: 600;
+}
+
+// The unpriced models, readable by tap or keyboard rather than a hover title.
+.unpriced {
+  summary {
+    border-radius: 2px;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  }
+
+  span {
+    display: block;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
 }
