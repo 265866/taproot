@@ -239,7 +239,20 @@ describe('the page styles', () => {
   test('the failures table fits its card: fixed layout, the error column takes the rest', () => {
     const css = compile('features/dashboard/components/Main.module.scss');
     expect(ruleBody(css, '.failureTable')).toContain('table-layout: fixed');
-    expect(ruleBody(css, '.errorLine')).toContain('text-overflow: ellipsis');
+    expect(ruleBody(css, '.cellLine')).toContain('text-overflow: ellipsis');
+  });
+
+  test("an open row's cells wrap, though the table keeps its cells on one line", () => {
+    const css = compile('features/dashboard/components/Main.module.scss');
+    const table = compile('components/ui/DataTable.module.scss');
+    expect(table).toMatch(/\.table td \{[^}]*white-space: nowrap/);
+    // Open: the table row whose error toggle is expanded, and the phone row that is the toggle.
+    const open =
+      /tr:has\(\.errorToggle\[aria-expanded=true\]\) \.cellLine,\s*\.failureRow\[aria-expanded=true\] \.cellLine \{([^}]*)\}/.exec(
+        css
+      )?.[1] ?? '';
+    expect(open).toContain('white-space: normal');
+    expect(open).toContain('overflow-wrap: anywhere');
   });
 });
 
@@ -352,6 +365,42 @@ describe('one banner when every read fails alike', () => {
     expect(count(html, '>Stale<')).toBeGreaterThanOrEqual(5);
   });
 
+  test('on a cold load, a section with nothing to keep shows its own error, and the banner claims no data', () => {
+    const cold = reads({
+      status: { data: null, error: down },
+      pools: { data: null, error: down },
+      summary: { data: null, error: down },
+      failures: { data: null, error: down },
+      anyRequest: { data: null, error: down },
+    });
+    const html = render(cold, { attention: { data: null, error: down, loadedAt: null } });
+    expect(html).toContain('pageError');
+    expect(html).toContain('Nothing has loaded yet');
+    expect(html).not.toContain('Showing the last data');
+    expect(html).not.toContain('>Stale<');
+    // The banner, then the verdict's two copies, Needs you, the pools, the chart, the failures,
+    // and the two top lists each say so in place, with their own Retry.
+    expect(count(html, 'role="alert"')).toBe(9);
+    expect(count(html, '>Retry<')).toBe(9);
+  });
+
+  test('a section that holds data stays quiet while one without data shows its own error', () => {
+    const mixed = reads({
+      status: { data: null, error: down },
+      pools: { data: null, error: down },
+      summary: { ...reads().summary, error: down },
+      failures: { data: null, error: down },
+    });
+    const html = render(mixed, { attention: { data: null, error: down, loadedAt: null } });
+    expect(html).toContain('Showing the last data that loaded');
+    // The tiles, the chart, and the top lists keep the summary's numbers, marked stale.
+    expect(html).toContain('4,517');
+    expect(count(html, '>Stale<')).toBeGreaterThanOrEqual(3);
+    // The verdict, Needs you, the pools, and the failures have nothing to keep.
+    expect(html).toContain('Couldn&#x27;t read the server&#x27;s status');
+    expect(count(html, 'role="alert"')).toBeGreaterThanOrEqual(5);
+  });
+
   test('different errors stay with their sections', () => {
     const html = render(reads({ pools: { ...reads().pools, error: 'pools down' } }), { attention });
     expect(html).not.toContain('pageError');
@@ -369,9 +418,24 @@ describe('the rail on narrow screens', () => {
     expect(html.indexOf('Needs you')).toBeLessThan(html.indexOf('Traffic'));
   });
 
-  test('on phones the verdict keeps two lines for its detail from the first paint', () => {
+  test('the verdict keeps its loaded height from the first paint, until it sits beside the rail', () => {
     const css = compile('features/dashboard/components/Verdict.module.scss');
-    expect(ruleBody(css, '.detail', '@media (max-width: 768px)')).toContain('min-height: 2lh');
+    const wide = '@media (min-width: 1192px)';
+    const narrow = css.slice(0, css.indexOf(wide));
+    // By default: two lines of detail and See failures' row, which has a row of its own.
+    expect(narrow).toMatch(/\.verdict \{\s*--see-failures-row: 24px;/);
+    expect(narrow).toMatch(/\.headline \{\s*flex-basis: 100%;/);
+    expect(narrow).toMatch(/\.detail \{\s*min-height: calc\(2lh \+ var\(--see-failures-row\)\);/);
+    // A degraded or down verdict shows See failures in that row, so its detail keeps two lines.
+    expect(narrow).toMatch(
+      /\.verdict\[data-state=degraded\] \.detail, \.verdict\[data-state=down\] \.detail \{\s*min-height: 2lh;/
+    );
+    // The link takes its row's 20 px however its target grows on a touch screen.
+    expect(ruleBody(narrow, '.seeFailures')).toContain('min-height: 20px');
+    // Beside the rail the page's verdict is at the top, and nothing reserves room.
+    const beside = css.slice(css.indexOf(wide));
+    expect(beside).toMatch(/\.headline \{\s*flex-basis: auto;/);
+    expect(beside).toMatch(/\.detail,[^{]*\{\s*min-height: 0;/);
   });
 });
 

@@ -116,7 +116,14 @@ describe('touch targets are 44 px on a touch screen of any width', () => {
     expect(px(rule(chart, '.tableToggle > summary', COARSE), 'min-height')).toBe(44);
     const main = compile('features/dashboard/components/Main.module.scss');
     expect(px(rule(main, '.errorToggle', COARSE), 'min-height')).toBe(44);
-    expect(px(rule(main, '.unpriced summary', COARSE), 'min-height')).toBe(44);
+    expect(px(rule(main, '.unpriced summary', COARSE), 'line-height')).toBe(44);
+  });
+
+  test("the Usage page's segments, where Usage by device and by model land", () => {
+    const usage = compile('features/taproot-usage/TaprootUsage.module.scss');
+    const touch = rule(usage, '.segment', COARSE);
+    expect(px(touch, 'min-height')).toBe(44);
+    expect(px(touch, 'min-width')).toBe(44);
   });
 
   test("the Accounts page's quota range segments", () => {
@@ -136,6 +143,15 @@ describe('the phone type scale', () => {
     }
     for (const name of ['fs-tag', 'fs-small'])
       expect(token(phone, name)).toBeGreaterThanOrEqual(11);
+  });
+
+  test('a phone held sideways reads at the phone scale too; a tablet keeps the dense one', () => {
+    const query = '@media (max-width: 768px), (pointer: coarse) and (max-height: 500px)';
+    const phone = rule(themes, ':root', query);
+    expect(token(phone, 'fs-table')).toBe(13);
+    expect(token(phone, 'fs-tag')).toBe(11);
+    // 820 by 1180 and 1024 by 768 are taller than 500 px, so no other query reaches them.
+    expect(blocks(themes, '@media (pointer: coarse) {')).toEqual([]);
   });
 
   test('desktop keeps the dense mockup scale', () => {
@@ -189,6 +205,23 @@ describe('the main column on narrow and stale screens', () => {
     expect(px(rule(main, '.colTopCost', PHONE), 'width')).not.toBeNull();
   });
 
+  test('on phones and touch screens, top-list names wrap rather than cut', () => {
+    const wrap = rule(main, '.topLabel', '@media (max-width: 768px), (pointer: coarse)');
+    expect(wrap).toContain('white-space: normal');
+    expect(wrap).toContain('overflow-wrap: anywhere');
+  });
+
+  test("a phone failure row's status keeps its height when the device and model wrap", () => {
+    expect(rule(main, '.failureRow > :nth-child(2)')).toContain('align-self: start');
+  });
+
+  test('a long unpriced-models summary ends in an ellipsis rather than a hard cut', () => {
+    const summary = rule(main, '.unpriced summary');
+    expect(summary).toContain('text-overflow: ellipsis');
+    expect(summary).toContain('white-space: nowrap');
+    expect(summary).toContain('overflow: hidden');
+  });
+
   test('the failures table gives the error the room: narrower attempts and model columns', () => {
     expect(px(rule(main, '.colAttempts'), 'width')).toBeLessThanOrEqual(76);
     expect(rule(main, '.colModel')).toContain('width: 18%');
@@ -218,17 +251,21 @@ describe('the shell on phones', () => {
   });
 
   test('the open drawer is a modal dialog; on wider screens the sidebar stays a landmark', () => {
-    expect(sidebarSemantics(true, 'Main navigation')).toEqual({
-      tag: 'div',
-      props: { role: 'dialog', 'aria-modal': true, 'aria-label': 'Main navigation' },
-    });
-    expect(sidebarSemantics(false, 'Main navigation')).toEqual({ tag: 'aside', props: {} });
-    const html = renderToStaticMarkup(
-      createElement(sidebarSemantics(true, 'Main navigation').tag, {
-        ...sidebarSemantics(true, 'Main navigation').props,
-      })
+    const drawer = renderToStaticMarkup(
+      createElement('div', sidebarSemantics(true, 'Main navigation'))
     );
-    expect(html).toBe('<div role="dialog" aria-modal="true" aria-label="Main navigation"></div>');
+    expect(drawer).toBe('<div role="dialog" aria-modal="true" aria-label="Main navigation"></div>');
+    const landmark = renderToStaticMarkup(
+      createElement('div', sidebarSemantics(false, 'Main navigation'))
+    );
+    expect(landmark).toBe('<div role="complementary"></div>');
+  });
+
+  test('one sidebar element takes either role, so crossing the phone breakpoint keeps it', () => {
+    const layout = readFileSync(join(SRC, 'components/layout/MainLayout.tsx'), 'utf8');
+    expect(layout).toMatch(/<div\s+id=\{SIDEBAR_ID\}/);
+    expect(layout).not.toMatch(/<Sidebar\b/);
+    expect(layout).not.toMatch(/<aside\s+id=\{SIDEBAR_ID\}/);
   });
 });
 

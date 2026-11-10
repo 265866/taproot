@@ -52,9 +52,11 @@ describe('shell scroll containers', () => {
 
   test('the page transition wrapper clips without becoming a scroll container', () => {
     const head = ruleHead(transition, '.page-transition');
-    expect(head).toMatch(/overflow:\s*clip;/);
+    // Only vertically: sideways, .main-content clips at the window's edge, so the Dashboard's
+    // inline rail can run its hairlines through the page's gutters.
+    expect(head).toMatch(/overflow:\s*visible clip;/);
     // `hidden` stays only as the fallback declared before `clip`.
-    expect(head.lastIndexOf('overflow: clip')).toBeGreaterThan(
+    expect(head.lastIndexOf('overflow: visible clip')).toBeGreaterThan(
       head.lastIndexOf('overflow: hidden')
     );
   });
