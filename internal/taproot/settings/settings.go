@@ -7,6 +7,7 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -65,6 +66,9 @@ type ScheduleSetter interface {
 type AlertsSetter interface {
 	Config() alerts.Config
 	SetConfig(alerts.Config) error
+	// SnapshotConfig returns a function that puts back the current state
+	// exactly, without validating it.
+	SnapshotConfig() (restore func())
 	Active() bool
 	WebhookInvalid() bool
 	// AnnounceWebhook queues a "Webhook connected" message without blocking.
@@ -320,7 +324,11 @@ func writeError(c *gin.Context, err error) {
 
 func (s *Settings) handlePut(c *gin.Context) {
 	var u update
-	if err := c.ShouldBindJSON(&u); err != nil {
+	// taproot.yaml never ignores a key, so neither does its API: a misspelled
+	// field would otherwise answer 200 and change nothing.
+	dec := json.NewDecoder(c.Request.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&u); err != nil {
 		writeError(c, badRequest("invalid_body", "settings body: %v", err))
 		return
 	}
@@ -458,16 +466,23 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 		next := before
 		if a.DiscordWebhook != nil {
 			next.DiscordWebhook = strings.TrimSpace(*a.DiscordWebhook)
+			if next.DiscordWebhook != "" {
+				if err := alerts.ValidateWebhook(next.DiscordWebhook); err != nil {
+					rollback()
+					return badRequest("invalid_alerts", "discord webhook: %v", err)
+				}
+			}
 		}
 		if a.Enabled != nil {
 			enabled := *a.Enabled
 			next.Enabled = &enabled
 		}
+		restoreAlerts := s.deps.Alerts.SnapshotConfig()
 		if err := s.deps.Alerts.SetConfig(next); err != nil {
 			rollback()
 			return badRequest("invalid_alerts", "discord webhook: %v", err)
 		}
-		undo = append(undo, func() { s.restore("alerts", s.deps.Alerts.SetConfig(before)) })
+		undo = append(undo, restoreAlerts)
 		if next.DiscordWebhook != before.DiscordWebhook {
 			edits = append(edits, yamlEdit{path: []string{"alerts", "discord-webhook"}, value: next.DiscordWebhook})
 			newWebhook = next.DiscordWebhook != ""

@@ -808,3 +808,26 @@ func TestStaleAccessCopyCannotUndoAChange(t *testing.T) {
 		t.Errorf("devices and device together = %d %s", code, body)
 	}
 }
+
+// taproot.yaml never ignores a key, so PUT refuses a field it does not know
+// instead of answering 200 and changing nothing.
+func TestPutRefusesUnknownFields(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	before := f.file(t)
+	for _, body := range []string{
+		`{"backups": {"daily-at": "03:00", "keep": 5}}`,
+		`{"backup": {"keep": 5}}`,
+		`{"access": {"devices": [{"id": "nlaptopCNTRL", "proxy": true, "admin": true, "owner": "x"}]}}`,
+	} {
+		code, _, resp := f.do(t, http.MethodPut, body)
+		if code != http.StatusBadRequest || errorCode(t, resp) != "invalid_body" {
+			t.Fatalf("PUT %s = %d %s", body, code, resp)
+		}
+	}
+	if f.file(t) != before {
+		t.Fatalf("taproot.yaml changed:\n%s", f.file(t))
+	}
+	if _, keep := f.backups.Schedule(); keep != 3 {
+		t.Fatalf("keep = %d after refused updates", keep)
+	}
+}
