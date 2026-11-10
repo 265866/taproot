@@ -292,6 +292,8 @@ export interface UsageSession {
   models: string[];
   totals: UsageTotals;
   accountSwitches: number;
+  /** The session has more requests in range than the server reads; the fields cover the first. */
+  truncated: boolean;
 }
 
 /** USD per million tokens. */

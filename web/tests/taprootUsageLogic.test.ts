@@ -34,7 +34,11 @@ import {
   sortBreakdown,
   tokenRows,
 } from '@/features/taproot-usage/logic/summary';
-import { affinityStats, sessionDurationMs } from '@/features/taproot-usage/logic/sessions';
+import {
+  affinityStats,
+  sessionDurationMs,
+  sessionRequestsLabel,
+} from '@/features/taproot-usage/logic/sessions';
 import { accountName, indexAccounts } from '@/features/taproot-usage/logic/accounts';
 import {
   draftsChanged,
@@ -278,9 +282,19 @@ function session(partial: Partial<UsageSession> & Pick<UsageSession, 'sessionId'
     models: ['m'],
     totals: totals({}),
     accountSwitches: 0,
+    truncated: false,
     ...partial,
   };
 }
+
+describe('session request counts', () => {
+  test('mark a session the server cut short', () => {
+    expect(sessionRequestsLabel({ requests: 50_000, truncated: true })).toBe(
+      `${(50_000).toLocaleString()}+`
+    );
+    expect(sessionRequestsLabel({ requests: 12, truncated: false })).toBe('12');
+  });
+});
 
 describe('session affinity', () => {
   test('estimates cache writes beyond the stable sessions share', () => {

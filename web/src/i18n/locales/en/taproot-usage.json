@@ -127,7 +127,8 @@
       "load_more": "Load more sessions",
       "empty": "No sessions in this range.",
       "empty_switched": "No loaded session switched accounts.",
-      "view_requests": "View requests for session {{id}}"
+      "view_requests": "View requests for session {{id}}",
+      "truncated_note": "A request count ending in + marks a session with more than 50,000 requests in this range. Its row covers only the first 50,000."
     },
     "requests": {
       "title": "Requests",
