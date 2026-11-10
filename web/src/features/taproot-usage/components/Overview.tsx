@@ -11,7 +11,7 @@ import {
   requestRows,
   tokenRows,
 } from '../logic/summary';
-import { groupColor } from '../logic/viz';
+import { groupColors } from '../logic/viz';
 import { KpiTiles } from './KpiTiles';
 import { BreakdownTable } from './BreakdownTable';
 import { CostChart, PercentileChart, RequestsChart, TokenMultiples, type TimeAxis } from './Charts';
@@ -39,11 +39,15 @@ function OverviewView({
   const { t } = useTranslation();
   const ranked = useMemo(() => rankGroups(summary), [summary]);
   const series = useMemo(() => chooseSeries(ranked), [ranked]);
-  const colors = useMemo(() => {
-    const map = new Map<string, string>();
-    series.forEach((s, index) => map.set(s.key, groupColor(groupBy, s.key, index, accountOrder)));
-    return map;
-  }, [series, groupBy, accountOrder]);
+  const colors = useMemo(
+    () =>
+      groupColors(
+        groupBy,
+        series.map((s) => s.key),
+        accountOrder
+      ),
+    [series, groupBy, accountOrder]
+  );
   const costEntries = useMemo(
     () =>
       series.map((s) => ({

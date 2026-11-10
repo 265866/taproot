@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useEmailMask } from '@/hooks/useEmailMask';
 import { taprootApi, type UsageDevice } from '@/services/api/taproot';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
+import { QueryError } from './QueryError';
 import { toIso, type TimeWindow } from '../logic/range';
 import type { SortDirection } from '../logic/summary';
 import {
@@ -26,8 +26,6 @@ interface Props {
 }
 
 export function DevicesView({ window, refreshKey, showEmails, onViewRequests }: Props) {
-  const { t } = useTranslation();
-  const { mask } = useEmailMask();
   const query = useTaprootQuery(`devices|${window.fromMs}|${window.toMs}|${refreshKey}`, () =>
     taprootApi.usageDevices({ from: toIso(window.fromMs), to: toIso(window.toMs) })
   );
@@ -36,14 +34,7 @@ export function DevicesView({ window, refreshKey, showEmails, onViewRequests }: 
 
   return (
     <>
-      {query.error ? (
-        <div className={styles.error} role="alert">
-          <span>{mask(t('taproot_usage.load_failed', { message: query.error.message }))}</span>
-          <button type="button" className={styles.ghostButton} onClick={query.reload}>
-            {t('taproot_usage.retry')}
-          </button>
-        </div>
-      ) : null}
+      <QueryError query={query} />
       {query.loading ? <div className={styles.loadingBar} /> : null}
       {flagged.length > 0 ? <TtlAdvice devices={flagged} /> : null}
       {query.data ? (
@@ -96,13 +87,22 @@ export function TtlAdvice({ devices }: { devices: readonly UsageDevice[] }) {
                 requests: m.splitRequests.toLocaleString(),
               })}
             </p>
-            <p className={styles.callout}>
-              {t('taproot_usage.devices.ttl_fix_before', { device: name })}{' '}
-              <code className={styles.mono}>&quot;promptCacheTtl&quot;: &quot;1h&quot;</code>{' '}
-              {t('taproot_usage.devices.ttl_fix_after')}{' '}
-              <code className={styles.mono}>~/.claude/settings.json</code>
-              {t('taproot_usage.devices.ttl_fix_version')}
-            </p>
+            {e.netSavingsUSD < 0 ? (
+              <p className={styles.ttlMeasured}>
+                {t('taproot_usage.devices.ttl_keep', {
+                  device: name,
+                  amount: formatUSD(-e.netSavingsUSD),
+                })}
+              </p>
+            ) : (
+              <p className={styles.callout}>
+                {t('taproot_usage.devices.ttl_fix_before', { device: name })}{' '}
+                <code className={styles.mono}>&quot;promptCacheTtl&quot;: &quot;1h&quot;</code>{' '}
+                {t('taproot_usage.devices.ttl_fix_after')}{' '}
+                <code className={styles.mono}>~/.claude/settings.json</code>
+                {t('taproot_usage.devices.ttl_fix_version')}
+              </p>
+            )}
             <p className={styles.ttlEstimate}>
               <span className={`${styles.badge} ${styles.badgeWarn}`}>
                 {t('taproot_usage.devices.estimate_badge')}

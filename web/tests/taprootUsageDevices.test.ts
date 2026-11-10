@@ -214,4 +214,19 @@ describe('devices tab rendering', () => {
     expect(html).toContain('4 cache writes totalling 400K tokens');
     expect(html).toContain('about $0.42 saved');
   });
+
+  test('the TTL advice says to keep 5 minutes when its estimate says one hour costs more', () => {
+    const costly = device(
+      'node:server',
+      {},
+      {
+        ...flagged.mainConversation,
+        estimate: { ...flagged.mainConversation.estimate, netSavingsUSD: -0.16 },
+      }
+    );
+    const html = render(createElement(TtlAdvice, { devices: [costly] }));
+    expect(html).toContain('Keep the 5-minute TTL on server');
+    expect(html).toContain('about $0.16 more');
+    expect(html).not.toContain('promptCacheTtl');
+  });
 });

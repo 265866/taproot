@@ -16,7 +16,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   accountLabel: (authIndex: string) => string;
-  deviceLabel: (deviceKey: string) => string;
+  deviceLabel: (deviceKey: string, fallbackName?: string) => string;
   showEmails: boolean;
   onFilterSession: (sessionId: string) => void;
 }
@@ -48,7 +48,10 @@ export function RequestDrawer({
           ),
         ],
         [t('taproot_usage.detail.account'), accountLabel(event.authIndex)],
-        [t('taproot_usage.detail.device'), deviceLabel(deviceFilterKey(event.deviceId ?? ''))],
+        [
+          t('taproot_usage.detail.device'),
+          deviceLabel(deviceFilterKey(event.deviceId ?? ''), event.deviceName),
+        ],
         [
           t('taproot_usage.detail.device_login'),
           loginLabel(event.deviceLogin ?? '', showEmails) || DASH,
