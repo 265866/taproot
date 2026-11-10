@@ -932,69 +932,6 @@
   margin: 0 0 14px;
 }
 
-/* ---------- Dashboard summary ---------- */
-
-.summary {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.summaryHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.summaryLinks {
-  display: flex;
-  gap: 14px;
-  font-size: 14px;
-
-  a {
-    color: var(--text-secondary);
-    text-decoration: none;
-
-    &:hover {
-      color: var(--text-primary);
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 2px;
-      border-radius: 4px;
-    }
-  }
-}
-
-.summaryGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
-  gap: 12px;
-
-  // Tablets fit four 170px tiles, which leaves the fifth alone on a row; wider tiles give 3 + 2.
-  @media (min-width: 600px) and (max-width: 1100px) {
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  }
-}
-
-.poolBar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bg-tertiary);
-  overflow: hidden;
-
-  > span {
-    display: block;
-    height: 100%;
-    border-radius: 3px;
-  }
-}
-
 .srOnly {
   position: absolute;
   width: 1px;

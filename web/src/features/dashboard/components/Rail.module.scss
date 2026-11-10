@@ -1,0 +1,474 @@
+// The Dashboard's rail: Needs you and Pools. The rail draws no padding of its own; `--rail-pad`
+// (set by the page) is the side padding, so rows can draw full-width hairlines.
+
+.block {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--space-2);
+  padding: 0 var(--rail-pad) var(--space-2);
+}
+
+.title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.caption {
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+}
+
+.headLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  align-self: center;
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+  box-shadow: inset 0 0 0 1px var(--status-warning-border);
+
+  &[data-tone='danger'] {
+    background: var(--status-danger-bg);
+    color: var(--status-danger-text);
+    box-shadow: inset 0 0 0 1px var(--status-danger-border);
+  }
+}
+
+.stale {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+  font-size: var(--fs-tag);
+  font-weight: 600;
+  align-self: center;
+}
+
+.error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 var(--rail-pad) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--status-danger-border);
+  border-radius: var(--radius-lg);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  font-size: var(--fs-table);
+
+  > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--rail-pad);
+  border-top: 1px solid var(--border-color);
+}
+
+// Needs you
+
+.needs {
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item,
+.resolved {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px var(--rail-pad);
+
+  & + & {
+    border-top: 1px solid var(--border-color);
+  }
+}
+
+.resolved + .item {
+  border-top: 1px solid var(--border-color);
+}
+
+.itemIcon {
+  display: grid;
+  margin-top: 1px;
+
+  &[data-severity='blocking'] {
+    color: var(--status-danger);
+  }
+
+  &[data-severity='at_risk'],
+  &[data-severity='overdue'] {
+    color: var(--status-warning);
+  }
+
+  &[data-severity='waiting'] {
+    color: var(--text-secondary);
+  }
+}
+
+.itemBody {
+  min-width: 0;
+}
+
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 1px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-small);
+}
+
+.itemTitle {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.itemDetail {
+  margin: 1px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-body);
+  overflow-wrap: anywhere;
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+.resolvedTitle {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.fixRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.fixRow .fix {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: var(--fs-table);
+  font-weight: 500;
+  text-decoration: none;
+
+  @media (max-width: $breakpoint-mobile) {
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: var(--fs-body);
+  }
+}
+
+.fixDone {
+  color: var(--status-ok-text);
+  font-size: var(--fs-meta);
+}
+
+.fixFailed {
+  color: var(--status-danger-text);
+  font-size: var(--fs-meta);
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-body);
+
+  > svg {
+    flex: none;
+    margin-top: 2px;
+  }
+
+  &[data-tone='danger'] {
+    color: var(--status-danger-text);
+  }
+
+  &[data-tone='warning'] {
+    color: var(--status-warning-text);
+  }
+}
+
+.calm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px var(--rail-pad);
+
+  .items + & {
+    border-top: 1px solid var(--border-color);
+  }
+}
+
+.calmIcon {
+  display: grid;
+  margin-top: 1px;
+  color: var(--status-ok);
+}
+
+.calmIconQuiet {
+  display: grid;
+  margin-top: 1px;
+  color: var(--text-tertiary);
+}
+
+// Pools
+
+.pools {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pool {
+  padding: 12px var(--rail-pad) 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+.poolHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+}
+
+.poolDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  align-self: center;
+}
+
+.poolName {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.poolHeadline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 var(--space-2);
+
+  b {
+    color: var(--text-primary);
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  span {
+    color: var(--text-secondary);
+    font-size: var(--fs-table);
+  }
+
+  em {
+    margin-left: auto;
+    color: var(--text-tertiary);
+    font-size: var(--fs-meta);
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(var(--slot-columns, 3), minmax(0, 1fr));
+  gap: var(--space-2) 10px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.slot {
+  min-width: 0;
+}
+
+.slotBar {
+  position: relative;
+  display: block;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+
+  i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 3px;
+  }
+
+  .slot[data-state='cooling'] &,
+  .slot[data-state='signed_out'] &,
+  .slot[data-state='disabled'] & {
+    background: repeating-linear-gradient(135deg, var(--border-hover) 0 2px, transparent 2px 5px);
+    box-shadow: inset 0 0 0 1px var(--border-primary);
+
+    i {
+      opacity: 0.3;
+    }
+  }
+}
+
+.slotLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: var(--fs-caption);
+  line-height: 1.3;
+  white-space: nowrap;
+
+  b {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.slotState {
+  font-size: var(--fs-small);
+
+  &[data-state='cooling'] {
+    color: var(--status-warning-text);
+  }
+
+  &[data-state='signed_out'] {
+    color: var(--status-danger-text);
+  }
+
+  &[data-state='disabled'] {
+    color: var(--text-secondary);
+  }
+}
+
+.slotName {
+  display: block;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px var(--space-3);
+  margin: 10px 0 0;
+  font-size: var(--fs-meta);
+
+  dt {
+    color: var(--text-tertiary);
+  }
+
+  dd {
+    margin: 0;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.faint {
+  margin-left: 4px;
+  color: var(--text-tertiary);
+}
+
+.runsOut {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+
+  &[data-tone='warning'] {
+    color: var(--status-warning-text);
+  }
+
+  &[data-tone='danger'] {
+    color: var(--status-danger-text);
+  }
+}
+
+.runsOutIcon {
+  display: grid;
+  margin-top: 2px;
+
+  .runsOut[data-tone='ok'] & {
+    color: var(--status-ok);
+  }
+}
+
+.emptyBar {
+  height: 14px;
+  border: 1px dashed var(--border-hover);
+  border-radius: 3px;
+}
+
+.emptyHint {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}

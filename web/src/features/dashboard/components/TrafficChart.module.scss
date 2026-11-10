@@ -1,0 +1,279 @@
+.section {
+  min-width: 0;
+}
+
+.skeleton {
+  height: 210px;
+}
+
+.body {
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+.plot {
+  position: relative;
+  min-height: 210px;
+  border-radius: var(--radius-md);
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: $breakpoint-mobile) {
+    min-height: 170px;
+  }
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+
+.tick {
+  fill: var(--text-tertiary);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rateTick {
+  fill: var(--status-danger-text);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  stroke: var(--border-color);
+  stroke-dasharray: 2 3;
+}
+
+.baseline {
+  stroke: var(--border-primary);
+}
+
+.hatch {
+  stroke: var(--text-quaternary);
+  stroke-width: 1.2;
+  opacity: 0.6;
+}
+
+.dayLine {
+  stroke: var(--border-hover);
+}
+
+.dayLabel {
+  fill: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.activeBand {
+  fill: var(--bg-hover);
+}
+
+.barOk {
+  fill: var(--viz-success);
+  opacity: 0.82;
+
+  .partial & {
+    opacity: 0.45;
+  }
+}
+
+.barFailed {
+  fill: var(--viz-failure);
+
+  .partial & {
+    opacity: 0.75;
+  }
+}
+
+.lineHalo {
+  fill: none;
+  stroke: var(--bg-primary);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+
+.line {
+  fill: none;
+  stroke: var(--viz-failure);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.dot {
+  fill: var(--viz-failure);
+  stroke: var(--viz-failure);
+  stroke-width: 1.4;
+}
+
+.dotOpen {
+  fill: var(--bg-primary);
+  stroke: var(--viz-failure);
+  stroke-width: 1.4;
+}
+
+.now {
+  stroke: var(--text-secondary);
+  stroke-dasharray: 3 2;
+}
+
+.nowLabel {
+  fill: var(--text-secondary);
+  font-size: 10.5px;
+}
+
+.tooltip {
+  position: absolute;
+  top: 4px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-md);
+  background: var(--floating-surface);
+  box-shadow: var(--floating-shadow);
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+
+  b {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+  pointer-events: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-3);
+  margin: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-caption);
+  list-style: none;
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  b {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.swatchOk,
+.swatchFailed,
+.swatchHatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.swatchOk {
+  background: var(--viz-success);
+}
+
+.swatchFailed {
+  background: var(--viz-failure);
+}
+
+.swatchLine {
+  display: inline-block;
+  width: 14px;
+  border-top: 1.75px solid var(--viz-failure);
+}
+
+.swatchHatch {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--text-quaternary) 0 1.5px,
+    transparent 1.5px 3.5px
+  );
+  box-shadow: inset 0 0 0 1px var(--border-hover);
+}
+
+// The legend sits in the section's header on wide screens and under the chart on narrow ones;
+// one copy shows at a time, so the accessibility tree has one.
+.legendWide {
+  display: none;
+}
+
+.legendNarrow {
+  padding: var(--space-2) 2px 0;
+}
+
+@media (min-width: $breakpoint-mobile) {
+  .legendWide {
+    display: block;
+  }
+
+  .legendNarrow {
+    display: none;
+  }
+}
+
+.tableToggle {
+  margin: var(--space-2) calc(-1 * var(--space-3)) 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.tableScroll {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-table);
+  font-variant-numeric: tabular-nums;
+
+  th,
+  td {
+    padding: 6px 14px;
+    border-top: 1px solid var(--border-color);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  thead th {
+    border-top: 0;
+    color: var(--text-tertiary);
+    font-size: var(--fs-small);
+    font-weight: 500;
+  }
+
+  th:first-child {
+    text-align: left;
+  }
+
+  tbody th {
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+}
