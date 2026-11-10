@@ -13,7 +13,7 @@ import { collectQuotaRowInstants, pickUrgentRowId } from '../../resetSchedule';
 import { planValueClassForTier, resolveKimiCardTier } from '../../cardTier';
 import type { QuotaBodyProps } from '../../types';
 
-export function KimiQuotaBody({ quota, classes }: QuotaBodyProps<KimiQuotaState>) {
+export function KimiQuotaBody({ quota, classes, readAt }: QuotaBodyProps<KimiQuotaState>) {
   const { t, i18n } = useTranslation();
   const now = useNow();
   const soonestRowId = useMemo(
@@ -52,7 +52,8 @@ export function KimiQuotaBody({ quota, classes }: QuotaBodyProps<KimiQuotaState>
           row.resetAtMs == null ? formatKimiResetHint(t, row.resetHint) : null,
           row.resetAtMs,
           now,
-          i18n.resolvedLanguage
+          i18n.resolvedLanguage,
+          readAt
         );
         const soon = row.id === soonestRowId;
 

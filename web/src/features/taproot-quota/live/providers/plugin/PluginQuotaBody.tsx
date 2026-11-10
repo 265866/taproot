@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import type { PluginQuotaMetric, PluginQuotaState } from '@/types';
+import { formatInstantShort } from '@/utils/quota/relativeTime';
 import { QuotaMeter } from '../../components/QuotaMeter';
 import type { QuotaBodyProps } from '../../types';
 
 const formatReset = (value: string | undefined): string => {
   if (!value) return '-';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? value : formatInstantShort(date.getTime());
 };
 
 const formatMetric = (metric: PluginQuotaMetric): string => {

@@ -15,6 +15,8 @@ import {
 } from '@/stores';
 import { configApi } from '@/services/api';
 import { useApiKeysForModels } from '@/hooks/useApiKeysForModels';
+import { outcomeFromError, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { getErrorMessage } from '@/utils/helpers';
 import { formatDateTimeValue } from '@/utils/format';
 import { classifyModels } from '@/utils/models';
 import { TaprootMark } from '@/components/common/TaprootMark';
@@ -68,7 +70,7 @@ export function SystemPage() {
   const fetchModelsFromStore = useModelsStore((state) => state.fetchModels);
 
   const [modelStatus, setModelStatus] = useState<{
-    type: 'success' | 'warning' | 'error' | 'muted';
+    type: 'success' | 'warning' | 'muted';
     message: string;
   }>();
   const [requestLogModalOpen, setRequestLogModalOpen] = useState(false);
@@ -90,8 +92,7 @@ export function SystemPage() {
 
   const appVersion = __APP_VERSION__ || t('system_info.version_unknown');
   const apiVersion = auth.serverVersion || t('system_info.version_unknown');
-  const buildTime =
-    formatDateTimeValue(auth.serverBuildDate, i18n.language) || t('system_info.version_unknown');
+  const buildTime = formatDateTimeValue(auth.serverBuildDate, i18n.language) || '—';
 
   const getIconForCategory = (categoryId: string): string | null => {
     const iconEntry = MODEL_CATEGORY_ICONS[categoryId];
@@ -102,39 +103,43 @@ export function SystemPage() {
 
   const resolveApiKeysForModels = useApiKeysForModels();
 
-  const fetchModels = async ({ forceRefresh = false }: { forceRefresh?: boolean } = {}) => {
+  /** Resolves to the failure's message, or null. The error box shows a failure. */
+  const fetchModels = async ({ forceRefresh = false }: { forceRefresh?: boolean } = {}): Promise<
+    string | null
+  > => {
     if (auth.connectionStatus !== 'connected') {
       setModelStatus({
         type: 'warning',
         message: t('notification.connection_required'),
       });
-      return;
+      return null;
     }
 
     if (!auth.apiBase) {
       showNotification(t('notification.connection_required'), 'warning');
-      return;
+      return null;
     }
 
     setModelStatus({ type: 'muted', message: t('system_info.models_loading') });
     try {
-      const apiKeys = await resolveApiKeysForModels({ force: forceRefresh });
-      const primaryKey = apiKeys[0];
-      const list = await fetchModelsFromStore(auth.apiBase, primaryKey, forceRefresh);
-      const hasModels = list.length > 0;
-      setModelStatus({
-        type: hasModels ? 'success' : 'warning',
-        message: hasModels
-          ? t('system_info.models_count', { count: list.length })
-          : t('system_info.models_empty'),
-      });
+      const apiKeys = await resolveApiKeysForModels();
+      const list = await fetchModelsFromStore(auth.apiBase, apiKeys[0], forceRefresh);
+      setModelStatus(
+        list.length > 0
+          ? { type: 'success', message: t('system_info.models_count', { count: list.length }) }
+          : undefined
+      );
+      return null;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
-      const suffix = message ? `: ${message}` : '';
-      const text = `${t('system_info.models_error')}${suffix}`;
-      setModelStatus({ type: 'error', message: text });
+      setModelStatus(undefined);
+      return getErrorMessage(err, t('system_info.models_error'));
     }
   };
+
+  useHeaderRefresh(
+    async () => outcomeFromError(await fetchModels({ forceRefresh: true })),
+    auth.connectionStatus === 'connected'
+  );
 
   const openRequestLogModal = useCallback(() => {
     setRequestLogTouched(false);
@@ -244,18 +249,22 @@ export function SystemPage() {
 
             <div className={styles.infoTile}>
               <div className={styles.tileHeader}>
-                <div className={styles.tileLabel}>{t('footer.api_version')}</div>
+                <div className={styles.tileLabel}>{t('system_info.server_version')}</div>
               </div>
               <div className={styles.tileValue}>{apiVersion}</div>
             </div>
 
             <div className={styles.infoTile}>
-              <div className={styles.tileLabel}>{t('footer.build_date')}</div>
+              <div className={styles.tileHeader}>
+                <div className={styles.tileLabel}>{t('footer.build_date')}</div>
+              </div>
               <div className={styles.tileValue}>{buildTime}</div>
             </div>
 
             <div className={styles.infoTile}>
-              <div className={styles.tileLabel}>{t('connection.status')}</div>
+              <div className={styles.tileHeader}>
+                <div className={styles.tileLabel}>{t('system_info.connection')}</div>
+              </div>
               <div className={styles.tileValue}>{t(`common.${auth.connectionStatus}_status`)}</div>
               <div className={styles.tileSub}>{auth.apiBase || '-'}</div>
             </div>
@@ -338,10 +347,14 @@ export function SystemPage() {
           {modelStatus && (
             <div className={`status-badge ${modelStatus.type}`}>{modelStatus.message}</div>
           )}
-          {modelsError && <div className="error-box">{mask(modelsError)}</div>}
+          {modelsError && (
+            <div className="error-box" role="alert">
+              {mask(`${t('system_info.models_error')}: ${modelsError}`)}
+            </div>
+          )}
           {modelsLoading ? (
             <div className="hint">{t('common.loading')}</div>
-          ) : models.length === 0 ? (
+          ) : modelsError ? null : models.length === 0 ? (
             <div className="hint">{t('system_info.models_empty')}</div>
           ) : (
             <div className="item-list">

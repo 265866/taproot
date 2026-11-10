@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -143,13 +144,24 @@ func TestPickProbesEachUnobservedCredentialOnce(t *testing.T) {
 		unobserved("a-new", "claude"),
 	}
 	// Each unobserved credential gets one request to learn its reset. If its headers
-	// never arrive, it sorts as unknown rather than being probed forever.
-	got := pickSequence(t, newTestSelector(), "claude", 4, auths)
+	// never arrive, it sorts as unknown until probeRetry passes, then is probed again.
+	s := newTestSelector()
+	got := pickSequence(t, s, "claude", 4, auths)
 	want := []string{"a-new", "b-new", "c-known", "c-known"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("picks = %v, want %v", got, want)
-		}
+	if !slices.Equal(got, want) {
+		t.Fatalf("picks = %v, want %v", got, want)
+	}
+	later := testNow.Add(probeRetry)
+	s.now = func() time.Time { return later }
+	if got := pickSequence(t, s, "claude", 3, auths); !slices.Equal(got, want[:3]) {
+		t.Fatalf("picks after probeRetry = %v, want %v", got, want[:3])
+	}
+
+	// API-key credentials report no weekly window and are never probed.
+	apiKey := unobserved("a-api-key", "claude")
+	apiKey.Attributes = map[string]string{"api_key": "sk-ant-example"}
+	if got := pickSequence(t, newTestSelector(), "claude", 2, []*coreauth.Auth{apiKey, claudeAuth("b-known", testNow.Add(24*time.Hour), "0.2")}); !slices.Equal(got, []string{"b-known", "b-known"}) {
+		t.Fatalf("picks with an API key = %v, want the known credential", got)
 	}
 
 	// Providers without weekly quota headers are never probed.
@@ -286,5 +298,50 @@ func TestIsStrategy(t *testing.T) {
 		if IsStrategy(raw) {
 			t.Errorf("IsStrategy(%q) = true", raw)
 		}
+	}
+}
+
+// Resets a second apart tie wherever they fall relative to a minute boundary, and
+// resets more than a minute apart do not.
+func TestNearTiesShareLoadAcrossMinuteBoundaries(t *testing.T) {
+	base := time.Date(2026, 11, 5, 9, 0, 59, 0, time.UTC)
+	across := []*coreauth.Auth{claudeAuth("a", base, "0.1"), claudeAuth("b", base.Add(2*time.Second), "0.1")}
+	if got := pickSequence(t, newTestSelector(), "claude", 4, across); !slices.Equal(got, []string{"a", "b", "a", "b"}) {
+		t.Fatalf("2 s apart across a minute boundary = %v, want round-robin", got)
+	}
+	apart := []*coreauth.Auth{claudeAuth("a", base, "0.1"), claudeAuth("b", base.Add(61*time.Second), "0.1")}
+	if got := pickSequence(t, newTestSelector(), "claude", 3, apart); !slices.Equal(got, []string{"a", "a", "a"}) {
+		t.Fatalf("61 s apart = %v, want the sooner one", got)
+	}
+}
+
+func TestPickFallsBackToStoredReadings(t *testing.T) {
+	day := 24 * time.Hour
+	readings := &Readings{}
+	readings.Observe([]Window{
+		{AuthIndex: "idx-a", Provider: "claude", Name: "seven_day", Utilization: 0.2, ResetsAt: testNow.Add(2 * day), ObservedAt: testNow},
+		{AuthIndex: "idx-b", Provider: "codex", Name: "codex_primary", Utilization: 0.1, ResetsAt: testNow.Add(day), PeriodSeconds: 7 * 24 * 3600, ObservedAt: testNow},
+		// A 5-hour window is not the weekly one.
+		{AuthIndex: "idx-c", Provider: "codex", Name: "codex_primary", Utilization: 0.1, ResetsAt: testNow.Add(time.Hour), PeriodSeconds: 5 * 3600, ObservedAt: testNow},
+		{AuthIndex: "idx-d", Provider: "claude", Name: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: testNow.Add(day / 2), ObservedAt: testNow},
+		// An older reading does not replace a newer one.
+		{AuthIndex: "idx-a", Provider: "claude", Name: "seven_day", Utilization: 0.2, ResetsAt: testNow.Add(day / 4), ObservedAt: testNow.Add(-time.Hour)},
+	})
+	s := &SoonestResetSelector{readings: readings, now: func() time.Time { return testNow }}
+	stored := func(id, index string) *coreauth.Auth {
+		return &coreauth.Auth{ID: id, Index: index, Provider: "claude", Quota: coreauth.QuotaState{Signals: map[string]string{"Anthropic-Ratelimit-Unified-5h-Utilization": "0.1"}}}
+	}
+	auths := []*coreauth.Auth{
+		stored("a", "idx-a"),
+		stored("d-exhausted", "idx-d"),
+		claudeAuth("e-signals", testNow.Add(3*day), "0.1"),
+	}
+	if got := pickSequence(t, s, "claude", 2, auths); !slices.Equal(got, []string{"a", "a"}) {
+		t.Fatalf("picks = %v, want a, the soonest open stored reset", got)
+	}
+	codex := &coreauth.Auth{ID: "b", Index: "idx-b", Provider: "codex"}
+	fiveHour := &coreauth.Auth{ID: "c", Index: "idx-c", Provider: "codex"}
+	if got := pickSequence(t, s, "codex", 3, []*coreauth.Auth{fiveHour, codex}); !slices.Equal(got, []string{"c", "b", "b"}) {
+		t.Fatalf("codex picks = %v, want a probe of c, then b by its stored weekly reset", got)
 	}
 }

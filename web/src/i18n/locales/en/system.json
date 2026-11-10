@@ -3,7 +3,7 @@
     "title": "System",
     "about_title": "Taproot",
     "models_title": "Available Models",
-    "models_desc": "Shows the /models response and uses saved API keys for auth automatically.",
+    "models_desc": "The models the proxy serves, as /v1/models lists them.",
     "models_loading": "Loading available models...",
     "models_empty": "No models returned by /models",
     "models_error": "Failed to load model list",
@@ -16,6 +16,8 @@
     "link_webui_repo": "Upstream: CLIProxyAPI",
     "link_webui_repo_desc": "The proxy taproot is forked from",
     "link_docs": "Upstream documentation",
-    "link_docs_desc": "CLIProxyAPI guides; taproot's own guides are in its repository's docs/ folder"
+    "link_docs_desc": "CLIProxyAPI guides; taproot's own guides are in its repository's docs/ folder",
+    "server_version": "Server version",
+    "connection": "Connection"
   }
 }

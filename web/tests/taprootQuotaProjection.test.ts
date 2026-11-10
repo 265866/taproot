@@ -438,6 +438,64 @@ describe('drain', () => {
       [4, 0.5],
     ]);
   });
+
+  /** Lines with jumps, gaps, late starts, and early ends, from a fixed seed. */
+  const randomLines = (count: number, length: number, seed: number): Point[][] => {
+    let state = seed;
+    const rand = () => {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      return state / 2 ** 32;
+    };
+    return Array.from({ length: count }, () => {
+      const line: Point[] = [];
+      let t = Math.floor(rand() * 20);
+      for (let i = 0; i < length; i++) {
+        line.push({ t, v: Math.round(rand() * 100) / 100 });
+        if (rand() < 0.2) line.push({ t, v: Math.round(rand() * 100) / 100 });
+        t += 1 + Math.floor(rand() * 5);
+      }
+      return line;
+    });
+  };
+
+  /** The definition: every line's left and right limits at every distinct time. */
+  const referenceSum = (lines: Point[][]): Point[] => {
+    const times = [...new Set(lines.flatMap((l) => l.map((p) => p.t)))].sort((a, b) => a - b);
+    const out: Point[] = [];
+    for (const t of times) {
+      let left = 0;
+      let right = 0;
+      for (const line of lines) {
+        left += line.length > 0 && line[0].t === t ? 0 : (valueAt(line, t, 'left') ?? 0);
+        right += valueAt(line, t, 'right') ?? 0;
+      }
+      if (out.length > 0) out.push({ t, v: left });
+      if (out.length === 0 || Math.abs(right - left) > 1e-9) out.push({ t, v: right });
+    }
+    return out;
+  };
+
+  test('sumPolylines matches the definition on uneven lines', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const lines = [...randomLines(6, 60, seed), []];
+      const sum = sumPolylines(lines);
+      const reference = referenceSum(lines);
+      expect(sum.length).toBe(reference.length);
+      sum.forEach((p, i) => {
+        expect(p.t).toBe(reference[i].t);
+        expect(p.v).toBeCloseTo(reference[i].v, 9);
+      });
+    }
+  });
+
+  test('sumPolylines stays linear in the number of points', () => {
+    // 20 accounts of 23 days observed every 5 minutes; the old per-time scan took minutes.
+    const lines = randomLines(20, 6_600, 7);
+    const started = performance.now();
+    const sum = sumPolylines(lines);
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(sum.length).toBeGreaterThan(6_600);
+  });
 });
 
 describe('account-wide windows', () => {

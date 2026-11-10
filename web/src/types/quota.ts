@@ -459,7 +459,7 @@ export interface XaiBillingSummary {
   mode: 'billing' | 'paid-health';
   source?: 'cli-chat-proxy' | 'api.x.ai-fallback';
   planType?: 'paid';
-  healthStatus?: 'chat-ok';
+  healthStatus?: 'credential-ok';
   userId?: string;
   teamId?: string;
   periodType: XaiBillingPeriodType;

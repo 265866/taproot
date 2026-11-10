@@ -181,7 +181,7 @@
   width: 100%;
   height: 2px;
   border-radius: $radius-full;
-  background: var(--border-primary);
+  background: var(--dash-disabled, var(--text-tertiary));
 }
 
 /* bottom 由 TSX 按柱高写入；柱子全部落定后再淡入 */

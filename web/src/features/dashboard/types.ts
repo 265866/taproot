@@ -1,25 +1,32 @@
-import type { RecentRequestBucket } from '@/utils/recentRequests';
-
-/** 每个统计桶覆盖的分钟数（后端固定为 10 分钟 × 20 桶） */
+/** Minutes per chart bucket. */
 export const TRAFFIC_BUCKET_MINUTES = 10;
+/** Buckets in the rolling window: the current one and the 19 before it. */
+export const TRAFFIC_BUCKET_COUNT = 20;
+export const TRAFFIC_WINDOW_MINUTES = TRAFFIC_BUCKET_MINUTES * TRAFFIC_BUCKET_COUNT;
 
-/** 聚合后的整体流量窗口 */
+export interface TrafficBucket {
+  /** Bucket start, epoch milliseconds; buckets align to the epoch. */
+  startMs: number;
+  success: number;
+  failed: number;
+}
+
+/** Upstream requests in the rolling window, from taproot's usage records. */
 export interface TrafficWindow {
-  buckets: RecentRequestBucket[];
+  /** Empty until the first read succeeds. */
+  buckets: TrafficBucket[];
   totalSuccess: number;
   totalFailure: number;
   total: number;
-  /** 0–100；窗口内无请求时为 null */
+  /** 0–100; null without requests. */
   successRate: number | null;
-  /** 单桶最大请求数，用于图表纵轴 */
   peakTotal: number;
-  /** 峰值所在桶下标，-1 表示无数据 */
+  /** -1 without requests. */
   peakIndex: number;
-  /** 窗口跨度（分钟） */
   windowMinutes: number;
 }
 
-/** 单个供应商的流量切片 */
+/** One provider over the same window as the hero. */
 export interface ProviderTraffic {
   id: string;
   credentials: number;
@@ -27,21 +34,14 @@ export interface ProviderTraffic {
   failure: number;
   total: number;
   successRate: number | null;
-  buckets: RecentRequestBucket[];
+  buckets: TrafficBucket[];
 }
 
-/** 凭证健康度 */
 export interface CredentialHealth {
   total: number;
   active: number;
   disabled: number;
   unavailable: number;
-  /** 按供应商类型分组的凭证数，按数量降序 */
+  /** Credentials per provider, most first. */
   byType: Array<{ type: string; count: number }>;
-}
-
-/** 顶部计数卡片的原始数值 */
-export interface DashboardCounts {
-  credentials: number | null;
-  models: number | null;
 }

@@ -5,7 +5,7 @@ import { oauthApi, pluginsApi } from '@/services/api';
 import { getErrorMessage, isRecord } from '@/utils/helpers';
 import { notifyAuthFilesChanged } from '@/features/authFiles/authFilesEvents';
 import { createOAuthAttempts, type OAuthAttempt } from '../oauthAttempts';
-import { resolveCallbackUrl } from '../callbackUrl';
+import { isCallbackFromOtherAttempt, resolveCallbackUrl } from '../callbackUrl';
 import {
   buildPluginOAuthProviderCards,
   type OAuthProviderCard,
@@ -19,6 +19,8 @@ export interface ProviderFlowState {
   status?: 'waiting' | 'success' | 'error';
   error?: string;
   polling?: boolean;
+  /** A status request failed for a reason that may pass; polling retries with a backoff. */
+  reconnecting?: boolean;
   callbackUrl?: string;
   callbackSubmitting?: boolean;
   callbackStatus?: 'success' | 'error';
@@ -38,6 +40,8 @@ interface UseOAuthFlowsOptions {
 
 const SUCCESS_RESET_DELAY_MS = 5000;
 const POLL_INTERVAL_MS = 3000;
+/** The server forgets a pending sign-in after 30 minutes (`oauthSessionTTL`). */
+const OAUTH_SESSION_TTL_MS = 30 * 60 * 1000;
 
 const getAuthKey = (provider: string, suffix: string) =>
   `auth_login.${provider.replace('-', '_')}_${suffix}`;
@@ -46,6 +50,12 @@ function getErrorStatus(error: unknown): number | undefined {
   if (!isRecord(error)) return undefined;
   return typeof error.status === 'number' ? error.status : undefined;
 }
+
+/** A network failure, a timeout, a rate limit, or a server error can pass on its own. */
+export const isTransientPollError = (error: unknown): boolean => {
+  const status = getErrorStatus(error);
+  return status === undefined || status === 408 || status === 429 || status >= 500;
+};
 
 /** 已启用且声明 OAuth 能力的插件 → 追加到内置提供商之后。 */
 export function usePluginOAuthProviders(apiBase: string) {
@@ -140,9 +150,11 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
   };
 
   const startPolling = (provider: string, state: string, attempt: OAuthAttempt) => {
+    const startedAt = Date.now();
     attempt.poll(
       () => oauthApi.getAuthStatus(state, attempt.signal),
       (res) => {
+        updateProviderState(provider, { reconnecting: false });
         if (res.status === 'ok') {
           completeProviderAuth(provider);
           notify(provider, providerText(provider, 'oauth_status_success'), 'success');
@@ -157,11 +169,17 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
         return res.status === 'wait';
       },
       (err) => {
+        if (isTransientPollError(err) && Date.now() - startedAt < OAUTH_SESSION_TTL_MS) {
+          updateProviderState(provider, { reconnecting: true });
+          return true;
+        }
         updateProviderState(provider, {
           status: 'error',
           error: getErrorMessage(err),
           polling: false,
+          reconnecting: false,
         });
+        return false;
       },
       POLL_INTERVAL_MS
     );
@@ -175,6 +193,7 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
       state: undefined,
       status: 'waiting',
       polling: true,
+      reconnecting: false,
       error: undefined,
       callbackStatus: undefined,
       callbackError: undefined,
@@ -240,7 +259,12 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
       );
       return;
     }
-    const redirectUrl = resolveCallbackUrl(provider, callbackInput, states[provider]?.state);
+    const loginState = states[provider]?.state;
+    if (isCallbackFromOtherAttempt(callbackInput, loginState)) {
+      rejectInput('auth_login.oauth_callback_other_attempt');
+      return;
+    }
+    const redirectUrl = resolveCallbackUrl(provider, callbackInput, loginState);
     if (!redirectUrl) {
       rejectInput(
         provider === 'xai' ? 'auth_login.xai_callback_state_missing' : 'auth_login.missing_state'
@@ -260,7 +284,6 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
       notify(provider, t('auth_login.oauth_callback_success'), 'success');
       // The backend only accepts callbacks for pending logins. If a failed status
       // request stopped polling, resume it so the card can report the outcome.
-      const loginState = states[provider]?.state;
       if (loginState && !attempt.isPolling()) {
         updateProviderState(provider, { status: 'waiting', error: undefined, polling: true });
         startPolling(provider, loginState, attempt);
@@ -269,12 +292,9 @@ export function useOAuthFlows({ providerCards, isFocused }: UseOAuthFlowsOptions
       if (!attempt.isCurrent()) return;
       const status = getErrorStatus(err);
       const message = getErrorMessage(err);
+      // The callback endpoint answers 404 only for a sign-in the server no longer has.
       const errorMessage =
-        status === 404
-          ? t('auth_login.oauth_callback_upgrade_hint', {
-              defaultValue: 'Please update CLI Proxy API or check the connection.',
-            })
-          : message || undefined;
+        status === 404 ? t('auth_login.oauth_callback_expired') : message || undefined;
       updateProviderState(provider, {
         callbackSubmitting: false,
         callbackStatus: 'error',

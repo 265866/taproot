@@ -7,7 +7,7 @@ Taproot sends requests through the Claude and Codex subscription accounts you ad
 1. On the **Accounts** page, select **Add account**.
 2. Under **Sign in with a provider**, select Claude or Codex, then select **Open Link** to open the provider's sign-in page.
 3. Sign in. The provider then sends you to a `http://localhost:...` address, which does not load.
-4. Copy the full address from the address bar, paste it into **Callback URL**, and select **Submit Callback URL**.
+4. Copy the full address from the address bar, paste it into **Paste the address you land on**, and select **Submit Callback URL**.
 
 ## Upload an existing credential
 

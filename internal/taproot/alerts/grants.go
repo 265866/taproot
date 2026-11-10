@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/egress"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
-	"github.com/265866/taproot/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -87,7 +87,8 @@ func safeLabel(s string) string {
 }
 
 type grantReader struct {
-	url string
+	url   string
+	proxy *egress.Proxy
 }
 
 // read fetches one Claude account's grants with its current access token.
@@ -108,7 +109,11 @@ func (g grantReader) read(ctx context.Context, a *coreauth.Auth) ([]Grant, error
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", claudeUserAgent)
 	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
-	resp, err := (&http.Client{Transport: grantTransport(a)}).Do(req)
+	client, err := g.proxy.Client(a)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request grants: %s", withoutURL(err))
 	}
@@ -125,14 +130,4 @@ func (g grantReader) read(ctx context.Context, a *coreauth.Auth) ([]Grant, error
 		return nil, fmt.Errorf("usage endpoint status %d", resp.StatusCode)
 	}
 	return parseGrantStatus(body)
-}
-
-func grantTransport(a *coreauth.Auth) http.RoundTripper {
-	if proxy := strings.TrimSpace(a.ProxyURL); proxy != "" {
-		if t, _, err := proxyutil.BuildHTTPTransport(proxy); err == nil && t != nil {
-			return t
-		}
-		log.WithField("auth_index", a.Index).Warn("taproot alerts: invalid auth proxy URL, reading grants directly")
-	}
-	return http.DefaultTransport
 }

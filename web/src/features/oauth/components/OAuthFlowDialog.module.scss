@@ -227,7 +227,7 @@
   color: var(--text-primary);
 }
 
-.optional {
+.stepTag {
   padding: 1px 7px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
@@ -237,6 +237,10 @@
   letter-spacing: 0.03em;
   line-height: 1.5;
   color: var(--text-tertiary);
+
+  &[data-required] {
+    color: var(--text-primary);
+  }
 }
 
 .stepHint {

@@ -59,7 +59,10 @@
     },
     "live": {
       "description": "Taproot records no quota for this provider. Read it live from the provider instead.",
-      "no_files": "No credential file for a live read."
+      "no_files": "No credential file for a live read.",
+      "reset_since_read": "reset since read",
+      "read_at": "Read {{relative}}",
+      "read_just_now": "Read just now"
     },
     "soonest_row_hint": "Recovers first on this credential",
     "ledger": {
@@ -93,6 +96,8 @@
       "back_in": "back in {{duration}}",
       "blocked": "blocked",
       "last_seen": "Last seen {{time}}",
+      "quota_read": "Quota read {{relative}}",
+      "quota_read_just_now": "Quota read just now",
       "never_seen": "No requests yet",
       "no_windows": "No quota reported yet.",
       "none": "—",
@@ -332,7 +337,10 @@
     "plan_supergrok": "SuperGrok",
     "plan_supergrok_heavy": "SuperGrok Heavy",
     "plan_paid": "Paid",
-    "paid_health": "Paid API chat is available. xAI does not expose quota totals for this OAuth credential.",
+    "paid_health": "The paid API credential works. xAI does not expose quota totals for it.",
+    "paid_team_blocked": "xAI has blocked this credential's team from API requests.",
+    "paid_key_blocked": "xAI has blocked this API key.",
+    "paid_key_disabled": "This API key is disabled in xAI.",
     "pay_as_you_go_label": "Pay as you go",
     "pay_as_you_go_enabled": "Enabled, cap {{cap}}",
     "pay_as_you_go_disabled": "Disabled"
