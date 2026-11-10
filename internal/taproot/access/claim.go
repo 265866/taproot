@@ -152,7 +152,8 @@ func (g *Guard) ServerDNSName(ctx context.Context) string {
 	if !g.enabled {
 		return ""
 	}
-	if s := g.self(ctx); s != nil {
+	// Other callers may wait on this fetch, so it outlives a caller that hangs up.
+	if s := g.self(context.WithoutCancel(ctx)); s != nil {
 		return s.DNSName
 	}
 	return ""

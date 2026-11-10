@@ -67,11 +67,11 @@ func (s *Settings) claim(ctx context.Context, code string, caller access.Identit
 			message: "only a tailnet device can claim this server: open the dashboard from the device that should become its first admin",
 		}
 	}
-	switch server := s.deps.Access.ServerNodeID(); {
+	switch server := s.deps.Access.ServerNodeID(ctx); {
 	case server == "":
 		return access.DeviceGrant{}, &apiError{
 			status: http.StatusServiceUnavailable, code: "server_node_unknown",
-			message: "taproot has not read its own tailnet node from tailscaled yet; try again in a few seconds",
+			message: "taproot cannot read its own tailnet node from tailscaled; try again in a few seconds",
 		}
 	case caller.NodeID == server:
 		return access.DeviceGrant{}, &apiError{

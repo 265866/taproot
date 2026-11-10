@@ -451,10 +451,15 @@ func (g *Guard) Grants() Grants {
 	return Grants{Devices: slices.Clone(set.Devices), Addresses: slices.Clone(set.Addresses)}
 }
 
-// ServerNodeID returns the server's own stable node ID from the last
-// tailscaled status read, or "" before the first one.
-func (g *Guard) ServerNodeID() string {
-	if self, _ := g.cachedSelf(); self != nil {
+// ServerNodeID returns the server's own stable node ID through the same
+// lookup admission uses, reading tailscaled when the cached node is stale. It
+// returns "" while the node was never read or the guard is off.
+func (g *Guard) ServerNodeID(ctx context.Context) string {
+	if !g.enabled {
+		return ""
+	}
+	// Other callers may wait on this fetch, so it outlives a caller that hangs up.
+	if self := g.self(context.WithoutCancel(ctx)); self != nil {
 		return self.StableID
 	}
 	return ""
