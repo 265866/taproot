@@ -108,7 +108,21 @@ describe('plugin secret fields', () => {
   });
 
   test('masks string fields whose names hold secrets', () => {
-    for (const name of ['api_key', 'apiKey', 'token', 'client-secret', 'password', 'private_key']) {
+    for (const name of [
+      'api_key',
+      'apiKey',
+      'token',
+      'client-secret',
+      'password',
+      'private_key',
+      'accesstoken',
+      'authtoken',
+      'clientsecret',
+      'privatekey',
+      'apitoken',
+      'api_keys',
+      'apiKeys',
+    ]) {
       expect(isSecretPluginField(field(name))).toBe(true);
     }
     for (const name of ['label', 'base_url', 'model']) {

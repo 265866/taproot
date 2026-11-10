@@ -219,6 +219,7 @@ $diff-hunk-color: #388bfd;
   margin-left: 8px;
   color: var(--text-secondary);
   font-style: italic;
+  user-select: none;
 }
 
 // ── Context lines ───────────────────────────────────────

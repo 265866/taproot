@@ -23,9 +23,10 @@ type Translate = {
 export const normalizePluginConfigFieldType = (field: PluginConfigField): string =>
   field.type.trim().toLowerCase();
 
-// The plugin API has no secret field type, so mask by name, as a password manager would.
-// Whole name segments only, so max_tokens and tokenizer stay readable.
-const SECRET_SEGMENTS = new Set([
+// The plugin API has no secret field type, so mask by name, as a password manager would. A name
+// segment that ends with a secret word counts, so accesstoken and clientsecret are masked, while
+// max_tokens and tokenizer stay readable.
+const SECRET_ENDINGS = [
   'secret',
   'token',
   'password',
@@ -33,7 +34,10 @@ const SECRET_SEGMENTS = new Set([
   'credential',
   'credentials',
   'apikey',
-]);
+  'apikeys',
+  'privatekey',
+  'privatekeys',
+];
 const KEY_QUALIFIERS = new Set(['api', 'private']);
 // A name ending in one of these holds a reference to a secret or a number, not the secret itself.
 const NON_SECRET_SUFFIXES = new Set(['env', 'file', 'path', 'name', 'url', 'limit']);
@@ -54,7 +58,8 @@ export const isSecretPluginField = (field: PluginConfigField): boolean => {
   }
   return segments.some(
     (segment, index) =>
-      SECRET_SEGMENTS.has(segment) || (segment === 'key' && KEY_QUALIFIERS.has(segments[index - 1]))
+      SECRET_ENDINGS.some((ending) => segment.endsWith(ending)) ||
+      ((segment === 'key' || segment === 'keys') && KEY_QUALIFIERS.has(segments[index - 1]))
   );
 };
 
