@@ -393,12 +393,14 @@ func (q *quotaTracker) load(ctx context.Context, c querier, k quotaKey) (*quotaL
 	return &l, nil
 }
 
-func (q *quotaTracker) shouldWrite(prev *quotaLast, o observation) bool {
+func (q *quotaTracker) shouldWrite(prev *quotaLast, o observation, now time.Time) bool {
 	if prev == nil {
 		return true
 	}
+	// An older reading arrived late, unless the stored one came from a clock
+	// that has since been stepped back.
 	if o.ObservedAt.Before(prev.ObservedAt) {
-		return false
+		return prev.ObservedAt.After(now.Add(clockSlack))
 	}
 	if o.Source == sourceRefresh {
 		return true
@@ -415,7 +417,7 @@ func (q *quotaTracker) shouldWrite(prev *quotaLast, o observation) bool {
 	return o.ObservedAt.Sub(prev.ObservedAt) >= quotaHeartbeat
 }
 
-func (q *quotaTracker) write(ctx context.Context, c *sql.Conn, obs []observation) (int, error) {
+func (q *quotaTracker) write(ctx context.Context, c *sql.Conn, obs []observation, now time.Time) (int, error) {
 	written := 0
 	for _, o := range obs {
 		if o.AuthIndex == "" || o.Window == "" {
@@ -426,7 +428,7 @@ func (q *quotaTracker) write(ctx context.Context, c *sql.Conn, obs []observation
 		if err != nil {
 			return written, err
 		}
-		if !q.shouldWrite(prev, o) {
+		if !q.shouldWrite(prev, o, now) {
 			continue
 		}
 		if _, err := c.ExecContext(ctx, `INSERT OR IGNORE INTO quota_observations

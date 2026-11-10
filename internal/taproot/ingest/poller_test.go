@@ -165,3 +165,53 @@ func TestRefreshAccountsCopiesManagerState(t *testing.T) {
 		t.Fatalf("file-name label = %q, %v", label, err)
 	}
 }
+
+// TestPollStampsEachAccountAtItsResponse polls accounts one after another
+// against an endpoint that takes 700 ms to answer.
+func TestPollStampsEachAccountAtItsResponse(t *testing.T) {
+	i, _ := newTestIngest(t, Config{})
+	var (
+		mu  sync.Mutex
+		now = time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	)
+	i.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		now = now.Add(700 * time.Millisecond)
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"rate_limit":{"primary_window":{"used_percent":10,"limit_window_seconds":18000,"reset_after_seconds":3600}}}`))
+	}))
+	t.Cleanup(srv.Close)
+	i.codexUsageURL = srv.URL
+	m := coreauth.NewManager(nil, nil, nil)
+	var accounts []string
+	for _, id := range []string{"codex-1.json", "codex-2.json", "codex-3.json"} {
+		accounts = append(accounts, registerAuth(t, m, &coreauth.Auth{ID: id, FileName: id, Provider: "codex",
+			Metadata: map[string]any{"access_token": "tok"}}))
+	}
+	i.AttachAuthManager(m)
+
+	i.pollIdle(context.Background())
+	mustFlush(t, i)
+	var stamps []int64
+	for _, idx := range accounts {
+		observed := queryInt(t, i, `SELECT observed_at FROM quota_observations WHERE auth_index=?`, idx)
+		// The reset is relative to the response, so it must follow the stamp.
+		if resets := queryInt(t, i, `SELECT resets_at FROM quota_observations WHERE auth_index=?`, idx); resets != observed+3_600_000 {
+			t.Fatalf("%s: resets %d, observed %d", idx, resets, observed)
+		}
+		stamps = append(stamps, observed)
+	}
+	start := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	got := map[int64]bool{}
+	for _, s := range stamps {
+		got[s-ms(start)] = true
+	}
+	if len(got) != 3 || !got[700] || !got[1400] || !got[2100] {
+		t.Fatalf("stamps after start %v, want 700, 1400, and 2100 ms", got)
+	}
+}

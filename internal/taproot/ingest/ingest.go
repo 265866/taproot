@@ -257,7 +257,7 @@ func (i *Ingest) flush(ctx context.Context) error {
 		if _, err := insertEvents(ctx, c, events); err != nil {
 			return err
 		}
-		_, err := i.tracker.write(ctx, c, allObs)
+		_, err := i.tracker.write(ctx, c, allObs, now)
 		return err
 	})
 	if err != nil {
