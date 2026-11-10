@@ -413,6 +413,7 @@ func (c *capture) build() (*recordMeta, []byte, error) {
 		}
 		c.requestID = id.String()
 	}
+	c.url = redactQuery(c.url)
 	text, sections := renderText(c)
 	path := c.url
 	if i := strings.IndexByte(path, '?'); i >= 0 {

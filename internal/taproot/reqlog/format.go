@@ -6,6 +6,8 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -320,11 +322,13 @@ func redactHeaders(headers map[string][]string) map[string][]string {
 	return out
 }
 
-// writeRedacted copies an executor-formatted API section, masking credential
-// headers. Those sections list headers after a "Headers:" line until a blank
-// line, and bodies follow a "Body:" line, so only header blocks are touched.
+// writeRedacted copies an executor-formatted API section, masking
+// credentials. Each attempt opens with an "=== API ..." line and a preamble
+// that can carry "Upstream URL:" and "Auth: ... value=<key>" lines, which
+// upstream masks only partly; headers follow a "Headers:" line until a blank
+// line, and bodies follow a "Body:" line, so bodies are never touched.
 func writeRedacted(out *bytes.Buffer, section []byte) {
-	inHeaders := false
+	inPreamble, inHeaders := false, false
 	rest := section
 	for len(rest) > 0 {
 		line := rest
@@ -333,6 +337,7 @@ func writeRedacted(out *bytes.Buffer, section []byte) {
 		}
 		rest = rest[len(line):]
 		trimmed := bytes.TrimRight(line, "\r\n")
+		eol := line[len(trimmed):]
 		switch {
 		case inHeaders && len(trimmed) == 0:
 			inHeaders = false
@@ -340,14 +345,60 @@ func writeRedacted(out *bytes.Buffer, section []byte) {
 			if name, _, ok := bytes.Cut(trimmed, []byte(": ")); ok && sensitiveHeader(string(name)) {
 				out.Write(name)
 				out.WriteString(": " + redacted)
-				out.Write(line[len(trimmed):])
+				out.Write(eol)
 				continue
 			}
 		case string(trimmed) == "Headers:":
-			inHeaders = true
+			inPreamble, inHeaders = false, true
+		case string(trimmed) == "Body:":
+			inPreamble = false
+		case bytes.HasPrefix(trimmed, []byte("=== API ")):
+			inPreamble = true
+		case inPreamble && bytes.HasPrefix(trimmed, []byte("Upstream URL: ")):
+			out.WriteString("Upstream URL: " + redactQuery(string(trimmed[len("Upstream URL: "):])))
+			out.Write(eol)
+			continue
+		case inPreamble && bytes.HasPrefix(trimmed, []byte("Auth: ")):
+			out.Write(authValue.ReplaceAll(trimmed, []byte("${1}"+redacted)))
+			out.Write(eol)
+			continue
 		}
 		out.Write(line)
 	}
+}
+
+// authValue matches the credential in upstream's "Auth:" line, which ends
+// the line ("type=api_key value=AIza...wxyz").
+var authValue = regexp.MustCompile(`(\bvalue=).*`)
+
+// redactQuery replaces the value of every credential-like query parameter in
+// raw, a URL or path with an optional query. Upstream keeps 4 characters from
+// each end of these; taproot stores none.
+func redactQuery(raw string) string {
+	base, query, ok := strings.Cut(raw, "?")
+	if !ok {
+		return raw
+	}
+	params := strings.Split(query, "&")
+	for i, param := range params {
+		key, _, hasValue := strings.Cut(param, "=")
+		name, err := url.QueryUnescape(key)
+		if err != nil {
+			name = key
+		}
+		if hasValue && sensitiveParam(name) {
+			params[i] = key + "=" + redacted
+		}
+	}
+	return base + "?" + strings.Join(params, "&")
+}
+
+// sensitiveParam covers the query parameters upstream masks ("key", "value",
+// which the management API uses for client keys, and api_key forms) and the
+// names sensitiveHeader treats as credentials.
+func sensitiveParam(name string) bool {
+	name = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), "[]")
+	return name == "key" || name == "value" || strings.Contains(name, "api_key") || sensitiveHeader(name)
 }
 
 // decodeResponse undoes Content-Encoding on non-streaming bodies the way

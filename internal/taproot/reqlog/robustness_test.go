@@ -405,3 +405,48 @@ func TestEncodeFrameRefusesOversizedMeta(t *testing.T) {
 		t.Fatal("encoded a frame whose meta recovery would reject")
 	}
 }
+
+// TestAPISectionCredentialsAreRedacted checks the credentials upstream masks
+// only partly, keeping 4 characters from each end: the executor's "Auth:"
+// value, "Upstream URL:" query keys, and the record URL's query keys.
+func TestAPISectionCredentialsAreRedacted(t *testing.T) {
+	h := newHarness(t, Config{})
+	const partial = "AIza...wxyz"
+	apiRequest := "=== API REQUEST 1 ===\nTimestamp: 2026-01-01T00:00:00Z\n" +
+		"Upstream URL: https://example.com/v1beta/models/m:streamGenerateContent?alt=sse&key=" + partial + "\n" +
+		"HTTP Method: POST\n" +
+		"Auth: provider=gemini, auth_id=a1, label=alice@github, type=api_key value=" + partial + "\n" +
+		"\nHeaders:\nX-Goog-Api-Key: " + partial + "\nContent-Type: application/json\n" +
+		"\nBody:\nAuth: value=body text stays\nUpstream URL: /?key=body-stays\n\n"
+	ts := h.clock.now()
+	if err := h.logs.logger.LogRequestWithOptions("/v1beta/models/m:streamGenerateContent?alt=sse&key="+partial, "POST", nil, []byte(`{}`), 200, nil, []byte(`{}`),
+		nil, []byte(apiRequest), nil, nil, nil, false, "creds", ts, ts); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+	_, raw, err := h.logs.Raw(context.Background(), "creds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("AIza")) || bytes.Contains(raw, []byte("wxyz")) {
+		t.Fatalf("stored text keeps part of the key:\n%s", raw)
+	}
+	for _, want := range []string{
+		"URL: /v1beta/models/m:streamGenerateContent?alt=sse&key=[redacted]\n",
+		"Upstream URL: https://example.com/v1beta/models/m:streamGenerateContent?alt=sse&key=[redacted]\n",
+		"Auth: provider=gemini, auth_id=a1, label=alice@github, type=api_key value=[redacted]\n",
+		"X-Goog-Api-Key: [redacted]\n",
+		"Body:\nAuth: value=body text stays\nUpstream URL: /?key=body-stays\n",
+	} {
+		if !bytes.Contains(raw, []byte(want)) {
+			t.Errorf("stored text lacks %q:\n%s", want, raw)
+		}
+	}
+	d, err := h.logs.Get(context.Background(), "creds", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(d.Request.URL, "wxyz") {
+		t.Fatalf("detail URL %q keeps part of the key", d.Request.URL)
+	}
+}
