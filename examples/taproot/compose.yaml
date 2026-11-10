@@ -15,7 +15,7 @@
 
 services:
   taproot:
-    image: ghcr.io/265866/taproot:0.5
+    image: ghcr.io/265866/taproot:0.4
     container_name: taproot
     restart: unless-stopped
     # Container root is the host's root under rootful Docker, so run as the

@@ -61,7 +61,7 @@ loginctl enable-linger "$USER"
 journalctl --user -u taproot | grep 'setup code [A-Z0-9]'
 ```
 
-The quadlet runs the minor version's tag, such as `ghcr.io/265866/taproot:0.5`, and pulls it only when the host does not have it, so an update waits until you pull. `loginctl enable-linger` keeps the service running when you are not signed in. Run the quadlet as your own user, without `User=` or `UserNS=`. Podman maps the container's root to your user, which owns the files in the data directory.
+The quadlet runs the minor version's tag, such as `ghcr.io/265866/taproot:0.4`, and pulls it only when the host does not have it, so an update waits until you pull. `loginctl enable-linger` keeps the service running when you are not signed in. Run the quadlet as your own user, without `User=` or `UserNS=`. Podman maps the container's root to your user, which owns the files in the data directory.
 
 ## Docker Compose
 

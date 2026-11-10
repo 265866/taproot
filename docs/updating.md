@@ -4,12 +4,12 @@ Updates are manual unless you turn on the automatic updater. A restart cuts the 
 
 ## Install a patch release
 
-A minor version's image tag, such as `0.5`, brings its patch releases and never a new minor version. Replace `0.5` below with the tag your setup runs.
+A minor version's image tag, such as `0.4`, brings its patch releases and never a new minor version. Replace `0.4` below with the tag your setup runs.
 
 | Setup | Update |
 | --- | --- |
-| Quick start container | `podman pull ghcr.io/265866/taproot:0.5`, then `podman rm -f taproot` and run the [Quick start](../README.md#quick-start) command again |
-| Podman quadlet | `podman pull ghcr.io/265866/taproot:0.5 && systemctl --user restart taproot` |
+| Quick start container | `podman pull ghcr.io/265866/taproot:0.4`, then `podman rm -f taproot` and run the [Quick start](../README.md#quick-start) command again |
+| Podman quadlet | `podman pull ghcr.io/265866/taproot:0.4 && systemctl --user restart taproot` |
 | Docker Compose | `docker compose pull && docker compose up -d` |
 | NixOS | Change the tag in `inputs.taproot.url` to the new release, then run `nix flake update taproot` and `nixos-rebuild switch` |
 | Plain binary | Download and check the new tarball as in [Verify a tarball](verifying-releases.md#verify-a-tarball), unpack it, point `/opt/taproot` at it, and run `sudo systemctl restart taproot` |
