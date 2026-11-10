@@ -44,9 +44,17 @@ export function dailyBucketZone(buckets: readonly { t: string }[]): DayZone {
   return 'local';
 }
 
-/** Hourly buckets up to a week, daily beyond: 24 to 168 points, or one point per day. */
+/**
+ * Hourly buckets up to a week, daily beyond: 24 to 168 points, or one point per day. Seven whole
+ * local days span 169 h across a fall-back clock change; that span is a week on the local clock,
+ * so it stays hourly with 169 points.
+ */
 export function chooseBucket(window: TimeWindow): UsageBucket {
-  return window.toMs - window.fromMs <= 7 * DAY_MS ? '1h' : '1d';
+  const span = window.toMs - window.fromMs;
+  const offsetShift =
+    (new Date(window.toMs).getTimezoneOffset() - new Date(window.fromMs).getTimezoneOffset()) *
+    MINUTE_MS;
+  return Math.min(span, span - offsetShift) <= 7 * DAY_MS ? '1h' : '1d';
 }
 
 /**
@@ -99,6 +107,44 @@ export function customWindow(
   const endOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
   const cap = Math.ceil(nowMs / MINUTE_MS) * MINUTE_MS;
   return { window: { fromMs, toMs: Math.min(endOfDay, cap) } };
+}
+
+/** The window to load, or the reason a custom range has none. */
+export function resolveWindow(
+  range: RangePreset,
+  from: string,
+  to: string,
+  anchorMs: number
+): { window: TimeWindow; error: null } | { window: null; error: CustomRangeError } {
+  if (range !== 'custom') return { window: presetWindow(range, anchorMs), error: null };
+  const result = customWindow(from, to, anchorMs);
+  if ('window' in result) return { window: result.window, error: null };
+  return { window: null, error: result.error };
+}
+
+/**
+ * The Requests table's selection: its range, its filters, and the page shown. The page counts
+ * because rows from another page do not answer the one on screen.
+ */
+export function requestsSelection(rangeSelection: string, filterSelection: string, page: number) {
+  return `${rangeSelection}|${filterSelection}|${page}`;
+}
+
+/**
+ * A range query's key, and the selection its data answers: the range as chosen, without the
+ * anchor time and refresh count that a refresh or a tab switch moves under an unchanged choice.
+ */
+export function rangeQuery(
+  range: RangePreset,
+  from: string,
+  to: string,
+  window: TimeWindow,
+  refreshKey: number
+): { key: string; selection: string } {
+  return {
+    key: `${toIso(window.fromMs)}|${toIso(window.toMs)}|${chooseBucket(window)}|${refreshKey}`,
+    selection: range === 'custom' ? `custom|${from}|${to}` : range,
+  };
 }
 
 /** Local midnight today through the next whole minute. */

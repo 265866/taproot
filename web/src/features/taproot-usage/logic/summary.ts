@@ -167,6 +167,34 @@ export function latencyRows(
   return { series, rows };
 }
 
+/**
+ * Whether a line chart's value at `index` has no non-null neighbor. A line draws nothing for such
+ * a point, so it needs a dot to show at all.
+ */
+export function isIsolatedPoint(rows: readonly ChartRow[], id: string, index: number): boolean {
+  if (rows[index]?.[id] == null) return false;
+  return rows[index - 1]?.[id] == null && rows[index + 1]?.[id] == null;
+}
+
+/** The largest value of a series and the bucket it falls in, or null when the series is empty. */
+export function peakOf(
+  rows: readonly object[],
+  ids: readonly string[]
+): { t: number; value: number } | null {
+  let peak: { t: number; value: number } | null = null;
+  for (const row of rows as readonly Record<string, unknown>[]) {
+    let value = 0;
+    for (const id of ids) {
+      const v = row[id];
+      if (typeof v === 'number') value += v;
+    }
+    if (value > 0 && (peak === null || value > peak.value)) {
+      peak = { t: Number(row.t), value };
+    }
+  }
+  return peak;
+}
+
 export interface BreakdownRow {
   key: string;
   totals: AdditiveTotals;

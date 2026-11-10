@@ -11,23 +11,36 @@ function slot(index: number): string {
 }
 
 /**
- * The color for a group series. Colors follow the entity where it has a stable identity
- * (providers by accent, accounts by their position in /accounts) so changing the range does not
- * repaint them; models and sessions take the palette in rank order.
+ * The colors for a chart's group series, given in rank order. Colors follow the entity where it
+ * has a stable identity (providers by accent, accounts by their position in /accounts) so changing
+ * the range does not repaint them; the other series take the unused palette slots in rank order.
  */
-export function groupColor(
+export function groupColors(
   groupBy: UsageGroupBy,
-  key: string,
-  rankIndex: number,
+  keys: readonly string[],
   accountOrder: readonly string[]
-): string {
-  if (key === OTHER_GROUP) return 'var(--usage-series-other)';
-  if (groupBy === 'provider' && PROVIDER_COLORS[key]) return PROVIDER_COLORS[key];
-  if (groupBy === 'account') {
-    const index = accountOrder.indexOf(key);
-    if (index >= 0 && index < MAX_GROUP_SERIES) return slot(index);
+): Map<string, string> {
+  const colors = new Map<string, string>();
+  const used = new Set<number>();
+  for (const key of keys) {
+    if (key === OTHER_GROUP) colors.set(key, 'var(--usage-series-other)');
+    else if (groupBy === 'provider' && PROVIDER_COLORS[key]) colors.set(key, PROVIDER_COLORS[key]);
+    else if (groupBy === 'account') {
+      const index = accountOrder.indexOf(key);
+      if (index >= 0 && index < MAX_GROUP_SERIES) {
+        colors.set(key, slot(index));
+        used.add(index);
+      }
+    }
   }
-  return slot(rankIndex);
+  let next = 0;
+  for (const key of keys) {
+    if (colors.has(key)) continue;
+    while (used.has(next)) next++;
+    used.add(next);
+    colors.set(key, slot(next));
+  }
+  return colors;
 }
 
 export function providerColor(provider: string, index: number): string {
