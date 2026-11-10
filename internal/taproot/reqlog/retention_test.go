@@ -291,6 +291,41 @@ func TestRestoreKeepsSealedCopyWhenDecodeFails(t *testing.T) {
 // retention would prune the newest dictionary, the only one that decodes the
 // copy, and the next start would lose the record.
 func TestRetentionKeepsDictionaryOfHeldCopy(t *testing.T) {
+	t.Run("raw write fails", func(t *testing.T) {
+		checkHeldCopyKeepsDictionary(t, func(zst string) func() {
+			blocker := strings.TrimSuffix(zst, ".zst") + ".raw.tmp"
+			if err := os.MkdirAll(filepath.Join(blocker, "x"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			return func() {
+				if err := os.RemoveAll(blocker); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	})
+	t.Run("sealed file unreadable", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root reads a file with mode 0")
+		}
+		checkHeldCopyKeepsDictionary(t, func(zst string) func() {
+			if err := os.Chmod(zst, 0); err != nil {
+				t.Fatal(err)
+			}
+			return func() {
+				if err := os.Chmod(zst, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	})
+}
+
+// checkHeldCopyKeepsDictionary restores a snapshot taken while a segment was
+// open after that segment sealed, with block making the first decode fail, runs
+// retention, then lifts the block and expects the next start to read the record.
+func checkHeldCopyKeepsDictionary(t *testing.T, block func(zstPath string) (unblock func())) {
+	t.Helper()
 	h := newHarness(t, Config{})
 	if _, err := h.logs.engine.dicts.add(bytes.Repeat([]byte(`{"model":"m","messages":[]}`), 400)); err != nil {
 		t.Fatal(err)
@@ -306,17 +341,12 @@ func TestRetentionKeepsDictionaryOfHeldCopy(t *testing.T) {
 	if len(zsts) != 1 {
 		t.Fatalf("sealed files %v", zsts)
 	}
-	blocker := strings.TrimSuffix(zsts[0], ".zst") + ".raw.tmp"
-	if err := os.MkdirAll(filepath.Join(blocker, "x"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	unblock := block(zsts[0])
 
 	h.restoreSnapshot(snapshot)
 	h.logs.engine.applyRetention(context.Background())
 
-	if err := os.RemoveAll(blocker); err != nil {
-		t.Fatal(err)
-	}
+	unblock()
 	h.stop()
 	h.open(Config{})
 	h.logs.engine.compactQueued(context.Background())

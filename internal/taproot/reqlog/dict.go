@@ -194,6 +194,9 @@ func writeSynced(path string, content []byte) error {
 // prune runs on the compactor goroutine, which also seals, so no seal can
 // pick a dictionary prune is removing.
 func (d *dictStore) prune(ctx context.Context, now time.Time, maxAge time.Duration, keep []int64) error {
+	if slices.Contains(keep, dictUnknown) {
+		return nil
+	}
 	ids, err := d.ids()
 	if err != nil || len(ids) == 0 {
 		return err

@@ -1027,19 +1027,24 @@ func (e *engine) reserveDiskIDs(ctx context.Context) error {
 // dictionary or a failed read or write can clear; this cannot.
 var errUndecodable = errors.New("sealed segment does not decode")
 
+// dictUnknown stands for the dictionary of a held sealed file whose header
+// could not be read; while one is held, prune keeps every dictionary.
+const dictUnknown int64 = -1
+
 // restoreRawFromSealed decompresses a sealed file back to its raw name when
 // the raw file is gone, so the segment can be re-indexed and sealed again. It
-// returns the sealed file's dictionary id when it read one.
+// returns the sealed file's dictionary id, or dictUnknown when it could not
+// read one.
 func (e *engine) restoreRawFromSealed(rawPath, zstPath string) (int64, error) {
 	if _, err := os.Stat(rawPath); !errors.Is(err, os.ErrNotExist) {
-		return 0, err
+		return dictUnknown, err
 	}
 	if _, err := os.Stat(zstPath); errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
 	dictID, err := frameDictID(zstPath)
 	if err != nil {
-		return 0, err
+		return dictUnknown, err
 	}
 	dict, err := e.dicts.get(dictID)
 	if err != nil {
@@ -1326,9 +1331,9 @@ func (e *engine) sizeVictims(ctx context.Context, limit int64) ([]int64, error) 
 			break
 		}
 		if !seg.deletable {
-			// Blob GC cannot pass a record in a segment that is still being
-			// written or compacted, so deleting newer history would free segment bytes but no
-			// blobs, and could empty the store.
+			// Blob GC cannot pass a record in a segment that is still
+			// being written or compacted, so deleting newer history would
+			// free segment bytes but no blobs, and could empty the store.
 			log.Warn("request logs: max-bytes waits for the oldest segment to seal")
 			break
 		}
