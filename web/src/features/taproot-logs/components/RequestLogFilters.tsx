@@ -11,7 +11,7 @@ import {
   DEFAULT_QUERY,
   type RequestLogQuery,
 } from '../model/query';
-import { useMaskableField } from '../hooks/useMaskableField';
+import { useMaskableField, type MaskableField } from '../hooks/useMaskableField';
 import styles from './RequestLogFilters.module.scss';
 
 const DEBOUNCE_MS = 300;
@@ -24,9 +24,7 @@ function DebouncedInput({
   placeholder,
   list,
   icon,
-  autoFocus,
-  onFocus,
-  onBlur,
+  field,
 }: {
   value: string;
   onCommit: (value: string) => void;
@@ -34,9 +32,7 @@ function DebouncedInput({
   placeholder: string;
   list?: string;
   icon?: boolean;
-  autoFocus?: boolean;
-  onFocus?: () => void;
-  onBlur?: () => void;
+  field?: MaskableField;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(value);
@@ -46,8 +42,12 @@ function DebouncedInput({
     const timer = window.setTimeout(() => onCommit(draft), DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [draft, value, onCommit]);
+  const clear = () => {
+    setDraft('');
+    onCommit('');
+  };
   return (
-    <div className={styles.field}>
+    <div className={styles.field} {...field?.fieldProps}>
       {icon && <IconSearch size={15} className={styles.fieldIcon} aria-hidden="true" />}
       <input
         className={`input ${styles.input} ${icon ? styles.withIcon : ''}`}
@@ -60,12 +60,10 @@ function DebouncedInput({
             onCommit('');
           }
         }}
-        onFocus={onFocus}
         onBlur={() => {
           if (draft !== value) onCommit(draft);
-          onBlur?.();
         }}
-        autoFocus={autoFocus}
+        autoFocus={field?.autoFocus}
         aria-label={label}
         placeholder={placeholder}
         list={list}
@@ -76,10 +74,7 @@ function DebouncedInput({
         <button
           type="button"
           className={styles.clear}
-          onClick={() => {
-            setDraft('');
-            onCommit('');
-          }}
+          {...(field?.clearButtonProps(clear) ?? { onClick: clear })}
           aria-label={t('taproot_logs.filters.clear_field', { field: label })}
         >
           <IconX size={14} />
@@ -107,7 +102,7 @@ function MaskableInput(props: {
       />
     );
   }
-  return <DebouncedInput {...props} {...field.inputProps} />;
+  return <DebouncedInput {...props} field={field} />;
 }
 
 export function RequestLogFilters({

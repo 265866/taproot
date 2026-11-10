@@ -580,7 +580,7 @@ export function AppLogsPanel() {
             )}
 
             <div className={styles.filters}>
-              <div className={styles.searchWrapper}>
+              <div className={styles.searchWrapper} {...searchField.fieldProps}>
                 {searchField.masked ? (
                   <MaskedValueChip
                     value={searchQuery}
@@ -589,7 +589,7 @@ export function AppLogsPanel() {
                   />
                 ) : (
                   <Input
-                    {...searchField.inputProps}
+                    autoFocus={searchField.autoFocus}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={t('taproot_logs.app.search_placeholder')}
@@ -600,7 +600,7 @@ export function AppLogsPanel() {
                         <button
                           type="button"
                           className={styles.searchClear}
-                          onClick={() => setSearchQuery('')}
+                          {...searchField.clearButtonProps(() => setSearchQuery(''))}
                           title={t('taproot_logs.app.clear_search')}
                           aria-label={t('taproot_logs.app.clear_search')}
                         >
