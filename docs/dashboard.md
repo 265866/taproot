@@ -4,14 +4,20 @@ Taproot serves its dashboard at `/` on the proxy port, such as `http://<server>:
 
 ## Pages
 
-- **Dashboard:** upstream requests over the last 3 hours 20 minutes and their success rate, today's cost and pooled quota, the number of credentials and models, and the server's version and runtime settings. The numbers come from taproot's usage records, so a restart does not reset them, and the page rereads them every 30 seconds while it is open. A request that fails over to another account counts once per account it tried.
+- **Dashboard:** answers "is everything OK, and what needs me?" first.
+  - **Verdict:** serving normally, degraded, or down, judged on the last 15 minutes and the accounts that can serve right now. A degraded or down verdict links to the failed requests of those 15 minutes.
+  - **Needs you:** each problem with a severity, how long it has waited, and one button that fixes it or opens the page that does. **Sign in again** opens the provider's sign-in, **Enable** and **Back up now** run in place and say how they went, and **Review** opens Access at that device's request. When file logging is off, a problem that points at the server's log says to read the server's own output, or `journalctl -u taproot`, rather than linking to an empty tab. The same problems put badges on Accounts, Access, and Backups in the sidebar and a dot in the tab title, on every page.
+  - **Pools:** each provider's accounts right now, with what is left on each, how many can serve, quota locked on signed-out accounts or waiting on cooling ones, the next reset, the burn over the last 3 hours, and when the pool runs out.
+  - **The window:** 1 hour, 24 hours, 7 days, or 30 days, remembered in this browser. It sets the request count, failures, median latency and time to first token, API-equivalent cost, the traffic chart (with its data as a table), the last 5 failed requests, and the top devices and models, each linking into Request Logs or Usage. Client requests count once, however many accounts they tried; retries show beside them.
+  - **First run:** until the server has an account and its first request, the window gives way to a three-step checklist: add an account, point Claude Code or Codex at the server (with snippets that use its address), and approve devices. Each step ticks itself off.
+  - The page rereads everything every 30 seconds while the tab is visible. When a read fails, the section keeps its last numbers, marks them stale, and offers **Retry**. The model count is on **System**.
 - **Accounts:** pool charts, the quota ledger, credentials, and sign-in. See [Accounts](accounts.md).
 - **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
 - **Request Logs:** search and view stored requests. The application log is a tab here.
 - **Backups:** create, download, and restore backups.
 - **Access:** device requests, every tailnet device with its Proxy and Admin switches, and the addresses that reach the proxy without Tailscale.
 - **Settings:** request logs and their limits, the backup schedule, quota polling, and Discord alerts.
-- **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins.
+- **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins. System also counts the models the proxy serves.
 
 Account emails stay hidden until you select **Show emails**.
 
