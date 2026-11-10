@@ -128,7 +128,7 @@ func TestRefusalsRecordRequests(t *testing.T) {
 	// own node on the admin surface, an admitted device, and an unknown one.
 	do(e, "127.0.0.1:1234", "/v8/management/config", nil)
 	assertForbidden(t, do(e, "192.0.2.20:1234", "/v8/management/config", nil))
-	assertForbidden(t, do(e, selfIP+":1234", "/v8/management/config", nil))
+	assertPlainDenied(t, do(e, selfIP+":1234", "/v8/management/config", nil), "server_node")
 	do(e, adminIP+":1234", "/v1/models", nil)
 	assertForbidden(t, do(e, strayIP+":1234", "/v1/models", nil))
 
@@ -218,7 +218,7 @@ func TestSelfRequest(t *testing.T) {
 		"another site":      {shareeIP + ":1", `{}`, map[string]string{"Origin": "http://evil.example.com", RequestHeader: "1"}, http.StatusForbidden, "forbidden"},
 		"loopback":          {"127.0.0.1:1", `{}`, browser, http.StatusForbidden, "request_tailnet_only"},
 		"an address":        {"192.0.2.20:1", `{}`, browser, http.StatusForbidden, "forbidden"},
-		"the server":        {selfIP + ":1", `{}`, browser, http.StatusForbidden, "forbidden"},
+		"the server":        {selfIP + ":1", `{}`, browser, http.StatusForbidden, "server_node"},
 		"no identity":       {strayIP + ":1", `{}`, browser, http.StatusForbidden, "forbidden"},
 		"an admin":          {adminIP + ":1", `{}`, browser, http.StatusConflict, "has_access"},
 		"a long name":       {outsiderIP + ":1", `{"name": "` + strings.Repeat("é", MaxLabelRunes+1) + `"}`, browser, http.StatusBadRequest, "invalid_name"},
@@ -530,9 +530,7 @@ func TestOutsideDeviceIsNotClaimable(t *testing.T) {
 	peers[shareeIP] = fakePeer{login: "dana@example.com", displayName: "dana", node: "dana-1", sharee: true}
 	ts := newFakeTailscaled(t, peers)
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: []DeviceGrant{}})
-	if _, err := g.StartClaim(); err != nil {
-		t.Fatal(err)
-	}
+	startClaim(t, g)
 	e, _ := testEngine(g)
 	claimable := func(remote string) any {
 		t.Helper()
@@ -822,7 +820,7 @@ func TestAdminWithoutProxy(t *testing.T) {
 		}
 	}
 	assertForbidden(t, do(e, "192.0.2.20:1234", "/v8/management/config", nil))
-	assertForbidden(t, do(e, selfIP+":1234", "/v8/management/config", nil))
+	assertPlainDenied(t, do(e, selfIP+":1234", "/v8/management/config", nil), "server_node")
 	if got := h.open(t); len(got) != 2 {
 		t.Fatalf("requests = %+v, want bob-pc and worker only", got)
 	}

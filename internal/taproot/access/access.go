@@ -104,6 +104,7 @@ import (
 const (
 	defaultSocket   = "/var/run/tailscale/tailscaled.sock"
 	defaultCacheTTL = time.Minute
+	maxCacheTTL     = 10 * time.Minute
 	// selfRetry spaces LocalAPI status attempts while the last one failed.
 	selfRetry     = 5 * time.Second
 	managementEnv = "MANAGEMENT_PASSWORD"
@@ -308,8 +309,8 @@ func New(cfg Config) (*Guard, error) {
 		log.Warn("taproot access: guard disabled (access.enabled: false). Every caller that reaches the port, from any address and without a login, can use the proxy routes (/v1/..., /v1beta/..., /backend-api/codex/...) and spend every account's quota, and no Host, Origin, or cross-site check runs there. The dashboard, /taproot/**, /v0/management/**, /v8/management/**, plugin pages, the OAuth callbacks, and /v1/ws stay loopback-only and refuse browser requests from other sites.")
 		return g, nil
 	}
-	if g.ttl < 0 {
-		return nil, fmt.Errorf("cache-ttl must not be negative, got %s", g.ttl)
+	if g.ttl < 0 || g.ttl > maxCacheTTL {
+		return nil, fmt.Errorf("cache-ttl must be between 0 and %s, got %s: a device that takes over another's tailnet address keeps the old device's access for up to that long", maxCacheTTL, g.ttl)
 	}
 	if g.ttl == 0 {
 		g.ttl = defaultCacheTTL
@@ -374,6 +375,7 @@ func (g *Guard) SetGrants(in Grants) error {
 	}
 	g.grants.Store(set)
 	g.sockets.revoke(set)
+	g.restartClaim()
 	return nil
 }
 
@@ -416,7 +418,11 @@ func newGrantSet(in Grants) (*grantSet, error) {
 			if errAddr != nil {
 				return nil, fmt.Errorf("access.addresses: %q is not an address or CIDR", a.CIDR)
 			}
-			prefix = netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen())
+			prefix = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		// admit unmaps the caller, so a 4-in-6 prefix must be IPv4 to match.
+		if prefix.Addr().Is4In6() && prefix.Bits() >= 96 {
+			prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
 		}
 		prefix = prefix.Masked()
 		// admit matches addresses before whois, so a covered tailnet device
@@ -531,8 +537,8 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 					reason, denial = g.browserGuard(r, func() *selfNode { return nil })
 				}
 				if reason != "" {
-					log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, path, surf, r.RemoteAddr, reason)
-					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": denial})
+					log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, quoteHeader(path), surf, r.RemoteAddr, reason)
+					deny(c, denial, false)
 					return
 				}
 			}
@@ -541,10 +547,13 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		}
 		self := sync.OnceValue(func() *selfNode { return g.self(context.WithoutCancel(r.Context())) })
 		id, reason := g.admit(r.Context(), r.RemoteAddr, self)
+		denial := forbiddenDenial()
 		if reason == "" {
-			reason = g.browserCheck(r, self)
+			var browserDenial gin.H
+			if reason, browserDenial = g.browserCheck(r, self); reason != "" {
+				denial = browserDenial
+			}
 		}
-		denial := gin.H{"code": "forbidden", "message": "caller is not allowed"}
 		// Only a tailnet device on a request that passed the browser checks
 		// gets a denial naming it, which tells it nothing it does not know.
 		switch {
@@ -571,7 +580,14 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 				break
 			}
 			reason = id.notAdmin
-			if id.noAdminGrant {
+			switch {
+			case id.self:
+				denial = gin.H{"code": "server_node", "message": "this is the taproot server's own tailnet node, which never gets Admin: open the dashboard from another device on the tailnet"}
+			case id.adminGrant():
+				// The grant has Admin, but the guard withholds it until it
+				// knows which node is the server.
+				denial = gin.H{"code": "server_node_unknown", "message": "taproot cannot tell yet whether this device is the server itself, because tailscaled's status is unavailable or out of date; try again in a few seconds"}
+			case id.noAdminGrant:
 				self, _ := g.cachedSelf()
 				name := shortNodeName(id.Node, self)
 				denial = deviceDenial("not_admin", id, name, fmt.Sprintf("%s (%s, ID %s): this device has no Admin permission. On a device that has it, turn on Admin for this one on the Access page of taproot's dashboard", cmp.Or(name, "this device"), id.Login, id.NodeID))
@@ -594,8 +610,8 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		}
 		if reason != "" {
 			// Upstream's log formatter drops fields it does not know, so the details go in the message.
-			log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, path, surf, r.RemoteAddr, reason)
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": denial})
+			log.Infof("taproot access: denied %s %s (%s) from %s: %s", r.Method, quoteHeader(path), surf, r.RemoteAddr, reason)
+			deny(c, denial, self() == nil)
 			return
 		}
 		c.Set(identityKey, id)
@@ -653,13 +669,17 @@ func (g *Guard) noProxyDenial(r *http.Request, id Identity) gin.H {
 // GETs. It returns the denial reason and response body, or "" when the request
 // passes.
 func (g *Guard) browserGuard(r *http.Request, self func() *selfNode) (string, gin.H) {
-	if reason := g.browserCheck(r, self); reason != "" {
-		return reason, gin.H{"code": "forbidden", "message": "caller is not allowed"}
+	if reason, denial := g.browserCheck(r, self); reason != "" {
+		return reason, denial
 	}
 	if sideEffectGET(r) && r.Header.Get(RequestHeader) != "1" {
 		return "state-changing GET without " + RequestHeader, requestHeaderDenial()
 	}
 	return "", nil
+}
+
+func forbiddenDenial() gin.H {
+	return gin.H{"code": "forbidden", "message": "caller is not allowed"}
 }
 
 func requestHeaderDenial() gin.H {
@@ -803,19 +823,32 @@ func (g *Guard) self(ctx context.Context) *selfNode {
 	s, err := g.status(ctx)
 	now := g.now()
 	g.selfMu.Lock()
-	defer g.selfMu.Unlock()
+	prev := g.selfNode
 	if err != nil {
 		g.selfRetryAt = now.Add(selfRetry)
-		if g.selfNode == nil {
+		g.selfMu.Unlock()
+		if prev == nil {
 			log.Warnf("taproot access: cannot read this server's tailnet node, so tailnet callers get no admin access and only local host names are accepted: %v", err)
 		} else {
-			log.Warnf("taproot access: cannot refresh this server's tailnet node, keeping %s: %v", g.selfNode.DNSName, err)
+			log.Warnf("taproot access: cannot refresh this server's tailnet node, keeping %s: %v", prev.DNSName, err)
 		}
-		return g.selfNode
+		return prev
 	}
 	g.selfNode = &s
 	g.selfExpires = now.Add(g.ttl)
-	return g.selfNode
+	g.selfMu.Unlock()
+	if prev != nil && (prev.StableID != s.StableID || otherTailnet(prev.DNSName, s.DNSName)) {
+		// The server moved to another node or tailnet, where the cached
+		// addresses may belong to other devices.
+		g.mu.Lock()
+		clear(g.cache)
+		g.mu.Unlock()
+	}
+	if prev == nil || prev.StableID != s.StableID {
+		// A grant on the server's own node stops counting as an admin.
+		g.restartClaim()
+	}
+	return &s
 }
 
 // cachedSelf returns the cached node and whether it may be used without a

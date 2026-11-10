@@ -285,13 +285,12 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot settings: %w", err)
 	}
-	code, err := guard.StartClaim()
-	if err != nil {
-		return nil, nil, fmt.Errorf("taproot access: %w", err)
-	}
-	if code != "" {
-		log.Warnf("taproot access: setup code %s. No device has Admin yet: open %s from the device that should become the first admin, and enter this code. It works once, and taproot makes a new one each time it starts until a device has Admin.",
+	announce := func(code string) {
+		log.Warnf("taproot access: setup code %s. No device has Admin: open %s from the device that should become the first admin, and enter this code. It works once. While no device has Admin, taproot makes a new one each time it starts, and after the last device with Admin is removed.",
 			access.FormatClaimCode(code), dashboardURL(cfg, guard.ServerDNSName(ctx)))
+	}
+	if err := guard.StartClaim(ctx, announce); err != nil {
+		return nil, nil, fmt.Errorf("taproot access: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
