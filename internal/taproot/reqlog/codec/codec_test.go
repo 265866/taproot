@@ -2,6 +2,7 @@ package codec
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"hash/adler32"
@@ -119,10 +120,16 @@ func countIDAT(t testing.TB, b []byte) int {
 	return n
 }
 
+// packed is Pack without a deadline or start hook, which never fails.
+func packed(data []byte) (Kind, []byte) {
+	kind, stored, _ := Pack(context.Background(), data, nil)
+	return kind, stored
+}
+
 func roundTrip(t testing.TB, data []byte) Kind {
 	t.Helper()
-	kind, stored := Pack(data)
-	got, err := Unpack(kind, stored, len(data))
+	kind, stored := packed(data)
+	got, err := Unpack(context.Background(), kind, stored, len(data))
 	if err != nil {
 		t.Fatalf("Unpack(kind %d): %v", kind, err)
 	}
@@ -203,7 +210,7 @@ func TestJPEG(t *testing.T) {
 				t.Logf("lepton rejects %s: %v", tc.name, err)
 				return
 			}
-			got, err := Unpack(Lepton, stored, len(tc.data))
+			got, err := Unpack(context.Background(), Lepton, stored, len(tc.data))
 			if err != nil || !bytes.Equal(got, tc.data) {
 				t.Fatalf("lepton round trip: err=%v equal=%v", err, bytes.Equal(got, tc.data))
 			}
@@ -257,7 +264,7 @@ func TestPNG(t *testing.T) {
 				t.Fatalf("kind = %d, want %d", kind, tc.want)
 			}
 			if kind == PNG {
-				_, stored := Pack(tc.data)
+				_, stored := packed(tc.data)
 				layouts[pixelLayout(stored[1])] = true
 			}
 		})
@@ -320,7 +327,7 @@ func packedFixtures(t testing.TB) map[Kind][]byte {
 	}
 	out := map[Kind][]byte{}
 	for _, in := range inputs {
-		k, _ := Pack(in)
+		k, _ := packed(in)
 		out[k] = in
 	}
 	return out
@@ -331,10 +338,10 @@ func TestUnpackCorrupt(t *testing.T) {
 		if kind == Raw {
 			continue
 		}
-		_, stored := Pack(data)
+		_, stored := packed(data)
 		step := max(1, len(stored)/300)
 		for n := 0; n < len(stored); n += step {
-			if got, err := Unpack(kind, stored[:n], len(data)); err == nil && !bytes.Equal(got, data) {
+			if got, err := Unpack(context.Background(), kind, stored[:n], len(data)); err == nil && !bytes.Equal(got, data) {
 				t.Fatalf("kind %d truncated to %d decoded wrong bytes without error", kind, n)
 			}
 		}
@@ -343,7 +350,7 @@ func TestUnpackCorrupt(t *testing.T) {
 		for range 300 {
 			c := slices.Clone(stored)
 			c[r.IntN(len(c))] ^= byte(1 + r.IntN(255))
-			if got, err := Unpack(kind, c, len(data)); err == nil && !bytes.Equal(got, data) {
+			if got, err := Unpack(context.Background(), kind, c, len(data)); err == nil && !bytes.Equal(got, data) {
 				wrong++
 			}
 		}
@@ -354,22 +361,22 @@ func TestUnpackCorrupt(t *testing.T) {
 				t.Fatalf("kind %d: %d corruptions went undetected", kind, wrong)
 			}
 		}
-		if _, err := Unpack(kind, stored, len(data)+1); err == nil {
+		if _, err := Unpack(context.Background(), kind, stored, len(data)+1); err == nil {
 			t.Fatalf("kind %d accepted a wrong raw length", kind)
 		}
 	}
-	if _, err := Unpack(Raw, []byte("abc"), 2); err == nil {
+	if _, err := Unpack(context.Background(), Raw, []byte("abc"), 2); err == nil {
 		t.Fatal("Raw accepted a wrong raw length")
 	}
-	if _, err := Unpack(Raw, nil, -1); err == nil {
+	if _, err := Unpack(context.Background(), Raw, nil, -1); err == nil {
 		t.Fatal("negative raw length accepted")
 	}
-	if _, err := Unpack(Kind(9), []byte("abc"), 3); err == nil {
+	if _, err := Unpack(context.Background(), Kind(9), []byte("abc"), 3); err == nil {
 		t.Fatal("unknown kind accepted")
 	}
 	for _, k := range []Kind{Lepton, PNG} {
 		for _, junk := range [][]byte{nil, {pngVersion}, {pngVersion, 0x80}, randomBytes(64, 4)} {
-			_, err := Unpack(k, junk, 100)
+			_, err := Unpack(context.Background(), k, junk, 100)
 			if err == nil {
 				t.Fatalf("kind %d accepted junk %x", k, junk)
 			}
@@ -388,8 +395,8 @@ func TestConcurrent(t *testing.T) {
 		wg.Go(func() {
 			for range 4 {
 				for _, data := range fixtures {
-					kind, stored := Pack(data)
-					got, err := Unpack(kind, stored, len(data))
+					kind, stored := packed(data)
+					got, err := Unpack(context.Background(), kind, stored, len(data))
 					if err != nil || !bytes.Equal(got, data) {
 						errs <- errors.New("concurrent round trip failed")
 						return
@@ -439,10 +446,10 @@ func TestSamples(t *testing.T) {
 			stats[ext] = s
 		}
 		start := time.Now()
-		kind, stored := Pack(data)
+		kind, stored := packed(data)
 		s.pack += time.Since(start)
 		start = time.Now()
-		got, err := Unpack(kind, stored, len(data))
+		got, err := Unpack(context.Background(), kind, stored, len(data))
 		s.unpack = append(s.unpack, time.Since(start))
 		if err != nil || !bytes.Equal(got, data) {
 			t.Errorf("%s: kind %d round trip failed: %v", e.Name(), kind, err)
@@ -476,11 +483,11 @@ func BenchmarkUnpack(b *testing.B) {
 		{"jpeg-1280x800", encodeJPEG(b, photo(1280, 800, 6), 85)},
 		{"png-240x160-zlib", readFixture(b, "zlib.png")},
 	} {
-		kind, stored := Pack(tc.data)
+		kind, stored := packed(tc.data)
 		b.Run(tc.name, func(b *testing.B) {
 			b.SetBytes(int64(len(tc.data)))
 			for b.Loop() {
-				if _, err := Unpack(kind, stored, len(tc.data)); err != nil {
+				if _, err := Unpack(context.Background(), kind, stored, len(tc.data)); err != nil {
 					b.Fatal(err)
 				}
 			}

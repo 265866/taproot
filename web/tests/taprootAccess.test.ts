@@ -176,6 +176,8 @@ describe('saving', () => {
     expect(accessUpdate(data, draft, onDesktop)).toEqual({
       ok: true,
       update: {
+        // The server refuses the save if the lists changed since this version.
+        version: '0123456789abcdef',
         devices: [
           { id: 'nDESKCNTRL', name: 'alice-desktop', label: '', proxy: true, admin: true },
           { id: 'nBOBCNTRL', name: 'bob-laptop', label: '', proxy: true, admin: false },
@@ -222,7 +224,7 @@ describe('saving', () => {
     expect(accessUpdate(data, draft, loopback).ok).toBe(true);
   });
 
-  test('Allow saves the saved grants plus the request, with the name as its label', () => {
+  test('Allow saves only the request’s device, with the name as its label', () => {
     expect(allowDefaults(danaRequest)).toEqual({ name: "Dana's PC", proxy: true, admin: false });
     const draft = draftFrom(data);
     draft.devices.nBOBCNTRL = { proxy: false, admin: false };
@@ -231,29 +233,18 @@ describe('saving', () => {
       proxy: true,
       admin: true,
     });
+    // Other devices are left as the server has them, so a page loaded before another save
+    // cannot undo it.
     expect(result).toEqual({
       ok: true,
       update: {
-        devices: [
-          { id: 'nDESKCNTRL', name: 'alice-desktop', label: '', proxy: true, admin: true },
-          { id: 'nBOBCNTRL', name: 'bob-laptop', label: '', proxy: true, admin: false },
-          { id: 'nCICNTRL', name: 'ci-runner', label: '', proxy: true, admin: false },
-          {
-            id: 'nALIMBPCNTRL',
-            name: 'alice-mbp.tailnet-1111.ts.net',
-            label: 'Work laptop',
-            proxy: true,
-            admin: true,
-          },
-          { id: 'nOLDCNTRL', name: 'old-laptop', label: '', proxy: true, admin: false },
-          { id: 'nDANA0001CNTRL', name: '', label: "Dana's PC", proxy: true, admin: true },
-        ],
+        device: { id: 'nDANA0001CNTRL', name: '', label: "Dana's PC", proxy: true, admin: true },
       },
     });
     // A request from a named device that keeps its Tailscale name saves no label.
     const carol: AccessRequest = { ...danaRequest, nodeId: 'nCAROLCNTRL', name: 'carol-ipad' };
     const named = allowUpdate(data, carol, allowDefaults(carol));
-    expect(named.ok && named.update.devices.at(-1)).toEqual({
+    expect(named.ok && named.update.device).toEqual({
       id: 'nCAROLCNTRL',
       name: 'carol-ipad',
       label: '',
@@ -293,7 +284,7 @@ describe('saving', () => {
       request('nBOBCNTRL'),
       allowDefaults(request('nBOBCNTRL'), byId('nBOBCNTRL'))
     );
-    expect(bobAllow.ok && bobAllow.update.devices.find((d) => d.id === 'nBOBCNTRL')).toEqual({
+    expect(bobAllow.ok && bobAllow.update.device).toEqual({
       id: 'nBOBCNTRL',
       name: 'bob-laptop',
       label: '',
@@ -374,11 +365,11 @@ describe('saving', () => {
     const form = allowDefaults(request, bob);
     expect(form.name).toBe("Dana's work laptop");
     const kept = allowUpdate(labeled, request, form);
-    expect(kept.ok && kept.update.devices.find((d) => d.id === 'nBOBCNTRL')?.label).toBe(
+    expect(kept.ok && kept.update.device?.label).toBe(
       "Dana's work laptop"
     );
     const edited = allowUpdate(labeled, request, { ...form, name: 'Windows PC' });
-    expect(edited.ok && edited.update.devices.find((d) => d.id === 'nBOBCNTRL')?.label).toBe(
+    expect(edited.ok && edited.update.device?.label).toBe(
       'Windows PC'
     );
     // Without a label, the device's own name, then its Tailscale name.
@@ -398,7 +389,7 @@ describe('saving', () => {
       same.devices.find((d) => d.id === 'nBOBCNTRL')
     );
     const sameAllow = allowUpdate(same, request, sameForm);
-    expect(sameAllow.ok && sameAllow.update.devices.find((d) => d.id === 'nBOBCNTRL')?.label).toBe(
+    expect(sameAllow.ok && sameAllow.update.device?.label).toBe(
       'bob-laptop'
     );
   });
@@ -456,6 +447,68 @@ describe('saving', () => {
     expect(changeCount(after, next)).toBe(3);
   });
 
+  test('a reload drops edits to anything the server changed in between', () => {
+    // The admin turned on Proxy for Dana's device, then allowed its request with Admin too.
+    const draft = draftFrom(data);
+    draft.devices.nDANA0001CNTRL = { proxy: true, admin: false };
+    draft.devices.nBOBCNTRL = { proxy: false, admin: false };
+    draft.labels.nCICNTRL = 'Runner';
+    draft.labels.nBOBCNTRL = 'Bob laptop';
+    draft.addresses = [];
+    const after: AccessDevices = {
+      ...data,
+      version: 'fedcba9876543210',
+      devices: data.devices.map((d) => {
+        if (d.id === 'nDANA0001CNTRL') return { ...d, proxy: true, admin: true };
+        if (d.id === 'nBOBCNTRL') return { ...d, label: 'Bob' };
+        return d;
+      }),
+      addresses: [{ cidr: '192.0.2.21/32', note: '' }],
+    };
+    const next = rebaseDraft(data, draft, after);
+    // Saving the old edit would take back the Admin just granted.
+    expect(next.devices.nDANA0001CNTRL).toEqual({ proxy: true, admin: true });
+    expect(next.labels.nBOBCNTRL).toBe('Bob');
+    expect(next.addresses).toEqual([{ cidr: '192.0.2.21/32', note: '' }]);
+    // Edits to what nobody else changed stay.
+    expect(next.devices.nBOBCNTRL).toEqual({ proxy: false, admin: false });
+    expect(next.labels.nCICNTRL).toBe('Runner');
+    expect(changeCount(after, next)).toBe(2);
+    const saved = accessUpdate(after, next, onDesktop);
+    expect(saved.ok && saved.update.version).toBe('fedcba9876543210');
+    expect(saved.ok && saved.update.devices?.find((d) => d.id === 'nDANA0001CNTRL')).toMatchObject({
+      proxy: true,
+      admin: true,
+    });
+  });
+
+  test('a new address may not cover Tailscale addresses', () => {
+    const draft = draftFrom(data);
+    for (const tailnet of [
+      '100.64.0.0/10',
+      '100.64.0.2',
+      '100.127.255.255/32',
+      '100.0.0.0/8',
+      '64.0.0.0/2',
+      '0.0.0.0/0',
+      'fd7a:115c:a1e0::1',
+      'fd7a:115c:a1e0:ab12::/64',
+      'fd7a::/16',
+      'fd00::/8',
+      '::/0',
+      '::ffff:100.64.0.5',
+    ]) {
+      expect(newAddress(tailnet, '', draft)).toMatchObject({
+        ok: false,
+        error: 'address_tailnet',
+        detail: tailnet,
+      });
+    }
+    for (const outside of ['100.128.0.0/9', '100.63.255.255', '10.0.0.0/8', 'fd7a:115c:a1e1::/48', 'fd00::/16']) {
+      expect(newAddress(outside, '', draft).ok).toBe(true);
+    }
+  });
+
   test('a new address must look like an address and not repeat one', () => {
     const draft = draftFrom(data);
     expect(newAddress(' 192.0.2.30 ', ' agents ', draft)).toEqual({
@@ -467,7 +520,19 @@ describe('saving', () => {
       ok: false,
       error: 'address_duplicate',
     });
-    for (const bad of ['laptop', '192.0.2', 'http://192.0.2.1', '']) {
+    for (const bad of [
+      'laptop',
+      '192.0.2',
+      'http://192.0.2.1',
+      '',
+      '999.1.1.1/24',
+      '192.0.2.1/33',
+      '192.0.2.01',
+      'fd00::5/129',
+      ':',
+      '1::2::3',
+      '1:2:3:4:5:6:7:8:9',
+    ]) {
       expect(newAddress(bad, '', draft)).toMatchObject({ ok: false, error: 'address_format' });
     }
   });
@@ -491,6 +556,11 @@ test('an older server without the new fields still reads as one shape', () => {
     tags: [],
   });
   expect(read.tailnetError).toBeUndefined();
+  // Without a version, a save sends none, which an older server ignores anyway.
+  expect(read.version).toBe('');
+  const unversioned = accessUpdate(read, draftFrom(read), null);
+  expect(unversioned.ok && 'version' in unversioned.update).toBe(false);
+  expect(normalizeAccessDevices({ version: '0123456789abcdef' }).version).toBe('0123456789abcdef');
   const asked = normalizeAccessDevices({
     requests: [{ nodeId: 'n1CNTRL', asked: 'admin' }, { nodeId: 'n2CNTRL' }, { asked: 'root' }],
   });

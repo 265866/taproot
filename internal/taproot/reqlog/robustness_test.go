@@ -2,6 +2,7 @@ package reqlog
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/logging"
 )
 
 // restoreSnapshot stops the harness, replaces its database with snapshot the
@@ -338,9 +340,11 @@ func TestDeniedRequestsAreNotStored(t *testing.T) {
 func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 	h := newHarness(t, Config{})
 	ts := h.clock.now()
-	timeline := []byte("Timestamp: 2026-11-02T12:00:00Z\nEvent: api.websocket.request\nUpstream URL: wss://chatgpt.com/x\nHeaders:\n" +
+	timeline := []byte("Timestamp: 2026-11-02T12:00:00Z\nEvent: api.websocket.request\nUpstream URL: wss://example.com/v1/responses?key=" + secretToken + "&model=m\n" +
+		"Auth: provider=xai auth_id=a1 label=l type=api_key value=" + secretToken + "\nHeaders:\n" +
 		"Authorization: Bear****cret\nChatgpt-Account-Id: acct\nCookie: __cf_bm=" + secretToken + "\n\nBody:\n{\"type\":\"response.create\"}\n" +
-		"Timestamp: 2026-11-02T12:00:01Z\nEvent: api.websocket.handshake\nStatus: 101\nHeaders:\nSet-Cookie: __cf_bm=" + secretToken + "\nX-Codex-Primary-Used-Percent: 12\n\n")
+		"Timestamp: 2026-11-02T12:00:01Z\nEvent: api.websocket.handshake\nStatus: 101\nHeaders:\nSet-Cookie: __cf_bm=" + secretToken + "\nX-Codex-Primary-Used-Percent: 12\n\n" +
+		"Timestamp: 2026-11-02T12:00:02Z\nEvent: api.websocket.response\nUpstream URL: https://example.com/doc?token=abc\nAuth: type=x value=frame-text\n\n")
 	if err := h.logs.logger.LogRequest("/v1/responses", "GET", nil, nil, 101, nil, nil, nil, nil, nil, timeline, nil, "ws", ts, ts); err != nil {
 		t.Fatal(err)
 	}
@@ -355,9 +359,265 @@ func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 			t.Fatalf("timeline keeps %q:\n%s", secret, got)
 		}
 	}
-	for _, kept := range []string{"Chatgpt-Account-Id: acct", "X-Codex-Primary-Used-Percent: 12", `{"type":"response.create"}`, "Cookie: " + redacted, "Set-Cookie: " + redacted} {
+	for _, kept := range []string{"Chatgpt-Account-Id: acct", "X-Codex-Primary-Used-Percent: 12", `{"type":"response.create"}`, "Cookie: " + redacted, "Set-Cookie: " + redacted,
+		"Upstream URL: wss://example.com/v1/responses?key=" + redacted + "&model=m", "type=api_key value=" + redacted,
+		"Upstream URL: https://example.com/doc?token=abc\nAuth: type=x value=frame-text"} {
 		if !strings.Contains(got, kept) {
 			t.Fatalf("timeline lost %q:\n%s", kept, got)
 		}
+	}
+}
+
+// TestHugeUpstreamErrorKeepsSegment stores an upstream error message larger
+// than the frame's meta limit, then another record of the same session.
+// Sealing must keep both: a frame that recovery rejects would truncate the
+// segment there and lose every later record.
+func TestHugeUpstreamErrorKeepsSegment(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	ts := h.clock.now()
+	huge := strings.Repeat("é", maxFrameMeta/2+1)
+	headers := map[string][]string{"X-Claude-Code-Session-Id": {"s"}}
+	if err := lg.LogRequestWithOptions("/v1/messages", "POST", headers, []byte(`{}`), 502, nil, []byte(`bad gateway`), nil, []byte("=== API REQUEST 1 ===\nx\n"), nil, nil,
+		[]*interfaces.ErrorMessage{{StatusCode: 502, Error: errors.New(huge)}}, false, "huge", ts, ts); err != nil {
+		t.Fatal(err)
+	}
+	logSimple(t, lg, "after", "/v1/messages", "s", 200, ts.Add(time.Second), []byte(`{}`))
+	h.flush()
+	h.sealAll()
+	d, err := h.logs.Get(context.Background(), "huge", true)
+	if err != nil {
+		t.Fatalf("huge: %v", err)
+	}
+	msg := d.Upstream.Errors[0].Message
+	if len(msg) > maxMetaMessage+100 || !strings.HasPrefix(huge, strings.SplitN(msg, "\n", 2)[0]) || !strings.Contains(msg, "the raw log has the full text") {
+		t.Fatalf("error message in meta is %d bytes: %.80q...", len(msg), msg)
+	}
+	_, raw, err := h.logs.Raw(context.Background(), "huge")
+	if err != nil || !bytes.Contains(raw, []byte(huge)) {
+		t.Fatalf("raw log lost the full error message: %v", err)
+	}
+	if _, err := h.logs.Get(context.Background(), "after", true); err != nil {
+		t.Fatalf("record after the huge one: %v", err)
+	}
+	if n := h.logs.engine.stats.writeErrors.Load(); n != 0 {
+		t.Fatalf("%d write errors", n)
+	}
+}
+
+func TestEncodeFrameRefusesOversizedMeta(t *testing.T) {
+	meta := &recordMeta{RequestID: "r", URL: "/" + strings.Repeat("a", maxFrameMeta)}
+	if _, _, err := encodeFrame(meta, []byte("text"), func(blobHash, []byte) {}); err == nil {
+		t.Fatal("encoded a frame whose meta recovery would reject")
+	}
+}
+
+// TestAPISectionCredentialsAreRedacted checks the credentials upstream masks
+// only partly, keeping 4 characters from each end: the executor's "Auth:"
+// value, "Upstream URL:" query keys, and the record URL's query keys.
+func TestAPISectionCredentialsAreRedacted(t *testing.T) {
+	h := newHarness(t, Config{})
+	const partial = "AIza...wxyz"
+	apiRequest := "=== API REQUEST 1 ===\nTimestamp: 2026-01-01T00:00:00Z\n" +
+		"Upstream URL: https://example.com/v1beta/models/m:streamGenerateContent?alt=sse&key=" + partial + "\n" +
+		"HTTP Method: POST\n" +
+		"Auth: provider=gemini, auth_id=a1, label=alice@github, type=api_key value=" + partial + "\n" +
+		"\nHeaders:\nX-Goog-Api-Key: " + partial + "\nContent-Type: application/json\n" +
+		"\nBody:\nAuth: value=body text stays\nUpstream URL: /?key=body-stays\n\n"
+	ts := h.clock.now()
+	if err := h.logs.logger.LogRequestWithOptions("/v1beta/models/m:streamGenerateContent?alt=sse&key="+partial, "POST", nil, []byte(`{}`), 200, nil, []byte(`{}`),
+		nil, []byte(apiRequest), nil, nil, nil, false, "creds", ts, ts); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+	_, raw, err := h.logs.Raw(context.Background(), "creds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("AIza")) || bytes.Contains(raw, []byte("wxyz")) {
+		t.Fatalf("stored text keeps part of the key:\n%s", raw)
+	}
+	for _, want := range []string{
+		"URL: /v1beta/models/m:streamGenerateContent?alt=sse&key=[redacted]\n",
+		"Upstream URL: https://example.com/v1beta/models/m:streamGenerateContent?alt=sse&key=[redacted]\n",
+		"Auth: provider=gemini, auth_id=a1, label=alice@github, type=api_key value=[redacted]\n",
+		"X-Goog-Api-Key: [redacted]\n",
+		"Body:\nAuth: value=body text stays\nUpstream URL: /?key=body-stays\n",
+	} {
+		if !bytes.Contains(raw, []byte(want)) {
+			t.Errorf("stored text lacks %q:\n%s", want, raw)
+		}
+	}
+	d, err := h.logs.Get(context.Background(), "creds", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(d.Request.URL, "wxyz") {
+		t.Fatalf("detail URL %q keeps part of the key", d.Request.URL)
+	}
+}
+
+// TestIdleStreamReleasesBudget covers upstream's Finalize returning early,
+// without Close, when it cannot read a spooled section: the writer would keep
+// its share of the queue budget for as long as the process runs.
+func TestIdleStreamReleasesBudget(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	start := h.clock.now()
+	open := func(id string) logging.StreamingLogWriter {
+		w, err := lg.LogStreamingRequest("/v1/messages", "POST", nil, []byte(`{"model":"m"}`), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = w.WriteStatus(200, map[string][]string{"Content-Type": {"text/event-stream"}})
+		return w
+	}
+	leaked, busy, switched := open("leaked"), open("busy"), open("switched")
+	leaked.WriteChunkAsync(bytes.Repeat([]byte("c"), 64<<10))
+	busy.WriteChunkAsync([]byte("data: 1\n\n"))
+
+	h.clock.set(start.Add(streamIdleLimit - time.Minute))
+	busy.WriteChunkAsync([]byte("data: 2\n\n"))
+	h.clock.set(start.Add(streamIdleLimit + time.Minute))
+	_ = open("next")
+	if used := h.logs.engine.budget.used.Load(); used != 2*int64(len("data: 1\n\n")) {
+		t.Fatalf("budget after the idle stream expired: %d bytes, want only the busy stream's", used)
+	}
+
+	// A Close that still comes stores the record, marked truncated.
+	leaked.WriteChunkAsync([]byte("late"))
+	if err := leaked.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := busy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Switching logging off abandons an expired writer like any other, even
+	// when it is back on by the time Close comes.
+	lg.SetEnabled(false)
+	lg.SetEnabled(true)
+	if err := switched.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+	d, err := h.logs.Get(context.Background(), "leaked", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Meta.Dropped != "response truncated" || strings.Contains(d.Response.Body, "ccc") {
+		t.Fatalf("expired stream stored as dropped=%q with a %d-byte body", d.Meta.Dropped, len(d.Response.Body))
+	}
+	if !strings.Contains(d.Response.Body, "no activity for 30m0s") || strings.Contains(d.Response.Body, "log queue full") {
+		t.Fatalf("expired stream's note: %q", d.Response.Body)
+	}
+	if _, err := h.logs.Get(context.Background(), "switched", true); err == nil {
+		t.Fatal("a stream that expired before logging was switched off was stored")
+	}
+	if d, err := h.logs.Get(context.Background(), "busy", true); err != nil || d.Response.Body != "data: 1\n\ndata: 2\n\n" {
+		t.Fatalf("busy stream: %v", err)
+	}
+}
+
+func TestDecodeResponseStopsAtBudget(t *testing.T) {
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write(make([]byte, 8<<20))
+	_ = zw.Close()
+	headers := map[string][]string{"Content-Encoding": {"gzip"}}
+
+	b := &budget{limit: 1 << 20}
+	got, held, err := decodeResponse(headers, gz.Bytes(), b)
+	if err == nil || held != 0 || !bytes.Equal(got, gz.Bytes()) {
+		t.Fatalf("bomb decoded to %d bytes, held %d, err %v; want the compressed body back and an error", len(got), held, err)
+	}
+	if used := b.used.Load(); used != 0 {
+		t.Fatalf("budget after a stopped decode: %d", used)
+	}
+
+	b = &budget{limit: 16 << 20}
+	got, held, err = decodeResponse(headers, gz.Bytes(), b)
+	if err != nil || len(got) != 8<<20 || held != 8<<20 || b.used.Load() != held {
+		t.Fatalf("decode within budget: %d bytes, held %d, used %d, err %v", len(got), held, b.used.Load(), err)
+	}
+}
+
+// TestSpooledSectionsOverBudgetStayOnDisk checks that a spooled section
+// larger than the free budget is not read into memory: the record keeps its
+// metadata, its bodies are dropped, and no budget stays held.
+func TestSpooledSectionsOverBudgetStayOnDisk(t *testing.T) {
+	h := newHarness(t, Config{QueueBytes: 1 << 20})
+	lg := h.logs.logger
+	src, err := lg.NewFileBodySource("api-response")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := src.AppendBytes(bytes.Repeat([]byte("x"), 2<<20)); err != nil {
+		t.Fatal(err)
+	}
+	if held, ok := lg.holdSpooled(src); ok || held != 0 {
+		t.Fatalf("holdSpooled = %d, %v for 2 MiB against a 1 MiB budget", held, ok)
+	}
+	ts := h.clock.now()
+	if err := lg.LogRequestWithOptionsAndAllSources("/v1/messages", "POST", nil, []byte(`{"model":"m"}`), 200, nil, []byte(`{}`), nil, nil,
+		[]byte("=== API REQUEST 1 ===\nx\n"), nil, nil, src, nil, nil, nil, false, "spooled", ts, ts); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+	d, err := h.logs.Get(context.Background(), "spooled", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Meta.Model != "m" || strings.Contains(d.Upstream.Response, "xxxx") || !strings.Contains(d.Request.Body, "log queue full") {
+		t.Fatalf("record: model %q, request body %q, upstream response %d bytes", d.Meta.Model, d.Request.Body, len(d.Upstream.Response))
+	}
+	if used := h.logs.engine.budget.used.Load(); used != 0 {
+		t.Fatalf("budget held after the record was written: %d", used)
+	}
+}
+
+// TestSubmitTakesOverHeldBudget checks that submit keeps the budget its
+// caller held instead of releasing it and reserving again, tops it up or
+// gives back the rest, and leaves nothing held once the record is written.
+func TestSubmitTakesOverHeldBudget(t *testing.T) {
+	const limit = 1 << 20
+	h := newHarness(t, Config{QueueBytes: limit})
+	e := h.logs.engine
+	ts := h.clock.now()
+	record := func(id string, body int) *capture {
+		return &capture{url: "/v1/messages", method: "POST", status: 200, statusWritten: true, requestID: id,
+			requestTime: ts, finishedAt: ts, requestBody: bytes.Repeat([]byte("b"), body)}
+	}
+
+	// The caller holds the whole budget, which is exactly what the record needs.
+	if !e.budget.reserve(limit) {
+		t.Fatal("reserve")
+	}
+	e.submit(record("exact", limit-recordOverhead), limit)
+	h.flush()
+	// It holds more than the record needs, and submit returns the excess.
+	if !e.budget.reserve(64 << 10) {
+		t.Fatal("reserve")
+	}
+	e.submit(record("excess", 1), 64<<10)
+	h.flush()
+	// The top-up cannot fit, so the record keeps its metadata and the hold is
+	// returned.
+	if !e.budget.reserve(4 << 10) {
+		t.Fatal("reserve")
+	}
+	e.submit(record("short", 2*limit), 4<<10)
+	h.flush()
+
+	for id, wantBody := range map[string]bool{"exact": true, "excess": true, "short": false} {
+		d, err := h.logs.Get(context.Background(), id, true)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if kept := !strings.Contains(d.Request.Body, "log queue full"); kept != wantBody {
+			t.Fatalf("%s: body kept = %v, want %v", id, kept, wantBody)
+		}
+	}
+	if used := e.budget.used.Load(); used != 0 {
+		t.Fatalf("budget held after the records were written: %d", used)
 	}
 }

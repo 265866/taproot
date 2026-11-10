@@ -2,9 +2,12 @@ package ingest
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -74,58 +77,89 @@ func (i *Ingest) handleQuotaCurrent(c *gin.Context) {
 // currentWindows reads the latest observation of every window, for one
 // account or, with an empty authIndex, for every account not removed.
 func (i *Ingest) currentWindows(ctx context.Context, authIndex string) (map[string]*quotaAccountJSON, error) {
+	latest, err := i.latestObservations(ctx, authIndex)
+	if err != nil {
+		return nil, err
+	}
+	byAccount := map[string]*quotaAccountJSON{}
+	for _, o := range latest {
+		a := byAccount[o.AuthIndex]
+		if a == nil {
+			a = &quotaAccountJSON{AuthIndex: o.AuthIndex, Provider: o.Provider, Windows: []quotaWindowJSON{}}
+			byAccount[o.AuthIndex] = a
+		}
+		w := quotaWindowJSON{
+			Window: o.Window, Utilization: o.Utilization, Status: o.Status, ObservedAt: formatTime(o.ObservedAt),
+			PeriodSeconds: o.PeriodSeconds, AccountWide: accountWideWindow(o.Window),
+		}
+		if !o.ResetsAt.IsZero() {
+			resets := formatTime(o.ResetsAt)
+			w.ResetsAt = &resets
+		}
+		a.Windows = append(a.Windows, w)
+	}
+	for _, a := range byAccount {
+		sort.Slice(a.Windows, func(x, y int) bool { return a.Windows[x].Window < a.Windows[y].Window })
+	}
+	return byAccount, nil
+}
+
+// clockSlack is how far past now a stored observation may be stamped before
+// it counts as written by a clock that ran ahead.
+const clockSlack = time.Minute
+
+// latestObservations reads the newest observation of every window, for one
+// account or, with an empty authIndex, for every account not removed. A row
+// stamped more than clockSlack in the future yields to the window's newest
+// row before it, so a clock stepped back does not freeze the reading.
+func (i *Ingest) latestObservations(ctx context.Context, authIndex string) ([]observation, error) {
 	// A loose index scan: each account, then each of its windows, then the
 	// window's latest row are one seek each on quota_observations_key, so the
 	// cost follows the number of windows rather than the length of history.
 	auths := `SELECT MIN(auth_index) FROM quota_observations
 		UNION ALL
 		SELECT (SELECT MIN(auth_index) FROM quota_observations WHERE auth_index > a) FROM auths WHERE a IS NOT NULL`
-	var args []any
+	args := []any{ms(i.now().Add(clockSlack))}
 	if authIndex != "" {
 		auths = `SELECT ?`
-		args = append(args, authIndex)
+		args = append([]any{authIndex}, args...)
 	}
 	rows, err := i.db.QueryContext(ctx, `WITH RECURSIVE
 		auths(a) AS (`+auths+`),
 		windows(a, w) AS (
 			SELECT a, (SELECT MIN(window_name) FROM quota_observations WHERE auth_index = a) FROM auths WHERE a IS NOT NULL
 			UNION ALL
-			SELECT a, (SELECT MIN(window_name) FROM quota_observations WHERE auth_index = a AND window_name > w) FROM windows WHERE w IS NOT NULL)
+			SELECT a, (SELECT MIN(window_name) FROM quota_observations WHERE auth_index = a AND window_name > w) FROM windows WHERE w IS NOT NULL),
+		horizon(h) AS (SELECT ?)
 		SELECT q.auth_index, q.provider, q.window_name, q.utilization, q.resets_at, q.status, q.period_seconds, q.observed_at
-		FROM windows JOIN quota_observations q ON q.id = (SELECT id FROM quota_observations
-			WHERE auth_index = a AND window_name = w ORDER BY observed_at DESC LIMIT 1)
+		FROM windows, horizon JOIN quota_observations q ON q.id = COALESCE(
+			(SELECT id FROM quota_observations WHERE auth_index = a AND window_name = w AND observed_at <= h ORDER BY observed_at DESC LIMIT 1),
+			(SELECT id FROM quota_observations WHERE auth_index = a AND window_name = w ORDER BY observed_at DESC LIMIT 1))
 		WHERE w IS NOT NULL AND a NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)`, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("latest quota: %w", err)
 	}
 	defer closeRows(rows)
-	byAccount := map[string]*quotaAccountJSON{}
+	var out []observation
 	for rows.Next() {
 		var (
-			w                   quotaWindowJSON
-			authIndex, provider string
-			resetsAt            *int64
-			observed            int64
+			o        observation
+			resetsAt sql.NullInt64
+			observed int64
 		)
-		if err := rows.Scan(&authIndex, &provider, &w.Window, &w.Utilization, &resetsAt, &w.Status, &w.PeriodSeconds, &observed); err != nil {
-			return nil, err
+		if err := rows.Scan(&o.AuthIndex, &o.Provider, &o.Window, &o.Utilization, &resetsAt, &o.Status, &o.PeriodSeconds, &observed); err != nil {
+			return nil, fmt.Errorf("latest quota: %w", err)
 		}
-		w.ResetsAt, w.ObservedAt = formatNullableMs(resetsAt), formatMs(observed)
-		w.AccountWide = accountWideWindow(w.Window)
-		a := byAccount[authIndex]
-		if a == nil {
-			a = &quotaAccountJSON{AuthIndex: authIndex, Provider: provider, Windows: []quotaWindowJSON{}}
-			byAccount[authIndex] = a
+		if resetsAt.Valid {
+			o.ResetsAt = time.UnixMilli(resetsAt.Int64).UTC()
 		}
-		a.Windows = append(a.Windows, w)
+		o.ObservedAt = time.UnixMilli(observed).UTC()
+		out = append(out, o)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("latest quota: %w", err)
 	}
-	for _, a := range byAccount {
-		sort.Slice(a.Windows, func(x, y int) bool { return a.Windows[x].Window < a.Windows[y].Window })
-	}
-	return byAccount, nil
+	return out, nil
 }
 
 type quotaPointJSON struct {

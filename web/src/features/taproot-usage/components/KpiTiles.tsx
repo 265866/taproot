@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { UsageTotals } from '@/services/api/taproot';
-import { cacheHitRatio, cacheWriteUnsplit, failureRate } from '../logic/totals';
+import { cacheHitRatio, cacheWriteUnsplit, failureRate, unpricedHint } from '../logic/totals';
 import { formatMs, formatRatio, formatTokens, formatUSD } from '../logic/format';
 import styles from '../TaprootUsage.module.scss';
 
@@ -31,7 +31,7 @@ export function KpiTiles({ totals }: { totals: UsageTotals }) {
         <span className={styles.kpiLabel}>{t('taproot_usage.kpi.cost')}</span>
         <strong className={styles.kpiValue}>{formatUSD(totals.costUSD)}</strong>
         <span className={styles.kpiHint}>
-          {t('taproot_usage.kpi.cost_hint')} {t('taproot_usage.kpi.unpriced_hint')}
+          {t('taproot_usage.kpi.cost_hint')} {unpricedHint(t, totals)}
         </span>
       </article>
 

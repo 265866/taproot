@@ -754,3 +754,57 @@ func TestFormatting(t *testing.T) {
 		t.Error("New accepted a bad startup poll interval")
 	}
 }
+
+// A page that read the lists before another save cannot undo that save: a
+// whole-list save from the older version is refused, and Allow sets only its
+// own device.
+func TestStaleAccessCopyCannotUndoAChange(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	f.caller = laptopCaller
+	worker := access.DeviceGrant{ID: "nworkerCNTRL", Name: "worker", Proxy: true, Admin: true}
+	put := func(body string) (int, view, string) { return f.do(t, http.MethodPut, body) }
+	code, v, body := put(`{"access": {"devices": [{"id": "nlaptopCNTRL", "name": "laptop", "proxy": true, "admin": true}, {"id": "nworkerCNTRL", "name": "worker", "proxy": true, "admin": true}]}}`)
+	if code != http.StatusOK || v.Access.Version == "" {
+		t.Fatalf("grant worker Admin = %d %s", code, body)
+	}
+	stale := v.Access.Version
+
+	// Another page revokes the worker's Admin.
+	code, v, body = put(`{"access": {"version": "` + stale + `", "devices": [{"id": "nlaptopCNTRL", "name": "laptop", "proxy": true, "admin": true}, {"id": "nworkerCNTRL", "name": "worker", "proxy": true}]}}`)
+	if code != http.StatusOK || v.Access.Version == stale {
+		t.Fatalf("revoke = %d %s", code, body)
+	}
+	worker.Admin = false
+	revoked := []access.DeviceGrant{laptop, worker}
+
+	// The stale page saves its whole list.
+	code, _, body = put(`{"access": {"version": "` + stale + `", "devices": [{"id": "nlaptopCNTRL", "name": "laptop", "proxy": true, "admin": true}, {"id": "nworkerCNTRL", "name": "worker", "proxy": true, "admin": true}], "addresses": []}}`)
+	if code != http.StatusConflict || errorCode(t, body) != "access_changed" {
+		t.Fatalf("stale save = %d %s, want 409 access_changed", code, body)
+	}
+	if got := f.guard.Grants().Devices; !slices.Equal(got, revoked) {
+		t.Fatalf("a stale save changed devices to %+v", got)
+	}
+
+	// The stale page allows a request: only that device changes.
+	code, v, body = put(`{"access": {"device": {"id": "nbobCNTRL", "name": "bob-pc", "label": "Bob", "proxy": true}}}`)
+	want := append(slices.Clone(revoked), access.DeviceGrant{ID: "nbobCNTRL", Name: "bob-pc", Label: "Bob", Proxy: true})
+	if code != http.StatusOK || !slices.Equal(v.Access.Devices, want) {
+		t.Fatalf("allow one device = %d %s", code, body)
+	}
+	if got := f.parsed(t).Access.Devices; !slices.Equal(got, want) {
+		t.Errorf("file devices = %+v", got)
+	}
+	// It replaces an existing entry in place, and taking every permission away removes it.
+	code, v, body = put(`{"access": {"device": {"id": "nworkerCNTRL", "name": "worker", "proxy": false}}}`)
+	if code != http.StatusOK || !slices.Equal(v.Access.Devices, []access.DeviceGrant{laptop, want[2]}) {
+		t.Fatalf("device without permissions = %d %s", code, body)
+	}
+	// The caller's own Admin is still protected.
+	if code, _, body := put(`{"access": {"device": {"id": "nlaptopCNTRL", "proxy": true}}}`); code != http.StatusConflict || errorCode(t, body) != "would_lock_out" {
+		t.Errorf("device update dropping own Admin = %d %s", code, body)
+	}
+	if code, _, body := put(`{"access": {"devices": [], "device": {"id": "nbobCNTRL", "proxy": true}}}`); code != http.StatusBadRequest || errorCode(t, body) != "invalid_access" {
+		t.Errorf("devices and device together = %d %s", code, body)
+	}
+}
