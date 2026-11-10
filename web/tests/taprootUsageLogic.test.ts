@@ -12,6 +12,7 @@ import {
   localTimeZone,
   parseLocalDate,
   presetWindow,
+  summaryZone,
   todayWindow,
   toIso,
 } from '@/features/taproot-usage/logic/range';
@@ -511,6 +512,12 @@ describe('series colors and links', () => {
 describe('daily buckets and time zones', () => {
   test('sends the browser zone', () => {
     expect(localTimeZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  test('sends the zone with daily buckets only', () => {
+    expect(summaryZone('1d')).toBe(localTimeZone());
+    expect(summaryZone('1h')).toBeUndefined();
+    expect(summaryZone('5m')).toBeUndefined();
   });
 
   test('buckets at local midnight mean the server honored tz', () => {

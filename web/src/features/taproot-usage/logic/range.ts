@@ -27,6 +27,11 @@ export function localTimeZone(): string | undefined {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
 }
 
+/** The zone for a summary's `tz`: only daily buckets follow it, so other buckets omit it. */
+export function summaryZone(bucket: UsageBucket): string | undefined {
+  return bucket === '1d' ? localTimeZone() : undefined;
+}
+
 /**
  * Daily buckets start at local midnight when the server honored `tz`. A server that ignores it
  * cuts UTC days, which the labels then say.
