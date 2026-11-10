@@ -51,6 +51,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 20px;
   color: var(--status-warning-text);
   font-size: var(--fs-body);
   font-weight: 500;
@@ -67,6 +68,7 @@
     outline-offset: 3px;
   }
 
+  // A 44 px target that still takes 20 px of the row.
   @media (pointer: coarse) {
     min-height: 44px;
     margin-block: -12px;
@@ -102,15 +104,46 @@
   font-size: var(--fs-meta);
 }
 
-// On phones the detail keeps two lines from the first paint, so the rail below it never moves when
-// the status arrives.
 @media (max-width: $breakpoint-mobile) {
   .headline {
     font-size: 17px;
   }
 
   .detail {
-    min-height: 2lh;
     font-size: var(--fs-table);
+  }
+}
+
+// Below the rail breakpoint the verdict leads the inline rail, so its height must not change when
+// the status arrives, or everything under it moves. From the first paint it keeps two lines of
+// detail and the row a degraded or down verdict's See failures takes, which here always gets its
+// own row under the headline.
+.verdict {
+  // The row gap above See failures and its 20 px.
+  --see-failures-row: 24px;
+}
+
+.headline {
+  flex-basis: 100%;
+}
+
+.detail {
+  min-height: calc(2lh + var(--see-failures-row));
+
+  .verdict[data-state='degraded'] &,
+  .verdict[data-state='down'] & {
+    min-height: 2lh;
+  }
+}
+
+@media (min-width: $breakpoint-page-aside) {
+  .headline {
+    flex-basis: auto;
+  }
+
+  .detail,
+  .verdict[data-state='degraded'] .detail,
+  .verdict[data-state='down'] .detail {
+    min-height: 0;
   }
 }

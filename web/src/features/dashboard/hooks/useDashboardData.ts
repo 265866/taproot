@@ -30,8 +30,8 @@ export interface Read<T> {
   data: T | null;
   error: string | null;
   /**
-   * The page shows `error` in its one banner, because every read failed alike: the section shows
-   * no error of its own, only its last data marked stale.
+   * The page shows `error` in its one banner, because every read failed alike, and this read holds
+   * data: the section shows no error of its own, only its last data marked stale.
    */
   quiet?: boolean;
 }

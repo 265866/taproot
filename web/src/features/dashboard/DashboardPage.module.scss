@@ -28,8 +28,9 @@
   gap: var(--space-3);
 }
 
-// Below the rail breakpoint the rail is inline, full width between the page's gutters: at the top
-// of the page, or on first run after the checklist with a hairline above it.
+// Below the rail breakpoint the rail is inline, its hairlines running through the page's gutters to
+// the content area's edges: at the top of the page, or on first run after the checklist with a
+// hairline above it. The page transition clips only vertically, so the gutters show them.
 .railInline,
 .railAfter {
   margin-inline: calc(-1 * var(--console-gutter));

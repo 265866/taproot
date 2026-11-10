@@ -2,6 +2,7 @@
   "dashboard": {
     "rail_label": "Right now",
     "page_error": "Couldn't reach the server: {{message}}. Showing the last data that loaded.",
+    "page_error_nothing": "Couldn't reach the server: {{message}}. Nothing has loaded yet.",
     "verdict": {
       "loading": "Checking the server…",
       "unknown": "Status unknown",

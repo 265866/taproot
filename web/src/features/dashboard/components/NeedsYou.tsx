@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import type { Attention, AttentionItem } from '@/services/api/taprootStatus';
-import { getErrorMessage } from '@/utils/helpers';
 import { formatFileSize } from '@/utils/format';
 import {
   itemAction,
@@ -25,7 +24,8 @@ import {
 } from '../model/attentionActions';
 import type { Read } from '../hooks/useDashboardData';
 import { formatAge } from '../model/format';
-import { AccountGoneError, backupNow, enableAccount } from '../model/inlineActions';
+import type { FixRuns } from '../hooks/useFixRuns';
+import { backupNow, enableAccount } from '../model/inlineActions';
 import styles from './Rail.module.scss';
 
 interface NeedsYouProps {
@@ -35,8 +35,7 @@ interface NeedsYouProps {
   loggingToFile: boolean | null;
   nowMs: number;
   onRetry: () => void;
-  /** After an inline fix, so the item, its badge, the pools, and the verdict update together. */
-  onChanged: () => Promise<void>;
+  fixes: FixRuns;
 }
 
 const SEVERITY_ICON: Record<AttentionItem['severity'], ReactNode> = {
@@ -53,34 +52,15 @@ export function NeedsYou({
   loggingToFile,
   nowMs,
   onRetry,
-  onChanged,
+  fixes: { runs, run },
 }: NeedsYouProps) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const headingId = useId();
-  // Kept here rather than in each item: a fix that works removes its item on the next read, and
-  // the result must outlive it.
-  const [runs, setRuns] = useState<Record<string, FixRun>>({});
   const { data, error } = attention;
   const items = data?.items ?? [];
   const resolved = resolvedResults(runs, items, nowMs);
   const blocking = items.some((item) => item.severity === 'blocking');
-
-  const runInline = async (item: AttentionItem, task: () => Promise<string>) => {
-    const title = mask(item.title);
-    setRuns((prev) => ({ ...prev, [item.id]: { kind: 'running', title } }));
-    try {
-      const message = await task();
-      setRuns((prev) => ({ ...prev, [item.id]: { kind: 'done', message, title, at: Date.now() } }));
-      await onChanged();
-    } catch (failure: unknown) {
-      const message =
-        failure instanceof AccountGoneError
-          ? t('dashboard.needs.enable_gone')
-          : getErrorMessage(failure, t('dashboard.needs.action_failed'));
-      setRuns((prev) => ({ ...prev, [item.id]: { kind: 'failed', message, title } }));
-    }
-  };
 
   const errorRow =
     error && !attention.quiet ? (
@@ -137,7 +117,7 @@ export function NeedsYou({
             action={itemAction(item, loggingToFile)}
             age={item.since ? formatAge(Date.parse(item.since), nowMs, t) : ''}
             run={runs[item.id] ?? IDLE}
-            onRun={(task) => void runInline(item, task)}
+            onRun={(task) => void run(item, task)}
           />
         ))}
       </ul>

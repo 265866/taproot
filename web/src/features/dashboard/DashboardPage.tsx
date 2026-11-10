@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ComponentType, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageAside } from '@/components/layout/PageAside';
 import { Button } from '@/components/ui/Button';
@@ -19,6 +19,8 @@ import {
   type DashboardReads,
   type Read,
 } from './hooks/useDashboardData';
+import { useFixRuns } from './hooks/useFixRuns';
+import { useKeepFocus } from './hooks/useKeepFocus';
 import {
   addressHint,
   devicesApproved,
@@ -101,8 +103,8 @@ export interface DashboardViewProps {
  * shows one copy. Inline, the rail is part of the page rather than the shell's `PageAside`, so it
  * mounts with the page instead of above an already painted one. On first run on a narrow screen,
  * the rail's empty Needs you and pools would push the checklist off a phone's screen, so they
- * follow the checklist instead. When every read fails with the same error, the page says it once,
- * and the sections keep their last data, marked stale.
+ * follow the checklist instead. When every read fails with the same error, the page says it once:
+ * a section with data keeps it, marked stale, and one without shows its own error.
  */
 export function DashboardView({
   timeWindow,
@@ -127,17 +129,19 @@ export function DashboardView({
     given.failures.error,
     givenAttention.error,
   ]);
-  const quiet = pageError !== null;
-  const reads: DashboardReads = quiet
-    ? {
-        ...given,
-        status: quietRead(given.status),
-        pools: quietRead(given.pools),
-        summary: quietRead(given.summary),
-        failures: quietRead(given.failures),
-      }
-    : given;
-  const attention = quiet ? quietRead(givenAttention) : givenAttention;
+  const quiet = <R extends Read<unknown>>(read: R): R =>
+    pageError !== null && read.data !== null ? quietRead(read) : read;
+  const reads: DashboardReads = {
+    ...given,
+    status: quiet(given.status),
+    pools: quiet(given.pools),
+    summary: quiet(given.summary),
+    failures: quiet(given.failures),
+  };
+  const attention = quiet(givenAttention);
+  const anyHeld = [reads.status, reads.pools, reads.summary, reads.failures, attention].some(
+    (read) => read.quiet
+  );
   const summary = windowSummary(reads.summary, timeWindow);
   const retryAttention = () => void refreshAttention();
   const retryAll = () => {
@@ -152,12 +156,16 @@ export function DashboardView({
       ? showFirstRun({ hasAccount: hasAccounts(pools), hasClientRequest: anyRequest })
       : false;
 
+  const fixes = useFixRuns(onChanged);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const keepFocus = useKeepFocus(pageRef);
+
   const verdict = (className: string) => (
     <Verdict status={reads.status} onRetry={retry} className={className} />
   );
 
   const rail: ReactNode = (
-    <div className={styles.rail}>
+    <div className={styles.rail} ref={keepFocus}>
       {firstRun ? null : verdict(styles.verdictInRail)}
       <NeedsYou
         attention={attention}
@@ -165,7 +173,7 @@ export function DashboardView({
         loggingToFile={loggingToFile}
         nowMs={Math.max(attention.loadedAt ?? 0, nowMs)}
         onRetry={retryAttention}
-        onChanged={onChanged}
+        fixes={fixes}
       />
       <PoolsRail pools={reads.pools} nowMs={nowMs} onRetry={retry} />
     </div>
@@ -180,11 +188,17 @@ export function DashboardView({
   );
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} ref={pageRef}>
       {pageError !== null ? (
         <div className={styles.pageError} role="alert">
           <IconCircleAlert size={14} className={styles.pageErrorIcon} />
-          <span>{mask(t('dashboard.page_error', { message: pageError }))}</span>
+          <span>
+            {mask(
+              t(anyHeld ? 'dashboard.page_error' : 'dashboard.page_error_nothing', {
+                message: pageError,
+              })
+            )}
+          </span>
           <Button variant="secondary" size="sm" onClick={retryAll}>
             {t('console.retry')}
           </Button>

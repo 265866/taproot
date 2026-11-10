@@ -127,19 +127,22 @@
   overflow: hidden;
 }
 
-.errorLine {
+// A cell's text on one line, cut with an ellipsis, or in full, wrapped, while its row is open. The
+// table keeps every cell on one line, so an open row's cells set wrapping back.
+.cellLine {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.errorFull {
-  display: block;
+tr:has(.errorToggle[aria-expanded='true']) .cellLine,
+.failureRow[aria-expanded='true'] .cellLine {
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 
-// A row without a log has nowhere else to read its error, so a cut one opens in place.
+// A row without a log has nowhere else to read its cells, so a cut one opens in place.
 .errorToggle {
   display: flex;
   align-items: center;
@@ -226,6 +229,11 @@
   > :nth-child(4) {
     justify-self: end;
   }
+
+  // The status keeps its own height when the device and model wrap beside it.
+  > :nth-child(2) {
+    align-self: start;
+  }
 }
 
 button.failureRow {
@@ -303,6 +311,12 @@ button.failureRow:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+
+  // A phone or touch screen has no other way to read a cut name, so names wrap there.
+  @media (max-width: $breakpoint-mobile), (pointer: coarse) {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
 }
 
 .two {
@@ -359,6 +373,17 @@ button.failureRow:focus-visible {
   border-radius: 2px;
 }
 
+// A wrapped name keeps its dot on the first line.
+@media (max-width: $breakpoint-mobile), (pointer: coarse) {
+  .modelName {
+    align-items: flex-start;
+  }
+
+  .dot {
+    margin-top: calc((1lh - 8px) / 2);
+  }
+}
+
 // The tiles keep their last numbers through a failed read at full contrast; the Stale tag says
 // they are old.
 .tiles {
@@ -378,11 +403,15 @@ button.failureRow:focus-visible {
 }
 
 // The unpriced models, readable by tap or keyboard rather than a hover title. The tile's sub-line
-// clips its overflow, so the focus ring sits inside the summary.
+// clips its overflow, so the focus ring sits inside the summary, and a summary too long for a
+// narrow tile ends in an ellipsis rather than a hard cut; opening it lists the models.
 .unpriced {
   summary {
+    overflow: hidden;
     padding: 0 3px;
     border-radius: 2px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     cursor: pointer;
 
     &:focus-visible {
@@ -391,9 +420,7 @@ button.failureRow:focus-visible {
     }
 
     @media (pointer: coarse) {
-      display: flex;
-      align-items: center;
-      min-height: 44px;
+      line-height: 44px;
     }
   }
 

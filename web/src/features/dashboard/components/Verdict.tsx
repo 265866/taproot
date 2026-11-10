@@ -53,9 +53,7 @@ export function Verdict({ status, onRetry, className }: VerdictProps) {
             {status.error ? t('dashboard.verdict.unknown') : t('dashboard.verdict.loading')}
           </h2>
           {status.error ? (
-            status.quiet ? null : (
-              errorRow(status.error)
-            )
+            errorRow(status.error)
           ) : (
             <div className={styles.detail}>
               <Skeleton width="60%" height={14} />
