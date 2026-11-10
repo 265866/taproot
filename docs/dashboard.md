@@ -30,7 +30,7 @@ Each item has a severity tag (**Blocking**, **At risk**, **Waiting**, or **Overd
 | --- | --- |
 | An account is signed out, or its login can no longer refresh. | **Sign in again** opens Accounts and starts that provider's sign-in. |
 | An account is disabled while nothing else serves its provider and clients still ask for it. | **Enable** turns it on in place. |
-| A pool is projected to run out before its next reset, or has under 15% left. Cooling accounts are named here, not listed on their own. | **Open Accounts** opens that provider's tab. |
+| A pool is projected to run out before its next reset, or has under 15% left. If every enabled account is cooling, it is Blocking: "<provider> has no usable account". Cooling accounts are named here, not listed on their own. | **Open Accounts** opens that provider's tab. |
 | A device asks for access. | **Review** opens Access at that device's request. |
 | The newest backup is over 26 hours old, or the last scheduled backup failed. | **Back up now** runs a backup in place. |
 | Discord alerts fail to deliver. | **Open Settings** opens the alerts settings. |
@@ -41,7 +41,7 @@ Each item has a severity tag (**Blocking**, **At risk**, **Waiting**, or **Overd
 
 ### Pools show what each provider can serve now
 
-Each provider has one bar per account, labelled with the part of its email before the @ and the share of quota left. Cooling, signed-out, and disabled accounts are hatched. The headline counts usable accounts only, such as "1.45 of 2 accounts usable". A note under the bars gives the quota locked on signed-out accounts, or the quota on cooling accounts and when they are back. Below that are the next reset, the burn over the last 3 hours as a share of the pool per hour, and when the pool runs out.
+Each provider has one bar per account, labelled with the part of its email before the @ and the share of quota left. Cooling, signed-out, and disabled accounts are hatched. The headline counts usable accounts only, such as "1.45 of 2 accounts usable". Notes under the bars give the quota locked on signed-out and disabled accounts, and the quota on cooling accounts and when they are back; both show when both apply. Below that are the next reset, the burn over the last 3 hours as a share of the pool per hour, and when the pool runs out.
 
 ### The window sets the numbers, the chart, and the lists
 

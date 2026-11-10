@@ -4,7 +4,7 @@ Updates are manual unless you turn on the automatic updater. A restart cuts the 
 
 ## Install a patch release
 
-A minor version's image tag, such as `0.3`, brings its patch releases and never a new minor version. Replace `0.3` below with the tag your setup runs.
+A minor version's image tag, such as `0.5`, brings its patch releases and never a new minor version. Replace `0.5` below with the tag your setup runs.
 
 | Setup | Update |
 | --- | --- |
