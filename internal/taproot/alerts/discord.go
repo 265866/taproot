@@ -161,9 +161,13 @@ func (e *DeliveryError) Error() string {
 	return "discord unreachable: " + e.Reason
 }
 
+// errNotSent reports a message the queue dropped, or skipped because alerts
+// were off.
+var errNotSent = errors.New("not sent")
+
 // Sender posts messages to the webhook from an in-memory queue that holds at
 // most one message per key. A newer message for a pending key replaces it in
-// place, so a recovery is never dropped behind its own alert.
+// place. The detector queues a recovery only after its alert was delivered.
 type Sender struct {
 	client *http.Client
 
@@ -180,6 +184,9 @@ type Sender struct {
 	origin  string
 	backoff time.Duration
 	sleep   func(context.Context, time.Duration) error
+	// onResult, when set, receives each message's outcome: nil once Discord
+	// accepted it, otherwise why it was not delivered. It must not block.
+	onResult func(Message, error)
 }
 
 // NewSender returns a sender that reads the current webhook from webhook.
@@ -199,7 +206,7 @@ func NewSender(webhook func() string, origin string) *Sender {
 // replaced and keeps its place in line.
 func (s *Sender) Enqueue(m Message) {
 	s.mu.Lock()
-	_, pending := s.pending[m.Key]
+	prev, pending := s.pending[m.Key]
 	full := !pending && len(s.order) >= maxPending
 	if !full {
 		if !pending {
@@ -210,11 +217,21 @@ func (s *Sender) Enqueue(m Message) {
 	s.mu.Unlock()
 	if full {
 		log.WithField("key", m.Key).Warn("taproot alerts: too many pending alerts, dropping alert")
+		s.report(m, errNotSent)
 		return
+	}
+	if pending {
+		s.report(prev, errNotSent)
 	}
 	select {
 	case s.ready <- struct{}{}:
 	default:
+	}
+}
+
+func (s *Sender) report(m Message, err error) {
+	if s.onResult != nil {
+		s.onResult(m, err)
 	}
 }
 
@@ -245,11 +262,17 @@ func (s *Sender) Run(ctx context.Context) {
 		for m, ok := s.next(); ok && ctx.Err() == nil; m, ok = s.next() {
 			hook := s.webhook()
 			if hook == "" {
+				s.report(m, errNotSent)
 				continue
 			}
-			if err := s.Send(ctx, hook, m); err != nil && ctx.Err() == nil {
+			err := s.Send(ctx, hook, m)
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
 				log.WithError(err).WithField("key", m.Key).Warn("taproot alerts: discord delivery failed")
 			}
+			s.report(m, err)
 		}
 		select {
 		case <-ctx.Done():

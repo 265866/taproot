@@ -316,6 +316,7 @@ func TestRestartKeepsALoginAlertOpenUntilTheCredentialWorks(t *testing.T) {
 			if got := h.titles(t, 2); got[0] != "Claude login broken" || got[1] != "Claude pool is empty" {
 				t.Fatalf("titles = %q", got)
 			}
+			h.step(t, 0) // the delivery wakes an evaluation, which records it
 
 			// After the restart upstream has forgotten RequiresSignIn, and an
 			// old refresh time proves nothing.
@@ -478,6 +479,7 @@ func TestGrantAlertDoesNotRepeatWithinItsWindow(t *testing.T) {
 	if got := h.titles(t, 1); got[0] != "Claude reset grant expires soon" {
 		t.Fatalf("titles = %q", got)
 	}
+	h.step(t, 0)
 
 	mu.Lock()
 	failing = true

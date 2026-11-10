@@ -84,6 +84,13 @@ type Service struct {
 	grantReads   map[string]grantRead
 	grantPolling bool
 
+	// deliveries holds the sender's outcomes for detector messages until the
+	// evaluation goroutine, which owns the detector, applies them. rearm asks
+	// it to treat the open alerts as unsent after the webhook changed.
+	deliveryMu sync.Mutex
+	deliveries []delivery
+	rearm      bool
+
 	// startedAt and restoredLogins belong to the evaluation goroutine;
 	// loadState sets them before that goroutine starts.
 	startedAt time.Time
@@ -92,6 +99,11 @@ type Service struct {
 	// a broken login looks healthy until a refresh fails again. These stay
 	// broken until the credential shows it works.
 	restoredLogins map[string]restoredLogin
+}
+
+type delivery struct {
+	msg Message
+	err error
 }
 
 type restoredLogin struct {
@@ -123,6 +135,7 @@ func New(cfg Config, db *store.DB, feed QuotaFeed) (*Service, error) {
 		grantReads:     map[string]grantRead{},
 	}
 	s.sender = NewSender(s.webhook, discordOrigin())
+	s.sender.onResult = s.delivered
 	feed.OnQuota(s.observe)
 	return s, nil
 }
@@ -161,6 +174,11 @@ func (s *Service) SetConfig(cfg Config) error {
 	newWebhook := cfg.DiscordWebhook != "" && cfg.DiscordWebhook != s.cfg.DiscordWebhook
 	s.cfg, s.webhookInvalid = cfg, false
 	s.cfgMu.Unlock()
+	if newWebhook {
+		s.deliveryMu.Lock()
+		s.rearm = true
+		s.deliveryMu.Unlock()
+	}
 	// AnnounceWebhook wakes the evaluation for a new webhook, so the
 	// connected message is posted before any alert.
 	if !newWebhook {
@@ -246,6 +264,33 @@ func (s *Service) observe(obs []ingest.QuotaObservation) {
 	s.signal()
 }
 
+// delivered is the sender's result hook; it runs on the sender goroutine.
+func (s *Service) delivered(m Message, err error) {
+	if !m.tracked {
+		return
+	}
+	s.deliveryMu.Lock()
+	s.deliveries = append(s.deliveries, delivery{m, err})
+	s.deliveryMu.Unlock()
+	s.signal()
+}
+
+// applyDeliveries hands the pending delivery outcomes, and a webhook change,
+// to the detector.
+func (s *Service) applyDeliveries(now time.Time) (changed bool) {
+	s.deliveryMu.Lock()
+	results, rearm := s.deliveries, s.rearm
+	s.deliveries, s.rearm = nil, false
+	s.deliveryMu.Unlock()
+	for _, r := range results {
+		changed = s.detector.Delivered(now, r.msg, r.err) || changed
+	}
+	if rearm {
+		changed = s.detector.Rearm() || changed
+	}
+	return changed
+}
+
 func (s *Service) signal() {
 	select {
 	case s.wake <- struct{}{}:
@@ -287,18 +332,17 @@ func (s *Service) evaluate(ctx context.Context) {
 	if !s.Active() {
 		return
 	}
-	auths := s.authList()
-	if len(auths) == 0 {
-		return
-	}
 	now := s.now()
-	accounts := accountsFrom(auths, now, s.heldLogins(auths))
-	s.pollGrants(ctx, auths, now)
-	forgot := s.detector.Forget(accounts)
-	msgs, changed := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
-	changed = changed || forgot
-	for _, m := range msgs {
-		s.sender.Enqueue(m)
+	changed := s.applyDeliveries(now)
+	if auths := s.authList(); len(auths) > 0 {
+		accounts := accountsFrom(auths, now, s.heldLogins(auths))
+		s.pollGrants(ctx, auths, now)
+		forgot := s.detector.Forget(accounts)
+		msgs, stepped := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
+		changed = changed || forgot || stepped
+		for _, m := range msgs {
+			s.sender.Enqueue(m)
+		}
 	}
 	if changed {
 		if err := s.saveState(ctx); err != nil {
@@ -474,6 +518,11 @@ func (s *Service) loadState(ctx context.Context) error {
 		var t track
 		if err := json.Unmarshal([]byte(raw), &t); err != nil {
 			continue
+		}
+		// The queue lived in memory, so an alert that was waiting in it was
+		// never delivered.
+		if t.Queued {
+			t.undeliver()
 		}
 		s.detector.tracks[key] = &t
 		if idx, ok := strings.CutPrefix(key, "login:"); ok && t.Active && t.Notified {
