@@ -4,6 +4,8 @@
  * a body whole unless the caller asked for it.
  */
 
+import { parseJsonValue, type JsonValue } from './jsonValue';
+
 /** Bodies above this start collapsed and are parsed only when opened. */
 export const COLLAPSE_BYTES = 256 * 1024;
 /** Above this, parsing JSON on the main thread would stall the tab for too long. */
@@ -28,14 +30,25 @@ export function sniffBody(text: string): BodyKind {
 }
 
 export type ParsedJson =
-  { ok: true; value: unknown } | { ok: false; reason: 'invalid' | 'too_large' };
+  { ok: true; value: JsonValue } | { ok: false; reason: 'invalid' | 'too_large' };
 
 export function parseJsonBody(text: string): ParsedJson {
   if (text.length > PARSE_LIMIT_BYTES) return { ok: false, reason: 'too_large' };
   try {
-    return { ok: true, value: JSON.parse(text) as unknown };
+    return { ok: true, value: parseJsonValue(text) };
   } catch {
     return { ok: false, reason: 'invalid' };
+  }
+}
+
+/** Whether a stream event's data can be shown formatted; `[DONE]` starts like JSON but is not. */
+export function isFormattableJson(text: string): boolean {
+  if (sniffBody(text) !== 'json' || text.length > PARSE_LIMIT_BYTES) return false;
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
   }
 }
 

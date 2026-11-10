@@ -20,6 +20,10 @@ import {
   containerSummary,
   openByDefault,
 } from '@/features/taproot-logs/model/jsonTree';
+import { JsonNumber, JsonObject, parseJsonValue } from '@/features/taproot-logs/model/jsonValue';
+import { encodeUrlValue } from '@/utils/urlValue';
+
+const json = (value: unknown) => parseJsonValue(JSON.stringify(value));
 import {
   formatBytes,
   formatDurationMs,
@@ -51,7 +55,7 @@ describe('request log query in the URL', () => {
   test('writes only non-default filters and keeps other params', () => {
     const base = new URLSearchParams('requestId=abc&model=old');
     const next = writeQuery(base, { ...DEFAULT_QUERY, status: 'error', q: '  x ' });
-    expect(next.toString()).toBe('requestId=abc&status=error&q=x');
+    expect(next.toString()).toBe(`requestId=abc&status=error&q=${encodeUrlValue('x')}`);
     // The input is not mutated.
     expect(base.toString()).toBe('requestId=abc&model=old');
     expect(writeQuery(new URLSearchParams('range=1h'), DEFAULT_QUERY).toString()).toBe('');
@@ -98,7 +102,10 @@ describe('body classification', () => {
   test('parses JSON, reports invalid JSON, and refuses bodies over the limit without parsing', () => {
     expect(parseJsonBody('{"model":"m","n":[1,2]}')).toEqual({
       ok: true,
-      value: { model: 'm', n: [1, 2] },
+      value: new JsonObject([
+        ['model', 'm'],
+        ['n', [new JsonNumber('1'), new JsonNumber('2')]],
+      ]),
     });
     expect(parseJsonBody('{"truncated":')).toEqual({ ok: false, reason: 'invalid' });
     const huge = '{"a":"' + 'x'.repeat(PARSE_LIMIT_BYTES) + '"}';
@@ -212,19 +219,19 @@ describe('upstream sections', () => {
 
 describe('JSON tree paging', () => {
   test('pages array and object children', () => {
-    const messages = Array.from({ length: 250 }, (_, i) => ({ i }));
+    const messages = json(Array.from({ length: 250 }, (_, i) => ({ i })));
     expect(childCount(messages)).toBe(250);
     const page = childPage(messages, 100);
     expect(page).toHaveLength(100);
-    expect(page[0]).toEqual(['0', { i: 0 }]);
-    expect(page[99]).toEqual(['99', { i: 99 }]);
-    expect(childPage({ a: 1, b: 2, c: 3 }, 2)).toEqual([
-      ['a', 1],
-      ['b', 2],
+    expect(page[0]).toEqual({ key: '0', value: json({ i: 0 }), duplicate: false });
+    expect(page[99]).toEqual({ key: '99', value: json({ i: 99 }), duplicate: false });
+    expect(childPage(json({ a: 1, b: 2, c: 3 }), 2)).toEqual([
+      { key: 'a', value: new JsonNumber('1'), duplicate: false },
+      { key: 'b', value: new JsonNumber('2'), duplicate: false },
     ]);
     expect(childPage('scalar', 10)).toEqual([]);
     expect(childCount(null)).toBe(0);
-    expect(childCount({})).toBe(0);
+    expect(childCount(json({}))).toBe(0);
   });
 
   test('opens the root and small first-level containers only', () => {
@@ -235,21 +242,23 @@ describe('JSON tree paging', () => {
   });
 
   test('summarizes collapsed containers by their identifying key', () => {
-    expect(containerSummary([1, 2, 3])).toEqual({ kind: 'array', count: 3 });
-    expect(containerSummary({ role: 'user', content: [] })).toEqual({
+    expect(containerSummary(json([1, 2, 3]))).toEqual({ kind: 'array', count: 3 });
+    expect(containerSummary(json({ role: 'user', content: [] }))).toEqual({
       kind: 'object',
       hint: 'role: user',
       keys: ['content'],
       more: 0,
     });
-    expect(containerSummary({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 })).toEqual({
+    expect(containerSummary(json({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 }))).toEqual({
       kind: 'object',
       hint: '',
       keys: ['a', 'b', 'c', 'd'],
       more: 2,
     });
     // "type" wins over "role" and "name".
-    expect(containerSummary({ name: 'n', type: 'text' })).toMatchObject({ hint: 'type: text' });
+    expect(containerSummary(json({ name: 'n', type: 'text' }))).toMatchObject({
+      hint: 'type: text',
+    });
   });
 });
 

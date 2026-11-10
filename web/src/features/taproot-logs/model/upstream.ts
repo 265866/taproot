@@ -13,9 +13,9 @@
  *   Body:
  *   <body until the next block>
  *
- * Responses use `=== API RESPONSE N ===` with `Status: 429`; an unnumbered response block holds
- * the aggregated body right after its timestamp. Text that does not fit the shape stays as body,
- * so an unexpected layout still shows verbatim.
+ * Responses use `=== API RESPONSE N ===` with `Status: 429`; an unnumbered request or response
+ * block holds the payload right after its timestamp. Text that does not fit the shape stays as
+ * body, so an unexpected layout still shows verbatim.
  */
 
 export interface UpstreamBlock {
@@ -43,9 +43,33 @@ export function parseUpstream(text: string): UpstreamBlock[] {
   return blocks;
 }
 
+/**
+ * Blocks the request log writes around a payload that came without its own heading: the leading
+ * field it adds, then the payload verbatim, which may itself be `event: …` / `data: …` lines.
+ */
+const PAYLOAD_BLOCKS: Record<string, string> = {
+  'API REQUEST': 'Timestamp',
+  'API RESPONSE': 'Timestamp',
+  'API ERROR RESPONSE': 'HTTP Status',
+};
+
 function parseBlock(title: string, text: string, start: number, end: number): UpstreamBlock {
   const block: UpstreamBlock = { title, fields: [], headers: [], body: '' };
   let pos = start;
+  const payloadField = PAYLOAD_BLOCKS[title];
+  if (payloadField !== undefined) {
+    if (text[pos] === '\r') pos++;
+    if (text[pos] === '\n') pos++;
+    const newline = text.indexOf('\n', pos);
+    const lineEnd = newline < 0 || newline > end ? end : newline;
+    const field = FIELD.exec(text.slice(pos, lineEnd).replace(/\r$/, ''));
+    if (field && field[1] === payloadField) {
+      block.fields.push([field[1], field[2]]);
+      pos = lineEnd + 1;
+    }
+    block.body = pos < end ? text.slice(pos, end).trimEnd() : '';
+    return block;
+  }
   let mode: 'fields' | 'headers' = 'fields';
   // Walk line by line through the short head only; the body is sliced once.
   while (pos < end) {

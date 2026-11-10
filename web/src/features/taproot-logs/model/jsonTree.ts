@@ -3,6 +3,8 @@
  * children at a time, so a conversation with thousands of messages costs a few hundred nodes.
  */
 
+import { JsonNumber, JsonObject, type JsonValue } from './jsonValue';
+
 /** Children rendered per container before "show more". */
 export const CHILD_PAGE = 100;
 /** Characters of a string value shown before "show more". */
@@ -12,46 +14,51 @@ export const STRING_STEP = 20_000;
 
 export type JsonKind = 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null';
 
-export function jsonKind(value: unknown): JsonKind {
+export function jsonKind(value: JsonValue): JsonKind {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';
-  switch (typeof value) {
-    case 'string':
-      return 'string';
-    case 'number':
-      return 'number';
-    case 'boolean':
-      return 'boolean';
-    default:
-      return 'object';
-  }
+  if (value instanceof JsonObject) return 'object';
+  if (value instanceof JsonNumber) return 'number';
+  return typeof value === 'string' ? 'string' : 'boolean';
 }
 
-export function isContainer(value: unknown): value is Record<string, unknown> | unknown[] {
-  return typeof value === 'object' && value !== null;
+export function isContainer(value: JsonValue): value is JsonObject | JsonValue[] {
+  return Array.isArray(value) || value instanceof JsonObject;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** How a scalar reads in the tree: numbers as written, strings without their quotes. */
+export function scalarText(value: JsonValue): string {
+  if (value instanceof JsonNumber) return value.text;
+  return String(value);
 }
 
-export function childCount(value: unknown): number {
+export function childCount(value: JsonValue): number {
   if (Array.isArray(value)) return value.length;
-  if (isObject(value)) return Object.keys(value).length;
+  if (value instanceof JsonObject) return value.entries.length;
   return 0;
 }
 
-/** The first `shown` children as [key, value] pairs; array keys are indexes. */
-export function childPage(value: unknown, shown: number): [string, unknown][] {
+/** A child of a container: array keys are indexes; `duplicate` marks a key seen before it. */
+export interface JsonChild {
+  key: string;
+  value: JsonValue;
+  duplicate: boolean;
+}
+
+/** The first `shown` children. */
+export function childPage(value: JsonValue, shown: number): JsonChild[] {
   if (Array.isArray(value)) {
-    return value.slice(0, shown).map((child, index) => [String(index), child]);
+    return value
+      .slice(0, shown)
+      .map((child, index) => ({ key: String(index), value: child, duplicate: false }));
   }
-  if (!isObject(value)) return [];
-  const out: [string, unknown][] = [];
-  for (const key in value) {
-    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+  if (!(value instanceof JsonObject)) return [];
+  const seen = new Set<string>();
+  const out: JsonChild[] = [];
+  for (const [key, child] of value.entries) {
     if (out.length >= shown) break;
-    out.push([key, value[key]]);
+    out.push({ key, value: child, duplicate: seen.has(key) });
+    seen.add(key);
   }
   return out;
 }
@@ -72,19 +79,21 @@ export type ContainerSummary =
  * A one-line preview of a collapsed container, such as `role: user · content` or a count,
  * so a collapsed message still says what it is.
  */
-export function containerSummary(value: unknown): ContainerSummary {
-  if (!isObject(value)) return { kind: 'array', count: childCount(value) };
-  const hintKey = ['type', 'role', 'name'].find((key) => typeof value[key] === 'string');
-  const keys = Object.keys(value).filter((key) => key !== hintKey);
+export function containerSummary(value: JsonValue): ContainerSummary {
+  if (!(value instanceof JsonObject)) return { kind: 'array', count: childCount(value) };
+  let hint: [string, string] | undefined;
+  for (const name of ['type', 'role', 'name']) {
+    const entry = value.entries.find(([key, child]) => key === name && typeof child === 'string');
+    if (entry) {
+      hint = [name, entry[1] as string];
+      break;
+    }
+  }
+  const keys = value.entries.map(([key]) => key).filter((key) => key !== hint?.[0]);
   return {
     kind: 'object',
-    hint: hintKey ? `${hintKey}: ${String(value[hintKey]).slice(0, 40)}` : '',
+    hint: hint ? `${hint[0]}: ${hint[1].slice(0, 40)}` : '',
     keys: keys.slice(0, 4),
     more: Math.max(0, keys.length - 4),
   };
-}
-
-/** Pretty JSON for copying one subtree; the caller decides whether the subtree is small enough. */
-export function prettyJson(value: unknown): string {
-  return JSON.stringify(value, null, 2) ?? String(value);
 }

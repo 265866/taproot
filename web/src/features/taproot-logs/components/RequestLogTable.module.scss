@@ -120,30 +120,39 @@
 }
 
 .success {
-  background: color-mix(in srgb, var(--success-color) 16%, transparent);
-  color: var(--success-color);
+  background: var(--success-badge-bg);
+  color: var(--success-badge-text);
 }
 
 .info {
-  background: var(--provider-codex-soft);
-  color: var(--provider-codex);
+  background: var(--count-badge-bg);
+  color: var(--count-badge-text);
 }
 
 .warn {
   background: var(--amber-10);
-  color: var(--amber-color);
+  color: var(--amber-text);
 }
 
 .error {
-  background: var(--destructive-10);
-  color: var(--error-color);
+  background: var(--failure-badge-bg);
+  color: var(--failure-badge-text);
 }
 
 .footer {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
+  gap: 8px 12px;
   padding: 14px;
   border-top: 1px solid var(--border-color);
+}
+
+.moreError {
+  color: var(--failure-badge-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .end {

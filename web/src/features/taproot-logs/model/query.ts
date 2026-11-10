@@ -17,6 +17,9 @@ export interface RequestLogQuery {
   q: string;
 }
 
+/** History state on a detail entry that the list pushed, so closing the detail can go back. */
+export type DetailState = { fromList: true };
+
 export const DEFAULT_QUERY: RequestLogQuery = {
   range: 'all',
   status: '',
@@ -34,6 +37,8 @@ const RANGE_MS: Record<Exclude<RangePreset, 'all'>, number> = {
 };
 
 const TEXT_KEYS = ['status', 'model', 'authIndex', 'sessionId', 'q'] as const;
+/** Keys whose values can hold an email, so the address bar carries them encoded. */
+const ENCODED_KEYS: readonly string[] = ['sessionId', 'q'];
 
 const isRange = (value: string | null): value is RangePreset =>
   RANGE_PRESETS.includes(value as RangePreset);
@@ -46,6 +51,7 @@ export function parseQuery(params: URLSearchParams): RequestLogQuery {
   if (isRange(range)) query.range = range;
   for (const key of TEXT_KEYS) query[key] = params.get(key)?.trim() ?? '';
   query.sessionId = decodeUrlValue(query.sessionId);
+  query.q = decodeUrlValue(query.q);
   // A hand-edited link with a bad status would otherwise make every page a 400.
   if (query.status && !isStatus(query.status)) query.status = '';
   query.status = query.status.toLowerCase();
@@ -59,7 +65,7 @@ export function writeQuery(params: URLSearchParams, query: RequestLogQuery): URL
   else next.set('range', query.range);
   for (const key of TEXT_KEYS) {
     const value = query[key].trim();
-    if (value) next.set(key, key === 'sessionId' ? encodeUrlValue(value) : value);
+    if (value) next.set(key, ENCODED_KEYS.includes(key) ? encodeUrlValue(value) : value);
     else next.delete(key);
   }
   return next;

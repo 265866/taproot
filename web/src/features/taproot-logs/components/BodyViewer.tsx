@@ -11,6 +11,7 @@ import {
   COLLAPSE_BYTES,
   SSE_PAGE,
   TEXT_CHUNK,
+  isFormattableJson,
   parseJsonBody,
   parseSse,
   sniffBody,
@@ -246,9 +247,10 @@ function EventStream({ text }: { text: string }) {
 function EventData({ data }: { data: string }) {
   const { t } = useTranslation();
   const [formatted, setFormatted] = useState(false);
+  const formattable = useMemo(() => isFormattableJson(data), [data]);
   const parsed = useMemo(
-    () => (formatted && sniffBody(data) === 'json' ? parseJsonBody(data) : null),
-    [data, formatted]
+    () => (formatted && formattable ? parseJsonBody(data) : null),
+    [data, formatted, formattable]
   );
   const { mask } = useEmailMask();
   const { visible, remaining } = textWindow(mask(data), 600);
@@ -262,7 +264,7 @@ function EventData({ data }: { data: string }) {
           {remaining > 0 && '…'}
         </pre>
       )}
-      {sniffBody(data) === 'json' && (
+      {formattable && (
         <button
           type="button"
           className={styles.eventToggle}

@@ -14,27 +14,31 @@ import {
   isContainer,
   jsonKind,
   openByDefault,
+  scalarText,
 } from '../model/jsonTree';
+import type { JsonValue } from '../model/jsonValue';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { textWindow } from '../model/body';
 import styles from './JsonTree.module.scss';
 
 /** A collapsible JSON viewer that renders only what is open. */
-export function JsonTree({ value }: { value: unknown }) {
+export function JsonTree({ value }: { value: JsonValue }) {
   return (
     <div className={styles.tree}>
-      <JsonNode name={null} value={value} depth={0} />
+      <JsonNode name={null} duplicate={false} value={value} depth={0} />
     </div>
   );
 }
 
 const JsonNode = memo(function JsonNode({
   name,
+  duplicate,
   value,
   depth,
 }: {
   name: string | null;
-  value: unknown;
+  duplicate: boolean;
+  value: JsonValue;
   depth: number;
 }) {
   const { t } = useTranslation();
@@ -42,7 +46,15 @@ const JsonNode = memo(function JsonNode({
   const [open, setOpen] = useState(() => openByDefault(depth, size));
   const [shown, setShown] = useState(CHILD_PAGE);
   const { mask } = useEmailMask();
-  const label = name === null ? null : <span className={styles.key}>{mask(name)}</span>;
+  const label =
+    name === null ? null : (
+      <span className={styles.key}>
+        {mask(name)}
+        {duplicate && (
+          <span className={styles.duplicate}>{t('taproot_logs.json.duplicate_key')}</span>
+        )}
+      </span>
+    );
 
   if (!isContainer(value)) {
     return (
@@ -86,8 +98,14 @@ const JsonNode = memo(function JsonNode({
       </button>
       {open && size > 0 && (
         <div className={styles.children}>
-          {childPage(value, shown).map(([key, child]) => (
-            <JsonNode key={key} name={key} value={child} depth={depth + 1} />
+          {childPage(value, shown).map((child, index) => (
+            <JsonNode
+              key={index}
+              name={child.key}
+              duplicate={child.duplicate}
+              value={child.value}
+              depth={depth + 1}
+            />
           ))}
           {remaining > 0 && (
             <button
@@ -110,13 +128,13 @@ const JsonNode = memo(function JsonNode({
   );
 });
 
-function JsonScalar({ value }: { value: unknown }) {
+function JsonScalar({ value }: { value: JsonValue }) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const [shown, setShown] = useState(STRING_PREVIEW);
   const blobs = useContext(BlobsContext);
   if (typeof value !== 'string') {
-    return <span className={styles[jsonKind(value)]}>{String(value)}</span>;
+    return <span className={styles[jsonKind(value)]}>{scalarText(value)}</span>;
   }
   const segments = splitBlobRefs(value, blobs);
   if (segments.some((segment) => typeof segment !== 'string')) {
@@ -153,7 +171,7 @@ function JsonScalar({ value }: { value: unknown }) {
   );
 }
 
-function SummaryText({ value }: { value: unknown }) {
+function SummaryText({ value }: { value: JsonValue }) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const summary = containerSummary(value);

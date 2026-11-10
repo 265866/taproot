@@ -91,6 +91,7 @@ export function RequestLogFilters({
 }) {
   const { t } = useTranslation();
   const modelListId = useId();
+  const hideSearch = useHidesValue(query.q);
   const hideSession = useHidesValue(query.sessionId);
   const set = <K extends keyof RequestLogQuery>(key: K, value: RequestLogQuery[K]) =>
     onChange({ ...query, [key]: value });
@@ -106,13 +107,21 @@ export function RequestLogFilters({
   return (
     <div className={styles.filters} role="search" aria-label={t('taproot_logs.filters.label')}>
       <div className={styles.search}>
-        <DebouncedInput
-          value={query.q}
-          onCommit={(value) => set('q', value)}
-          label={t('taproot_logs.filters.search')}
-          placeholder={t('taproot_logs.filters.search_placeholder')}
-          icon
-        />
+        {hideSearch ? (
+          <MaskedValueChip
+            value={query.q}
+            label={t('taproot_logs.filters.search')}
+            onClear={() => set('q', '')}
+          />
+        ) : (
+          <DebouncedInput
+            value={query.q}
+            onCommit={(value) => set('q', value)}
+            label={t('taproot_logs.filters.search')}
+            placeholder={t('taproot_logs.filters.search_placeholder')}
+            icon
+          />
+        )}
       </div>
       <Select
         className={styles.select}

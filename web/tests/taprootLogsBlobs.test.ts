@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import '../src/i18n/index';
 import { createTaprootClient } from '../src/services/api/taproot';
 import { JsonTree } from '../src/features/taproot-logs/components/JsonTree';
+import { parseJsonValue } from '../src/features/taproot-logs/model/jsonValue';
 import { BlobsContext } from '../src/features/taproot-logs/components/blobsContext';
 import {
   expandedLength,
@@ -65,11 +66,13 @@ describe('blob placeholders', () => {
 
   test('the JSON tree shows an image thumbnail and a download link, and keeps masking', () => {
     usePrivacyStore.setState({ showEmails: false });
-    const value = {
-      url: `data:image/png;base64,${png.placeholder}`,
-      signature: sig.placeholder,
-      note: `from ops-person@example.org ${png.placeholder}`,
-    };
+    const value = parseJsonValue(
+      JSON.stringify({
+        url: `data:image/png;base64,${png.placeholder}`,
+        signature: sig.placeholder,
+        note: `from ops-person@example.org ${png.placeholder}`,
+      })
+    );
     const html = renderToStaticMarkup(
       createElement(BlobsContext.Provider, { value: blobs }, createElement(JsonTree, { value }))
     );
@@ -84,7 +87,7 @@ describe('blob placeholders', () => {
 
   test('without the detail context a placeholder renders as text', () => {
     const html = renderToStaticMarkup(
-      createElement(JsonTree, { value: { data: png.placeholder } })
+      createElement(JsonTree, { value: parseJsonValue(JSON.stringify({ data: png.placeholder })) })
     );
     expect(html).toContain(png.placeholder);
     expect(html).not.toContain('<img');
