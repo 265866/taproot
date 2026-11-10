@@ -499,6 +499,9 @@ type sessionJSON struct {
 	Models          []string `json:"models"`
 	Totals          Totals   `json:"totals"`
 	AccountSwitches int      `json:"accountSwitches"`
+	// Truncated means the session has more than sessionsMaxRows requests in
+	// range, and everything above covers only the first of them.
+	Truncated bool `json:"truncated"`
 }
 
 func (i *Ingest) handleUsageSessions(c *gin.Context) {
@@ -558,7 +561,7 @@ func (i *Ingest) handleUsageSessions(c *gin.Context) {
 func (i *Ingest) loadSession(ctx context.Context, id string, fromMs, toMs int64, pb *priceBook) (sessionJSON, error) {
 	rows, err := i.db.QueryContext(ctx, `SELECT ts, auth_index, model, failed, latency_ms, COALESCE(ttft_ms, 0),
 		input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens, cache_write_1h_tokens
-		FROM usage_events WHERE session_id = ? AND ts >= ? AND ts < ? ORDER BY ts, id LIMIT ?`, id, fromMs, toMs, sessionsMaxRows)
+		FROM usage_events WHERE session_id = ? AND ts >= ? AND ts < ? ORDER BY ts, id LIMIT ?`, id, fromMs, toMs, sessionsMaxRows+1)
 	if err != nil {
 		return sessionJSON{}, fmt.Errorf("query session: %w", err)
 	}
@@ -569,6 +572,10 @@ func (i *Ingest) loadSession(ctx context.Context, id string, fromMs, toMs int64,
 	var first, last int64
 	prevAccount := ""
 	for rows.Next() {
+		if a.requests == sessionsMaxRows {
+			s.Truncated = true
+			break
+		}
 		var (
 			ts, latency, ttft int64
 			authIndex, model  string

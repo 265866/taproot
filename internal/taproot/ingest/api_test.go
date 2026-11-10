@@ -462,6 +462,32 @@ func TestResetPricesRestoresShippedRowsAndRepricesHistory(t *testing.T) {
 	}
 }
 
+func TestLongSessionIsMarkedTruncated(t *testing.T) {
+	i, _, clock := newAPI(t)
+	ctx := context.Background()
+	start := clock.t.Add(-24 * time.Hour)
+	seed := func(session string, n int) {
+		t.Helper()
+		if _, err := i.db.ExecContext(ctx, `WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM seq WHERE x < ?)
+			INSERT INTO usage_events (event_key, ts, session_id, provider, model, auth_index, latency_ms, input_tokens, output_tokens)
+			SELECT ?||x, ? + x, ?, 'claude', 'claude-opus-5-5', 'auth-a', 100, 10, 20 FROM seq`, n, session, ms(start), session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("full", sessionsMaxRows)
+	seed("long", sessionsMaxRows+1)
+	pb := newPriceBook(seedPrices)
+	for session, truncated := range map[string]bool{"full": false, "long": true} {
+		s, err := i.loadSession(ctx, session, ms(start), ms(clock.t), pb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.Truncated != truncated || s.Requests != sessionsMaxRows || s.Totals.InputTokens != 10*sessionsMaxRows {
+			t.Fatalf("%s: truncated %v, requests %d, input %d", session, s.Truncated, s.Requests, s.Totals.InputTokens)
+		}
+	}
+}
+
 func TestUsageSummaryNamesUnpricedModels(t *testing.T) {
 	i, r, clock := newAPI(t)
 	ctx := context.Background()
