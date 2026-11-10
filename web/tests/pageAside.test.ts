@@ -84,8 +84,9 @@ describe('the rail geometry', () => {
       logger: { warn: () => undefined },
     }
   ).css;
-  const insideMobileQuery = (at: number) =>
-    [...css.matchAll(/@media \(max-width: 768px\) \{/g)].some((match) => {
+  const COLUMNS_QUERY = '@media (min-width: 1184px) {';
+  const insideColumnsQuery = (at: number) =>
+    [...css.matchAll(/@media \(min-width: 1184px\) \{/g)].some((match) => {
       let depth = 0;
       for (let i = match.index; i < css.length; i += 1) {
         if (css[i] === '{') depth += 1;
@@ -93,31 +94,32 @@ describe('the rail geometry', () => {
       }
       return false;
     });
-  // The desktop rule comes first; the phone rule is the last one, inside the mobile query.
-  const block = (selector: string, which: 'desktop' | 'phone') => {
-    const at =
-      which === 'desktop' ? css.indexOf(`${selector} {`) : css.lastIndexOf(`${selector} {`);
+  // The one-column rule comes first; the two-column rule is the last one, inside the wide query.
+  const block = (selector: string, which: 'columns' | 'inline') => {
+    const at = which === 'inline' ? css.indexOf(`${selector} {`) : css.lastIndexOf(`${selector} {`);
     expect(at).toBeGreaterThan(-1);
-    expect(insideMobileQuery(at)).toBe(which === 'phone');
+    expect(insideColumnsQuery(at)).toBe(which === 'columns');
     return css.slice(at, css.indexOf('}', at));
   };
 
-  test('desktop: a 344 px rail with a hairline on its left, spanning the full height', () => {
+  test('wide windows: a 344 px rail with a hairline, spanning the full height and growing with its content', () => {
     expect(css).toContain('--page-aside-width: 344px;');
-    expect(block('.content.content-has-aside', 'desktop')).toContain(
+    expect(css).toContain(COLUMNS_QUERY);
+    expect(block('.content.content-has-aside', 'columns')).toContain(
       'grid-template-columns: minmax(0, 1fr) var(--page-aside-width);'
     );
-    const rail = block('.content.content-has-aside > .page-aside', 'desktop');
+    const rail = block('.content.content-has-aside > .page-aside', 'columns');
     expect(rail).toContain('grid-row: 1/-1;');
+    expect(rail).toContain('min-height: 100%;');
     expect(rail).toContain('border-left: 1px solid var(--border-color);');
   });
 
-  test('phone: one column, the rail inline with no hairline', () => {
-    expect(block('.content.content-has-aside', 'phone')).toContain(
+  test('narrower windows and phones: one column, the rail inline with no hairline', () => {
+    expect(block('.content.content-has-aside', 'inline')).toContain(
       'grid-template-columns: minmax(0, 1fr);'
     );
-    const rail = block('.content.content-has-aside > .page-aside', 'phone');
-    expect(rail).toContain('grid-column: 1;');
-    expect(rail).toContain('border-left: 0;');
+    const rail = block('.content.content-has-aside > .page-aside', 'inline');
+    expect(rail).not.toContain('border-left');
+    expect(rail).not.toContain('grid-row');
   });
 });

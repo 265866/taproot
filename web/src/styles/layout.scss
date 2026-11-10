@@ -725,22 +725,36 @@
   }
 }
 
-// A page's rail (PageAside): the header and the page take the first column, and the rail spans
-// the full height of the second. It comes before <main> in the document, as on phones.
+// A page's rail (PageAside). It takes a second column, spanning the full height beside the header
+// and the page, only when the window leaves the page at least 640 px beside the open sidebar.
+// Narrower windows, phones included, show it inline after the header and before the page.
+$page-aside-columns-min: 200px + 344px + 640px;
+
 .content.content-has-aside {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--page-aside-width);
-  grid-template-rows: auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr;
 
   > * {
     grid-column: 1;
   }
 
   > .page-aside {
-    grid-column: 2;
-    grid-row: 1 / -1;
     min-width: 0;
-    border-left: 1px solid var(--border-color);
+  }
+
+  @media (min-width: $page-aside-columns-min) {
+    grid-template-columns: minmax(0, 1fr) var(--page-aside-width);
+    grid-template-rows: auto 1fr;
+
+    // A rail taller than the window grows past its grid area so its hairline reaches its end.
+    > .page-aside {
+      grid-column: 2;
+      grid-row: 1 / -1;
+      align-self: start;
+      min-height: 100%;
+      border-left: 1px solid var(--border-color);
+    }
   }
 }
 
@@ -918,18 +932,6 @@
     // height of its own (AppLogsPanel.module.scss).
     &.content-logs {
       overflow: visible;
-    }
-
-    // One column: the header, the rail inline, then the page.
-    &.content-has-aside {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto auto 1fr;
-
-      > .page-aside {
-        grid-column: 1;
-        grid-row: auto;
-        border-left: 0;
-      }
     }
 
     &.content-plugin-resource {

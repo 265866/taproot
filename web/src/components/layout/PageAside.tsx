@@ -4,9 +4,9 @@ import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer'
 import { claimPageAside, usePageAsideState } from './pageAsideStore';
 
 /**
- * Content for the shell's full-height rail beside the page header and the page. On desktop the
- * rail is `--page-aside-width` wide with a hairline on its left and spans the window's height; on
- * phones it follows the header inline, before the page. The rail draws no padding: the content
+ * Content for the shell's full-height rail beside the page header and the page. In wide windows the
+ * rail is `--page-aside-width` wide with a hairline on its left and spans the window's height; in
+ * narrower windows and on phones it follows the header inline, before the page. The rail draws no padding: the content
  * owns its spacing. Pages without one keep the full content width. Only the current page layer
  * claims the rail, and leaving the page removes it.
  */
