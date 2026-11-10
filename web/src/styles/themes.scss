@@ -65,7 +65,8 @@
   --button-primary-hover: #000000;
   --button-primary-text: #ffffff;
   --input-bg: var(--bg-secondary);
-  --toggle-off-bg: #d5d2cb;
+  // 3:1 against every light surface and the white thumb, as WCAG 1.4.11 asks of a control.
+  --toggle-off-bg: #85807a;
   --overlay-bg: rgba(0, 0, 0, 0.35);
   --tooltip-bg: #24211c;
   --tooltip-text: #f6f4f1;

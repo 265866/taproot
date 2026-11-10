@@ -12,6 +12,7 @@ import {
   isNew,
   labelFor,
   layoutDevices,
+  enableAddress,
   newAddress,
   proxyLock,
   rebaseDraft,
@@ -535,6 +536,36 @@ describe('saving', () => {
     ]) {
       expect(newAddress(bad, '', draft)).toMatchObject({ ok: false, error: 'address_format' });
     }
+  });
+
+  test('a new address is compared as the server stores it', () => {
+    const draft = { ...draftFrom(data), addresses: [{ cidr: '10.0.0.0/24', note: '' }] };
+    for (const same of ['10.0.0.5/24', '10.0.0.255/24', '::ffff:10.0.0.0/120']) {
+      expect(newAddress(same, '', draft)).toMatchObject({ ok: false, error: 'address_duplicate' });
+    }
+    expect(newAddress('10.0.0.0/25', '', draft).ok).toBe(true);
+    expect(newAddress('::ffff:192.0.2.20', '', draftFrom(data))).toMatchObject({
+      error: 'address_duplicate',
+    });
+  });
+
+  test('a saved address switched off is not added again as a second row', () => {
+    const off = { ...draftFrom(data), addresses: [] };
+    expect(newAddress('192.0.2.20', 'other note', off, data.addresses)).toMatchObject({
+      ok: false,
+      error: 'address_switched_off',
+    });
+    expect(newAddress('192.0.2.21', '', off, data.addresses).ok).toBe(true);
+  });
+
+  test('switching a saved address back on keeps the saved order', () => {
+    const [a, b, c] = ['192.0.2.1/32', '192.0.2.2/32', '192.0.2.3/32'].map((cidr) => ({
+      cidr,
+      note: '',
+    }));
+    const added = { cidr: '198.51.100.7/32', note: 'new' };
+    expect(enableAddress([a, b, c], [b, c, added], a)).toEqual([a, b, c, added]);
+    expect(enableAddress([a, b, c], [a, added], b)).toEqual([a, b, added]);
   });
 });
 

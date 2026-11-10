@@ -89,7 +89,7 @@ describe('the device table', () => {
     );
     expect(sheet).toMatch(sheetForget);
     expect(sheet).toMatch(
-      /\.row \{[^}]*@media \(max-width: 820px\) \{\s*grid-template-columns: minmax\(0, 1fr\) auto auto;\s*\.id \{\s*display: none;/
+      /\.row \{[^}]*@media \(max-width: 820px\) \{\s*grid-template-columns: minmax\(0, 1fr\) 64px 64px;\s*\.id \{\s*display: none;/
     );
   });
 
@@ -148,10 +148,14 @@ describe('the device table', () => {
     expect(html).not.toContain('Joined');
   });
 
+  const text = (html: string) => html.replace(/<[^>]+>/g, '');
+
   test('requests show who, which client, when, and how often, with Allow and Deny', () => {
     const html = render();
     expect(html).toContain('Dana&#x27;s PC');
-    expect(html).toContain('dana@example.com · Claude Code · 14 minutes ago · 7 times');
+    expect(text(html)).toContain('dana@example.com · Claude Code · 14 minutes ago · 7 times');
+    // Each item stays on one line on a phone.
+    expect(html).toContain('<span class="metaItem"> · 7 times</span>');
     expect(html).toContain('aria-label="Allow Dana&#x27;s PC"');
     expect(html).toContain('aria-label="Deny Dana&#x27;s PC"');
   });
@@ -170,6 +174,45 @@ describe('the device table', () => {
     expect(render({ data: unlisted, draft: draftFrom(unlisted) })).toContain(
       'aria-label="Allow dana&#x27;s device ·0001"'
     );
+  });
+
+  test("a request shows the device's address and ID, and marks a name the device chose", () => {
+    const html = text(render());
+    // Dana's device is a sharee's, which Tailscale does not name.
+    expect(html).toContain('named by the device');
+    expect(html).toContain('100.64.0.31 · ID nDANA0001CNTRL');
+    const bob = {
+      ...data,
+      requests: [{ ...data.requests[0], nodeId: 'nBOBCNTRL', name: 'laptop', outside: false }],
+    };
+    const bobHtml = text(render({ data: bob, draft: draftFrom(bob) }));
+    expect(bobHtml).toContain('Tailscale name bob-laptop · ');
+    expect(bobHtml).toContain('ID nBOBCNTRL');
+    // A request named by its Tailscale name is not marked.
+    const plain = { ...bob, requests: [{ ...bob.requests[0], name: 'bob-laptop' }] };
+    const plainHtml = text(render({ data: plain, draft: draftFrom(plain) }));
+    expect(plainHtml).not.toContain('named by the device');
+    expect(plainHtml).not.toContain('Tailscale name');
+  });
+
+  test('a locked switch is described by its reason', () => {
+    const html = render();
+    for (const [label, reason] of [
+      ['Proxy for taproot-host', 'Taproot&#x27;s own server always has Proxy.'],
+      ['Admin for taproot-host', 'Taproot&#x27;s own server never gets Admin.'],
+      ['Admin for alice-desktop', 'This is the device you are using.'],
+      [
+        'Admin for 192.0.2.20/32',
+        'Addresses without Tailscale can use the proxy but never get Admin.',
+      ],
+    ]) {
+      const input = new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`).exec(html)?.[0] ?? '';
+      const id = /aria-describedby="([^"]+)"/.exec(input)?.[1];
+      expect({ label, id: id ?? null }).toMatchObject({ label, id: expect.any(String) });
+      expect(html).toMatch(new RegExp(`id="${id}"[^>]*>${reason}`));
+    }
+    const free = /<input[^>]*aria-label="Proxy for bob-laptop"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(free).not.toContain('aria-describedby');
   });
 
   test('a request for the dashboard says so, and one for Proxy does not', () => {

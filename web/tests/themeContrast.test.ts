@@ -129,3 +129,23 @@ for (const [mode, tokens] of Object.entries(THEMES)) {
     });
   });
 }
+
+describe('switches', () => {
+  const white = { r: 255, g: 255, b: 255, a: 1 };
+  for (const mode of ['light', 'white'] as const) {
+    test(`${mode}: the off track stands out from every surface and from its white thumb`, () => {
+      const c = (name: string) => mustColor(THEMES[mode], name);
+      const track = c('toggle-off-bg');
+      for (const surface of ['bg-secondary', 'bg-primary', 'bg-hover']) {
+        expect({ surface, ratio: contrast(track, c(surface)) >= 3 }).toEqual({
+          surface,
+          ratio: true,
+        });
+      }
+      expect(contrast(white, track)).toBeGreaterThanOrEqual(3);
+    });
+  }
+  test('dark: the white thumb carries the off state against the page', () => {
+    expect(contrast(white, mustColor(THEMES.dark, 'bg-secondary'))).toBeGreaterThanOrEqual(3);
+  });
+});
