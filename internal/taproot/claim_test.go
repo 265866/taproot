@@ -37,11 +37,11 @@ func startFirstRun(t *testing.T, configPath string) (fixture, string) {
 	}
 	hook := test.NewGlobal()
 	defer log.StandardLogger().ReplaceHooks(make(log.LevelHooks))
-	opts, stop, err := setup(context.Background(), cfg, configPath)
+	opts, running, err := setup(context.Background(), cfg, configPath)
 	if err != nil {
 		t.Fatalf("Setup on the first-run files: %v", err)
 	}
-	t.Cleanup(stop)
+	t.Cleanup(running.stop)
 	code := ""
 	for _, e := range hook.AllEntries() {
 		if m := setupCodeLine.FindStringSubmatch(e.Message); m != nil {
@@ -117,7 +117,7 @@ func TestFirstRunClaim(t *testing.T) {
 	if resp := claim(lanIP, code); resp.StatusCode != http.StatusForbidden || errCode(resp) != "forbidden" {
 		t.Fatalf("claim from an access.addresses caller = %d, want the guard's 403", resp.StatusCode)
 	}
-	if resp := claim(selfIP, code); resp.StatusCode != http.StatusForbidden || errCode(resp) != "forbidden" {
+	if resp := claim(selfIP, code); resp.StatusCode != http.StatusForbidden || errCode(resp) != "server_node" {
 		t.Fatalf("claim from the server's own node = %d, want the guard's 403", resp.StatusCode)
 	}
 	if resp := claim(newIP, "AAAA-AAAA"); code != "AAAA-AAAA" && (resp.StatusCode != http.StatusForbidden || errCode(resp) != "wrong_code") {

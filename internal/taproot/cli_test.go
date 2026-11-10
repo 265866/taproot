@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,7 +29,20 @@ func upstreamFlags() *flag.FlagSet {
 	fs.String("siwc-bind", "", "Bind Sign in with ChatGPT (SIWC) credentials to a Codex credential file")
 	fs.Int("oauth-callback-port", 0, "Override OAuth callback port")
 	fs.Int("discover-timeout", 3, "Timeout in seconds for LAN discovery")
+	fs.Bool("discover", false, "Discover local AI gateways")
+	fs.Bool("discover-json", false, "Output discovered gateways in JSON format")
 	return fs
+}
+
+// chdirWithConfig runs the test in a directory with a config.yaml, where a run
+// without --config is not refused.
+func chdirWithConfig(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
 }
 
 func TestVersionLine(t *testing.T) {
@@ -41,7 +56,7 @@ func TestVersionLine(t *testing.T) {
 
 func TestHandleArgsVersion(t *testing.T) {
 	// "--config --version" names a missing config file, which HandleArgs creates.
-	t.Chdir(t.TempDir())
+	chdirWithConfig(t)
 	for _, tc := range []struct {
 		args string
 		want bool
@@ -90,6 +105,7 @@ func TestHandleArgsVersion(t *testing.T) {
 // An upstream flag named version is left alone rather than redefined, and
 // --version is upstream's to serve.
 func TestHandleArgsKeepsAnExistingVersionFlag(t *testing.T) {
+	chdirWithConfig(t)
 	for _, args := range [][]string{{"taproot"}, {"taproot", "--version", "1.2"}, {"taproot", "--version=1.2"}} {
 		fs := upstreamFlags()
 		fs.String("version", "", "upstream's own version flag")
@@ -110,6 +126,7 @@ func TestHandleArgsKeepsAnExistingVersionFlag(t *testing.T) {
 }
 
 func TestHandleArgsUsage(t *testing.T) {
+	chdirWithConfig(t)
 	fs := upstreamFlags()
 	handleArgs(fs, []string{"taproot"}, &bytes.Buffer{}, func(int) { t.Fatal("exited without --version") })
 	var out bytes.Buffer

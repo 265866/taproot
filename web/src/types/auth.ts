@@ -2,9 +2,15 @@ export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'er
 
 /**
  * Why the management API could not be reached: access refused, a tailnet device without Admin,
- * or no usable response.
+ * the server's own node (which never gets Admin), an admin device the server cannot tell apart
+ * from itself yet, or no usable response.
  */
-export type ConnectionFailure = 'forbidden' | 'not_admin' | 'unreachable';
+export type ConnectionFailure =
+  | 'forbidden'
+  | 'not_admin'
+  | 'server_node'
+  | 'server_node_unknown'
+  | 'unreachable';
 
 /** The refused device, as the access guard names it in a `not_admin` denial. */
 export interface DeniedDevice {

@@ -151,6 +151,18 @@ describe('same-origin management connection', () => {
     expect(useAuthStore.getState().connectionFailure).toBe('forbidden');
   });
 
+  for (const code of ['server_node', 'server_node_unknown'] as const) {
+    test(`the guard's ${code} denial is not reported as being off the tailnet`, async () => {
+      status = 403;
+      denial = { error: { code, message: 'from the guard' } };
+      expect(await connectTo()).toBe(false);
+      expect(useAuthStore.getState()).toMatchObject({
+        connectionFailure: code,
+        connectionFailureDevice: null,
+      });
+    });
+  }
+
   test('a plain guard 403 stays access denied', async () => {
     status = 403;
     denial = { error: { code: 'forbidden', message: 'caller is not allowed' } };
@@ -248,6 +260,22 @@ describe('connection gate', () => {
     expect(html).toContain('Try again');
     expect(html).not.toContain('dashboard-body');
     expect(html).not.toMatch(/type="password"|<input/);
+  });
+
+  test('tells a browser on the server to use another device, without the off-tailnet advice', () => {
+    const html = render('error', 'server_node');
+    expect(html).toContain('This is the taproot server');
+    expect(html).toContain('another device on your tailnet');
+    expect(html).not.toContain('only admits devices on its tailnet');
+    expect(html).not.toContain('dashboard-body');
+  });
+
+  test('tells an admin device to retry while the server cannot read its own node', () => {
+    const html = render('error', 'server_node_unknown');
+    expect(html).toContain('Taproot can&#x27;t check this device yet');
+    expect(html).toContain('Try again in a few seconds.');
+    expect(html).toContain('Try again');
+    expect(html).not.toContain('only admits devices on its tailnet');
   });
 
   const refused: DeniedDevice = {

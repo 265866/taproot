@@ -21,6 +21,8 @@ A backup holds `config.yaml`, `taproot.yaml`, the database, the credential files
 
 A restore keeps where this server keeps its files: `data-dir` and `store.path` in `taproot.yaml`, and `oauth.auth-dir` in `config.yaml` (or the older top-level `auth-dir`, in whichever form the current file uses), stay as they are now. It refuses a backup whose `taproot.yaml` this release would not start with, such as one with a key that a later release renamed, and changes nothing. From the dashboard, it also refuses a backup that would take Admin from the device you restore it on. After a restore, settings, backups, and further restores wait until taproot restarts.
 
+A restore finishes with a restart. Taproot exits with status 75, and the database from the backup takes effect when its supervisor starts it again. Every shipped example restarts it (`Restart=always`, `--restart unless-stopped`), and so does a restart policy that restarts only failures, such as systemd's `Restart=on-failure`. Without a supervisor, start taproot again yourself.
+
 ## The two configuration files
 
 - `config.yaml` is CLIProxyAPI's configuration. On the first start, taproot writes [`examples/taproot/config.yaml`](../examples/taproot/config.yaml), the minimal configuration for taproot, with `oauth.auth-dir` moved beside the file. CLIProxyAPI ignores keys it does not know, so a taproot setting in `config.yaml` has no effect.
@@ -45,7 +47,7 @@ Every key is optional. Sizes accept a number of bytes or a value such as `512MiB
 | `access.addresses` | empty | Addresses outside Tailscale that may use the proxy: `cidr` and an optional `note`. |
 | `access.extra-hosts` | empty | More `Host` names the server answers to. |
 | `access.tailscale-socket` | `/var/run/tailscale/tailscaled.sock` | The `tailscaled` LocalAPI socket. |
-| `access.cache-ttl` | `1m` | How long taproot caches which device an address belongs to. |
+| `access.cache-ttl` | `1m` | How long taproot caches which device an address belongs to, at most `10m`. A device that takes over another's tailnet address keeps the other device's access for up to this long. |
 | `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. |
 | `ingest.poll-interval` | `15m` | How often taproot polls the quota of idle accounts. `0` turns polling off. |
 | `request-logs.max-days` | `14` | Delete request logs older than this many days. A negative value keeps them forever. |

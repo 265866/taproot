@@ -25,6 +25,10 @@ Docker created `data/` as root because it did not exist before the first `docker
 
 A browser on the server connects as the server's own node, which never gets Admin. Claim the server and open the dashboard from another device on the tailnet.
 
+## The browser shows "Taproot doesn't answer to this name"
+
+You opened taproot by a name it does not know, such as a local DNS name, an `/etc/hosts` alias, or a custom domain. Taproot answers only to `localhost`, its Tailscale name and addresses, and the names under `access.extra-hosts`, so that another website cannot reach it through DNS rebinding. Open it by its Tailscale name, such as `http://server:8317/`, or add the name under `access.extra-hosts` in `taproot.yaml` and restart taproot. If the page says taproot cannot read its own Tailscale name, tailscaled is not answering; see [Every tailnet device is refused after tailscaled restarts or updates](#every-tailnet-device-is-refused-after-tailscaled-restarts-or-updates).
+
 ## Taproot stops with `taproot.yaml not found`
 
 `config.yaml` exists but `taproot.yaml` does not. Taproot never writes one beside an existing `config.yaml`. Create the file in the directory the error names. An empty file works, or start from [`examples/taproot/taproot.yaml`](../examples/taproot/taproot.yaml). To keep `taproot.yaml` elsewhere, set `TAPROOT_CONFIG` to its path.
@@ -32,6 +36,18 @@ A browser on the server connects as the server's own node, which never gets Admi
 ## Taproot stops on an unknown key
 
 Taproot reads `taproot.yaml` strictly, and the error names the key and its line. Fix the spelling, or remove the key. [Configuration](configuration.md#taprootyaml) lists every key. A key that a newer patch release added stops an older release too.
+
+## Taproot stops on `more than one YAML document`
+
+`taproot.yaml` has a line with only `---`, which starts a second YAML document, and taproot reads only one. Merge the documents into one, and remove the `---` line.
+
+## Taproot stops with `no --config flag`
+
+Taproot was started without `--config` in a directory with no `config.yaml`. Start it with `taproot --config <dir>/config.yaml`. On its first start, taproot writes a default `config.yaml` and `taproot.yaml` in `<dir>`.
+
+## Clients get `every account is disabled` or `no enabled Claude account serves model`
+
+The pool has accounts, but none can serve the model the client asked for. Every account is disabled, or no enabled account is of the model's provider, such as a Claude model with only Codex accounts. Enable or add an account on the dashboard's Accounts page. For `no enabled account serves model`, also check the model name the client sends.
 
 ## Taproot stops on `access.allow-logins`, `access.admin-nodes`, or `access.trusted-cidrs`
 

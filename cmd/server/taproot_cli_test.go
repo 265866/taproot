@@ -1,16 +1,26 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/265866/taproot/internal/taproot"
+	"github.com/265866/taproot/internal/taproot/store"
 )
 
 // runMain runs main in a child process of the test binary, in dir, with the
@@ -19,6 +29,20 @@ import (
 // another taproot.yaml.
 func runMain(t *testing.T, dir string, args ...string) (int, string) {
 	t.Helper()
+	out, err := mainCommand(dir, args).CombinedOutput()
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return 0, string(out)
+	case errors.As(err, &exit):
+		return exit.ExitCode(), string(out)
+	default:
+		t.Fatalf("run main %v: %v", args, err)
+		return -1, ""
+	}
+}
+
+func mainCommand(dir string, args []string) *exec.Cmd {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRunMain$")
 	cmd.Dir = dir
 	for _, kv := range os.Environ() {
@@ -38,17 +62,7 @@ func runMain(t *testing.T, dir string, args ...string) (int, string) {
 	dead := "http://127.0.0.1:9"
 	cmd.Env = append(cmd.Env, "HTTP_PROXY="+dead, "HTTPS_PROXY="+dead, "http_proxy="+dead, "https_proxy="+dead, "NO_PROXY=127.0.0.1,localhost", "no_proxy=127.0.0.1,localhost",
 		"TAPROOT_TEST_RUN_MAIN=1", "TAPROOT_TEST_ARGS="+strings.Join(args, "\x1f"))
-	out, err := cmd.CombinedOutput()
-	var exit *exec.ExitError
-	switch {
-	case err == nil:
-		return 0, string(out)
-	case errors.As(err, &exit):
-		return exit.ExitCode(), string(out)
-	default:
-		t.Fatalf("run main %v: %v", args, err)
-		return -1, ""
-	}
+	return cmd
 }
 
 // TestRunMain is the child process of runMain.
@@ -151,5 +165,178 @@ func TestFatalStartupErrorsExitNonzero(t *testing.T) {
 				t.Fatalf("exit %d, want 1 with %q:\n%s", code, tc.want(dir), out)
 			}
 		})
+	}
+}
+
+// runningMain is main started by startMain.
+type runningMain struct {
+	process *os.Process
+	exit    <-chan int
+	output  *bytes.Buffer
+}
+
+// startMain starts main like runMain, without waiting for it, and returns
+// once the server on port answers /healthz.
+func startMain(t *testing.T, dir, port string, args ...string) runningMain {
+	t.Helper()
+	cmd := mainCommand(dir, args)
+	output := &bytes.Buffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exit := make(chan int, 1)
+	go func() {
+		var exitErr *exec.ExitError
+		switch err := cmd.Wait(); {
+		case err == nil:
+			exit <- 0
+		case errors.As(err, &exitErr):
+			exit <- exitErr.ExitCode()
+		default:
+			exit <- -1
+		}
+	}()
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	m := runningMain{process: cmd.Process, exit: exit, output: output}
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case code := <-exit:
+			t.Fatalf("main exited %d before serving:\n%s", code, output)
+		default:
+		}
+		if resp, err := http.Get("http://127.0.0.1:" + port + "/healthz"); err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return m
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("main did not serve /healthz:\n%s", output)
+	return m
+}
+
+func (m runningMain) wait(t *testing.T) int {
+	t.Helper()
+	select {
+	case code := <-m.exit:
+		return code
+	case <-time.After(30 * time.Second):
+		t.Fatalf("main did not exit:\n%s", m.output)
+		return -1
+	}
+}
+
+// writeServerConfig writes a config.yaml on a free loopback port, with a
+// fake OpenAI-compatible upstream at upstreamURL, and a taproot.yaml with the
+// guard off, and returns the port.
+func writeServerConfig(t *testing.T, dir, upstreamURL string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	config := "host: 127.0.0.1\nport: " + port + "\nrequest-log: true\nauth-dir: " + filepath.ToSlash(filepath.Join(dir, "auths")) + "\n" +
+		"openai-compatibility:\n  - name: fake\n    base-url: " + upstreamURL + "\n    api-key-entries: [{api-key: example-key}]\n    models: [{name: example-model, alias: example-model}]\n"
+	tp := "access:\n  enabled: false\ningest:\n  poll-interval: \"0\"\nbackups:\n  daily-at: \"off\"\n"
+	for name, content := range map[string]string{"config.yaml": config, "taproot.yaml": tp} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return port
+}
+
+// A usage event still queued when the server gets SIGTERM is written before
+// the process exits. Ingest writes queued events once a second, and the signal
+// follows the response at once.
+func TestShutdownKeepsQueuedRecords(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs SIGTERM")
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"example-model","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`)
+	}))
+	defer upstream.Close()
+	dir := t.TempDir()
+	port := writeServerConfig(t, dir, upstream.URL+"/v1")
+	m := startMain(t, dir, port, "--config", filepath.Join(dir, "config.yaml"))
+
+	const requests = 3
+	for range requests {
+		resp, err := http.Post("http://127.0.0.1:"+port+"/v1/chat/completions", "application/json", strings.NewReader(`{"model":"example-model","messages":[{"role":"user","content":"hi"}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("POST /v1/chat/completions = %d %s\n%s", resp.StatusCode, body, m.output)
+		}
+	}
+	if err := m.process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if code := m.wait(t); code != 0 {
+		t.Fatalf("main exited %d after SIGTERM, want 0:\n%s", code, m.output)
+	}
+
+	db, err := store.Open(context.Background(), store.Config{}, filepath.Join(dir, "taproot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	for table, want := range map[string]int{"usage_events": requests, "reqlog_records": requests} {
+		var n int
+		if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != want {
+			t.Errorf("%s after SIGTERM = %d, want %d", table, n, want)
+		}
+	}
+}
+
+// A restore makes the server exit with taproot.RestartExitCode, which every
+// restart policy restarts, Restart=on-failure included.
+func TestRestoreExitsForARestart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("restores restart only on unix")
+	}
+	dir := t.TempDir()
+	port := writeServerConfig(t, dir, "http://127.0.0.1:9/v1")
+	m := startMain(t, dir, port, "--config", filepath.Join(dir, "config.yaml"))
+
+	post := func(path string) []byte {
+		req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+port+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Taproot-Request", "1")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode >= 300 {
+			t.Fatalf("POST %s = %d %s\n%s", path, resp.StatusCode, body, m.output)
+		}
+		return body
+	}
+	var backup struct{ ID string }
+	if err := json.Unmarshal(post("/taproot/api/v1/backups"), &backup); err != nil || backup.ID == "" {
+		t.Fatalf("create backup: %v", err)
+	}
+	post("/taproot/api/v1/backups/" + backup.ID + "/restore")
+	if code := m.wait(t); code != taproot.RestartExitCode {
+		t.Fatalf("main exited %d after a restore, want %d:\n%s", code, taproot.RestartExitCode, m.output)
 	}
 }
