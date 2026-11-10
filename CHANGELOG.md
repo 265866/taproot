@@ -2,7 +2,9 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
-## Unreleased
+## [0.4.0](https://github.com/265866/taproot/compare/taproot-v0.3.0...taproot-v0.4.0) (2026-11-10)
+
+### Upgrading from 0.3
 
 - `PUT /taproot/api/v1/settings` refuses a field it does not know with 400 `invalid_body`, where it used to ignore it. It accepts only `access.version`, `access.devices`, `access.device`, `access.addresses`, `requestLogs.maxDays`, `requestLogs.maxBytes`, `requestLogs.excludePaths`, `requestLogs.keepUnrouted404`, `backups.dailyAt`, `backups.keep`, `ingest.pollInterval`, `alerts.discordWebhook`, and `alerts.enabled`. A script that sends back what `GET /settings` returns must first drop the read-only fields, such as `access.enabled`, `backups.nextRunAt`, and `info`, and a misspelled field, such as `daily-at` for `dailyAt`, now fails rather than changing nothing.
 - `access.cache-ttl` is at most `10m`, and taproot no longer starts with a larger value. A device that took over another's tailnet address kept the other device's access for up to the whole TTL. Before you update, lower `access.cache-ttl` in `taproot.yaml` to `10m` or less, or remove it to use the default `1m`.
@@ -10,6 +12,32 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 - NixOS: `services.taproot.settings.server.host` must now be a literal Tailscale address, an IPv4 address in 100.64.0.0/10 or a bracketed IPv6 address in fd7a:115c:a1e0::/48. A configuration that set it to a MagicDNS name, a LAN address, or another IPv4 address no longer evaluates. Remove that setting and set `services.taproot.tailscale.address` to the output of `tailscale ip -4` instead.
 - `taproot.yaml` must hold one YAML document. Taproot used to read only the first document after a `---` line and ignore the rest; it now refuses to start with a second one. Merge them into one before you update.
 - After a restore, taproot exits with status 75 so that its supervisor restarts it; a normal stop still exits 0. The shipped units and compose file restart on any exit. If your own unit or monitor treats a non-zero exit as a failure, allow 75.
+
+### Fixed
+
+* **taproot:** keep identifying callers after tailscaled restarts ([#46](https://github.com/265866/taproot/pull/46)) ([74efc7b](https://github.com/265866/taproot/commit/74efc7b963277bb4c96552630945d36231bdb33e))
+* **web:** label nameless devices by their Tailscale IP ([#45](https://github.com/265866/taproot/pull/45)) ([529884c](https://github.com/265866/taproot/commit/529884c364f5f734538c2f933b2a252da044b7f4))
+* **taproot:** admin devices read the model list and never raise access requests ([#47](https://github.com/265866/taproot/pull/47)) ([f3eb5c1](https://github.com/265866/taproot/commit/f3eb5c17dc420febb4025444b79902e12615024f))
+* **taproot:** let the Admin switch work for devices from other tailnets ([#49](https://github.com/265866/taproot/pull/49)) ([b242aed](https://github.com/265866/taproot/commit/b242aed74d92b627ed2fc16b55554ecf8f35c93e))
+* **taproot:** refuse Admin for the server's own node even before it is looked up ([#50](https://github.com/265866/taproot/pull/50)) ([58bb338](https://github.com/265866/taproot/commit/58bb33855316d484f2dd1d6bc2d4da8e3f8e073d))
+* **taproot:** keep revoked access revoked across addresses, tabs, and websockets ([#51](https://github.com/265866/taproot/pull/51)) ([09e3d70](https://github.com/265866/taproot/commit/09e3d7030a8d7e04a7f0e255aa9e047e6e6d5730))
+* **taproot:** make request log retention delete the oldest logs first ([#52](https://github.com/265866/taproot/pull/52)) ([f87ada2](https://github.com/265866/taproot/commit/f87ada2437818559a53c5d90eff68a5377905c2d))
+* **taproot:** stop daily usage hangs and fix several usage and quota readings ([#53](https://github.com/265866/taproot/pull/53)) ([cc99e40](https://github.com/265866/taproot/commit/cc99e40c8b36dcf279d555a09928a670e48c02fd))
+* **taproot:** bound request log memory and keep segments and keys safe ([#54](https://github.com/265866/taproot/pull/54)) ([dca4b47](https://github.com/265866/taproot/commit/dca4b477628ebe570d83f22eae485d593fef2bcd))
+* **taproot:** harden the updater, release pipeline, nix module, and demo checks ([#55](https://github.com/265866/taproot/pull/55)) ([4d78a84](https://github.com/265866/taproot/commit/4d78a841c83eb13e365a8f1a7b19bb7a76431c70))
+* **web:** make the dashboard shell honest, recoverable, and keyboard usable ([#57](https://github.com/265866/taproot/pull/57)) ([880a4e7](https://github.com/265866/taproot/commit/880a4e74877302b99b61745f34ab33f5b70873a9))
+* **taproot:** make restores safe to run and harden backups and settings ([#58](https://github.com/265866/taproot/pull/58)) ([5e266d1](https://github.com/265866/taproot/commit/5e266d1f329c31d60a1e488a1c248a5457114024))
+* **taproot:** keep queued records on shutdown and tidy first run and errors ([#56](https://github.com/265866/taproot/pull/56)) ([5da99f6](https://github.com/265866/taproot/commit/5da99f62f57ae2e9c62d3437b4d4cb33a59e6e43))
+* **taproot:** fair setup claims, clearer denials, and safer tailscaled reads ([#59](https://github.com/265866/taproot/pull/59)) ([32e7d50](https://github.com/265866/taproot/commit/32e7d50b271d48de85d038802f79cd9bcd6758ef))
+* **taproot:** reliable discord alerts, proxied quota reads, and fairer soonest-reset routing ([#60](https://github.com/265866/taproot/pull/60)) ([aad10ad](https://github.com/265866/taproot/commit/aad10adef1bb94253705a2baac2acb6d1c5c2ae3))
+* **web:** make the dashboard home and system page honest and live ([#61](https://github.com/265866/taproot/pull/61)) ([fb6acfc](https://github.com/265866/taproot/commit/fb6acfcb1a334b1b0d0a756ddc88b0fe3d91fee2))
+* **web:** fix alias data loss and broken account and sign-in flows ([#62](https://github.com/265866/taproot/pull/62)) ([932288f](https://github.com/265866/taproot/commit/932288f4607f808033e7c1ecd34455ac86f4225c))
+* **web:** make quota views fast, honest about age, and safe to retry ([#63](https://github.com/265866/taproot/pull/63)) ([ed8ddd9](https://github.com/265866/taproot/commit/ed8ddd9f058fa20dac5133fc3278f6399eb208f9))
+* **web:** keep usage analytics honest about stale data, ranges, and labels ([#64](https://github.com/265866/taproot/pull/64)) ([04fcfbe](https://github.com/265866/taproot/commit/04fcfbea69749c84d0b7d76b6aa3e05f9455eb4f))
+* **taproot:** refuse a request-log max-days that overflows the age cutoff ([#65](https://github.com/265866/taproot/pull/65)) ([d5b1e9c](https://github.com/265866/taproot/commit/d5b1e9cbc77df95a02a48354b24ef1949453798b))
+* **web:** make request and app logs reliable, faithful, and accessible ([#66](https://github.com/265866/taproot/pull/66)) ([5abe4dd](https://github.com/265866/taproot/commit/5abe4dd156a7eabd96c053cb317834d8f6cf9add))
+* **web:** safer restores, accurate settings, and clearer access and setup screens ([#67](https://github.com/265866/taproot/pull/67)) ([70ea48c](https://github.com/265866/taproot/commit/70ea48c9453cb4d68ae8907815d09cd97ba3c0c5))
+* **web:** keep concurrent config changes and fix config, routing, and plugin pages ([#68](https://github.com/265866/taproot/pull/68)) ([a2455d9](https://github.com/265866/taproot/commit/a2455d9d4c812ee87b56f7f5aac886ceb5159aaa))
 
 ## [0.3.0](https://github.com/265866/taproot/compare/taproot-v0.2.0...taproot-v0.3.0) (2026-11-09)
 
