@@ -12,6 +12,7 @@ import {
   chooseBucket,
   dailyBucketZone,
   presetWindow,
+  rangeQuery,
   resolveWindow,
   summaryZone,
   toIso,
@@ -58,9 +59,14 @@ export function TaprootUsagePage() {
   const window = validWindow ?? presetWindow('24h', anchorMs);
   const bucket = chooseBucket(window);
   const spanMs = window.toMs - window.fromMs;
-  const rangeQuery = validWindow
-    ? `${toIso(window.fromMs)}|${toIso(window.toMs)}|${bucket}|${refreshKey}`
-    : null;
+  const { key: validRangeKey, selection: rangeSelection } = rangeQuery(
+    params.range,
+    params.from,
+    params.to,
+    window,
+    refreshKey
+  );
+  const rangeKey = validWindow ? validRangeKey : null;
 
   const refresh = useCallback(async () => {
     setAnchorMs(Date.now());
@@ -82,7 +88,7 @@ export function TaprootUsagePage() {
   // The grouping and axis travel with the data they describe, so a click re-renders only the
   // toolbar until the new data arrives, instead of redrawing old data on a new axis.
   const overview = useTaprootQuery(
-    params.tab === 'overview' && rangeQuery ? `overview|${params.group}|${rangeQuery}` : null,
+    params.tab === 'overview' && rangeKey ? `overview|${params.group}|${rangeKey}` : null,
     async () => {
       const groupBy = params.group;
       const tz = summaryZone(bucket);
@@ -95,12 +101,13 @@ export function TaprootUsagePage() {
       const dayZone = bucket === '1d' ? dailyBucketZone(summary.buckets) : 'local';
       const axis: TimeAxis = { bucket, spanMs, dayZone };
       return { summary, byProvider: byProvider ?? summary, groupBy, axis };
-    }
+    },
+    `overview|${params.group}|${rangeSelection}`
   );
   const needsModels = params.tab === 'requests' || params.tab === 'pricing';
   // Only the model names are read, so UTC days serve.
   const modelSummary = useTaprootQuery(
-    needsModels && rangeQuery ? `models|${rangeQuery}` : null,
+    needsModels && rangeKey ? `models|${rangeKey}` : null,
     () => taprootApi.usageSummary({ ...range, bucket: '1d', groupBy: 'model' })
   );
   const models = useMemo(() => {
@@ -116,7 +123,7 @@ export function TaprootUsagePage() {
   const needsDevices =
     params.tab === 'requests' || (params.tab === 'overview' && params.group === 'device');
   const deviceList = useTaprootQuery(
-    needsDevices && rangeQuery ? `device-names|${rangeQuery}` : null,
+    needsDevices && rangeKey ? `device-names|${rangeKey}` : null,
     () => taprootApi.usageDevices({ from: range.from, to: range.to })
   );
   const devices = useMemo(() => deviceList.data?.devices ?? [], [deviceList.data]);
@@ -357,15 +364,20 @@ export function TaprootUsagePage() {
             <QueryError query={overview} />
             {overview.loading ? <div className={styles.loadingBar} /> : null}
             {overview.data ? (
-              <Overview
-                summary={overview.data.summary}
-                byProvider={overview.data.byProvider}
-                groupBy={overview.data.groupBy}
-                axis={overview.data.axis}
-                accountOrder={accountOrder}
-                labelFor={labelFor}
-                onViewRequests={viewRequests}
-              />
+              <div
+                className={`${styles.page} ${overview.current ? '' : styles.stale}`}
+                aria-busy={overview.loading}
+              >
+                <Overview
+                  summary={overview.data.summary}
+                  byProvider={overview.data.byProvider}
+                  groupBy={overview.data.groupBy}
+                  axis={overview.data.axis}
+                  accountOrder={accountOrder}
+                  labelFor={labelFor}
+                  onViewRequests={viewRequests}
+                />
+              </div>
             ) : null}
           </>
         ) : null}
@@ -389,6 +401,7 @@ export function TaprootUsagePage() {
         {params.tab === 'requests' && !rangeError ? (
           <RequestsView
             window={window}
+            rangeSelection={rangeSelection}
             refreshKey={refreshKey}
             filters={{
               account: params.account,
@@ -409,6 +422,7 @@ export function TaprootUsagePage() {
         {params.tab === 'devices' && !rangeError ? (
           <DevicesView
             window={window}
+            rangeSelection={rangeSelection}
             refreshKey={refreshKey}
             showEmails={showEmails}
             onViewRequests={(deviceId) =>

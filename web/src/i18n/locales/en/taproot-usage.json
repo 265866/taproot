@@ -294,8 +294,7 @@
       "estimate_rewrites_other": "{{count}} cache writes totalling {{tokens}} tokens followed a 5 to 60 minute pause, so a one-hour TTL would likely have read them instead (about {{cost}}). Writing the rest at the one-hour rate would add about {{premium}}.",
       "estimate_none": "No cache write followed a 5 to 60 minute pause in this range. Writing at the one-hour rate would add about {{premium}}.",
       "estimate_net_saving": "Net: about {{amount}} saved at API prices.",
-      "estimate_net_cost": "Net: about {{amount}} more at API prices.",
-      "estimate_net_cost_hint": "A one-hour TTL pays off when sessions pause for 5 to 60 minutes; if this device rarely pauses that long, the 5-minute TTL is cheaper."
+      "estimate_net_cost": "Net: about {{amount}} more at API prices."
     }
   }
 }

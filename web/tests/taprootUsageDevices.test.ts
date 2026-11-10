@@ -225,6 +225,7 @@ describe('devices tab rendering', () => {
       }
     );
     const html = render(createElement(TtlAdvice, { devices: [costly] }));
+    expect(html).not.toContain('the 5-minute TTL is cheaper');
     expect(html).toContain('Keep the 5-minute TTL on server');
     expect(html).toContain('about $0.16 more');
     expect(html).not.toContain('promptCacheTtl');

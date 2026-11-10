@@ -12,6 +12,7 @@ import {
   localTimeZone,
   parseLocalDate,
   presetWindow,
+  rangeQuery,
   resolveWindow,
   summaryZone,
   todayWindow,
@@ -723,5 +724,30 @@ describe('query state after a failure', () => {
     // A failed retry of the same key keeps data that is still for that key.
     const retried = settleQuery(loaded, '24h#1', '24h', { error: new Error('x') });
     expect(queryView(retried, '24h', '24h#1')).toMatchObject({ current: true, updatedAt: 1000 });
+  });
+
+  test('a failed refresh or tab return keeps figures that answer the same selection current', () => {
+    const at = Date.UTC(2026, 10, 9, 10, 0);
+    const opened = rangeQuery('24h', '', '', presetWindow('24h', at), 0);
+    // A header refresh two hours later moves the anchor and bumps the refresh count.
+    const refreshed = rangeQuery('24h', '', '', presetWindow('24h', at + 7_200_000), 1);
+    expect(refreshed.key).not.toBe(opened.key);
+    expect(refreshed.selection).toBe(opened.selection);
+
+    const loaded = settleQuery(null, `${opened.key}#0`, opened.selection, { data: 'day', at });
+    const failed = settleQuery(loaded, `${refreshed.key}#0`, refreshed.selection, {
+      error: new Error('database is locked'),
+    });
+    expect(queryView(failed, refreshed.selection, `${refreshed.key}#0`)).toMatchObject({
+      current: true,
+      updatedAt: at,
+    });
+
+    // Another range, or other custom dates, is another selection.
+    const week = rangeQuery('7d', '', '', presetWindow('7d', at), 1);
+    expect(queryView(failed, week.selection, `${week.key}#0`).current).toBe(false);
+    const custom = (from: string, to: string) =>
+      rangeQuery('custom', from, to, presetWindow('7d', at), 0).selection;
+    expect(custom('2026-11-01', '2026-11-07')).not.toBe(custom('2026-11-02', '2026-11-07'));
   });
 });

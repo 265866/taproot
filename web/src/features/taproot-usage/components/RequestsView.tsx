@@ -30,6 +30,8 @@ export interface RequestFilters {
 
 interface Props {
   window: TimeWindow;
+  /** The range as chosen, which a refresh or a tab switch leaves unchanged. */
+  rangeSelection: string;
   refreshKey: number;
   filters: RequestFilters;
   onFiltersChange: (patch: Partial<RequestFilters>) => void;
@@ -44,6 +46,7 @@ interface Props {
 
 export function RequestsView({
   window,
+  rangeSelection,
   refreshKey,
   filters,
   onFiltersChange,
@@ -55,7 +58,8 @@ export function RequestsView({
   showEmails,
 }: Props) {
   const { t } = useTranslation();
-  const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filters.account}|${filters.model}|${filters.session}|${filters.device}|${filters.failed}`;
+  const filterSelection = `${filters.account}|${filters.model}|${filters.session}|${filters.device}|${filters.failed}`;
+  const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filterSelection}`;
   // cursors[i] opens page i; page 0 has none.
   const [paging, setPaging] = useState<{
     key: string;
@@ -83,11 +87,14 @@ export function RequestsView({
       failed: filters.failed === '' ? undefined : filters.failed === 'true',
       cursor,
       limit: PAGE_SIZE,
-    })
+    }),
+    `${rangeSelection}|${filterSelection}`
   );
   const events = query.data?.events ?? [];
-  // A cursor from another filter's page would page through the wrong results.
-  const nextCursor = query.current ? (query.data?.nextCursor ?? null) : null;
+  // Only a page that answers this exact request may page on: a cursor from another filter, window,
+  // or page would page through the wrong results.
+  const nextCursor =
+    query.loading || query.error ? null : (query.data?.nextCursor ?? null);
 
   const accountOptions = useMemo(() => {
     const keys = accounts.map((a) => a.authIndex);
@@ -239,7 +246,10 @@ export function RequestsView({
       ) : null}
 
       {events.length > 0 ? (
-        <div className={styles.tableScroll}>
+        <div
+          className={`${styles.tableScroll} ${query.current ? '' : styles.stale}`}
+          aria-busy={query.loading}
+        >
           <table className={styles.table}>
             <thead>
               <tr>

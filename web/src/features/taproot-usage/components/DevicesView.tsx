@@ -19,15 +19,25 @@ import styles from '../TaprootUsage.module.scss';
 
 interface Props {
   window: TimeWindow;
+  /** The range as chosen, which a refresh or a tab switch leaves unchanged. */
+  rangeSelection: string;
   refreshKey: number;
   showEmails: boolean;
   /** Opens Requests filtered to a device; the empty ID means requests without a device. */
   onViewRequests: (deviceId: string) => void;
 }
 
-export function DevicesView({ window, refreshKey, showEmails, onViewRequests }: Props) {
-  const query = useTaprootQuery(`devices|${window.fromMs}|${window.toMs}|${refreshKey}`, () =>
-    taprootApi.usageDevices({ from: toIso(window.fromMs), to: toIso(window.toMs) })
+export function DevicesView({
+  window,
+  rangeSelection,
+  refreshKey,
+  showEmails,
+  onViewRequests,
+}: Props) {
+  const query = useTaprootQuery(
+    `devices|${window.fromMs}|${window.toMs}|${refreshKey}`,
+    () => taprootApi.usageDevices({ from: toIso(window.fromMs), to: toIso(window.toMs) }),
+    `devices|${rangeSelection}`
   );
   const devices = useMemo(() => query.data?.devices ?? [], [query.data]);
   const flagged = devices.filter((d) => ttlStatus(d) === 'flag');
@@ -36,9 +46,14 @@ export function DevicesView({ window, refreshKey, showEmails, onViewRequests }: 
     <>
       <QueryError query={query} />
       {query.loading ? <div className={styles.loadingBar} /> : null}
-      {flagged.length > 0 ? <TtlAdvice devices={flagged} /> : null}
       {query.data ? (
-        <DevicesTable devices={devices} showEmails={showEmails} onViewRequests={onViewRequests} />
+        <div
+          className={`${styles.page} ${query.current ? '' : styles.stale}`}
+          aria-busy={query.loading}
+        >
+          {flagged.length > 0 ? <TtlAdvice devices={flagged} /> : null}
+          <DevicesTable devices={devices} showEmails={showEmails} onViewRequests={onViewRequests} />
+        </div>
       ) : null}
     </>
   );
@@ -126,7 +141,6 @@ export function TtlAdvice({ devices }: { devices: readonly UsageDevice[] }) {
                       amount: formatUSD(-e.netSavingsUSD),
                     })}
               </strong>
-              {e.netSavingsUSD < 0 ? ` ${t('taproot_usage.devices.estimate_net_cost_hint')}` : null}
             </p>
           </div>
         );

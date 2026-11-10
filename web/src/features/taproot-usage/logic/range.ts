@@ -46,8 +46,8 @@ export function dailyBucketZone(buckets: readonly { t: string }[]): DayZone {
 
 /**
  * Hourly buckets up to a week, daily beyond: 24 to 168 points, or one point per day. Seven whole
- * local days span 169 h across a fall-back clock change, so a span that is a week on the local
- * clock counts as a week too.
+ * local days span 169 h across a fall-back clock change; that span is a week on the local clock,
+ * so it stays hourly with 169 points.
  */
 export function chooseBucket(window: TimeWindow): UsageBucket {
   const span = window.toMs - window.fromMs;
@@ -120,6 +120,23 @@ export function resolveWindow(
   const result = customWindow(from, to, anchorMs);
   if ('window' in result) return { window: result.window, error: null };
   return { window: null, error: result.error };
+}
+
+/**
+ * A range query's key, and the selection its data answers: the range as chosen, without the
+ * anchor time and refresh count that a refresh or a tab switch moves under an unchanged choice.
+ */
+export function rangeQuery(
+  range: RangePreset,
+  from: string,
+  to: string,
+  window: TimeWindow,
+  refreshKey: number
+): { key: string; selection: string } {
+  return {
+    key: `${toIso(window.fromMs)}|${toIso(window.toMs)}|${chooseBucket(window)}|${refreshKey}`,
+    selection: range === 'custom' ? `custom|${from}|${to}` : range,
+  };
 }
 
 /** Local midnight today through the next whole minute. */

@@ -209,6 +209,17 @@ describe('usage load errors', () => {
     expect(html).toContain('from the previous selection, loaded at Nov 9,');
   });
 
+  test('say when the data still on screen loaded, without blaming the selection, after a refresh', () => {
+    const html = render(
+      createElement(QueryError, {
+        query: { ...base, data: {}, current: true, updatedAt: Date.UTC(2026, 10, 9, 10, 42) },
+      })
+    );
+    expect(html).toContain('The figures below loaded at Nov 9,');
+    expect(html).toContain('may be out of date');
+    expect(html).not.toContain('previous selection');
+  });
+
   test('say only the error when nothing loaded before', () => {
     const html = render(
       createElement(QueryError, { query: { ...base, data: null, current: false, updatedAt: null } })

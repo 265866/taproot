@@ -341,6 +341,11 @@
   font-weight: 600;
 }
 
+/* Figures left over from another selection while its own load or after it failed. */
+.stale {
+  opacity: 0.6;
+}
+
 .loadingBar {
   height: 2px;
   border-radius: 2px;
