@@ -13,7 +13,7 @@ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { formatCompactNumber, formatDateValue, formatPercent } from '@/utils/format';
 import { DashboardUsageSummary } from '@/features/taproot-usage/components/DashboardUsageSummary';
-import { useDashboardOverview } from './hooks/useDashboardOverview';
+import { useDashboardOverview, type ReadStatus } from './hooks/useDashboardOverview';
 import { LiveWire } from './components/LiveWire';
 import { Meter } from './components/Meter';
 import { Sparkline } from './components/Sparkline';
@@ -59,6 +59,7 @@ export function DashboardPage() {
     credentials,
     models,
     errors,
+    status,
     today,
     quota,
     nowMs,
@@ -109,6 +110,7 @@ export function DashboardPage() {
 
   const verdict = dashboardVerdict({
     connectionStatus,
+    loading: status.recent === 'loading',
     traffic: trafficKnown ? traffic : null,
     credentials,
   });
@@ -134,6 +136,9 @@ export function DashboardPage() {
     loadErrors.push(t('dashboard.load_failed_credentials', { message: errors.authFiles }));
   }
 
+  const unreadHint = (readState: ReadStatus) =>
+    readState === 'failed' ? t('dashboard.stat_read_failed') : t('common.loading');
+
   const statTiles = [
     {
       key: 'success',
@@ -141,7 +146,7 @@ export function DashboardPage() {
       value: traffic.successRate === null ? DASH : formatPercent(traffic.successRate),
       hint: trafficKnown
         ? t('dashboard.stat_success_hint', { count: traffic.total, window: windowLabel })
-        : t('dashboard.stat_unavailable'),
+        : unreadHint(status.recent),
       meter: traffic.successRate,
       tone: successRateTone,
     },
@@ -157,7 +162,7 @@ export function DashboardPage() {
               unavailable: credentials.unavailable,
             })
           : t('dashboard.stat_credentials_empty')
-        : t('dashboard.stat_unavailable'),
+        : unreadHint(status.authFiles),
       meter: credentialsMeter.value,
       tone: credentialsMeter.tone,
     },
@@ -281,7 +286,11 @@ export function DashboardPage() {
           <div className={styles.heroPanelTop}>
             <span className={styles.heroPanelLabel}>{t('dashboard.hero_requests_label')}</span>
             {connected &&
-              (errors.recent || !trafficKnown ? (
+              (status.recent === 'loading' ? (
+                <span className={`${styles.liveBadge} ${styles.liveBadgeStale}`}>
+                  {t('common.loading')}
+                </span>
+              ) : errors.recent ? (
                 <span className={`${styles.liveBadge} ${styles.liveBadgeStale}`}>
                   {t('dashboard.hero_stale')}
                 </span>

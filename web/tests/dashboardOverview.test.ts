@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, jest, spyOn, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import axios, { AxiosError, AxiosHeaders } from 'axios';
 import i18n from '../src/i18n/index';
@@ -15,7 +15,13 @@ import {
   redactProxyUrl,
   versionLabel,
 } from '../src/features/dashboard/model';
-import { initialReads, readDashboard } from '../src/features/dashboard/hooks/useDashboardOverview';
+import {
+  DASHBOARD_POLL_MS,
+  initialReads,
+  pollWhileVisible,
+  readDashboard,
+  readStatus,
+} from '../src/features/dashboard/hooks/useDashboardOverview';
 import type { TrafficWindow } from '../src/features/dashboard/types';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -100,6 +106,12 @@ describe('dashboard traffic comes from usage records over one window', () => {
     expect(providers.reduce((sum, p) => sum + p.total, 0)).toBe(traffic.total);
   });
 
+  test('usage without a provider is unattributed', () => {
+    const { fromMs } = recentTrafficRange(NOW);
+    const { providers } = buildTraffic(summary([[fromMs, { '(none)': totals(2) }]]), fromMs, []);
+    expect(providers.map((p) => [p.id, p.total])).toEqual([['unknown', 2]]);
+  });
+
   test('no summary yet means unknown traffic, not zero', () => {
     const { traffic, providers } = buildTraffic(null, 0, [file('claude')]);
     expect(traffic.buckets).toEqual([]);
@@ -120,8 +132,12 @@ describe('the verdict', () => {
       ...Array.from({ length: disabled }, () => file('claude', { disabled: true })),
       ...Array.from({ length: unavailable }, () => file('claude', { unavailable: true })),
     ]);
-  const verdict = (t: TrafficWindow | null, c = health(3)) =>
-    dashboardVerdict({ connectionStatus: 'connected', traffic: t, credentials: c }).key;
+  const verdict = (t: TrafficWindow | null, c = health(3), loading = false) =>
+    dashboardVerdict({ connectionStatus: 'connected', loading, traffic: t, credentials: c }).key;
+
+  test('before the first read settles the headline says it is checking', () => {
+    expect(verdict(null, null, true)).toBe('hero_verdict_loading');
+  });
 
   test('a failed read is unknown, never quiet', () => {
     expect(verdict(null)).toBe('hero_verdict_unknown');
@@ -141,6 +157,10 @@ describe('the verdict', () => {
 
   test('most accounts cooling down warns even while requests succeed', () => {
     expect(verdict(traffic(30, 0), health(1, 0, 2))).toBe('hero_verdict_warning');
+  });
+
+  test('one account of five cooling down does not warn while requests succeed', () => {
+    expect(verdict(traffic(100, 0), health(4, 0, 1))).toBe('hero_verdict_good');
   });
 });
 
@@ -228,10 +248,13 @@ describe('dashboard reads', () => {
     expect(recent?.groupBy).toBe('provider');
   });
 
-  test('the page polls while visible and the Today card has no clock of its own', () => {
-    const hook = read('src/features/dashboard/hooks/useDashboardOverview.ts');
-    expect(hook).toContain('setInterval');
-    expect(hook).toContain("document.visibilityState === 'visible'");
+  test('a read is loading until it settles, then ready or failed', () => {
+    expect(readStatus(initialReads(NOW).recent)).toBe('loading');
+    expect(readStatus({ data: null, error: 'Request failed' })).toBe('failed');
+    expect(readStatus({ data: [], error: 'Request failed' })).toBe('ready');
+  });
+
+  test('the Today card has no clock of its own', () => {
     const today = read('src/features/taproot-usage/components/DashboardUsageSummary.tsx');
     expect(today).not.toContain('Date.now()');
     expect(today).not.toContain('useTaprootQuery');
@@ -279,5 +302,64 @@ describe('model list errors and links', () => {
 
   test('the System page joins Refresh All', () => {
     expect(read('src/pages/SystemPage.tsx')).toContain('useHeaderRefresh(');
+  });
+});
+
+describe('polling', () => {
+  const fakeDocument = () => {
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    const setVisible = (visible: boolean) => {
+      doc.visibilityState = visible ? 'visible' : 'hidden';
+      doc.dispatchEvent(new Event('visibilitychange'));
+    };
+    return { doc, setVisible };
+  };
+  const original = globalThis.document;
+  afterEach(() => {
+    jest.useRealTimers();
+    globalThis.document = original;
+  });
+
+  test('a slow read is never overlapped by the next tick', async () => {
+    jest.useFakeTimers();
+    globalThis.document = fakeDocument().doc as unknown as Document;
+    let calls = 0;
+    let finish = () => {};
+    const stop = pollWhileVisible(() => {
+      calls += 1;
+      return new Promise<void>((resolve) => (finish = resolve));
+    });
+    expect(calls).toBe(1);
+    jest.advanceTimersByTime(DASHBOARD_POLL_MS * 3);
+    expect(calls).toBe(1);
+
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    jest.advanceTimersByTime(DASHBOARD_POLL_MS - 1);
+    expect(calls).toBe(1);
+    jest.advanceTimersByTime(1);
+    expect(calls).toBe(2);
+    stop();
+  });
+
+  test('a hidden tab skips its turn and reads at once when it returns', async () => {
+    jest.useFakeTimers();
+    const { doc, setVisible } = fakeDocument();
+    globalThis.document = doc as unknown as Document;
+    let calls = 0;
+    const stop = pollWhileVisible(async () => {
+      calls += 1;
+    });
+    await Promise.resolve();
+    setVisible(false);
+    jest.advanceTimersByTime(DASHBOARD_POLL_MS * 2);
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    setVisible(true);
+    expect(calls).toBe(2);
+    stop();
+    jest.advanceTimersByTime(DASHBOARD_POLL_MS * 2);
+    expect(calls).toBe(2);
   });
 });

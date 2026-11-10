@@ -28,12 +28,14 @@ export function recentTrafficRange(nowMs: number): { fromMs: number; toMs: numbe
   };
 }
 
-export const providerIdOfAuthFile = (file: AuthFileItem): string => {
-  const candidate = String(file.type ?? file.provider ?? '')
-    .trim()
-    .toLowerCase();
-  return candidate && candidate !== 'empty' ? candidate : 'unknown';
+/** The usage API groups records without a provider under `(none)`. */
+const normalizedProviderId = (raw: string): string => {
+  const id = raw.trim().toLowerCase();
+  return id && id !== 'empty' && id !== '(none)' ? id : 'unknown';
 };
+
+export const providerIdOfAuthFile = (file: AuthFileItem): string =>
+  normalizedProviderId(String(file.type ?? file.provider ?? ''));
 
 const emptySlots = (fromMs: number): TrafficBucket[] =>
   Array.from({ length: TRAFFIC_BUCKET_COUNT }, (_, index) => ({
@@ -107,7 +109,7 @@ export function buildTraffic(
     const index = Math.floor((Date.parse(bucket.t) - fromMs) / BUCKET_MS);
     if (!(index >= 0 && index < TRAFFIC_BUCKET_COUNT)) return;
     Object.entries(bucket.groups).forEach(([group, totals]) => {
-      const id = group.trim().toLowerCase() || 'unknown';
+      const id = normalizedProviderId(group);
       let slots = byProvider.get(id);
       if (!slots) {
         slots = emptySlots(fromMs);
@@ -189,10 +191,13 @@ export type VerdictKey =
   | 'hero_verdict_no_accounts'
   | 'hero_verdict_unknown'
   | 'hero_verdict_offline'
-  | 'hero_verdict_connecting';
+  | 'hero_verdict_connecting'
+  | 'hero_verdict_loading';
 
 export interface VerdictInput {
   connectionStatus: string;
+  /** True until the first read settles. */
+  loading: boolean;
   /** Null until the traffic read first succeeds. */
   traffic: TrafficWindow | null;
   /** Null until the credential read first succeeds. */
@@ -204,7 +209,12 @@ export interface VerdictInput {
  * success rate decides, except that a small sample cannot go past a warning, and fewer than half
  * of the credentials meant to serve being able to is at least a warning.
  */
-export function dashboardVerdict({ connectionStatus, traffic, credentials }: VerdictInput): {
+export function dashboardVerdict({
+  connectionStatus,
+  loading,
+  traffic,
+  credentials,
+}: VerdictInput): {
   key: VerdictKey;
   tone: MeterTone;
 } {
@@ -213,6 +223,7 @@ export function dashboardVerdict({ connectionStatus, traffic, credentials }: Ver
       ? { key: 'hero_verdict_connecting', tone: 'warning' }
       : { key: 'hero_verdict_offline', tone: 'idle' };
   }
+  if (loading) return { key: 'hero_verdict_loading', tone: 'idle' };
   if (credentials && credentials.active === 0) {
     return { key: 'hero_verdict_no_accounts', tone: 'critical' };
   }
@@ -221,8 +232,8 @@ export function dashboardVerdict({ connectionStatus, traffic, credentials }: Ver
 
   let tone = toneForSuccessRate(traffic.successRate);
   if (traffic.total < MIN_VERDICT_SAMPLE && tone === 'critical') tone = 'warning';
-  const health = credentialMeter(credentials).tone;
-  if (health === 'critical' || health === 'warning') tone = worse(tone, 'warning');
+  const serving = credentialMeter(credentials).value;
+  if (serving !== null && serving < 50) tone = worse(tone, 'warning');
 
   const keyByTone: Record<MeterTone, VerdictKey> = {
     good: 'hero_verdict_good',

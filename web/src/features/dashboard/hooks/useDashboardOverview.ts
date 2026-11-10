@@ -29,6 +29,12 @@ export interface Read<T> {
 
 const EMPTY_READ = { data: null, error: null };
 
+/** `loading` until the first read settles; `failed` while no read has succeeded since. */
+export type ReadStatus = 'loading' | 'ready' | 'failed';
+
+export const readStatus = (read: Read<unknown>): ReadStatus =>
+  read.data !== null ? 'ready' : read.error !== null ? 'failed' : 'loading';
+
 const settle = <T>(previous: Read<T>, result: PromiseSettledResult<T>): Read<T> =>
   result.status === 'fulfilled'
     ? { data: result.value, error: null }
@@ -102,9 +108,49 @@ export async function readDashboard(
 }
 
 /**
+ * Calls `read` now and then `intervalMs` after each read finishes, so a slow read never overlaps the
+ * next. Hidden tabs skip their turn; becoming visible reads at once unless a read is running.
+ * Returns the stop function.
+ */
+export function pollWhileVisible(
+  read: () => Promise<unknown>,
+  intervalMs = DASHBOARD_POLL_MS
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let reading = false;
+  let stopped = false;
+  const visible = () => document.visibilityState === 'visible';
+
+  const tick = async () => {
+    timer = undefined;
+    try {
+      if (visible()) {
+        reading = true;
+        await read();
+      }
+    } finally {
+      reading = false;
+      if (!stopped) timer = setTimeout(tick, intervalMs);
+    }
+  };
+  const onVisibility = () => {
+    if (!visible() || reading) return;
+    clearTimeout(timer);
+    void tick();
+  };
+
+  document.addEventListener('visibilitychange', onVisibility);
+  void tick();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    document.removeEventListener('visibilitychange', onVisibility);
+  };
+}
+
+/**
  * Everything the dashboard shows. Traffic comes from taproot's usage records, which survive
- * restarts, rather than upstream's in-memory counters. The reads repeat every 30 s while the tab
- * is visible and once more when it becomes visible.
+ * restarts, rather than upstream's in-memory counters.
  */
 export function useDashboardOverview() {
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
@@ -153,18 +199,7 @@ export function useDashboardOverview() {
 
   useEffect(() => {
     if (!connected) return;
-    void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load();
-    }, DASHBOARD_POLL_MS);
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') void load();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
+    return pollWhileVisible(load);
   }, [connected, load]);
 
   // The shell rereads the config for Refresh All, so the page rereads only its own data.
@@ -196,6 +231,10 @@ export function useDashboardOverview() {
     errors: {
       authFiles: reads.authFiles.error,
       recent: reads.recent.error,
+    },
+    status: {
+      authFiles: readStatus(reads.authFiles),
+      recent: readStatus(reads.recent),
     },
     today: reads.today,
     quota: reads.quota,
