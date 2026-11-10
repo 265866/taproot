@@ -23,6 +23,7 @@ import (
 //	digests/<id>   repository digests of image <id>, one per line
 //	running        image ID the container runs
 //	active         present while the unit is active
+//	crashloop      present while the unit, not active, waits to restart a crash
 //	healthy/<id>   present when the container answers health checks on <id>
 //	hang/<id>      present when health checks on <id> hang until curl times out
 //	stuck          present when a restart fails and leaves the container as is
@@ -75,7 +76,11 @@ podman)
 	esac ;;
 systemctl)
 	case $2 in
-	is-active) [[ -f $s/active ]] ;;
+	show)
+		if [[ -f $s/active ]]; then echo active
+		elif [[ -f $s/crashloop ]]; then echo activating
+		else echo inactive
+		fi ;;
 	restart)
 		call "systemctl restart $3"
 		if [[ -f $s/kill ]]; then
@@ -534,6 +539,28 @@ func TestUpdateOnlyRetagsAStoppedUnit(t *testing.T) {
 	wantOutput(t, out, "is not running, so it starts on the new image next time")
 }
 
+// A unit that waits to restart after a crash is not "active", but it is not
+// stopped either: the update restarts it and checks its health.
+func TestUpdateRestartsACrashLoopingUnit(t *testing.T) {
+	h := newUpdateHost(t)
+	h.remove("state/active")
+	h.write("state/crashloop", "")
+	h.remove("state/running")
+	out, code, calls := h.run()
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	wantCalls(t, calls,
+		"cosign verify "+image+"@"+digestNew,
+		"podman pull "+image+"@"+digestNew,
+		"podman tag "+idOld+" localhost/taproot:previous",
+		"podman tag "+idNew+" localhost/taproot:current",
+		"systemctl restart taproot-update-test.service",
+		"podman image rm "+idOlder,
+	)
+	wantOutput(t, out, "updated taproot-update-test.service to "+image+"@"+digestNew)
+}
+
 func TestUpdateRejectsBadSettings(t *testing.T) {
 	for name, extra := range map[string]string{
 		"unknown key":     "TAPROOT_TYPO=1\n",
@@ -582,7 +609,10 @@ func TestUpdateBindsTheSignatureToTheTrack(t *testing.T) {
 		{"exact version", "0.2.1", "0.2.1", "", true},
 		{"other patch for an exact version", "0.2.1", "0.2.2", "", false},
 		{"exact prerelease", "0.2.0-rc.2", "0.2.0-rc.2", "", true},
+		{"exact prerelease with a hyphen", "0.4.0-rc-1", "0.4.0-rc-1", "", true},
+		{"other tag for an exact prerelease with a hyphen", "0.4.0-rc-1", "0.1.0", "", false},
 		{"other tag accepts any release", "latest", "0.3.0", "", true},
+		{"other tag refuses a prerelease", "latest", "0.4.0-rc.1", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newUpdateHost(t)
@@ -707,6 +737,29 @@ func TestUpdateFinishesAnInterruptedRun(t *testing.T) {
 		}
 		wantCalls(t, calls)
 		wantOutput(t, out, "is not running, so it starts on localhost/taproot:current next time", "is already "+target)
+	})
+
+	t.Run("crash-looping after a reboot", func(t *testing.T) {
+		h := interrupt(t)
+		h.remove("state/active")
+		h.write("state/crashloop", "")
+		h.remove("state/running")
+		h.remove("state/healthy/" + idNew)
+		out, code, calls := h.run()
+		if code != 1 {
+			t.Fatalf("exit %d, want 1:\n%s", code, out)
+		}
+		wantCalls(t, calls,
+			"systemctl restart taproot-update-test.service",
+			"podman tag "+idOld+" localhost/taproot:current",
+			"podman tag "+idOlder+" localhost/taproot:previous",
+			"systemctl restart taproot-update-test.service",
+			"podman image rm "+idNew,
+		)
+		wantOutput(t, out, "rolled back")
+		if got := h.read("state/running"); got != idOld {
+			t.Fatalf("running %s, want %s", got, idOld)
+		}
 	})
 }
 

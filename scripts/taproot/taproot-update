@@ -18,6 +18,8 @@
 #                           also binds the signature check: 0.2 accepts only
 #                           an image signed for a taproot-v0.2.<patch> tag,
 #                           and 0.2.1 only one signed for taproot-v0.2.1.
+#                           Any other tag, such as latest, accepts a release
+#                           but never a prerelease.
 #   TAPROOT_UNIT            systemd user unit that runs taproot (taproot.service).
 #   TAPROOT_CONTAINER       Container name the unit runs (taproot).
 #   TAPROOT_LOCAL_TAG       Local tag the unit's quadlet runs
@@ -115,13 +117,14 @@ previous_tag="${local_tag%:*}:previous"
 [[ -n $unit && -n $container ]] || die "TAPROOT_UNIT and TAPROOT_CONTAINER must not be empty"
 
 # The signature must name the release line the track follows, so a track tag
-# moved to a prerelease or another minor version does not verify.
+# moved to a prerelease or another minor version does not verify. Any other
+# track, such as latest, accepts a release but never a prerelease.
 if [[ $track =~ ^[0-9]+\.[0-9]+$ ]]; then
 	identity="$IDENTITY_PREFIX${track//./\\.}\.[0-9]+\$"
-elif [[ $track =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+elif [[ $track =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
 	identity="$IDENTITY_PREFIX${track//./\\.}\$"
 else
-	identity=$IDENTITY_PREFIX
+	identity="${IDENTITY_PREFIX}[0-9]+\.[0-9]+\.[0-9]+\$"
 fi
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/taproot-update"
@@ -248,6 +251,16 @@ restart() {
 	systemctl --user restart "$unit" || log "systemctl --user restart $unit failed"
 }
 
+# unit_stopped succeeds when someone stopped the unit. A unit that crashed and
+# waits to restart is "activating", and one that gave up restarting is
+# "failed"; neither is stopped, and is-active would call both inactive.
+unit_stopped() {
+	case $(systemctl --user show -p ActiveState --value "$unit" 2>/dev/null) in
+	inactive | deactivating | "") return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
 # remove_unused removes an image that no tag or container uses any more.
 # podman refuses, and this ignores, an image that something still uses.
 remove_unused() {
@@ -306,7 +319,7 @@ if [[ -s $pending_file ]]; then
 	if $check; then
 		log "a run stopped before $target passed its health check; the next run checks it and rolls back if it fails"
 		exit 0
-	elif ! systemctl --user is-active --quiet "$unit"; then
+	elif unit_stopped; then
 		log "a run stopped before $target passed its health check; $unit is not running, so it starts on $local_tag next time"
 		rm -f -- "$pending_file"
 	elif [[ -n $new_id && $tagged == "$new_id" ]]; then
@@ -367,7 +380,7 @@ if [[ -n $current_id ]]; then
 fi
 podman tag "$new_id" "$local_tag"
 
-if ! systemctl --user is-active --quiet "$unit"; then
+if unit_stopped; then
 	rm -f -- "$pending_file"
 	log "tagged $target as $local_tag; $unit is not running, so it starts on the new image next time"
 	remove_unused "$old_previous_id"
