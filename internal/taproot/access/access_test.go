@@ -399,6 +399,38 @@ func TestSelfNodeMatchedByStableIDToo(t *testing.T) {
 	assertForbidden(t, do(e, "100.127.0.9:1", "/v8/management/config", nil))
 }
 
+// ServerNodeID reads tailscaled when no request has looked the node up yet,
+// so the settings checks never compare against an empty cache.
+func TestServerNodeIDReadsTailscaled(t *testing.T) {
+	ts := newFakeTailscaled(t, defaultPeers())
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	g.now = func() time.Time { return now }
+	if got := g.ServerNodeID(t.Context()); got != serverID {
+		t.Fatalf("ServerNodeID with an empty cache = %q, want %q", got, serverID)
+	}
+	if got := g.ServerNodeID(t.Context()); got != serverID || ts.statusCount() != 1 {
+		t.Fatalf("ServerNodeID = %q after %d status calls, want %q from the cache", got, ts.statusCount(), serverID)
+	}
+
+	// A failed refresh keeps the last known node.
+	ts.failStatus(1000)
+	now = now.Add(defaultCacheTTL)
+	if got := g.ServerNodeID(t.Context()); got != serverID || ts.statusCount() != 2 {
+		t.Fatalf("ServerNodeID after a failed refresh = %q (%d status calls), want %q", got, ts.statusCount(), serverID)
+	}
+
+	// Never read: unknown.
+	unread := newTestGuard(t, Config{TailscaleSocket: ts.socket})
+	if got := unread.ServerNodeID(t.Context()); got != "" {
+		t.Fatalf("ServerNodeID while tailscaled fails = %q, want empty", got)
+	}
+	off := false
+	if got := newTestGuard(t, Config{Enabled: &off}).ServerNodeID(t.Context()); got != "" {
+		t.Fatalf("ServerNodeID with the guard off = %q, want empty", got)
+	}
+}
+
 func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket})
@@ -434,8 +466,8 @@ func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 		t.Fatalf("known self node proxy status = %d, want 200", rec.Code)
 	}
 	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
-	if g.ServerNodeID() != serverID {
-		t.Fatalf("ServerNodeID = %q, want %q", g.ServerNodeID(), serverID)
+	if got := g.ServerNodeID(t.Context()); got != serverID {
+		t.Fatalf("ServerNodeID = %q, want %q", got, serverID)
 	}
 
 	// A later failure keeps the last known node.

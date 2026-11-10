@@ -31,8 +31,9 @@ const defaultPollInterval = 15 * time.Minute
 type AccessControl interface {
 	Grants() access.Grants
 	SetGrants(access.Grants) error
-	// ServerNodeID is the server's own stable node ID, or "" while unknown.
-	ServerNodeID() string
+	// ServerNodeID is the server's own stable node ID, read from tailscaled
+	// when needed, or "" while it cannot be read.
+	ServerNodeID(context.Context) string
 	ReadTailnet(context.Context) (access.Tailnet, error)
 	Reconcile(access.Tailnet) (access.Grants, []access.DeviceGrant, bool)
 	// Claimable, CheckClaimCode, and EndClaim are the one-time setup code.
@@ -353,7 +354,7 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 		if err := access.CheckGrants(next); err != nil {
 			return badRequest("invalid_access", "%v", err)
 		}
-		if err := s.checkAccess(next, caller); err != nil {
+		if err := s.checkAccess(ctx, before, next, caller); err != nil {
 			return err
 		}
 		if err := s.deps.Access.SetGrants(next); err != nil {
@@ -488,23 +489,42 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 
 // checkAccess refuses a change the guard would ignore or that would lock the
 // caller out: the guard is off, the server's own node is given Admin, or the
-// calling device loses Admin. Loopback callers are admins whatever the lists
-// say.
-func (s *Settings) checkAccess(next access.Grants, caller access.Identity) error {
+// calling device loses Admin. While the server's node cannot be read, a change
+// that gives a device Admin it did not have is refused, since that device may
+// be the server. Loopback callers are admins whatever the lists say.
+func (s *Settings) checkAccess(ctx context.Context, before, next access.Grants, caller access.Identity) error {
 	if !s.deps.AccessEnabled {
 		return &apiError{
 			status: http.StatusConflict, code: "access_disabled",
 			message: "the access guard is disabled in taproot.yaml, so the device and address lists have no effect",
 		}
 	}
-	server := s.deps.Access.ServerNodeID()
+	server := ""
+	if slices.ContainsFunc(next.Devices, func(d access.DeviceGrant) bool { return d.Admin }) {
+		server = s.deps.Access.ServerNodeID(ctx)
+	}
+	hadAdmin := map[string]bool{}
+	for _, d := range before.Devices {
+		if d.Admin {
+			hadAdmin[d.ID] = true
+		}
+	}
 	callerAdmin := false
 	for _, d := range next.Devices {
 		id := strings.TrimSpace(d.ID)
-		if server != "" && id == server && d.Admin {
-			return badRequest("server_admin", "the taproot server's own node %s never has Admin", id)
+		if !d.Admin {
+			continue
 		}
-		if id == caller.NodeID && d.Admin {
+		switch {
+		case server != "" && id == server:
+			return badRequest("server_admin", "the taproot server's own node %s never has Admin", id)
+		case server == "" && !hadAdmin[id]:
+			return &apiError{
+				status: http.StatusServiceUnavailable, code: "server_node_unknown",
+				message: "taproot cannot read its own tailnet node from tailscaled, so it cannot check that a new Admin device is not the server itself; try again in a few seconds",
+			}
+		}
+		if id == caller.NodeID {
 			callerAdmin = true
 		}
 	}

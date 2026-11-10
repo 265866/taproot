@@ -74,14 +74,20 @@ const serverID = "nserverCNTRL"
 
 // fakeAccess is the guard with a known server node and, when tailnet is set,
 // a canned tailnet read and reconcile result, since the fixture has no
-// tailscaled.
+// tailscaled. realServerNode reads the node through the guard instead.
 type fakeAccess struct {
 	*access.Guard
-	tailnet   *access.Tailnet
-	reconcile func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool)
+	tailnet        *access.Tailnet
+	reconcile      func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool)
+	realServerNode bool
 }
 
-func (f *fakeAccess) ServerNodeID() string { return serverID }
+func (f *fakeAccess) ServerNodeID(ctx context.Context) string {
+	if f.realServerNode {
+		return f.Guard.ServerNodeID(ctx)
+	}
+	return serverID
+}
 
 func (f *fakeAccess) ReadTailnet(ctx context.Context) (access.Tailnet, error) {
 	if f.tailnet == nil {
@@ -115,6 +121,8 @@ type options struct {
 	yaml          string
 	accessEnabled *bool
 	pollInterval  string
+	// tailscaleSocket is the guard's LocalAPI socket; empty is an absent one.
+	tailscaleSocket string
 }
 
 func newFixture(t *testing.T, opt options) *fixture {
@@ -134,6 +142,9 @@ func newFixture(t *testing.T, opt options) *fixture {
 	cfg.Access.Enabled = opt.accessEnabled
 	// Never the host's real tailscaled.
 	cfg.Access.TailscaleSocket = filepath.Join(dir, "absent.sock")
+	if opt.tailscaleSocket != "" {
+		cfg.Access.TailscaleSocket = opt.tailscaleSocket
+	}
 	dataDir := filepath.Join(dir, "data")
 	db, err := store.Open(context.Background(), store.Config{}, dataDir)
 	if err != nil {
