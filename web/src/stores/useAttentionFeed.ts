@@ -138,20 +138,31 @@ export function resetAttentionFeed() {
 }
 
 /**
+ * Starts the feed: a read now and every 30 s while the tab is visible, and one whenever credentials
+ * change. The returned stop also forgets the feed, for the next connection.
+ */
+export function startAttentionFeed(
+  read: () => Promise<Attention> = taprootApi.attention,
+  events: EventTarget = window
+): () => void {
+  const stop = pollWhileVisible(() => refreshAttention(read));
+  const onAuthFilesChanged = () => void refreshAttention(read);
+  events.addEventListener(AUTH_FILES_CHANGED_EVENT, onAuthFilesChanged);
+  return () => {
+    stop();
+    events.removeEventListener(AUTH_FILES_CHANGED_EVENT, onAuthFilesChanged);
+    resetAttentionFeed();
+  };
+}
+
+/**
  * Keeps the badges current on every page: one poll every 30 s while the tab is visible, plus a
  * read on each page change and whenever credentials change. The shell runs it once.
  */
 export function useAttentionFeed(enabled: boolean, pathname: string) {
   useEffect(() => {
     if (!enabled) return;
-    const stop = pollWhileVisible(() => refreshAttention());
-    const onAuthFilesChanged = () => void refreshAttention();
-    window.addEventListener(AUTH_FILES_CHANGED_EVENT, onAuthFilesChanged);
-    return () => {
-      stop();
-      window.removeEventListener(AUTH_FILES_CHANGED_EVENT, onAuthFilesChanged);
-      resetAttentionFeed();
-    };
+    return startAttentionFeed();
   }, [enabled]);
 
   useEffect(() => {

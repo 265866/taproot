@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { readAccountsLink, withoutAccountsLink } from '@/router/deepLinks';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { Button } from '@/components/ui/Button';
@@ -95,7 +96,7 @@ export function AccountsPage() {
   // `?provider=codex` (or `?signIn=codex`) opens on that provider's tab, as links from the
   // Dashboard do.
   const [tab, setTab] = useState(() => {
-    const provider = searchParams.get('provider') ?? searchParams.get('signIn');
+    const { provider } = readAccountsLink(searchParams);
     return provider ? normalizeProviderKey(provider) : 'all';
   });
   const [view, setView] = useState<ChartView>('remaining');
@@ -187,18 +188,8 @@ export function AccountsPage() {
     void reloadQuota();
   }, [loadFilesInBackground, reloadQuota]);
 
-  // A started sign-in or a chosen tab is not part of the page's address: a reload must not
-  // start the sign-in again.
   const clearDeepLink = useCallback(() => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('signIn');
-        next.delete('provider');
-        return next;
-      },
-      { replace: true }
-    );
+    setSearchParams(withoutAccountsLink, { replace: true });
   }, [setSearchParams]);
 
   const reloadAll = useCallback(async () => {
@@ -429,7 +420,7 @@ export function AccountsPage() {
             disableControls={disableControls}
             onUpload={handleUploadClick}
             onAdded={reloadAfterSignIn}
-            startProvider={searchParams.get('signIn')}
+            startProvider={readAccountsLink(searchParams).signIn}
             onStartHandled={clearDeepLink}
           />
         </div>

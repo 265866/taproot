@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { readSettingsSection } from '@/router/deepLinks';
 import { Button } from '@/components/ui/Button';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
@@ -133,7 +134,7 @@ export function TaprootSettingsPage() {
             <AlertsSection
               settings={settings.alerts}
               save={save}
-              focused={searchParams.get('section') === 'alerts'}
+              focused={readSettingsSection(searchParams) === 'alerts'}
             />
           )}
           <AboutSection settings={settings} me={me} />

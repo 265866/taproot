@@ -11,12 +11,18 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { readAccessFocus } from '@/router/deepLinks';
 import { Button } from '@/components/ui/Button';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconCopy, IconPencil, IconPlus, IconSearch } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { REFRESH_CANCELLED, REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import {
+  REFRESH_CANCELLED,
+  REFRESH_OK,
+  refreshFailed,
+  useHeaderRefresh,
+} from '@/hooks/useHeaderRefresh';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useFocusOnArrival } from '@/hooks/useFocusOnArrival';
 import {
@@ -221,7 +227,7 @@ export function TaprootAccessPage() {
           }}
           onAllow={allow}
           onDeny={(request) => void deny(request)}
-          focusNodeId={searchParams.get('focus')}
+          focusNodeId={readAccessFocus(searchParams)}
         />
       )}
     </div>

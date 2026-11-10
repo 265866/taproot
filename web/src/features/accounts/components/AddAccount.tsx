@@ -11,7 +11,7 @@ import {
 } from '@/features/oauth/hooks/useOAuthFlows';
 import {
   OAUTH_PROVIDERS,
-  oauthCardIdForProvider,
+  startCard,
   resolveThemedIcon,
   supportsManualCallback,
   type OAuthProviderCard,
@@ -132,8 +132,7 @@ export function AddAccount({
 
   useEffect(() => {
     if (!startProvider) return;
-    const cardId = oauthCardIdForProvider(startProvider);
-    const card = providerCards.find((c) => c.id === cardId);
+    const card = startCard(startProvider, providerCards);
     // A provider without a sign-in card here opens the panel, so the user can pick another way.
     if (card) openProvider(card);
     else setOpen(true);

@@ -1,5 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 import i18n from '@/i18n';
 import {
   normalizeAttention,
@@ -11,26 +10,39 @@ import {
 } from '@/services/api/taprootStatus';
 import { itemAction, itemCategoryKey } from '@/features/dashboard/model/attentionActions';
 import {
+  accessLink,
+  accountsLink,
   failedLogsLink,
   requestLogLink,
+  settingsLink,
+  signInLink,
   usageDevicesLink,
   usageModelsLink,
 } from '@/features/dashboard/model/links';
 import { AccountGoneError, enableAccount } from '@/features/dashboard/model/inlineActions';
 import { parseQuery } from '@/features/taproot-logs/model/query';
 import { readUsageParams } from '@/features/taproot-usage/hooks/useUsageParams';
-import { oauthCardIdForProvider } from '@/features/oauth/providers';
+import { OAUTH_PROVIDERS, oauthCardIdForProvider, startCard } from '@/features/oauth/providers';
+import { AUTH_FILES_CHANGED_EVENT } from '@/features/authFiles/authFilesEvents';
+import { initialReads, readDashboard } from '@/features/dashboard/hooks/useDashboardData';
+import {
+  readAccessFocus,
+  readAccountsLink,
+  readSettingsSection,
+  withoutAccountsLink,
+} from '@/router/deepLinks';
+import { POLL_INTERVAL_MS } from '@/utils/pollWhileVisible';
 import {
   attentionArea,
   attentionSnapshot,
   refreshAttention,
   resetAttentionFeed,
+  startAttentionFeed,
   useAttentionFeedStore,
 } from '@/stores/useAttentionFeed';
 import { useAttentionStore } from '@/stores/useAttentionStore';
 
 const t = i18n.t.bind(i18n);
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 const item = (over: Partial<AttentionItem> & Pick<AttentionItem, 'kind'>): AttentionItem => ({
   id: over.id ?? over.kind,
@@ -188,17 +200,35 @@ describe('the links into other pages', () => {
     });
   });
 
-  test('the target pages read the parameters', () => {
-    expect(read('src/features/accounts/AccountsPage.tsx')).toContain("searchParams.get('signIn')");
-    expect(read('src/features/accounts/AccountsPage.tsx')).toContain(
-      "searchParams.get('provider')"
-    );
-    expect(read('src/features/taproot-access/TaprootAccessPage.tsx')).toContain(
-      "focusNodeId={searchParams.get('focus')}"
-    );
-    expect(read('src/features/taproot-settings/TaprootSettingsPage.tsx')).toContain(
-      "focused={searchParams.get('section') === 'alerts'}"
-    );
+  test('Accounts opens the tab and starts the sign-in each link asks for', () => {
+    expect(readAccountsLink(query(signInLink('codex')))).toEqual({
+      provider: 'codex',
+      signIn: 'codex',
+    });
+    expect(readAccountsLink(query(accountsLink('claude')))).toEqual({
+      provider: 'claude',
+      signIn: null,
+    });
+    expect(readAccountsLink(query(accountsLink()))).toEqual({ provider: null, signIn: null });
+    // The sign-in starts on the card Add account would use.
+    expect(startCard('claude', OAUTH_PROVIDERS)?.id).toBe('anthropic');
+    expect(startCard('codex', OAUTH_PROVIDERS)?.id).toBe('codex');
+    expect(startCard('no-such-provider', OAUTH_PROVIDERS)).toBeNull();
+  });
+
+  test('once Accounts acts on the link, a reload does not start the sign-in again', () => {
+    const params = new URLSearchParams('signIn=codex&provider=codex&q=alice');
+    const cleared = withoutAccountsLink(params);
+    expect(cleared.toString()).toBe('q=alice');
+    expect(readAccountsLink(cleared)).toEqual({ provider: null, signIn: null });
+    // The page's own parameters are left as they were.
+    expect(params.get('signIn')).toBe('codex');
+  });
+
+  test('Access focuses the device and Settings the section each link names', () => {
+    expect(readAccessFocus(query(accessLink('nDANA0001CNTRL')))).toBe('nDANA0001CNTRL');
+    expect(readAccessFocus(query(accessLink()))).toBeNull();
+    expect(readSettingsSection(query(settingsLink('alerts')))).toBe('alerts');
   });
 });
 
@@ -336,16 +366,62 @@ describe('the sidebar badge feed', () => {
     expect(useAttentionStore.getState().count).toBe(0);
   });
 
-  test('the shell runs the feed on every page, once', () => {
-    const shell = read('src/components/layout/MainLayout.tsx');
-    expect(shell).toContain(
-      "useAttentionFeed(connectionStatus === 'connected', location.pathname);"
-    );
-    // The Dashboard reads the shared store instead of fetching /attention itself.
-    const page = read('src/features/dashboard/hooks/useDashboardData.ts');
-    expect(page).toContain('useAttentionFeedStore()');
-    expect(page).not.toContain('taprootApi.attention');
-    expect(page).not.toContain("'attention'");
+  test('the feed reads at start, every 30 s, and when credentials change, until stopped', async () => {
+    jest.useFakeTimers();
+    const original = globalThis.document;
+    globalThis.document = Object.assign(new EventTarget(), {
+      visibilityState: 'visible',
+    }) as unknown as Document;
+    try {
+      const events = new EventTarget();
+      let reads = 0;
+      const read = async () => {
+        reads += 1;
+        return ATTENTION;
+      };
+      const stop = startAttentionFeed(read, events);
+      await Promise.resolve();
+      expect(reads).toBe(1);
+      await Promise.resolve();
+      expect(useAttentionStore.getState().count).toBe(3);
+
+      events.dispatchEvent(new Event(AUTH_FILES_CHANGED_EVENT));
+      expect(reads).toBe(2);
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.advanceTimersByTime(POLL_INTERVAL_MS);
+      expect(reads).toBe(3);
+
+      stop();
+      // Stopping forgets the feed, so a new connection starts clean.
+      expect(useAttentionFeedStore.getState().data).toBeNull();
+      expect(useAttentionStore.getState().count).toBe(0);
+      events.dispatchEvent(new Event(AUTH_FILES_CHANGED_EVENT));
+      jest.advanceTimersByTime(POLL_INTERVAL_MS * 2);
+      expect(reads).toBe(3);
+    } finally {
+      jest.useRealTimers();
+      globalThis.document = original;
+    }
+  });
+
+  test('the Dashboard reads its list from the feed, not from /attention', async () => {
+    let attentionReads = 0;
+    const api = {
+      status: async () => normalizeStatus({}),
+      pools: async () => normalizePools({ pools: [] }),
+      requestsSummary: async () => normalizeRequestSummary({}),
+      requestsRecent: async () => [],
+      usageEvents: async () => ({ events: [], nextCursor: null }),
+      accessDevices: async () => ({ enabled: false, devices: [] }) as never,
+      attention: async () => {
+        attentionReads += 1;
+        return ATTENTION;
+      },
+    };
+    const { apply } = await readDashboard(api, '24h', Date.now(), initialReads);
+    apply(initialReads);
+    expect(attentionReads).toBe(0);
   });
 });
 
