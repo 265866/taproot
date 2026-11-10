@@ -17,8 +17,14 @@ import (
 // so Pack estimates each blob's peak from its header, skips a codec whose
 // estimate exceeds maxBlobCost, and holds the estimate in nativeWork while it
 // runs, which bounds the sum across concurrent calls.
+//
+// Pack also holds its estimate in packWork, which is smaller than nativeWork,
+// so the compactor never holds the whole budget and its queued packs wait on
+// packWork rather than ahead of reads in nativeWork's FIFO: a record view
+// decodes while a pack is running instead of after every queued one.
 const (
 	nativeBudget = 512 << 20
+	packBudget   = 384 << 20
 	maxBlobCost  = 256 << 20
 
 	coeffBytesPerBlock = 128
@@ -29,17 +35,43 @@ const (
 	maxLeptonHeader = 16 << 20
 )
 
-var nativeWork = semaphore.NewWeighted(nativeBudget)
+var (
+	nativeWork = semaphore.NewWeighted(nativeBudget)
+	packWork   = semaphore.NewWeighted(packBudget)
+)
 
-// reserve blocks until cost bytes of nativeWork are free and returns their
-// release. A cost over the budget takes the whole budget, so it runs alone.
-func reserve(cost int64) (release func()) {
+// reserve waits until cost bytes of nativeWork are free, or ctx is done, and
+// returns their release. A cost over the budget takes the whole budget, so it
+// runs alone.
+func reserve(ctx context.Context, cost int64) (release func(), err error) {
 	cost = min(cost, nativeBudget)
 	if cost <= 0 {
-		return func() {}
+		return func() {}, nil
 	}
-	_ = nativeWork.Acquire(context.Background(), cost) // fails only on a done context
-	return func() { nativeWork.Release(cost) }
+	if err := nativeWork.Acquire(ctx, cost); err != nil {
+		return nil, err
+	}
+	return func() { nativeWork.Release(cost) }, nil
+}
+
+// reservePack is reserve for Pack, which first takes its share of packWork.
+func reservePack(ctx context.Context, cost int64) (release func(), err error) {
+	cost = min(cost, packBudget)
+	if cost <= 0 {
+		return func() {}, nil
+	}
+	if err := packWork.Acquire(ctx, cost); err != nil {
+		return nil, err
+	}
+	releaseNative, err := reserve(ctx, cost)
+	if err != nil {
+		packWork.Release(cost)
+		return nil, err
+	}
+	return func() {
+		releaseNative()
+		packWork.Release(cost)
+	}, nil
 }
 
 func zstdCost(n int) int64 { return min(16*int64(n), zstdStateCap) + 2*int64(n) }
@@ -83,7 +115,8 @@ func unpackCost(kind Kind, stored []byte, rawLen int) int64 {
 	case PNG:
 		if len(stored) > 2 {
 			if bodyLen, k := binary.Uvarint(stored[2:]); k > 0 {
-				return pngCost(int64(min(bodyLen, nativeBudget)))
+				// Decoding needs no zstd match state, only preflate's.
+				return preflatePerPlain * int64(min(bodyLen, nativeBudget))
 			}
 		}
 		return nativeBudget

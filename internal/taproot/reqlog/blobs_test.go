@@ -705,7 +705,9 @@ func TestPackOfSmallLiveBlobsIsNotRewritten(t *testing.T) {
 // TestUnfinishedEncodeIsStoredRaw simulates a process that died while a
 // native codec encoded a blob: the mark encode leaves before calling the codec
 // is still there. The next pack rewrite must store that blob unencoded instead
-// of running the codec on it again, and clear the marks of blobs it encoded.
+// of running the codec on it again. Once it commits, no mark is left: not the
+// crashed blob's, not those of blobs it encoded, and not one for a blob that
+// no longer exists.
 func TestUnfinishedEncodeIsStoredRaw(t *testing.T) {
 	h := newHarness(t, Config{})
 	crashed, fine := make([]byte, 8192), make([]byte, 8192)
@@ -713,8 +715,11 @@ func TestUnfinishedEncodeIsStoredRaw(t *testing.T) {
 	logSimple(t, h.logs.logger, "enc", "/v1/messages", "s", 200, h.clock.now(), imageTurn([][]byte{crashed, fine}))
 	h.flush()
 	crashedHash := sha256.Sum256(crashed)
-	if _, err := h.db.Exec(`INSERT INTO reqlog_pack_attempts (hash) VALUES (?)`, crashedHash[:]); err != nil {
-		t.Fatal(err)
+	goneHash := sha256.Sum256([]byte("deleted blob"))
+	for _, mark := range [][]byte{crashedHash[:], goneHash[:]} {
+		if _, err := h.db.Exec(`INSERT INTO reqlog_pack_attempts (hash) VALUES (?)`, mark); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := h.logs.engine.do(context.Background(), func() {
 		h.logs.engine.blobs.ingestOpened = time.Time{}
@@ -738,11 +743,11 @@ func TestUnfinishedEncodeIsStoredRaw(t *testing.T) {
 		t.Fatalf("marked blob packed as kind %d and unmarked as %d, want raw and zstd", kinds[1], kinds[2])
 	}
 	var marks int
-	if err := h.db.QueryRow(`SELECT COUNT(*) FROM reqlog_pack_attempts WHERE hash != ?`, crashedHash[:]).Scan(&marks); err != nil {
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM reqlog_pack_attempts`).Scan(&marks); err != nil {
 		t.Fatal(err)
 	}
 	if marks != 0 {
-		t.Fatalf("%d marks left for blobs that encoded normally", marks)
+		t.Fatalf("%d encode marks left after the pack committed", marks)
 	}
 	d, err := h.logs.Get(context.Background(), "enc", true)
 	if err != nil {

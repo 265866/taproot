@@ -324,7 +324,8 @@ func redactHeaders(headers map[string][]string) map[string][]string {
 }
 
 // writeRedacted copies an executor-formatted API section, masking
-// credentials. Each attempt opens with an "=== API ..." line and a preamble
+// credentials. Each attempt opens with an "=== API ..." line, and each
+// websocket timeline event with "Event: api.websocket...", then a preamble
 // that can carry "Upstream URL:" and "Auth: ... value=<key>" lines, which
 // upstream masks only partly; headers follow a "Headers:" line until a blank
 // line, and bodies follow a "Body:" line, so bodies are never touched.
@@ -353,7 +354,7 @@ func writeRedacted(out *bytes.Buffer, section []byte) {
 			inPreamble, inHeaders = false, true
 		case string(trimmed) == "Body:":
 			inPreamble = false
-		case bytes.HasPrefix(trimmed, []byte("=== API ")):
+		case bytes.HasPrefix(trimmed, []byte("=== API ")), bytes.HasPrefix(trimmed, []byte("Event: api.websocket.")):
 			inPreamble = true
 		case inPreamble && bytes.HasPrefix(trimmed, []byte("Upstream URL: ")):
 			out.WriteString("Upstream URL: " + redactQuery(string(trimmed[len("Upstream URL: "):])))

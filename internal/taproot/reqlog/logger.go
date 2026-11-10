@@ -40,6 +40,10 @@ type requestLogger struct {
 	streamsMu  sync.Mutex
 	streams    map[*streamWriter]struct{}
 	lastExpiry time.Time
+	// switchOffs counts SetEnabled(false) calls. A writer that expired, and so
+	// left streams, compares it at Close to learn that logging was switched
+	// off since it started.
+	switchOffs atomic.Uint64
 }
 
 // streamIdleLimit is how long a stream writer may go without a call before
@@ -61,6 +65,7 @@ func (l *requestLogger) SetEnabled(enabled bool) {
 	if enabled {
 		return
 	}
+	l.switchOffs.Add(1)
 	l.streamsMu.Lock()
 	live := l.streams
 	l.streams = nil
@@ -169,9 +174,13 @@ func (l *requestLogger) LogRequestWithOptionsAndAllSources(url, method string, r
 		// time and can finish an event stream through this buffered path.
 		streaming: isEventStream(responseHeaders),
 	}
-	var decodedHeld int64
-	c.responseBody, decodedHeld, c.decompressErr = decodeResponse(responseHeaders, response, &l.engine.budget)
-	l.submitHeld(c, held+decodedHeld, fits)
+	c.responseBody = response
+	if fits {
+		var decodedHeld int64
+		c.responseBody, decodedHeld, c.decompressErr = decodeResponse(responseHeaders, response, &l.engine.budget)
+		held += decodedHeld
+	}
+	l.submitHeld(c, held, fits)
 	return nil
 }
 
@@ -200,17 +209,16 @@ func (l *requestLogger) holdSpooled(sources ...*logging.FileBodySource) (int64, 
 	return n, true
 }
 
-// submitHeld hands c to the engine, which charges its bodies itself, after
-// releasing what the caller held while reading them. A capture whose spooled
-// sections did not fit keeps its metadata only.
+// submitHeld hands c to the engine with the budget the caller held while
+// reading its bodies. A capture whose spooled sections did not fit keeps its
+// metadata only.
 func (l *requestLogger) submitHeld(c *capture, held int64, fits bool) {
-	l.engine.budget.release(held)
 	if !fits {
 		c.identify()
 		c.dropBodies("log queue full")
 		l.engine.stats.droppedBodies.Add(1)
 	}
-	l.engine.submit(c)
+	l.engine.submit(c, held)
 }
 
 func (l *requestLogger) LogStreamingRequest(url, method string, headers map[string][]string, body []byte, requestID string) (logging.StreamingLogWriter, error) {
@@ -230,6 +238,7 @@ func (l *requestLogger) LogStreamingRequest(url, method string, headers map[stri
 			streaming:      true,
 		},
 		lastActive: now,
+		switchOffs: l.switchOffs.Load(),
 	}
 	l.expireIdleStreams()
 	l.trackStream(w)
@@ -288,6 +297,7 @@ type streamWriter struct {
 	apiResSrc  *logging.FileBodySource
 	closed     bool
 	lastActive time.Time
+	switchOffs uint64
 	// expired is set once expireIfIdle released the budget; later chunks
 	// count as truncated, since nothing would release them again.
 	expired bool
@@ -404,12 +414,16 @@ func (w *streamWriter) Close() error {
 	w.closed = true
 	l := w.logger
 	l.untrackStream(w)
-	l.engine.budget.release(w.reserved)
+	reserved := w.reserved
 	w.reserved = 0
+	if w.expired && w.switchOffs != l.switchOffs.Load() {
+		return nil // switching off abandons writers, expired ones too
+	}
 
 	reachedUpstream := hasPayload(w.c.apiRequest) || w.apiReqSrc.HasPayload() || hasPayload(w.c.apiResponse) || w.apiResSrc.HasPayload() ||
 		hasPayload(w.c.apiWSTimeline) || len(w.c.apiErrors) > 0
 	if l.excluder.Load().excluded(w.c.method, w.c.url, w.c.status, reachedUpstream) {
+		l.engine.budget.release(reserved)
 		return nil
 	}
 	c := w.c
@@ -421,12 +435,16 @@ func (w *streamWriter) Close() error {
 	c.responseBody = w.chunks.Bytes()
 	if w.truncated > 0 {
 		l.engine.stats.truncated.Add(1)
-		c.responseBody = append(c.responseBody, []byte("\n[taproot: response truncated, "+strconv.FormatInt(w.truncated, 10)+" bytes dropped, log queue full]")...)
+		why := "log queue full"
+		if w.expired {
+			why = "no activity for " + streamIdleLimit.String()
+		}
+		c.responseBody = append(c.responseBody, []byte("\n[taproot: response truncated, "+strconv.FormatInt(w.truncated, 10)+" bytes dropped, "+why+"]")...)
 		c.dropped = "response truncated"
 	}
 	w.chunks = bytes.Buffer{}
 	c.finishedAt = l.now()
-	l.submitHeld(&c, held, fits)
+	l.submitHeld(&c, reserved+held, fits)
 	return nil
 }
 

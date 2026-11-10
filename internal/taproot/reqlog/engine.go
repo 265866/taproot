@@ -191,18 +191,23 @@ func (b *budget) release(n int64) { b.used.Add(-n) }
 // recordOverhead approximates what a record costs beyond its bodies.
 const recordOverhead = 8 << 10
 
-// submit queues a capture without blocking. When the budget is short it keeps
+// submit queues a capture without blocking. held is budget the caller already
+// reserved for c, which submit takes over. When the budget is short it keeps
 // the metadata and drops bodies; when even that fails the record is counted
 // and discarded.
-func (e *engine) submit(c *capture) {
+func (e *engine) submit(c *capture, held int64) {
 	select {
 	case <-e.stopped:
+		e.budget.release(held)
 		e.stats.droppedRecords.Add(1)
 		return
 	default:
 	}
 	size := int64(c.bodyBytes()) + recordOverhead
-	if !e.budget.reserve(size) {
+	if held >= size {
+		e.budget.release(held - size)
+	} else if !e.budget.reserve(size - held) {
+		e.budget.release(held)
 		c.identify()
 		c.dropBodies("log queue full")
 		e.stats.droppedBodies.Add(1)

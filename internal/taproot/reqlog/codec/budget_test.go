@@ -3,13 +3,17 @@ package codec
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"encoding/binary"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 )
 
 // sofJPEG returns SOI, an APP0 segment, and a baseline SOF for a w x h frame
@@ -179,7 +183,10 @@ func TestPNGPlainLen(t *testing.T) {
 }
 
 func TestReserveClampsToBudget(t *testing.T) {
-	release := reserve(4 * nativeBudget)
+	release, err := reserve(context.Background(), 4*nativeBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if nativeWork.TryAcquire(1) {
 		t.Fatal("budget not fully held by an oversized reservation")
 	}
@@ -188,4 +195,91 @@ func TestReserveClampsToBudget(t *testing.T) {
 		t.Fatal("budget not returned")
 	}
 	nativeWork.Release(nativeBudget)
+}
+
+// holdPacks takes all of packWork, as running packs would, and queues more
+// packs behind it. It returns once the holder releases everything.
+func holdPacks(t *testing.T) {
+	t.Helper()
+	release, err := reservePack(context.Background(), packBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var queued sync.WaitGroup
+	for range 8 {
+		queued.Go(func() {
+			if _, _, err := Pack(ctx, make([]byte, 6<<20), nil); err == nil {
+				t.Error("queued pack ran while the compactor's budget was held")
+			}
+		})
+	}
+	t.Cleanup(func() {
+		cancel()
+		queued.Wait()
+		release()
+	})
+}
+
+// TestReadsNotStarvedByPacks holds the compactor's whole share, with more
+// packs waiting, and checks that a read still gets the rest of the budget
+// rather than queuing behind them.
+func TestReadsNotStarvedByPacks(t *testing.T) {
+	var stored []byte
+	jpeg := encodeJPEG(t, photo(1024, 768, 3), 88)
+	if Native() {
+		var err error
+		if stored, err = leptonEncode(jpeg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	holdPacks(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	release, err := reserve(ctx, 64<<20) // about a 12 MP photo's Lepton decode
+	if err != nil {
+		t.Fatalf("read reservation waited behind packs: %v", err)
+	}
+	release()
+	if stored != nil {
+		got, err := Unpack(ctx, Lepton, stored, len(jpeg))
+		if err != nil || !bytes.Equal(got, jpeg) {
+			t.Fatalf("Lepton read while packs hold their budget: %v", err)
+		}
+	}
+}
+
+// TestPackStopsWhenContextEnds checks that a pack waiting for the budget
+// returns when its context ends, without encoding or calling start.
+func TestPackStopsWhenContextEnds(t *testing.T) {
+	release, err := reservePack(context.Background(), packBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	ctx, cancel := context.WithCancel(context.Background())
+	started := false
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := Pack(ctx, make([]byte, 64<<10), func() error {
+			started = true
+			return nil
+		})
+		done <- err
+	}()
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Pack returned %v, want context.Canceled", err)
+	}
+	if started {
+		t.Fatal("Pack called start without holding the budget")
+	}
+}
+
+func TestPackReturnsStartError(t *testing.T) {
+	errStart := errors.New("mark failed")
+	kind, stored, err := Pack(context.Background(), make([]byte, 64<<10), func() error { return errStart })
+	if !errors.Is(err, errStart) || kind != Raw || stored != nil {
+		t.Fatalf("Pack = %d, %d bytes, %v; want Raw, nil, the start error", kind, len(stored), err)
+	}
 }

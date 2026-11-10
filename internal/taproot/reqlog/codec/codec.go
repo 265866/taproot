@@ -70,6 +70,7 @@ package codec
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -118,24 +119,41 @@ var zstdDecoder = sync.OnceValue(func() *zstd.Decoder {
 })
 
 // Pack returns the smallest encoding of data that Unpack verifiably turns
-// back into data, byte for byte. It never fails: on any error, panic, or a
-// saving under 2%, it returns (Raw, data). A JPEG or PNG that its native codec
-// packs is not also tried with whole-file zstd, which saves the CPU of a second
-// high-level compression of an already compressed image.
+// back into data, byte for byte. On any codec error, panic, or a saving under
+// 2%, it returns (Raw, data). A JPEG or PNG that its native codec packs is not
+// also tried with whole-file zstd, which saves the CPU of a second high-level
+// compression of an already compressed image.
 // A JPEG or PNG whose native codec would need more than maxBlobCost of memory
-// gets only zstd. Pack waits while other calls hold the native memory budget.
-func Pack(data []byte) (kind Kind, stored []byte) {
+// gets only zstd. Pack waits while other calls hold the native memory budget,
+// and returns ctx's error if ctx ends first. Once it holds its share, it calls
+// start, if not nil, and returns start's error without encoding.
+func Pack(ctx context.Context, data []byte, start func() error) (kind Kind, stored []byte, err error) {
+	native, cost := nativePlan(data)
+	if len(data) >= minZstdLen {
+		cost = max(cost, zstdCost(len(data)))
+	}
+	release, err := reservePack(ctx, cost)
+	if err != nil {
+		return Raw, nil, err
+	}
+	defer release()
+	if start != nil {
+		if err := start(); err != nil {
+			return Raw, nil, err
+		}
+	}
+	kind, stored = pack(data, native)
+	return kind, stored, nil
+}
+
+// pack is Pack after the reservation.
+func pack(data []byte, native Kind) (kind Kind, stored []byte) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Warnf("codec: pack panicked, storing raw: %v", r)
 			kind, stored = Raw, data
 		}
 	}()
-	native, cost := nativePlan(data)
-	if len(data) >= minZstdLen {
-		cost = max(cost, zstdCost(len(data)))
-	}
-	defer reserve(cost)()
 	if native != Raw {
 		var (
 			s   []byte
@@ -171,9 +189,13 @@ func verified(kind Kind, stored, data []byte) bool {
 
 // Unpack reverses Pack. rawLen is the original length; the result must have
 // exactly that length. For Raw the result is stored itself. Native kinds wait
-// for their share of the native memory budget.
-func Unpack(kind Kind, stored []byte, rawLen int) ([]byte, error) {
-	defer reserve(unpackCost(kind, stored, rawLen))()
+// for their share of the native memory budget, or until ctx is done.
+func Unpack(ctx context.Context, kind Kind, stored []byte, rawLen int) ([]byte, error) {
+	release, err := reserve(ctx, unpackCost(kind, stored, rawLen))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return unpack(kind, stored, rawLen)
 }
 

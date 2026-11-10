@@ -340,7 +340,8 @@ func TestDeniedRequestsAreNotStored(t *testing.T) {
 func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 	h := newHarness(t, Config{})
 	ts := h.clock.now()
-	timeline := []byte("Timestamp: 2026-11-02T12:00:00Z\nEvent: api.websocket.request\nUpstream URL: wss://chatgpt.com/x\nHeaders:\n" +
+	timeline := []byte("Timestamp: 2026-11-02T12:00:00Z\nEvent: api.websocket.request\nUpstream URL: wss://example.com/v1/responses?key=" + secretToken + "&model=m\n" +
+		"Auth: provider=xai auth_id=a1 label=l type=api_key value=" + secretToken + "\nHeaders:\n" +
 		"Authorization: Bear****cret\nChatgpt-Account-Id: acct\nCookie: __cf_bm=" + secretToken + "\n\nBody:\n{\"type\":\"response.create\"}\n" +
 		"Timestamp: 2026-11-02T12:00:01Z\nEvent: api.websocket.handshake\nStatus: 101\nHeaders:\nSet-Cookie: __cf_bm=" + secretToken + "\nX-Codex-Primary-Used-Percent: 12\n\n")
 	if err := h.logs.logger.LogRequest("/v1/responses", "GET", nil, nil, 101, nil, nil, nil, nil, nil, timeline, nil, "ws", ts, ts); err != nil {
@@ -357,7 +358,8 @@ func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 			t.Fatalf("timeline keeps %q:\n%s", secret, got)
 		}
 	}
-	for _, kept := range []string{"Chatgpt-Account-Id: acct", "X-Codex-Primary-Used-Percent: 12", `{"type":"response.create"}`, "Cookie: " + redacted, "Set-Cookie: " + redacted} {
+	for _, kept := range []string{"Chatgpt-Account-Id: acct", "X-Codex-Primary-Used-Percent: 12", `{"type":"response.create"}`, "Cookie: " + redacted, "Set-Cookie: " + redacted,
+		"Upstream URL: wss://example.com/v1/responses?key=" + redacted + "&model=m", "type=api_key value=" + redacted} {
 		if !strings.Contains(got, kept) {
 			t.Fatalf("timeline lost %q:\n%s", kept, got)
 		}
@@ -468,7 +470,7 @@ func TestIdleStreamReleasesBudget(t *testing.T) {
 		_ = w.WriteStatus(200, map[string][]string{"Content-Type": {"text/event-stream"}})
 		return w
 	}
-	leaked, busy := open("leaked"), open("busy")
+	leaked, busy, switched := open("leaked"), open("busy"), open("switched")
 	leaked.WriteChunkAsync(bytes.Repeat([]byte("c"), 64<<10))
 	busy.WriteChunkAsync([]byte("data: 1\n\n"))
 
@@ -488,6 +490,13 @@ func TestIdleStreamReleasesBudget(t *testing.T) {
 	if err := busy.Close(); err != nil {
 		t.Fatal(err)
 	}
+	// Switching logging off abandons an expired writer like any other, even
+	// when it is back on by the time Close comes.
+	lg.SetEnabled(false)
+	lg.SetEnabled(true)
+	if err := switched.Close(); err != nil {
+		t.Fatal(err)
+	}
 	h.flush()
 	d, err := h.logs.Get(context.Background(), "leaked", true)
 	if err != nil {
@@ -495,6 +504,12 @@ func TestIdleStreamReleasesBudget(t *testing.T) {
 	}
 	if d.Meta.Dropped != "response truncated" || strings.Contains(d.Response.Body, "ccc") {
 		t.Fatalf("expired stream stored as dropped=%q with a %d-byte body", d.Meta.Dropped, len(d.Response.Body))
+	}
+	if !strings.Contains(d.Response.Body, "no activity for 30m0s") || strings.Contains(d.Response.Body, "log queue full") {
+		t.Fatalf("expired stream's note: %q", d.Response.Body)
+	}
+	if _, err := h.logs.Get(context.Background(), "switched", true); err == nil {
+		t.Fatal("a stream that expired before logging was switched off was stored")
 	}
 	if d, err := h.logs.Get(context.Background(), "busy", true); err != nil || d.Response.Body != "data: 1\n\ndata: 2\n\n" {
 		t.Fatalf("busy stream: %v", err)
@@ -555,5 +570,52 @@ func TestSpooledSectionsOverBudgetStayOnDisk(t *testing.T) {
 	}
 	if used := h.logs.engine.budget.used.Load(); used != 0 {
 		t.Fatalf("budget held after the record was written: %d", used)
+	}
+}
+
+// TestSubmitTakesOverHeldBudget checks that submit keeps the budget its
+// caller held instead of releasing it and reserving again, tops it up or
+// gives back the rest, and leaves nothing held once the record is written.
+func TestSubmitTakesOverHeldBudget(t *testing.T) {
+	const limit = 1 << 20
+	h := newHarness(t, Config{QueueBytes: limit})
+	e := h.logs.engine
+	ts := h.clock.now()
+	record := func(id string, body int) *capture {
+		return &capture{url: "/v1/messages", method: "POST", status: 200, statusWritten: true, requestID: id,
+			requestTime: ts, finishedAt: ts, requestBody: bytes.Repeat([]byte("b"), body)}
+	}
+
+	// The caller holds the whole budget, which is exactly what the record needs.
+	if !e.budget.reserve(limit) {
+		t.Fatal("reserve")
+	}
+	e.submit(record("exact", limit-recordOverhead), limit)
+	h.flush()
+	// It holds more than the record needs, and submit returns the excess.
+	if !e.budget.reserve(64 << 10) {
+		t.Fatal("reserve")
+	}
+	e.submit(record("excess", 1), 64<<10)
+	h.flush()
+	// The top-up cannot fit, so the record keeps its metadata and the hold is
+	// returned.
+	if !e.budget.reserve(4 << 10) {
+		t.Fatal("reserve")
+	}
+	e.submit(record("short", 2*limit), 4<<10)
+	h.flush()
+
+	for id, wantBody := range map[string]bool{"exact": true, "excess": true, "short": false} {
+		d, err := h.logs.Get(context.Background(), id, true)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if kept := !strings.Contains(d.Request.Body, "log queue full"); kept != wantBody {
+			t.Fatalf("%s: body kept = %v, want %v", id, kept, wantBody)
+		}
+	}
+	if used := e.budget.used.Load(); used != 0 {
+		t.Fatalf("budget held after the records were written: %d", used)
 	}
 }
