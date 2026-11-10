@@ -1,6 +1,7 @@
 package status
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,24 @@ func TestPoolsCountUsableAccountsOnly(t *testing.T) {
 		if a := p.Accounts[k]; a.Label != w.label || a.PercentLeft != w.pct || a.State != w.state {
 			t.Errorf("slot %d = %+v, want %+v", k, a, w)
 		}
+	}
+}
+
+func TestPoolLabelsShowTheEmailWhenNamesCollide(t *testing.T) {
+	work := auth("claude", "alice@example.com")
+	home := auth("claude", "Alice@example.org")
+	bob := auth("claude", "bob@example.com")
+	other := auth("codex", "alice@example.net")
+	_, _, pools := scene{auths: []*coreauth.Auth{work, home, bob, other}}.eval()
+	got := map[string][]string{}
+	for _, p := range pools {
+		for _, a := range p.Accounts {
+			got[p.Provider] = append(got[p.Provider], a.Label)
+		}
+	}
+	want := map[string][]string{"claude": {"alice@example.com", "Alice@example.org", "bob"}, "codex": {"alice"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("labels = %v, want %v", got, want)
 	}
 }
 

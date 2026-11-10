@@ -121,6 +121,7 @@ func buildPools(accounts []Account, latest []ingest.QuotaObservation, history []
 	var out []Pool
 	for provider, list := range byProvider {
 		p := Pool{Provider: provider, TotalAccounts: len(list), Accounts: []PoolAccount{}}
+		disambiguateLabels(list)
 		var usable, serveLater, recorded []accountInput
 		var lines [][]point
 		sort.SliceStable(list, func(x, y int) bool {
@@ -189,6 +190,21 @@ func buildPools(accounts []Account, latest []ingest.QuotaObservation, history []
 	}
 	sort.Slice(out, func(x, y int) bool { return compareProviders(out[x].Provider, out[y].Provider) })
 	return out
+}
+
+// disambiguateLabels names accounts by their full email when two accounts of
+// one pool share the part before the @, such as alice@example.com and
+// alice@example.org.
+func disambiguateLabels(list []Account) {
+	seen := map[string]int{}
+	for _, a := range list {
+		seen[strings.ToLower(a.Label)]++
+	}
+	for k, a := range list {
+		if a.Email != "" && seen[strings.ToLower(a.Label)] > 1 {
+			list[k].Label = a.Email
+		}
+	}
 }
 
 func msOf(t time.Time) float64 { return float64(t.UnixMilli()) }
