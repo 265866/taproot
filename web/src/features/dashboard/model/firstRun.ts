@@ -70,6 +70,12 @@ export function addressHint(
   return null;
 }
 
+/** This server's address with "server" for its host, as the address hint's example. */
+export function exampleAddress(baseUrl: string): string {
+  const match = /^(https?:)\/\/(?:\[[^\]]*\]|[^/:]*)(:\d+)?/.exec(baseUrl);
+  return `${match?.[1] ?? 'http:'}//server${match?.[2] ?? ''}`;
+}
+
 export function claudeCodeSnippet(baseUrl: string): string {
   return `export ANTHROPIC_BASE_URL="${baseUrl}"\nexport ANTHROPIC_AUTH_TOKEN="taproot"  # any value`;
 }

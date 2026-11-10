@@ -216,3 +216,15 @@ export function chartSummary(model: ChartModel, bucket: UsageBucket, t: TFunctio
   }
   return parts.join(' ');
 }
+
+const TOOLTIP_GAP = 10;
+
+/**
+ * Where a tooltip `tooltipWidth` wide starts in a plot `width` wide, for the bar centred at
+ * `center`: beside the bar on its right, else on its left, and never past either edge.
+ */
+export function tooltipLeft(center: number, width: number, tooltipWidth: number): number {
+  const right = center + TOOLTIP_GAP;
+  const left = right + tooltipWidth <= width ? right : center - TOOLTIP_GAP - tooltipWidth;
+  return Math.max(0, Math.min(left, width - tooltipWidth));
+}

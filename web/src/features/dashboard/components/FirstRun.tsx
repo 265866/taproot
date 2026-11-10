@@ -8,6 +8,7 @@ import {
   addressHint,
   claudeCodeSnippet,
   codexSnippet,
+  exampleAddress,
   setupSteps,
   type FirstRunFacts,
   type SetupStep,
@@ -146,7 +147,11 @@ function ClientStep({
       <p className={styles.text}>
         {t(done ? 'dashboard.setup.client_done' : 'dashboard.setup.client_text')}
       </p>
-      {hint ? <p className={styles.hint}>{t(`dashboard.setup.address_${hint}`)}</p> : null}
+      {hint ? (
+        <p className={styles.hint}>
+          {t(`dashboard.setup.address_${hint}`, { example: exampleAddress(baseUrl) })}
+        </p>
+      ) : null}
       <div className={styles.snippets}>
         <Snippet title={t('dashboard.setup.claude_code_title')} code={claudeCodeSnippet(baseUrl)} />
         <Snippet title={t('dashboard.setup.codex_title')} code={codexSnippet(baseUrl)} />

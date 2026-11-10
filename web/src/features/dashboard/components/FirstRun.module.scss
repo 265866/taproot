@@ -140,7 +140,8 @@
     font-weight: 500;
     text-decoration: none;
 
-    @media (max-width: $breakpoint-mobile) {
+    // Phones and touch screens of any width get 44 px targets.
+    @media (max-width: $breakpoint-mobile), (pointer: coarse) {
       min-height: 44px;
       padding: 0 14px;
     }
@@ -162,10 +163,21 @@
   color: var(--text-secondary);
   font-size: var(--fs-meta);
   font-weight: 500;
+  border-radius: 2px;
   text-decoration: none;
 
   &:hover {
     color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
+    margin-block: -10px;
   }
 }
 
@@ -208,6 +220,10 @@
 
   @media (max-width: $breakpoint-mobile) {
     min-height: 36px;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
   }
 }
 

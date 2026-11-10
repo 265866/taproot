@@ -1,6 +1,9 @@
 import { useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageAside } from '@/components/layout/PageAside';
+import { Button } from '@/components/ui/Button';
+import { IconCircleAlert } from '@/components/ui/icons';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { usePageFreshness } from '@/hooks/usePageFreshness';
@@ -9,6 +12,8 @@ import { refreshAttention } from '@/stores/useAttentionFeed';
 import { POLL_INTERVAL_MS } from '@/utils/pollWhileVisible';
 import type { Attention } from '@/services/api/taprootStatus';
 import {
+  quietRead,
+  sharedError,
   useDashboardData,
   windowSummary,
   type DashboardReads,
@@ -91,16 +96,19 @@ export interface DashboardViewProps {
 }
 
 /**
- * The page for a set of reads. Below `$breakpoint-page-aside` the rail comes first, so the verdict
- * renders at its top there and at the page's top above it; CSS shows one copy. On first run on a
- * narrow screen, the rail's empty Needs you and pools would push the checklist off a phone's
- * screen, so they follow the checklist instead.
+ * The page for a set of reads. Below `$breakpoint-page-aside` the rail comes first, inline at the
+ * top of the page, so the verdict renders at its top there and at the page's top above it; CSS
+ * shows one copy. Inline, the rail is part of the page rather than the shell's `PageAside`, so it
+ * mounts with the page instead of above an already painted one. On first run on a narrow screen,
+ * the rail's empty Needs you and pools would push the checklist off a phone's screen, so they
+ * follow the checklist instead. When every read fails with the same error, the page says it once,
+ * and the sections keep their last data, marked stale.
  */
 export function DashboardView({
   timeWindow,
   setWindow,
-  reads,
-  attention,
+  reads: given,
+  attention: givenAttention,
   loggingToFile,
   railBeside,
   baseUrl,
@@ -110,9 +118,32 @@ export function DashboardView({
   Aside = PageAside,
 }: DashboardViewProps) {
   const { t } = useTranslation();
-  const nowMs = reads.checkedAt ?? 0;
+  const { mask } = useEmailMask();
+  const nowMs = given.checkedAt ?? 0;
+  const pageError = sharedError([
+    given.status.error,
+    given.pools.error,
+    given.summary.error,
+    given.failures.error,
+    givenAttention.error,
+  ]);
+  const quiet = pageError !== null;
+  const reads: DashboardReads = quiet
+    ? {
+        ...given,
+        status: quietRead(given.status),
+        pools: quietRead(given.pools),
+        summary: quietRead(given.summary),
+        failures: quietRead(given.failures),
+      }
+    : given;
+  const attention = quiet ? quietRead(givenAttention) : givenAttention;
   const summary = windowSummary(reads.summary, timeWindow);
   const retryAttention = () => void refreshAttention();
+  const retryAll = () => {
+    retry();
+    retryAttention();
+  };
 
   const pools = reads.pools.data;
   const anyRequest = reads.anyRequest.data;
@@ -132,18 +163,36 @@ export function DashboardView({
         attention={attention}
         firstRun={firstRun}
         loggingToFile={loggingToFile}
-        nowMs={attention.loadedAt ?? nowMs}
+        nowMs={Math.max(attention.loadedAt ?? 0, nowMs)}
         onRetry={retryAttention}
         onChanged={onChanged}
       />
       <PoolsRail pools={reads.pools} nowMs={nowMs} onRetry={retry} />
     </div>
   );
-  const railAfterChecklist = firstRun && !railBeside;
+  const railInline = (
+    <section
+      className={firstRun ? styles.railAfter : styles.railInline}
+      aria-label={t('dashboard.rail_label')}
+    >
+      {rail}
+    </section>
+  );
 
   return (
     <div className={styles.page}>
-      {railAfterChecklist ? null : <Aside label={t('dashboard.rail_label')}>{rail}</Aside>}
+      {pageError !== null ? (
+        <div className={styles.pageError} role="alert">
+          <IconCircleAlert size={14} className={styles.pageErrorIcon} />
+          <span>{mask(t('dashboard.page_error', { message: pageError }))}</span>
+          <Button variant="secondary" size="sm" onClick={retryAll}>
+            {t('console.retry')}
+          </Button>
+        </div>
+      ) : null}
+
+      {railBeside ? <Aside label={t('dashboard.rail_label')}>{rail}</Aside> : null}
+      {!railBeside && !firstRun ? railInline : null}
 
       {firstRun && pools && anyRequest !== null ? (
         <>
@@ -157,11 +206,7 @@ export function DashboardView({
               devicesApproved: reads.access.data ? devicesApproved(reads.access.data) : false,
             }}
           />
-          {railAfterChecklist ? (
-            <aside className={styles.railAfter} aria-label={t('dashboard.rail_label')}>
-              {rail}
-            </aside>
-          ) : null}
+          {railBeside ? null : railInline}
         </>
       ) : (
         <>

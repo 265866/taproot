@@ -1,11 +1,13 @@
+import { useState, type ReactNode, type Ref } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { DataTable, DataTableCell, DataTableHead, StatusPill } from '@/components/ui/DataTable';
 import { Section } from '@/components/ui/Section';
-import { IconArrowRight } from '@/components/ui/icons';
+import { IconArrowRight, IconChevronDown } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { useTextOverflow } from '@/hooks/useTextOverflow';
 import type { ClientRequest, TopDevice, TopModel } from '@/services/api/taprootStatus';
-import type { Read, WindowSummary } from '../hooks/useDashboardData';
+import { sectionState, type Read, type WindowSummary } from '../hooks/useDashboardData';
 import { formatClock, formatCost, formatCount } from '../model/format';
 import { failedLogsLink, requestLogLink, usageDevicesLink, usageModelsLink } from '../model/links';
 import { modelProvider, providerColor } from '../model/providers';
@@ -25,17 +27,118 @@ const deviceLabel = (request: Pick<ClientRequest, 'deviceName' | 'deviceId'>, un
   request.deviceName || request.deviceId || unknown;
 
 /**
- * A failure's error. A row with a log opens it, and the log has the whole error; a row without one
- * expands in place, so the text never needs a hover.
+ * A failure's error on one line, as a button that expands it in place when `toggle` is set. The
+ * caller sets it only for a row without a log (a row with one opens the log, which has the whole
+ * error) whose line cuts the text, so the error never needs a hover and a row that shows it all
+ * offers nothing to expand.
  */
-function ErrorText({ text, expandable }: { text: string; expandable: boolean }) {
-  if (!text) return <>—</>;
-  if (!expandable) return <span className={styles.errorLine}>{text}</span>;
-  return (
-    <details className={styles.errorDetails}>
-      <summary>{text}</summary>
-    </details>
+function ErrorLine({
+  text,
+  lineRef,
+  toggle,
+  open,
+  onToggle,
+}: {
+  text: string;
+  lineRef?: Ref<HTMLSpanElement>;
+  toggle: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const line = (
+    <span ref={lineRef} className={open ? styles.errorFull : styles.errorLine}>
+      {text}
+    </span>
   );
+  if (!toggle) return line;
+  return (
+    <button type="button" className={styles.errorToggle} aria-expanded={open} onClick={onToggle}>
+      {line}
+      <IconChevronDown size={12} className={styles.errorChevron} aria-hidden="true" />
+    </button>
+  );
+}
+
+function ErrorText({ text, expandable }: { text: string; expandable: boolean }) {
+  const [lineRef, cut] = useTextOverflow<HTMLSpanElement>(text);
+  const [open, setOpen] = useState(false);
+  if (!text) return <>—</>;
+  return (
+    <ErrorLine
+      text={text}
+      lineRef={lineRef}
+      toggle={expandable && (cut || open)}
+      open={open}
+      onToggle={() => setOpen(!open)}
+    />
+  );
+}
+
+/**
+ * A failure on a phone. A row with a log is a link to it; a row without one becomes a button that
+ * expands the error when its line cuts the text, so the whole row is the target.
+ */
+function FailureCard({
+  row,
+  time,
+  device,
+  errorText,
+  label,
+}: {
+  row: ClientRequest;
+  time: string;
+  device: string;
+  /** The error, already masked. */
+  errorText: string;
+  label: string;
+}) {
+  const [lineRef, cut] = useTextOverflow<HTMLSpanElement>(errorText);
+  const [open, setOpen] = useState(false);
+  const content = (
+    <>
+      <span className={styles.failureWho}>
+        {device}
+        {row.model ? (
+          <>
+            {' · '}
+            <span className={styles.mono}>{row.model}</span>
+          </>
+        ) : null}
+      </span>
+      <StatusPill>{row.status || '—'}</StatusPill>
+      <span className={styles.failureMeta}>
+        {errorText ? (
+          <span ref={lineRef} className={open ? styles.errorFull : styles.errorLine}>
+            {errorText}
+          </span>
+        ) : (
+          '—'
+        )}
+      </span>
+      <span className={styles.failureTime}>{time}</span>
+    </>
+  );
+  if (row.requestId) {
+    return (
+      <Link className={styles.failureRow} to={requestLogLink(row.requestId)} aria-label={label}>
+        {content}
+      </Link>
+    );
+  }
+  if (errorText && (cut || open)) {
+    return (
+      <button
+        type="button"
+        className={styles.failureRow}
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen(!open)}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className={styles.failureRow}>{content}</div>;
 }
 
 /** The last five failed client requests; each opens its log, and the header opens the list. */
@@ -74,8 +177,7 @@ export function RecentFailures({
       action={
         <ArrowLink to={failedLogsLink(timeWindow)}>{t('dashboard.failures.open_logs')}</ArrowLink>
       }
-      loading={!rows}
-      error={failures.error}
+      {...sectionState(failures, !rows)}
       onRetry={onRetry}
     >
       {rows ? (
@@ -157,43 +259,21 @@ export function RecentFailures({
                 const time = formatClock(Date.parse(row.ts), nowMs);
                 const device = mask(deviceLabel(row, unknown));
                 const error = errorText(row);
-                const content = (
-                  <>
-                    <span className={styles.failureWho}>
-                      {device}
-                      {row.model ? (
-                        <>
-                          {' · '}
-                          <span className={styles.mono}>{row.model}</span>
-                        </>
-                      ) : null}
-                    </span>
-                    <StatusPill>{row.status || '—'}</StatusPill>
-                    <span className={styles.failureMeta}>
-                      <ErrorText text={error} expandable={!row.requestId} />
-                    </span>
-                    <span className={styles.failureTime}>{time}</span>
-                  </>
-                );
                 return (
                   <li key={`${row.ts}-${index}`}>
-                    {row.requestId ? (
-                      <Link
-                        className={styles.failureRow}
-                        to={requestLogLink(row.requestId)}
-                        aria-label={t('dashboard.failures.row_label', {
-                          time,
-                          device,
-                          model: row.model || t('dashboard.top.no_model'),
-                          status: row.status || '—',
-                          error: error || '—',
-                        })}
-                      >
-                        {content}
-                      </Link>
-                    ) : (
-                      <div className={styles.failureRow}>{content}</div>
-                    )}
+                    <FailureCard
+                      row={row}
+                      time={time}
+                      device={device}
+                      errorText={error}
+                      label={t('dashboard.failures.row_label', {
+                        time,
+                        device,
+                        model: row.model || t('dashboard.top.no_model'),
+                        status: row.status || '—',
+                        error: error || '—',
+                      })}
+                    />
                   </li>
                 );
               })}
@@ -221,13 +301,18 @@ function TopTable<T extends TopDevice | TopModel>({
 }: {
   rows: T[];
   nameHeader: string;
-  renderName: (row: T) => React.ReactNode;
+  renderName: (row: T) => ReactNode;
   keyOf: (row: T) => string;
 }) {
   const { t } = useTranslation();
   const peak = Math.max(1, ...rows.map((row) => row.requests));
   return (
-    <DataTable>
+    <DataTable className={styles.topTable}>
+      <colgroup>
+        <col />
+        <col className={styles.colTopCount} />
+        <col className={styles.colTopCost} />
+      </colgroup>
       <thead>
         <tr>
           <DataTableHead>{nameHeader}</DataTableHead>
@@ -238,7 +323,7 @@ function TopTable<T extends TopDevice | TopModel>({
       <tbody>
         {rows.map((row) => (
           <tr key={keyOf(row)}>
-            <DataTableCell truncate>{renderName(row)}</DataTableCell>
+            <DataTableCell className={styles.topName}>{renderName(row)}</DataTableCell>
             <DataTableCell numeric>
               <span className={styles.shareCell}>
                 <ShareBar share={row.requests / peak} />
@@ -279,8 +364,7 @@ export function TopLists({
             {t('dashboard.top.usage_devices')}
           </ArrowLink>
         }
-        loading={!data}
-        error={summary.error}
+        {...sectionState(summary, !data)}
         onRetry={onRetry}
       >
         {data ? (
@@ -291,7 +375,9 @@ export function TopLists({
               rows={data.topDevices}
               nameHeader={t('dashboard.top.device')}
               keyOf={(row) => row.deviceId || '(none)'}
-              renderName={(row) => mask(row.name || row.deviceId || unknown)}
+              renderName={(row) => (
+                <span className={styles.topLabel}>{mask(row.name || row.deviceId || unknown)}</span>
+              )}
             />
           )
         ) : null}
@@ -302,8 +388,7 @@ export function TopLists({
         action={
           <ArrowLink to={usageModelsLink(timeWindow)}>{t('dashboard.top.usage_models')}</ArrowLink>
         }
-        loading={!data}
-        error={summary.error}
+        {...sectionState(summary, !data)}
         onRetry={onRetry}
       >
         {data ? (
@@ -325,7 +410,9 @@ export function TopLists({
                         aria-hidden="true"
                       />
                     ) : null}
-                    <span className={styles.mono}>{row.model || t('dashboard.top.no_model')}</span>
+                    <span className={`${styles.mono} ${styles.topLabel}`}>
+                      {row.model || t('dashboard.top.no_model')}
+                    </span>
                   </span>
                 );
               }}

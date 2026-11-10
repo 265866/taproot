@@ -54,11 +54,22 @@
   color: var(--status-warning-text);
   font-size: var(--fs-body);
   font-weight: 500;
+  border-radius: 2px;
   text-decoration: underline;
   text-underline-offset: 3px;
 
   .verdict[data-state='down'] & {
     color: var(--status-danger-text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
+    margin-block: -12px;
   }
 }
 
@@ -91,12 +102,15 @@
   font-size: var(--fs-meta);
 }
 
+// On phones the detail keeps two lines from the first paint, so the rail below it never moves when
+// the status arrives.
 @media (max-width: $breakpoint-mobile) {
   .headline {
     font-size: 17px;
   }
 
   .detail {
+    min-height: 2lh;
     font-size: var(--fs-table);
   }
 }

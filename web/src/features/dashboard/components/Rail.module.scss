@@ -34,12 +34,24 @@
   gap: 4px;
   min-height: 24px;
   margin-left: auto;
+  border-radius: 2px;
   color: var(--text-secondary);
   font-size: var(--fs-meta);
   text-decoration: none;
 
   &:hover {
     color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  // A 44 px target on a touch screen, without moving anything around it.
+  @media (pointer: coarse) {
+    min-height: 44px;
+    margin-block: -10px;
   }
 }
 
@@ -182,16 +194,16 @@
   font-size: var(--fs-meta);
   line-height: var(--lh-body);
   overflow-wrap: anywhere;
+}
+
+.resolvedBody {
+  min-width: 0;
+  border-radius: 2px;
 
   &:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
-}
-
-.resolvedTitle {
-  color: var(--text-primary);
-  font-weight: 600;
 }
 
 .fixRow {
@@ -209,7 +221,8 @@
   font-weight: 500;
   text-decoration: none;
 
-  @media (max-width: $breakpoint-mobile) {
+  // Phones and touch screens of any width get 44 px targets.
+  @media (max-width: $breakpoint-mobile), (pointer: coarse) {
     min-height: 44px;
     padding: 0 14px;
     font-size: var(--fs-body);

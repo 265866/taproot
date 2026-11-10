@@ -1,16 +1,25 @@
-import { useEffect, useId, useMemo, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { IconChevronDown } from '@/components/ui/icons';
 import { Section } from '@/components/ui/Section';
 import type { UsageBucket } from '@/services/api/taproot';
-import type { Read, WindowSummary } from '../hooks/useDashboardData';
+import { sectionState, type Read, type WindowSummary } from '../hooks/useDashboardData';
 import {
   barRangeLabel,
   chartModel,
   chartSummary,
   dayStartLabel,
   tickLabel,
+  tooltipLeft,
   type ChartBar,
   type ChartModel,
 } from '../model/chart';
@@ -19,6 +28,8 @@ import styles from './TrafficChart.module.scss';
 
 const PAD = { left: 30, right: 38, top: 16, bottom: 22 };
 export const COMPACT_WIDTH = 560;
+/** The tooltip's CSS min-width, its width until it has laid out. */
+const TOOLTIP_MIN_WIDTH = 160;
 
 /**
  * Tracks an element's content width; 0 until it has laid out (and under server rendering). A
@@ -82,8 +93,7 @@ export function TrafficChart({ summary, onRetry }: TrafficChartProps) {
       title={t('dashboard.traffic.title')}
       caption={t(`dashboard.traffic.caption_${bucket}`)}
       action={<div className={styles.legendWide}>{legend}</div>}
-      loading={!data}
-      error={summary.error}
+      {...sectionState(summary, !data)}
       onRetry={onRetry}
       skeleton={<div className={styles.skeleton} />}
       className={styles.section}
@@ -246,13 +256,17 @@ function Tooltip({
   width: number;
   t: TFunction;
 }) {
-  const flip = left > width - 200;
+  const [tooltipWidth, setTooltipWidth] = useState(TOOLTIP_MIN_WIDTH);
+  const measure = useCallback((node: HTMLDivElement | null) => {
+    if (node?.offsetWidth) setTooltipWidth(node.offsetWidth);
+  }, []);
   return (
     <div
+      ref={measure}
       id={id}
       className={styles.tooltip}
       role="status"
-      style={flip ? { right: width - left + 10 } : { left: left + 10 }}
+      style={{ left: tooltipLeft(left, width, tooltipWidth) }}
     >
       <b>
         {barRangeLabel(bar, bucket)}

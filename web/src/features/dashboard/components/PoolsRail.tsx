@@ -69,7 +69,7 @@ export function PoolsRail({ pools, nowMs, onRetry }: PoolsRailProps) {
           <IconArrowRight size={12} />
         </Link>
       </div>
-      {error ? (
+      {error && !pools.quiet ? (
         <div className={styles.error} role="alert">
           <IconCircleAlert size={14} />
           <span>{mask(t('console.section_error', { message: error }))}</span>

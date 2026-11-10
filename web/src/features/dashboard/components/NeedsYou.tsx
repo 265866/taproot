@@ -23,12 +23,13 @@ import {
   type FixRun,
   type ItemAction,
 } from '../model/attentionActions';
+import type { Read } from '../hooks/useDashboardData';
 import { formatAge } from '../model/format';
 import { AccountGoneError, backupNow, enableAccount } from '../model/inlineActions';
 import styles from './Rail.module.scss';
 
 interface NeedsYouProps {
-  attention: { data: Attention | null; error: string | null };
+  attention: Read<Attention>;
   /** No account yet: the calm state says nothing needs the user *yet*. */
   firstRun: boolean;
   loggingToFile: boolean | null;
@@ -81,25 +82,19 @@ export function NeedsYou({
     }
   };
 
-  const errorRow = error ? (
-    <div className={styles.error} role="alert">
-      <IconCircleAlert size={14} />
-      <span>{mask(t('console.section_error', { message: error }))}</span>
-      <Button variant="secondary" size="sm" onClick={onRetry}>
-        {t('console.retry')}
-      </Button>
-    </div>
-  ) : null;
+  const errorRow =
+    error && !attention.quiet ? (
+      <div className={styles.error} role="alert">
+        <IconCircleAlert size={14} />
+        <span>{mask(t('console.section_error', { message: error }))}</span>
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          {t('console.retry')}
+        </Button>
+      </div>
+    ) : null;
 
   const resolvedRows = resolved.map(([id, run]) => (
-    <li key={`resolved:${id}`} className={styles.resolved}>
-      <span className={styles.calmIcon}>
-        <IconCheckCircle2 size={16} />
-      </span>
-      <p className={styles.itemDetail} role="status" tabIndex={-1} ref={focusIfFocusWasLost}>
-        <span className={styles.resolvedTitle}>{run.title}</span> {run.message}
-      </p>
-    </li>
+    <ResolvedRow key={`resolved:${id}`} run={run} />
   ));
 
   let body: ReactNode;
@@ -173,6 +168,27 @@ export function NeedsYou({
       {errorRow}
       {body !== null ? <div className={styles.needs}>{body}</div> : null}
     </section>
+  );
+}
+
+/**
+ * A fix that worked, after its item left the list: the result leads, and the problem it settled
+ * follows as context, so the row never reads as the failure it fixed.
+ */
+export function ResolvedRow({ run }: { run: Extract<FixRun, { kind: 'done' }> }) {
+  const { t } = useTranslation();
+  return (
+    <li className={styles.resolved}>
+      <span className={styles.calmIcon}>
+        <IconCheckCircle2 size={16} />
+      </span>
+      <div className={styles.resolvedBody} role="status" tabIndex={-1} ref={focusIfFocusWasLost}>
+        <p className={styles.itemTitle}>{run.message}</p>
+        <p className={styles.itemDetail}>
+          {t('dashboard.needs.resolved_was', { title: run.title })}
+        </p>
+      </div>
+    </li>
   );
 }
 

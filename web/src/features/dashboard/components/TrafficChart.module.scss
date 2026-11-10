@@ -138,6 +138,7 @@
   flex-direction: column;
   gap: 2px;
   min-width: 160px;
+  max-width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--border-hover);
   border-radius: var(--radius-md);
@@ -244,13 +245,15 @@
 .tableToggle {
   margin: var(--space-2) calc(-1 * var(--space-3)) 0;
 
+  // An inset ring: the card clips anything past its edge, and the closed toggle ends the card.
   > summary {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     min-height: 32px;
-    margin: 0 var(--space-3);
-    border-radius: 2px;
+    margin: 0 calc(var(--space-3) - 6px);
+    padding: 0 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: var(--fs-meta);
     list-style: none;
@@ -266,11 +269,15 @@
 
     &:focus-visible {
       outline: 2px solid var(--accent);
-      outline-offset: 2px;
+      outline-offset: -2px;
     }
 
     svg {
       transition: transform var(--dur-hover) var(--ease-out-strong);
+    }
+
+    @media (pointer: coarse) {
+      min-height: 44px;
     }
   }
 
@@ -279,9 +286,9 @@
   }
 }
 
+// The table grows with its rows rather than scrolling inside the page.
 .tableScroll {
-  max-height: 320px;
-  overflow: auto;
+  overflow-x: auto;
   border-top: 1px solid var(--border-color);
 }
 
@@ -313,5 +320,30 @@
   tbody th {
     color: var(--text-secondary);
     font-weight: 400;
+  }
+}
+
+// A phone-wide chart: every column stays in view, so the time and the headers wrap instead.
+@container (width < 480px) {
+  .table {
+    th,
+    td {
+      padding: 6px 8px;
+    }
+
+    thead th,
+    tbody th {
+      white-space: normal;
+    }
+  }
+}
+
+// Phones read the axis a step larger, like the rest of the page.
+@media (max-width: $breakpoint-mobile) {
+  .tick,
+  .rateTick,
+  .nowLabel,
+  .dayLabel {
+    font-size: 11px;
   }
 }

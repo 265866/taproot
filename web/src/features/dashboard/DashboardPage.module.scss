@@ -28,14 +28,60 @@
   gap: var(--space-3);
 }
 
-// On first run on a narrow screen, the rail follows the checklist, inside the page's gutter.
+// Below the rail breakpoint the rail is inline, full width between the page's gutters: at the top
+// of the page, or on first run after the checklist with a hairline above it.
+.railInline,
 .railAfter {
-  margin: 0 calc(-1 * var(--console-gutter));
-  border-top: 1px solid var(--border-color);
+  margin-inline: calc(-1 * var(--console-gutter));
 
   @media (max-width: $breakpoint-mobile) {
-    margin: 0 (-$spacing-md);
+    margin-inline: -$spacing-md;
   }
+}
+
+// The rail starts where the shell's inline rail did: right under the header, 16 px above the
+// verdict. The page's own padding above it is the main column's.
+.railInline {
+  margin-top: calc(-1 * var(--space-3));
+
+  > .rail {
+    padding-top: 10px;
+  }
+
+  @media (max-width: $breakpoint-mobile) {
+    > .rail {
+      padding-top: 0;
+    }
+  }
+}
+
+.railAfter {
+  border-top: 1px solid var(--border-color);
+}
+
+// Every read failed alike: the page says so once, above everything.
+.pageError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--status-danger-border);
+  border-radius: var(--radius-lg);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  font-size: var(--fs-table);
+
+  > span {
+    flex: 1;
+    min-width: 12em;
+    overflow-wrap: anywhere;
+  }
+}
+
+.pageErrorIcon {
+  flex: none;
+  color: var(--status-danger);
 }
 
 // One verdict shows at a time (see DashboardPage): the rail's copy below the rail breakpoint, where

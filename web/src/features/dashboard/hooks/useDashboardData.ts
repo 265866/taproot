@@ -29,7 +29,26 @@ import {
 export interface Read<T> {
   data: T | null;
   error: string | null;
+  /**
+   * The page shows `error` in its one banner, because every read failed alike: the section shows
+   * no error of its own, only its last data marked stale.
+   */
+  quiet?: boolean;
 }
+
+/** The error every read shares, which the page shows once instead of in each section; else null. */
+export function sharedError(errors: (string | null)[]): string | null {
+  const first = errors[0] ?? null;
+  return first !== null && errors.every((error) => error === first) ? first : null;
+}
+
+export const quietRead = <R extends Read<unknown>>(read: R): R => ({ ...read, quiet: true });
+
+/** A `Section`'s loading, error, and stale props for a read. */
+export const sectionState = (read: Read<unknown>, loading: boolean) =>
+  read.quiet
+    ? { loading: false, error: null, stale: read.error !== null }
+    : { loading, error: read.error };
 
 const EMPTY: Read<never> = { data: null, error: null };
 

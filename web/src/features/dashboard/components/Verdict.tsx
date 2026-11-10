@@ -52,7 +52,15 @@ export function Verdict({ status, onRetry, className }: VerdictProps) {
           <h2 id={headingId} className={styles.headline}>
             {status.error ? t('dashboard.verdict.unknown') : t('dashboard.verdict.loading')}
           </h2>
-          {status.error ? errorRow(status.error) : <Skeleton width="60%" height={14} />}
+          {status.error ? (
+            status.quiet ? null : (
+              errorRow(status.error)
+            )
+          ) : (
+            <div className={styles.detail}>
+              <Skeleton width="60%" height={14} />
+            </div>
+          )}
         </div>
       </section>
     );
@@ -90,7 +98,7 @@ export function Verdict({ status, onRetry, className }: VerdictProps) {
           ) : null}
         </div>
         <p className={styles.detail}>{mask(data.detail)}</p>
-        {status.error ? errorRow(status.error) : null}
+        {status.error && !status.quiet ? errorRow(status.error) : null}
       </div>
     </section>
   );

@@ -1,6 +1,7 @@
 {
   "dashboard": {
     "rail_label": "Right now",
+    "page_error": "Couldn't reach the server: {{message}}. Showing the last data that loaded.",
     "verdict": {
       "loading": "Checking the server…",
       "unknown": "Status unknown",
@@ -127,6 +128,7 @@
       "enable_done": "Enabled.",
       "enable_gone": "This account's credential file is gone. Open Accounts to check.",
       "backup_done": "Backed up ({{size}}).",
+      "resolved_was": "Was: {{title}}",
       "action_failed": "That didn't work."
     },
     "pools": {
@@ -190,7 +192,7 @@
       "client_done": "Requests are arriving. Point other clients here the same way.",
       "claude_code_title": "Claude Code · shell profile",
       "codex_title": "Codex · ~/.codex/config.toml",
-      "address_loopback": "This address works only on the server itself. On other devices, use the server's Tailscale name, such as http://server:8317.",
+      "address_loopback": "This address works only on the server itself. On other devices, use the server's Tailscale name, such as {{example}}.",
       "address_proxy": "This looks like a proxy's address, such as tailscale serve. A proxy on the server makes every caller look like the server itself; publish taproot's port on its Tailscale address instead (see Troubleshooting in the docs).",
       "copy": "Copy",
       "copy_label": "Copy the {{title}} snippet",
