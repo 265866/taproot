@@ -22,6 +22,7 @@ import (
 	"github.com/265866/taproot/internal/taproot/egress"
 	"github.com/265866/taproot/internal/taproot/ingest"
 	"github.com/265866/taproot/internal/taproot/reqlog"
+	"github.com/265866/taproot/internal/taproot/routing"
 	"github.com/265866/taproot/internal/taproot/settings"
 	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/265866/taproot/internal/taproot/web"
@@ -164,6 +165,12 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	providerProxy := &egress.Proxy{}
 	providerProxy.SetGlobal(func() string { return cfg.ProxyURL })
 	usage.UseProxy(providerProxy)
+	usage.OnQuota(func(obs []ingest.QuotaObservation) { routing.Stored.Observe(routingWindows(obs)) })
+	if latest, errLatest := usage.LatestQuota(ctx); errLatest != nil {
+		log.WithError(errLatest).Warn("taproot routing: load latest quota")
+	} else {
+		routing.Stored.Observe(routingWindows(latest))
+	}
 	usage.AttachDevices(guard)
 	plugins := &pluginCallers{}
 	usage.AttachPlugins(plugins)
@@ -258,6 +265,17 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		opts = append(opts, api.WithRequestLoggerFactory(factory))
 	}
 	return opts, stop, nil
+}
+
+func routingWindows(obs []ingest.QuotaObservation) []routing.Window {
+	out := make([]routing.Window, len(obs))
+	for k, o := range obs {
+		out[k] = routing.Window{
+			AuthIndex: o.AuthIndex, Provider: o.Provider, Name: o.Window, Utilization: o.Utilization, Status: o.Status,
+			ResetsAt: o.ResetsAt, PeriodSeconds: o.PeriodSeconds, ObservedAt: o.ObservedAt,
+		}
+	}
+	return out
 }
 
 // dashboardURL is where a tailnet device opens the dashboard: the server's

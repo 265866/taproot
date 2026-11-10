@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -30,12 +31,13 @@ func exportObservation(o observation) QuotaObservation {
 }
 
 type quotaHook struct {
-	fn atomic.Pointer[func([]QuotaObservation)]
+	mu  sync.Mutex
+	fns atomic.Pointer[[]func([]QuotaObservation)]
 }
 
 func (h *quotaHook) publish(obs []observation) {
-	fn := h.fn.Load()
-	if fn == nil || len(obs) == 0 {
+	fns := h.fns.Load()
+	if fns == nil || len(obs) == 0 {
 		return
 	}
 	out := make([]QuotaObservation, 0, len(obs))
@@ -44,13 +46,24 @@ func (h *quotaHook) publish(obs []observation) {
 			out = append(out, exportObservation(o))
 		}
 	}
-	(*fn)(out)
+	for _, fn := range *fns {
+		fn(out)
+	}
 }
 
 // OnQuota makes fn receive every quota observation once its flush commits.
-// fn runs on the flush goroutine, so it must return quickly.
+// fn runs on the flush goroutine, so it must return quickly, and it shares
+// the slice with other subscribers, so it must not modify it.
 func (i *Ingest) OnQuota(fn func([]QuotaObservation)) {
-	i.quotaHook.fn.Store(&fn)
+	h := &i.quotaHook
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var fns []func([]QuotaObservation)
+	if cur := h.fns.Load(); cur != nil {
+		fns = append(fns, *cur...)
+	}
+	fns = append(fns, fn)
+	h.fns.Store(&fns)
 }
 
 // LatestQuota returns the newest stored observation of each window, leaving

@@ -85,3 +85,16 @@ func TestQuotaAfterClockStepsBack(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaHookPublishesToEverySubscriber(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	var first, second int
+	i.OnQuota(func(obs []QuotaObservation) { first += len(obs) })
+	i.OnQuota(func(obs []QuotaObservation) { second += len(obs) })
+	r := claudeRecord("r1", clock.t, hdr("Anthropic-Ratelimit-Unified-7d-Utilization", "0.5"))
+	i.HandleUsage(context.Background(), r)
+	mustFlush(t, i)
+	if first != 1 || second != 1 {
+		t.Fatalf("subscribers received %d and %d observations, want 1 each", first, second)
+	}
+}
