@@ -264,6 +264,19 @@ func TestSeedDegraded(t *testing.T) {
 	if err := db.QueryRow(`SELECT (SELECT SUM(attempts) FROM client_requests), (SELECT COUNT(*) FROM usage_events)`).Scan(&attempts, &events); err != nil || attempts != events {
 		t.Errorf("attempts %d, usage events %d (%v)", attempts, events, err)
 	}
+	// The verdict's "See failures" opens the last quarter hour's failed
+	// request logs, so each of those failures has one.
+	var unlogged, logged int64
+	if err := db.QueryRow(`SELECT COUNT(*) FROM client_requests WHERE failed = 1 AND ts >= ? AND request_id NOT IN (SELECT request_id FROM reqlog_records)`,
+		testStart.Add(-15*time.Minute).UnixMilli()).Scan(&unlogged); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM reqlog_records WHERE status >= 400 AND ts >= ?`, testStart.Add(-15*time.Minute).UnixMilli()).Scan(&logged); err != nil {
+		t.Fatal(err)
+	}
+	if unlogged != 0 || logged < failed {
+		t.Errorf("last 15 min: %d failed client requests without a request log, %d failed request logs for %d failures", unlogged, logged, failed)
+	}
 }
 
 // -all-clear seeds nothing that needs the user: no signed-out account, no

@@ -16,8 +16,9 @@ import (
 	"github.com/265866/taproot/internal/taproot/store"
 )
 
-// writeRequestLogs records the burst requests through the request logger the
-// server installs, with fake request and response bodies.
+// writeRequestLogs records the burst requests, and the others marked logged,
+// through the request logger the server installs, with fake request and
+// response bodies.
 func writeRequestLogs(ctx context.Context, db *store.DB, dataDir string, requests []request) (int, error) {
 	logs, err := reqlog.New(reqlog.Config{}, db, dataDir)
 	if err != nil {
@@ -30,7 +31,7 @@ func writeRequestLogs(ctx context.Context, db *store.DB, dataDir string, request
 	defer logs.Close()
 	n := 0
 	for _, r := range requests {
-		if !r.burst {
+		if !r.burst && !r.logged {
 			continue
 		}
 		e := renderExchange(r)
