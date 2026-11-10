@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -184,5 +185,22 @@ func TestConfigPollInterval(t *testing.T) {
 	}
 	if _, err := New(Config{PollInterval: "soon"}, openTestDB(t)); err == nil {
 		t.Error("New accepted a bad poll interval")
+	}
+}
+
+// Records queued when the context ends are written before Wait returns, so
+// a shutdown loses none of them.
+func TestWaitReturnsAfterTheFinalFlush(t *testing.T) {
+	i, _ := newTestIngest(t, Config{PollInterval: "0"})
+	ctx, cancel := context.WithCancel(context.Background())
+	i.Start(ctx)
+	const queued = 10 // under flushBatch, so only the final flush writes them
+	for n := range queued {
+		i.HandleUsage(context.Background(), usage.Record{RequestID: fmt.Sprintf("req-%d", n), Provider: "claude", Model: "claude-sonnet-4-5"})
+	}
+	cancel()
+	i.Wait()
+	if got := queryInt(t, i, `SELECT COUNT(*) FROM usage_events`); got != queued {
+		t.Fatalf("usage_events after Wait = %d, want %d", got, queued)
 	}
 }

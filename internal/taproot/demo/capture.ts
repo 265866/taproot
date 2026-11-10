@@ -14,6 +14,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { privacyProblems } from './privacy';
 
 interface Args {
   url: string;
@@ -128,13 +129,8 @@ async function waitUntilSettled(page: Page) {
   await page.waitForTimeout(1500);
 }
 
-// The dashboard masks addresses as `a•••e@e•••.com`; masked ones are skipped.
-const EMAIL = /[A-Za-z0-9._%+•-]+@[A-Za-z0-9•-]+(?:\.[A-Za-z0-9-]+)*/g;
-const IPV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
-const HOME_PATH = /[A-Za-z]:\\Users\\|\/Users\/|\/home\//;
-
 /** Returns every piece of text on the page that is not one of the demo's synthetic values. */
-async function privacyProblems(page: Page): Promise<string[]> {
+async function pageProblems(page: Page): Promise<string[]> {
   const text = await page.evaluate(() => {
     const parts = [document.body.innerText];
     for (const el of document.querySelectorAll('*')) {
@@ -146,20 +142,7 @@ async function privacyProblems(page: Page): Promise<string[]> {
     }
     return parts.join('\n');
   });
-  const problems: string[] = [];
-  for (const m of text.match(EMAIL) ?? []) {
-    if (m.includes('•')) continue;
-    const domain = m.slice(m.indexOf('@') + 1).toLowerCase();
-    if (!['example.com', 'example.org', 'github'].includes(domain)) problems.push(`address ${m}`);
-  }
-  for (const m of text.match(IPV4) ?? []) {
-    // 192.0.2.0/24 is reserved for documentation (RFC 5737); the demo's address group uses it.
-    if (m !== '127.0.0.1' && !m.startsWith('100.64.0.') && !m.startsWith('192.0.2.')) problems.push(`address ${m}`);
-  }
-  if (HOME_PATH.test(text)) problems.push('a home directory path');
-  const lower = text.toLowerCase();
-  for (const word of args.deny) if (lower.includes(word)) problems.push(`denied text "${word}"`);
-  return problems;
+  return privacyProblems(text, args.deny);
 }
 
 mkdirSync(args.out, { recursive: true });
@@ -202,7 +185,7 @@ try {
         await shot.act(page);
         await waitUntilSettled(page);
       }
-      const problems = await privacyProblems(page);
+      const problems = await pageProblems(page);
       if (problems.length > 0) {
         failures.push(`${file}: ${[...new Set(problems)].join(', ')}`);
       } else {

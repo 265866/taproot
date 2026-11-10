@@ -7,6 +7,7 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/265866/taproot/internal/buildinfo"
 	"github.com/265866/taproot/internal/taproot/access"
 	"github.com/265866/taproot/internal/taproot/alerts"
+	"github.com/265866/taproot/internal/taproot/backup"
 	"github.com/265866/taproot/internal/taproot/reqlog"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -59,12 +61,19 @@ type ScheduleSetter interface {
 	SetSchedule(dailyAt string, keep int) error
 	// NextRun is the next scheduled backup, false while the schedule is off.
 	NextRun() (time.Time, bool)
+	// WriteConfig runs write so that no restore replaces taproot.yaml while
+	// it runs, and returns backup.ErrRestartPending instead once a restore
+	// is waiting for a restart.
+	WriteConfig(write func() error) error
 }
 
 // AlertsSetter is the alerts module's runtime webhook and switch.
 type AlertsSetter interface {
 	Config() alerts.Config
 	SetConfig(alerts.Config) error
+	// SnapshotConfig returns a function that puts back the current state
+	// exactly, without validating it.
+	SnapshotConfig() (restore func())
 	Active() bool
 	WebhookInvalid() bool
 	// AnnounceWebhook queues a "Webhook connected" message without blocking.
@@ -320,18 +329,31 @@ func writeError(c *gin.Context, err error) {
 
 func (s *Settings) handlePut(c *gin.Context) {
 	var u update
-	if err := c.ShouldBindJSON(&u); err != nil {
+	// taproot.yaml never ignores a key, so neither does its API: a misspelled
+	// field would otherwise answer 200 and change nothing.
+	dec := json.NewDecoder(c.Request.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&u); err != nil {
 		writeError(c, badRequest("invalid_body", "settings body: %v", err))
 		return
 	}
 	id, _ := s.identityFrom(c)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.apply(c.Request.Context(), u, id); err != nil {
+	if err := s.save(c.Request.Context(), u, id); err != nil {
 		writeError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, s.current())
+}
+
+// save runs apply while no restore can replace taproot.yaml.
+func (s *Settings) save(ctx context.Context, u update, caller access.Identity) error {
+	err := s.deps.Backups.WriteConfig(func() error { return s.apply(ctx, u, caller) })
+	if errors.Is(err, backup.ErrRestartPending) {
+		return &apiError{status: http.StatusConflict, code: "restart_pending", message: "a restore is waiting for taproot to restart; restart taproot, then change settings"}
+	}
+	return err
 }
 
 // apply changes each module in turn, undoing earlier changes when a later
@@ -458,16 +480,23 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 		next := before
 		if a.DiscordWebhook != nil {
 			next.DiscordWebhook = strings.TrimSpace(*a.DiscordWebhook)
+			if next.DiscordWebhook != "" {
+				if err := alerts.ValidateWebhook(next.DiscordWebhook); err != nil {
+					rollback()
+					return badRequest("invalid_alerts", "discord webhook: %v", err)
+				}
+			}
 		}
 		if a.Enabled != nil {
 			enabled := *a.Enabled
 			next.Enabled = &enabled
 		}
+		restoreAlerts := s.deps.Alerts.SnapshotConfig()
 		if err := s.deps.Alerts.SetConfig(next); err != nil {
 			rollback()
 			return badRequest("invalid_alerts", "discord webhook: %v", err)
 		}
-		undo = append(undo, func() { s.restore("alerts", s.deps.Alerts.SetConfig(before)) })
+		undo = append(undo, restoreAlerts)
 		if next.DiscordWebhook != before.DiscordWebhook {
 			edits = append(edits, yamlEdit{path: []string{"alerts", "discord-webhook"}, value: next.DiscordWebhook})
 			newWebhook = next.DiscordWebhook != ""
@@ -624,15 +653,24 @@ func (s *Settings) sweep(ctx context.Context) error {
 	if !changed {
 		return nil
 	}
-	before := s.deps.Access.Grants()
-	if err := s.deps.Access.SetGrants(next); err != nil {
-		return err
-	}
-	if edits := accessEdits(before, s.deps.Access.Grants()); len(edits) > 0 {
-		if err := writeYAML(s.deps.ConfigPath, edits); err != nil {
-			s.restore("access", s.deps.Access.SetGrants(before))
-			return fmt.Errorf("write %s: %w", s.deps.ConfigPath, err)
+	err = s.deps.Backups.WriteConfig(func() error {
+		before := s.deps.Access.Grants()
+		if err := s.deps.Access.SetGrants(next); err != nil {
+			return err
 		}
+		if edits := accessEdits(before, s.deps.Access.Grants()); len(edits) > 0 {
+			if err := writeYAML(s.deps.ConfigPath, edits); err != nil {
+				s.restore("access", s.deps.Access.SetGrants(before))
+				return fmt.Errorf("write %s: %w", s.deps.ConfigPath, err)
+			}
+		}
+		return nil
+	})
+	if errors.Is(err, backup.ErrRestartPending) {
+		return nil
+	}
+	if err != nil {
+		return err
 	}
 	for _, d := range forgotten {
 		log.Infof("taproot access: forgot device %s (%s), which has not been on the tailnet for %s", d.Name, d.ID, access.ForgetAfter)

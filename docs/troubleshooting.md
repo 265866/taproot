@@ -37,6 +37,18 @@ You opened taproot by a name it does not know, such as a local DNS name, an `/et
 
 Taproot reads `taproot.yaml` strictly, and the error names the key and its line. Fix the spelling, or remove the key. [Configuration](configuration.md#taprootyaml) lists every key. A key that a newer patch release added stops an older release too.
 
+## Taproot stops on `more than one YAML document`
+
+`taproot.yaml` has a line with only `---`, which starts a second YAML document, and taproot reads only one. Merge the documents into one, and remove the `---` line.
+
+## Taproot stops with `no --config flag`
+
+Taproot was started without `--config` in a directory with no `config.yaml`. Start it with `taproot --config <dir>/config.yaml`. On its first start, taproot writes a default `config.yaml` and `taproot.yaml` in `<dir>`.
+
+## Clients get `every account is disabled` or `no enabled Claude account serves model`
+
+The pool has accounts, but none can serve the model the client asked for. Every account is disabled, or no enabled account is of the model's provider, such as a Claude model with only Codex accounts. Enable or add an account on the dashboard's Accounts page. For `no enabled account serves model`, also check the model name the client sends.
+
 ## Taproot stops on `access.allow-logins`, `access.admin-nodes`, or `access.trusted-cidrs`
 
 These keys from 0.1.0 were removed. Replace them with `access.devices` and `access.addresses`, as the error says. [Move from 0.1.0](updating.md#move-from-010) shows the steps.

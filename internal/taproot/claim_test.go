@@ -37,11 +37,11 @@ func startFirstRun(t *testing.T, configPath string) (fixture, string) {
 	}
 	hook := test.NewGlobal()
 	defer log.StandardLogger().ReplaceHooks(make(log.LevelHooks))
-	opts, stop, err := setup(context.Background(), cfg, configPath)
+	opts, running, err := setup(context.Background(), cfg, configPath)
 	if err != nil {
 		t.Fatalf("Setup on the first-run files: %v", err)
 	}
-	t.Cleanup(stop)
+	t.Cleanup(running.stop)
 	code := ""
 	for _, e := range hook.AllEntries() {
 		if m := setupCodeLine.FindStringSubmatch(e.Message); m != nil {

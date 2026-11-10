@@ -10,6 +10,22 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Taproot</title>
+    <script>
+      // Paint the stored theme from the first frame; useThemeStore applies the same rules later.
+      (function () {
+        var theme = 'dark';
+        try {
+          var stored = JSON.parse(localStorage.getItem('cli-proxy-theme') || 'null');
+          var value = stored && stored.state && stored.state.theme;
+          if (value === 'light' || value === 'white' || value === 'auto') theme = value;
+        } catch (e) {}
+        if (theme === 'auto') {
+          theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'white';
+        }
+        if (theme === 'light') document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

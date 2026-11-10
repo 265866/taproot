@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_STARTED, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { taprootApi, type TaprootAccount } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
 import { AppLogsPanel } from './appLogs/AppLogsPanel';
@@ -144,9 +144,10 @@ function RequestLogsView({
   );
 
   const { reload } = logs;
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     reload();
     setStatsKey((key) => key + 1);
+    return REFRESH_STARTED;
   }, [reload]);
   useHeaderRefresh(requestId ? null : refresh);
 

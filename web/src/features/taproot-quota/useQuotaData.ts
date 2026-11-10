@@ -24,7 +24,8 @@ export function useQuotaData(range: DateRange) {
   const [error, setError] = useState('');
   const requestRef = useRef(0);
 
-  const load = useCallback(async () => {
+  /** Resolves to the error it showed, or '' (also when a newer load took over). */
+  const load = useCallback(async (): Promise<string> => {
     const id = ++requestRef.current;
     setLoading(true);
     setError('');
@@ -39,14 +40,17 @@ export function useQuotaData(range: DateRange) {
           to: new Date(now + 60_000).toISOString(),
         }),
       ]);
-      if (id !== requestRef.current) return;
+      if (id !== requestRef.current) return '';
       setData({
         groups: buildProviderGroups(accounts.accounts, current.accounts, series.series),
         now,
       });
+      return '';
     } catch (err: unknown) {
-      if (id !== requestRef.current) return;
-      setError(err instanceof Error ? err.message : String(err));
+      if (id !== requestRef.current) return '';
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      return message;
     } finally {
       if (id === requestRef.current) setLoading(false);
     }

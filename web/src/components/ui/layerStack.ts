@@ -18,6 +18,11 @@ export function popLayer(id: symbol): void {
   if (index >= 0) layers.splice(index, 1);
 }
 
+/** True while any sheet or modal is open. */
+export function hasOpenLayer(): boolean {
+  return layers.length > 0;
+}
+
 export function isTopLayer(id: symbol): boolean {
   return layers.length > 0 && layers[layers.length - 1] === id;
 }

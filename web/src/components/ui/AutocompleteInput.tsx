@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -42,6 +43,12 @@ export function AutocompleteInput({
   id,
   rightElement,
 }: AutocompleteInputProps) {
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
+  const listboxId = `${inputId}-listbox`;
+  const optionId = (index: number) => `${inputId}-option-${index}`;
+  const hintId = hint ? `${inputId}-hint` : undefined;
+  const errorId = error ? `${inputId}-error` : undefined;
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,6 +69,15 @@ export function AutocompleteInput({
     );
   });
   const showDropdown = isOpen && filteredOptions.length > 0 && !disabled;
+  const activeOptionId =
+    showDropdown && highlightedIndex >= 0 && highlightedIndex < filteredOptions.length
+      ? optionId(highlightedIndex)
+      : undefined;
+
+  useEffect(() => {
+    if (activeOptionId)
+      document.getElementById(activeOptionId)?.scrollIntoView({ block: 'nearest' });
+  }, [activeOptionId]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -132,6 +148,11 @@ export function AutocompleteInput({
         setIsOpen(false);
       }
     } else if (e.key === 'Escape') {
+      if (showDropdown) {
+        // Close only the list, not a dialog the field sits in.
+        e.preventDefault();
+        e.stopPropagation();
+      }
       setIsOpen(false);
     } else if (e.key === 'Tab') {
       setIsOpen(false);
@@ -140,10 +161,17 @@ export function AutocompleteInput({
 
   return (
     <div className={`form-group ${wrapperClassName}`} ref={containerRef} style={wrapperStyle}>
-      {label && <label htmlFor={id}>{label}</label>}
+      {label && <label htmlFor={inputId}>{label}</label>}
       <div style={{ position: 'relative' }} ref={inputWrapRef}>
         <input
-          id={id}
+          id={inputId}
+          role="combobox"
+          aria-expanded={showDropdown}
+          aria-controls={listboxId}
+          aria-autocomplete="list"
+          aria-activedescendant={activeOptionId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={[errorId, hintId].filter(Boolean).join(' ') || undefined}
           className={`input ${className}`.trim()}
           value={value}
           onChange={handleInputChange}
@@ -178,6 +206,8 @@ export function AutocompleteInput({
           createPortal(
             <div
               ref={dropdownRef}
+              id={listboxId}
+              role="listbox"
               className="autocomplete-dropdown"
               style={{
                 backgroundColor: 'var(--bg-secondary)',
@@ -191,6 +221,9 @@ export function AutocompleteInput({
               {filteredOptions.map((opt, index) => (
                 <div
                   key={`${opt.value}-${index}`}
+                  id={optionId(index)}
+                  role="option"
+                  aria-selected={index === highlightedIndex}
                   onClick={() => handleSelect(opt.value)}
                   style={{
                     padding: '8px 12px',
@@ -216,8 +249,16 @@ export function AutocompleteInput({
             document.body
           )}
       </div>
-      {hint && <div className="hint">{hint}</div>}
-      {error && <div className="error-box">{error}</div>}
+      {hint && (
+        <div id={hintId} className="hint">
+          {hint}
+        </div>
+      )}
+      {error && (
+        <div id={errorId} className="error-box">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

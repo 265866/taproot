@@ -13,3 +13,12 @@ export function resolvePageScrollContainer(
   }
   return scrollingElement as HTMLElement | null;
 }
+
+// React Router gives every location it did not create (a typed or edited hash) this same key.
+const UNTRACKED_LOCATION_KEY = 'default';
+
+/** Where the entering page starts: its saved offset when the router knows the entry, else the top. */
+export function enterScrollOffset(saved: ReadonlyMap<string, number>, locationKey: string): number {
+  if (locationKey === UNTRACKED_LOCATION_KEY) return 0;
+  return saved.get(locationKey) ?? 0;
+}

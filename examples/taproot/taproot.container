@@ -59,6 +59,9 @@ LogDriver=journald
 Restart=always
 RestartSec=5
 TimeoutStartSec=120
+# Taproot closes its connections at once on stop, so streams in flight are
+# cut, not drained. Podman sends SIGKILL 10 s after SIGTERM; this only bounds
+# systemd's wait for that.
 TimeoutStopSec=45
 UMask=0077
 
