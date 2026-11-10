@@ -295,6 +295,13 @@ func TestSeedAllClear(t *testing.T) {
 	if runs != 0 || requests == 0 {
 		t.Errorf("%d access requests and %d client requests, want none and some", runs, requests)
 	}
+	var failedRuns int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM backup_scheduled_run WHERE error != ''`).Scan(&failedRuns); err != nil {
+		t.Fatal(err)
+	}
+	if failedRuns != 0 {
+		t.Errorf("%d failed scheduled backup runs, want none", failedRuns)
+	}
 }
 
 // -first-run writes the config and nothing else, as a new server has it.
