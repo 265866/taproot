@@ -2,6 +2,7 @@ package reqlog
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/265866/taproot/internal/interfaces"
 	"github.com/265866/taproot/internal/logging"
@@ -446,11 +448,26 @@ func (c *capture) build() (*recordMeta, []byte, error) {
 		}
 		view := apiErrorView{Status: apiErr.StatusCode}
 		if apiErr.Error != nil {
-			view.Message = apiErr.Error.Error()
+			view.Message = truncateMessage(apiErr.Error.Error())
 		}
 		meta.APIErrors = append(meta.APIErrors, view)
 	}
 	return meta, text, nil
+}
+
+// maxMetaMessage bounds each upstream error message in the record meta, which
+// must stay under maxFrameMeta. The API errors section keeps the full text.
+const maxMetaMessage = 64 << 10
+
+func truncateMessage(msg string) string {
+	if len(msg) <= maxMetaMessage {
+		return msg
+	}
+	cut := maxMetaMessage
+	for cut > 0 && !utf8.RuneStart(msg[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s\n[truncated %d bytes; the raw log has the full text]", msg[:cut], len(msg)-cut)
 }
 
 func isEventStream(headers map[string][]string) bool {

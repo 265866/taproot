@@ -361,3 +361,47 @@ func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 		}
 	}
 }
+
+// TestHugeUpstreamErrorKeepsSegment stores an upstream error message larger
+// than the frame's meta limit, then another record of the same session.
+// Sealing must keep both: a frame that recovery rejects would truncate the
+// segment there and lose every later record.
+func TestHugeUpstreamErrorKeepsSegment(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	ts := h.clock.now()
+	huge := strings.Repeat("é", maxFrameMeta/2+1)
+	headers := map[string][]string{"X-Claude-Code-Session-Id": {"s"}}
+	if err := lg.LogRequestWithOptions("/v1/messages", "POST", headers, []byte(`{}`), 502, nil, []byte(`bad gateway`), nil, []byte("=== API REQUEST 1 ===\nx\n"), nil, nil,
+		[]*interfaces.ErrorMessage{{StatusCode: 502, Error: errors.New(huge)}}, false, "huge", ts, ts); err != nil {
+		t.Fatal(err)
+	}
+	logSimple(t, lg, "after", "/v1/messages", "s", 200, ts.Add(time.Second), []byte(`{}`))
+	h.flush()
+	h.sealAll()
+	d, err := h.logs.Get(context.Background(), "huge", true)
+	if err != nil {
+		t.Fatalf("huge: %v", err)
+	}
+	msg := d.Upstream.Errors[0].Message
+	if len(msg) > maxMetaMessage+100 || !strings.HasPrefix(huge, strings.SplitN(msg, "\n", 2)[0]) || !strings.Contains(msg, "the raw log has the full text") {
+		t.Fatalf("error message in meta is %d bytes: %.80q...", len(msg), msg)
+	}
+	_, raw, err := h.logs.Raw(context.Background(), "huge")
+	if err != nil || !bytes.Contains(raw, []byte(huge)) {
+		t.Fatalf("raw log lost the full error message: %v", err)
+	}
+	if _, err := h.logs.Get(context.Background(), "after", true); err != nil {
+		t.Fatalf("record after the huge one: %v", err)
+	}
+	if n := h.logs.engine.stats.writeErrors.Load(); n != 0 {
+		t.Fatalf("%d write errors", n)
+	}
+}
+
+func TestEncodeFrameRefusesOversizedMeta(t *testing.T) {
+	meta := &recordMeta{RequestID: "r", URL: "/" + strings.Repeat("a", maxFrameMeta)}
+	if _, _, err := encodeFrame(meta, []byte("text"), func(blobHash, []byte) {}); err == nil {
+		t.Fatal("encoded a frame whose meta recovery would reject")
+	}
+}
