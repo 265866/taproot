@@ -2,6 +2,10 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## Unreleased
+
+- `access.addresses` refuses an entry in Tailscale's ranges (`100.64.0.0/10` and `fd7a:115c:a1e0::/48`) or a wider range that includes one, such as `0.0.0.0/0`, and taproot no longer starts with one. Such an entry gave every tailnet device it covered Proxy and took Admin from admin devices. Before you update, replace it in `taproot.yaml` with the addresses outside Tailscale that need the proxy, and turn on Proxy for the tailnet devices that need it on the Access page.
+
 ## [0.3.0](https://github.com/265866/taproot/compare/taproot-v0.2.0...taproot-v0.3.0) (2026-11-09)
 
 ### Added

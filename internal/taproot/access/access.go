@@ -81,6 +81,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -262,6 +263,8 @@ type Guard struct {
 
 	claim setupClaim
 
+	sockets openSockets
+
 	// asks stores access requests; nil until AttachRequests.
 	asks atomic.Pointer[Requests]
 }
@@ -370,6 +373,7 @@ func (g *Guard) SetGrants(in Grants) error {
 		return err
 	}
 	g.grants.Store(set)
+	g.sockets.revoke(set)
 	return nil
 }
 
@@ -415,6 +419,14 @@ func newGrantSet(in Grants) (*grantSet, error) {
 			prefix = netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen())
 		}
 		prefix = prefix.Masked()
+		// admit matches addresses before whois, so a covered tailnet device
+		// would lose its identity: it would get Proxy without a grant, and an
+		// admin device would lose Admin.
+		for _, tailnet := range tailnetPrefixes {
+			if prefix.Overlaps(tailnet) {
+				return nil, fmt.Errorf("access.addresses: %s covers Tailscale addresses (%s); give tailnet devices Proxy under access.devices instead", prefix, tailnet)
+			}
+		}
 		if slices.Contains(set.prefixes, prefix) {
 			return nil, fmt.Errorf("access.addresses: %s is listed twice", prefix)
 		}
@@ -443,6 +455,21 @@ func CleanLabel(raw string) (string, error) {
 		return "", errors.New("holds control or format characters")
 	}
 	return label, nil
+}
+
+// Version identifies the lists' content. A client that edits a copy of the
+// lists sends it back, so a save made from a stale copy is refused instead of
+// undoing changes saved since.
+func (gr Grants) Version() string {
+	var b []byte
+	for _, d := range gr.Devices {
+		b = fmt.Appendf(b, "d %q %q %q %t %t\n", d.ID, d.Name, d.Label, d.Proxy, d.Admin)
+	}
+	for _, a := range gr.Addresses {
+		b = fmt.Appendf(b, "a %q %q\n", a.CIDR, a.Note)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:8])
 }
 
 // Grants returns a copy of the current device and address lists.
@@ -572,6 +599,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			return
 		}
 		c.Set(identityKey, id)
+		defer g.trackSocket(c, id, surf)()
 		if requestID := logging.GetGinRequestID(c); requestID != "" {
 			g.requests.start(requestID, g.deviceFor(id))
 			defer func() { g.requests.finish(requestID, g.now()) }()

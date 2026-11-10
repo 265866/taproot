@@ -13,7 +13,9 @@ Every tailnet device has two permissions:
 
 New devices start with neither. The server's own node always has Proxy and never Admin. Permissions belong to the device's Tailscale stable ID, so a device that takes another device's name gets nothing.
 
-Addresses outside Tailscale, listed under **Addresses without Tailscale** (`access.addresses` in `taproot.yaml`), get Proxy only. Add single addresses (`/32`) only, because every host in a wider range reaches the proxy.
+Addresses outside Tailscale, listed under **Addresses without Tailscale** (`access.addresses` in `taproot.yaml`), get Proxy only. Add single addresses (`/32`) only, because every host in a wider range reaches the proxy. Taproot refuses an address in Tailscale's ranges (`100.64.0.0/10` and `fd7a:115c:a1e0::/48`), and any range that includes one: give a tailnet device Proxy with its switch instead.
+
+A change applies to the device's next request. Turning off a permission also closes the device's open websocket sessions, such as a running Codex session, which then reconnect and are refused.
 
 ## The Access page
 
@@ -26,6 +28,8 @@ The page lists devices in these groups:
 - A folded line for every other device that can reach the server but has no access.
 - **Removed:** devices no longer on the tailnet. Taproot forgets them after 24 hours; select **Forget** to remove one sooner.
 - **Addresses without Tailscale:** callers outside Tailscale.
+
+If another admin saved access changes after you opened the page, **Save** reloads the page instead of overwriting them. Your edits stay, except edits to devices or addresses the other admin changed; check them and save again.
 
 To rename a device, select the pencil next to its name, then **Save**. Only a device with Proxy or Admin keeps a name. Taproot stores it as `label` in `taproot.yaml`, and a rename in Tailscale does not change it.
 
