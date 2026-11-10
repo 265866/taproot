@@ -155,15 +155,15 @@ describe('names, badges, and locks', () => {
     expect(isIdle(byId('nDANA0001CNTRL'), NOW)).toBe(false);
   });
 
-  test('Admin is locked for the server, your device, and outside devices without it', () => {
+  test('Admin is locked for the server and your device only', () => {
     const byId = (id: string) => data.devices.find((d) => d.id === id)!;
     expect(proxyLock(byId('nHOSTCNTRL'))).toBe('server_always');
     expect(adminLock(byId('nHOSTCNTRL'), onDesktop)).toBe('server_never');
     expect(adminLock(byId('nDESKCNTRL'), onDesktop)).toBe('needed_by_you');
     expect(adminLock(byId('nDESKCNTRL'), loopback)).toBeNull();
-    expect(adminLock(byId('nDANA0001CNTRL'), onDesktop)).toBe('from_request');
+    // A device outside the tailnet switches like any other, with or without Admin already.
+    expect(adminLock(byId('nDANA0001CNTRL'), onDesktop)).toBeNull();
     expect(proxyLock(byId('nDANA0001CNTRL'))).toBeNull();
-    // An outside device keeps Admin it already has, so it can be switched off.
     expect(adminLock(byId('nALIMBPCNTRL'), onDesktop)).toBeNull();
     expect(adminLock(byId('nWORKCNTRL'), onDesktop)).toBeNull();
   });

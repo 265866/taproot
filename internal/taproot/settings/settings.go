@@ -39,11 +39,9 @@ type AccessControl interface {
 	Claimable() bool
 	CheckClaimCode(code string, now time.Time) error
 	EndClaim()
-	// HasOpenRequest, ResolveRequests, and PruneRequests are the access
-	// requests: a device outside the tailnet gets Admin only from one, a
-	// saved grant closes the request of the device it was given to, and the
-	// sweep prunes old ones.
-	HasOpenRequest(ctx context.Context, nodeID string) bool
+	// ResolveRequests and PruneRequests are the access requests: a saved
+	// grant closes the request of the device it was given to, and the sweep
+	// prunes old ones.
 	ResolveRequests(ctx context.Context, before, after access.Grants)
 	PruneRequests(ctx context.Context, tn access.Tailnet)
 }
@@ -355,7 +353,7 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 		if err := access.CheckGrants(next); err != nil {
 			return badRequest("invalid_access", "%v", err)
 		}
-		if err := s.checkAccess(ctx, before, next, caller); err != nil {
+		if err := s.checkAccess(next, caller); err != nil {
 			return err
 		}
 		if err := s.deps.Access.SetGrants(next); err != nil {
@@ -491,10 +489,8 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 // checkAccess refuses a change the guard would ignore or that would lock the
 // caller out: the guard is off, the server's own node is given Admin, or the
 // calling device loses Admin. Loopback callers are admins whatever the lists
-// say. A device outside the server's tailnet gets Admin only while it has an
-// open access request, so a device someone shared in cannot be made an admin
-// by a slip of the switch.
-func (s *Settings) checkAccess(ctx context.Context, before, next access.Grants, caller access.Identity) error {
+// say.
+func (s *Settings) checkAccess(next access.Grants, caller access.Identity) error {
 	if !s.deps.AccessEnabled {
 		return &apiError{
 			status: http.StatusConflict, code: "access_disabled",
@@ -518,68 +514,7 @@ func (s *Settings) checkAccess(ctx context.Context, before, next access.Grants, 
 			message: fmt.Sprintf("this device (%s, ID %s) must keep Admin", caller.Node, caller.NodeID),
 		}
 	}
-	return s.checkOutsideAdmin(ctx, before, next, caller)
-}
-
-// checkOutsideAdmin refuses new Admin for a device outside the server's
-// tailnet that has no open access request. A device keeps Admin it already
-// had. When the tailnet cannot be read, or does not list the device, it
-// counts as outside, so a failed read never widens access. The caller's own
-// device is placed by its whois answer instead, as the claim does.
-func (s *Settings) checkOutsideAdmin(ctx context.Context, before, next access.Grants, caller access.Identity) error {
-	hadAdmin := map[string]bool{}
-	for _, d := range before.Devices {
-		if d.Admin {
-			hadAdmin[strings.TrimSpace(d.ID)] = true
-		}
-	}
-	var listed map[string]access.TailnetDevice
-	var readErr error
-	read := false
-	for _, d := range next.Devices {
-		id := strings.TrimSpace(d.ID)
-		if !d.Admin || hadAdmin[id] {
-			continue
-		}
-		if caller.Via == access.ViaTailnet && id == caller.NodeID {
-			if !caller.Outside {
-				continue
-			}
-		} else {
-			if !read {
-				listed, readErr = s.tailnetDevices(ctx)
-				read = true
-			}
-			if dev, ok := listed[id]; ok && !dev.Outside {
-				continue
-			}
-		}
-		if s.deps.Access.HasOpenRequest(ctx, id) {
-			continue
-		}
-		why := "is outside this server's tailnet"
-		if readErr != nil {
-			why = "could not be placed in this server's tailnet (" + readErr.Error() + ")"
-		} else if _, ok := listed[id]; !ok && id != caller.NodeID {
-			why = "is not on this server's tailnet"
-		}
-		return badRequest("outside_admin_needs_request",
-			"device %s %s, so it gets Admin only from its own access request: open taproot on that device and ask for access", id, why)
-	}
 	return nil
-}
-
-// tailnetDevices reads the tailnet and indexes its devices by stable ID.
-func (s *Settings) tailnetDevices(ctx context.Context) (map[string]access.TailnetDevice, error) {
-	tn, err := s.deps.Access.ReadTailnet(ctx)
-	if err != nil {
-		return nil, err
-	}
-	byID := make(map[string]access.TailnetDevice, len(tn.Peers)+1)
-	for _, d := range append([]access.TailnetDevice{tn.Self}, tn.Peers...) {
-		byID[d.ID] = d
-	}
-	return byID, nil
 }
 
 // accessEdits are the taproot.yaml edits that turn before into after.

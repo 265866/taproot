@@ -37,7 +37,6 @@
     "always": "always",
     "never": "never",
     "needed_by_you": "needed by you",
-    "from_request": "from a request",
     "proxy_label": "Proxy for {{name}}",
     "admin_label": "Admin for {{name}}",
     "rename": "Rename {{name}}",
