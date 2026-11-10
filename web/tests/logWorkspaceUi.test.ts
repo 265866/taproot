@@ -66,7 +66,9 @@ describe('log workspace layout contract', () => {
     expect(styles).toContain('flex-wrap: nowrap');
     expect(styles).toContain('.logRow:focus-within .copyButton');
     expect(page).toContain("aria-label={t('taproot_logs.app.copy_line')}");
-    expect(page).toContain('tabIndex={0}');
+    // One tab stop for the list: the active line and its own buttons.
+    expect(page).toContain('tabIndex={stop}');
+    expect(page).toContain('onKeyDown={moveLineFocus}');
     expect(page).toContain("aria-label={t('taproot_logs.app.log_content')}");
     expect(page).toContain('aria-pressed={autoRefresh}');
   });

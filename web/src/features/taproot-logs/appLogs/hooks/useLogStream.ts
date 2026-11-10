@@ -8,6 +8,7 @@ import {
   applyLogPage,
   buildLogsQuery,
   emptyLogBuffer,
+  serverUtcOffsetMinutes,
   shouldCatchUp,
   INITIAL_VISIBLE_LINES,
 } from '../model/logBuffer';
@@ -64,6 +65,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
   const [lastUpdated, setLastUpdated] = useState<number>();
   const [catchingUp, setCatchingUp] = useState(false);
   const [wasReset, setWasReset] = useState(false);
+  const [serverOffset, setServerOffset] = useState<number | null>(null);
   const retryDelayRef = useRef(8000);
   const nextReadAtRef = useRef(0);
   const [loading, setLoading] = useState(true);
@@ -120,6 +122,8 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
         const added = next.nextId - logBufferRef.current.nextId;
         logBufferRef.current = next;
         setLogBuffer(next);
+        const offset = serverUtcOffsetMinutes(data.lines, data.latestAfter);
+        if (offset !== null) setServerOffset(offset);
         if (data.cursorReset) {
           setWasReset(true);
           setVisibleCount(INITIAL_DISPLAY_LINES);
@@ -266,6 +270,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
     lastUpdated,
     catchingUp,
     wasReset,
+    serverOffset,
     loading,
     clearingLogs,
     error,

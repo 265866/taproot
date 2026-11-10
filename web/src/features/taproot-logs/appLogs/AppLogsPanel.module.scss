@@ -321,6 +321,9 @@
 .readStatus[data-live='true'] .statusDot {
   background: var(--success-color);
 }
+.serverTime {
+  margin-right: auto;
+}
 .bufferStatus {
   text-align: right;
 }
@@ -416,6 +419,10 @@
   &:nth-child(even) {
     background: color-mix(in srgb, var(--bg-secondary) 20%, transparent);
   }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
 }
 .rowWarn {
   border-left-color: var(--warning-color);
@@ -475,8 +482,8 @@
 }
 .statusWarn,
 .levelWarn {
-  color: var(--warning-text);
-  background: var(--warning-bg);
+  color: var(--amber-text);
+  background: var(--amber-10);
 }
 .statusError,
 .levelError {
@@ -636,12 +643,25 @@
     gap: 4px;
     padding-left: 0;
   }
-  .wrapped .logRow {
+  // A phone cannot show a line beside its time, so lines always wrap under their timestamp.
+  .logList {
+    width: auto;
+  }
+  .logRow {
     grid-template-columns: 1fr;
     gap: 0;
     padding: 5px 32px 5px 8px;
   }
-  .wrapped .timestamp {
+  .rowMain {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  .copyButton:global(.btn) {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+  }
+  .timestamp {
     font-size: 10px;
   }
   .statusBar {
