@@ -196,7 +196,9 @@ func apiResponseErrors(c *gin.Context) []*interfaces.ErrorMessage {
 // refusalCodes are the codes of upstream's auth manager errors for a request
 // it found no account to try for. Without Home mode, which taproot refuses,
 // the manager reports an attempted account's error instead whenever it tried
-// one, so these mean no account was tried.
+// one, so these mean no account was tried in the final round. After a retry
+// round whose failed attempt the executor did not mark as upstream (Codex
+// HTTP, openai-compat), the turn can also have a failed usage record.
 var refusalCodes = map[string]bool{
 	"auth_not_found": true, "auth_unavailable": true, "auth_disabled": true, "model_cooldown": true,
 	"provider_not_found": true, "executor_not_found": true, "session_auth_unavailable": true,
