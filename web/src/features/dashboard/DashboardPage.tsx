@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '@/stores';
 import { ROUTES } from '@/router/routes';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { useEmailMask } from '@/hooks/useEmailMask';
 import { formatCompactNumber, formatDateValue, formatPercent } from '@/utils/format';
 import { DashboardUsageSummary } from '@/features/taproot-usage/components/DashboardUsageSummary';
 import { useDashboardOverview } from './hooks/useDashboardOverview';
@@ -19,6 +20,7 @@ import { Sparkline } from './components/Sparkline';
 import { ThroughputChart } from './components/ThroughputChart';
 import { useCountUp, useRevealGroup, useRevealOnScroll } from '@/hooks/motion';
 import { providerLabel, splitWindowMinutes, toneForSuccessRate, type MeterTone } from './utils';
+import { credentialMeter, dashboardVerdict, redactProxyUrl, versionLabel } from './model';
 import styles from './dashboard.module.scss';
 
 const DASH = '—';
@@ -28,8 +30,14 @@ const TILE_ACCENTS: Record<MeterTone, string> = {
   good: 'var(--viz-success)',
   warning: 'var(--amber-color)',
   critical: 'var(--viz-failure)',
-  idle: 'var(--text-quaternary)',
+  idle: 'var(--text-tertiary)',
 };
+
+const clockFormat = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
 
 /** 大数字：六位以内用千分位，再往上压缩，避免撑破排版 */
 const formatHeadline = (value: number): string =>
@@ -37,11 +45,26 @@ const formatHeadline = (value: number): string =>
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
+  const { mask } = useEmailMask();
   const serverVersion = useAuthStore((state) => state.serverVersion);
   const serverBuildDate = useAuthStore((state) => state.serverBuildDate);
 
-  const { connectionStatus, connected, config, counts, traffic, providers, credentials, refresh } =
-    useDashboardOverview();
+  const {
+    connectionStatus,
+    connected,
+    config,
+    traffic,
+    trafficAtMs,
+    providers,
+    credentials,
+    models,
+    errors,
+    today,
+    quota,
+    nowMs,
+    refresh,
+  } = useDashboardOverview();
+  const trafficKnown = trafficAtMs !== null;
 
   useHeaderRefresh(refresh, connected);
 
@@ -56,7 +79,6 @@ export function DashboardPage() {
   const animatedTotal = useCountUp(traffic.total, connected);
 
   const windowLabel = useMemo(() => {
-    if (traffic.windowMinutes <= 0) return DASH;
     const { hours, minutes } = splitWindowMinutes(traffic.windowMinutes);
     if (hours === 0) return t('dashboard.window_m', { minutes });
     if (minutes === 0) return t('dashboard.window_h', { hours });
@@ -76,30 +98,21 @@ export function DashboardPage() {
       return t('basic_settings.routing_strategy_weighted_round_robin');
     }
     if (raw === 'fill-first') return t('basic_settings.routing_strategy_fill_first');
+    if (raw === 'soonest-reset-first') {
+      return t('config_management.visual.sections.network.strategy_soonest_reset_first');
+    }
     return raw;
   }, [config?.routingStrategy, t]);
 
   const unknownProviderLabel = t('dashboard.provider_unknown');
   const successRateTone = toneForSuccessRate(traffic.successRate);
 
-  /** 标题是算出来的判词，不是写死的口号；句尾句号充当状态灯 */
-  const verdict = useMemo(() => {
-    if (!connected) {
-      return connectionStatus === 'connecting'
-        ? { key: 'hero_verdict_connecting', accent: 'var(--amber-color)' }
-        : { key: 'hero_verdict_offline', accent: 'var(--text-quaternary)' };
-    }
-    if (traffic.total === 0 || traffic.successRate === null) {
-      return { key: 'hero_verdict_idle', accent: 'var(--text-quaternary)' };
-    }
-    const keyByTone: Record<MeterTone, string> = {
-      good: 'hero_verdict_good',
-      warning: 'hero_verdict_warning',
-      critical: 'hero_verdict_critical',
-      idle: 'hero_verdict_idle',
-    };
-    return { key: keyByTone[successRateTone], accent: TILE_ACCENTS[successRateTone] };
-  }, [connected, connectionStatus, traffic.total, traffic.successRate, successRateTone]);
+  const verdict = dashboardVerdict({
+    connectionStatus,
+    traffic: trafficKnown ? traffic : null,
+    credentials,
+  });
+  const credentialsMeter = credentialMeter(credentials);
 
   /* 句号状态灯只在「有活着的流量」时呼吸；离线/静默时保持安静 */
   const heroAlive = connected && traffic.total > 0;
@@ -111,15 +124,24 @@ export function DashboardPage() {
         ? 'common.connecting'
         : 'common.disconnected'
   );
-  const versionLabel = serverVersion ? `v${serverVersion.trim().replace(/^[vV]+/, '')}` : null;
-  const heroMetaLine = [versionLabel, connectionLabel].filter(Boolean).join(' · ');
+  const heroMetaLine = [versionLabel(serverVersion), connectionLabel].filter(Boolean).join(' · ');
+  const proxyUrl = config?.proxyUrl?.trim() ? redactProxyUrl(config.proxyUrl.trim()) : null;
+  const loadErrors: string[] = [];
+  if (errors.recent) {
+    loadErrors.push(t('dashboard.load_failed_traffic', { message: errors.recent }));
+  }
+  if (errors.authFiles) {
+    loadErrors.push(t('dashboard.load_failed_credentials', { message: errors.authFiles }));
+  }
 
   const statTiles = [
     {
       key: 'success',
       label: t('dashboard.success_rate'),
       value: traffic.successRate === null ? DASH : formatPercent(traffic.successRate),
-      hint: t('dashboard.stat_success_hint', { total: traffic.total.toLocaleString() }),
+      hint: trafficKnown
+        ? t('dashboard.stat_success_hint', { count: traffic.total, window: windowLabel })
+        : t('dashboard.stat_unavailable'),
       meter: traffic.successRate,
       tone: successRateTone,
     },
@@ -128,22 +150,24 @@ export function DashboardPage() {
       label: t('dashboard.stat_credentials'),
       value: credentials ? credentials.total.toLocaleString() : DASH,
       hint: credentials
-        ? t('dashboard.stat_credentials_hint', {
-            active: credentials.active,
-            disabled: credentials.disabled + credentials.unavailable,
-          })
-        : t('dashboard.stat_credentials_empty'),
-      meter:
-        credentials && credentials.total > 0
-          ? (credentials.active / credentials.total) * 100
-          : null,
-      tone: undefined,
+        ? credentials.total > 0
+          ? t('dashboard.stat_credentials_hint', {
+              active: credentials.active,
+              disabled: credentials.disabled,
+              unavailable: credentials.unavailable,
+            })
+          : t('dashboard.stat_credentials_empty')
+        : t('dashboard.stat_unavailable'),
+      meter: credentialsMeter.value,
+      tone: credentialsMeter.tone,
     },
     {
       key: 'models',
       label: t('dashboard.stat_models'),
-      value: counts.models === null ? DASH : counts.models.toLocaleString(),
-      hint: t('dashboard.stat_models_hint'),
+      value: models.count === null ? DASH : models.count.toLocaleString(),
+      hint: models.error
+        ? mask(t('dashboard.stat_models_error', { message: models.error }))
+        : t('dashboard.stat_models_hint'),
       meter: null,
       tone: undefined,
     },
@@ -151,13 +175,25 @@ export function DashboardPage() {
 
   const runtimeRows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: t('dashboard.runtime_routing'), value: routingStrategy },
-    { label: t('dashboard.runtime_retry'), value: String(config?.requestRetry ?? 0) },
+    {
+      label: t('dashboard.runtime_retry'),
+      // The config document leaves out a zero, and an unset request-retry is 0.
+      value: config ? String(config.requestRetry ?? 0) : DASH,
+    },
     { label: t('dashboard.runtime_version'), value: serverVersion?.trim() || DASH },
     {
       label: t('dashboard.runtime_build'),
       value: formatDateValue(serverBuildDate, i18n.language) || DASH,
     },
-    { label: t('dashboard.runtime_proxy'), value: config?.proxyUrl?.trim() || DASH, mono: true },
+    {
+      label: t('dashboard.runtime_proxy'),
+      value: proxyUrl
+        ? proxyUrl.redacted
+          ? t('dashboard.runtime_proxy_redacted', { url: proxyUrl.value })
+          : proxyUrl.value
+        : DASH,
+      mono: true,
+    },
   ];
 
   const runtimeToggles = config
@@ -178,19 +214,19 @@ export function DashboardPage() {
       description: t('dashboard.cta_accounts_desc'),
     },
     {
-      to: '/config',
+      to: ROUTES.config,
       icon: <IconSidebarConfig size={20} />,
       title: t('nav.config_management'),
       description: t('dashboard.cta_config_desc'),
     },
     {
-      to: '/logs',
+      to: ROUTES.requestLogs,
       icon: <IconSidebarLogs size={20} />,
-      title: t('nav.logs'),
+      title: t('nav.request_logs'),
       description: t('dashboard.cta_logs_desc'),
     },
     {
-      to: '/system',
+      to: ROUTES.system,
       icon: <IconSidebarSystem size={20} />,
       title: t('nav.system_info'),
       description: t('dashboard.cta_system_desc'),
@@ -204,6 +240,15 @@ export function DashboardPage() {
         <span className={styles.gridWash} />
       </div>
 
+      {loadErrors.length > 0 && (
+        <div className={styles.loadError} role="alert">
+          {loadErrors.map((message) => (
+            <p key={message}>{mask(message)}</p>
+          ))}
+          <p>{t('dashboard.load_failed_hint')}</p>
+        </div>
+      )}
+
       {/* ---------- Hero ---------- */}
       <section className={styles.hero} ref={heroRef}>
         <div className={styles.heroCopy}>
@@ -211,7 +256,7 @@ export function DashboardPage() {
             {t(`dashboard.${verdict.key}`)}
             <span
               className={`${styles.heroPeriod} ${heroAlive ? styles.heroPeriodLive : ''}`}
-              style={{ color: verdict.accent }}
+              style={{ color: TILE_ACCENTS[verdict.tone] }}
             >
               {t('dashboard.hero_period')}
             </span>
@@ -223,7 +268,7 @@ export function DashboardPage() {
             <Link to={ROUTES.accounts} className={styles.primaryAction}>
               {t('dashboard.cta_manage_credentials')}
             </Link>
-            <Link to="/logs" className={styles.ghostAction}>
+            <Link to={ROUTES.requestLogs} className={styles.ghostAction}>
               {t('dashboard.cta_inspect_logs')}{' '}
               <span className={styles.linkArrow} aria-hidden="true">
                 →
@@ -235,18 +280,28 @@ export function DashboardPage() {
         <div className={styles.heroPanel} data-reveal="scale">
           <div className={styles.heroPanelTop}>
             <span className={styles.heroPanelLabel}>{t('dashboard.hero_requests_label')}</span>
-            {connected && (
-              <span className={styles.liveBadge}>
-                <i className={styles.liveDot} aria-hidden="true" />
-                {t('dashboard.hero_live')}
-              </span>
-            )}
+            {connected &&
+              (errors.recent || !trafficKnown ? (
+                <span className={`${styles.liveBadge} ${styles.liveBadgeStale}`}>
+                  {t('dashboard.hero_stale')}
+                </span>
+              ) : (
+                <span className={styles.liveBadge}>
+                  <i className={styles.liveDot} aria-hidden="true" />
+                  {t('dashboard.hero_live')}
+                </span>
+              ))}
           </div>
           <strong className={styles.heroFigure}>
-            {connected ? formatHeadline(animatedTotal) : DASH}
+            {connected && trafficKnown ? formatHeadline(animatedTotal) : DASH}
           </strong>
           <span className={styles.heroPanelMeta}>
-            {t('dashboard.hero_window_meta', { window: windowLabel })}
+            {trafficAtMs === null
+              ? t('dashboard.hero_window_meta', { window: windowLabel })
+              : t('dashboard.hero_window_meta_updated', {
+                  window: windowLabel,
+                  time: clockFormat.format(trafficAtMs),
+                })}
           </span>
           {traffic.total > 0 && (
             <div className={styles.ratioBar} aria-hidden="true">
@@ -281,12 +336,13 @@ export function DashboardPage() {
         <div className={styles.heroWire}>
           <LiveWire
             points={heroSparkPoints}
+            color={TILE_ACCENTS[successRateTone === 'idle' ? 'good' : successRateTone]}
             ariaLabel={t('dashboard.hero_spark_label', { window: windowLabel })}
           />
         </div>
       </section>
 
-      <DashboardUsageSummary />
+      <DashboardUsageSummary today={today} quota={quota} nowMs={nowMs} />
 
       {/* ---------- KPI ---------- */}
       <section className={styles.statsRow} ref={statsRef} aria-label={t('dashboard.stats_aria')}>
@@ -363,7 +419,9 @@ export function DashboardPage() {
                     className={styles.fleetSpark}
                   />
                   <div className={styles.fleetNumbers}>
-                    <span className={styles.fleetTotal}>{provider.total.toLocaleString()}</span>
+                    <span className={styles.fleetTotal}>
+                      {trafficKnown ? provider.total.toLocaleString() : DASH}
+                    </span>
                     <span className={styles.fleetTotalLabel}>{t('dashboard.fleet_requests')}</span>
                   </div>
                   <div className={styles.fleetRate}>
@@ -390,7 +448,11 @@ export function DashboardPage() {
             <span className={styles.eyebrow}>{t('dashboard.health_eyebrow')}</span>
             <h2 className={styles.panelTitle}>{t('dashboard.health_title')}</h2>
           </header>
-          {!credentials || credentials.total === 0 ? (
+          {!credentials ? (
+            <p className={styles.emptyNote}>
+              {errors.authFiles ? t('dashboard.health_unavailable_note') : t('common.loading')}
+            </p>
+          ) : credentials.total === 0 ? (
             <p className={styles.emptyNote}>{t('dashboard.health_empty')}</p>
           ) : (
             <>
@@ -486,7 +548,7 @@ export function DashboardPage() {
               ))}
             </ul>
           )}
-          <Link to="/config" className={styles.panelLink}>
+          <Link to={ROUTES.config} className={styles.panelLink}>
             {t('dashboard.runtime_link')}{' '}
             <span className={styles.linkArrow} aria-hidden="true">
               →

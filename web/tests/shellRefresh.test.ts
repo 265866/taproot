@@ -53,7 +53,10 @@ describe('Refresh All reports what happened', () => {
       ['src/features/taproot-access/TaprootAccessPage.tsx', 'return refreshFailed(err)'],
       ['src/features/routing/RoutingPage.tsx', 'onCancel: () => resolve(REFRESH_CANCELLED)'],
       ['src/features/accounts/AccountsPage.tsx', 'outcomeFromError(filesError || quotaError)'],
-      ['src/features/dashboard/hooks/useDashboardOverview.ts', 'return authFilesFailure ?? config'],
+      [
+        'src/features/dashboard/hooks/useDashboardOverview.ts',
+        'outcomeFromError(dataError ?? modelsFailure)',
+      ],
     ]) {
       expect({ path, wired: read(path).includes(marker) }).toEqual({ path, wired: true });
     }

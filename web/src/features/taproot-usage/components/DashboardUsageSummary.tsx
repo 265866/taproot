@@ -1,36 +1,37 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { Link } from 'react-router-dom';
 import { buildProviderGroups } from '@/features/taproot-quota/model/fromApi';
 import { poolNow } from '@/features/taproot-quota/model/poolView';
-import { taprootApi } from '@/services/api/taproot';
+import type { AccountQuota, TaprootAccount, UsageSummary } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
-import { useTaprootQuery } from '../hooks/useTaprootQuery';
-import { todayWindow, toIso } from '../logic/range';
 import { cacheHitRatio, unpricedHint } from '../logic/totals';
 import { providerName } from '../logic/accounts';
 import { providerColor } from '../logic/viz';
 import { formatDateTime, formatRatio, formatUSD } from '../logic/format';
 import styles from '../TaprootUsage.module.scss';
 
-/** Today's taproot usage and the pooled quota per provider, for the dashboard home page. */
-export function DashboardUsageSummary() {
+interface Loaded<T> {
+  data: T | null;
+  error: string | null;
+}
+
+interface DashboardUsageSummaryProps {
+  /** Today's summary (local midnight to now), grouped by provider. */
+  today: Loaded<UsageSummary>;
+  quota: Loaded<[{ accounts: TaprootAccount[] }, { accounts: AccountQuota[] }]>;
+  /** When both were read; the quota projection runs to this instant. */
+  nowMs: number;
+}
+
+/**
+ * Today's taproot usage and the pooled quota per provider, for the dashboard home page. The
+ * dashboard reads the data, so it refreshes with the page and follows the clock past midnight.
+ */
+export function DashboardUsageSummary({ today, quota, nowMs }: DashboardUsageSummaryProps) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
-  const [nowMs] = useState(() => Date.now());
-  const window = useMemo(() => todayWindow(nowMs), [nowMs]);
-  const today = useTaprootQuery(`today|${window.fromMs}`, () =>
-    taprootApi.usageSummary({
-      from: toIso(window.fromMs),
-      to: toIso(window.toMs),
-      bucket: '1h',
-      groupBy: 'provider',
-    })
-  );
-  const quota = useTaprootQuery('quota-pool', () =>
-    Promise.all([taprootApi.accounts(), taprootApi.quotaCurrent()])
-  );
   const pools = useMemo(
     () =>
       quota.data
@@ -65,7 +66,7 @@ export function DashboardUsageSummary() {
       </div>
       {error ? (
         <div className={styles.error} role="alert">
-          <span>{mask(t('taproot_usage.dashboard.load_failed', { message: error.message }))}</span>
+          <span>{mask(t('taproot_usage.dashboard.load_failed', { message: error }))}</span>
         </div>
       ) : null}
       <div className={styles.summaryGrid}>

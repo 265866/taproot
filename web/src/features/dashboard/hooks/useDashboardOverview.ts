@@ -1,107 +1,110 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authFilesApi } from '@/services/api';
+import {
+  taprootApi,
+  type AccountQuota,
+  type TaprootAccount,
+  type UsageSummary,
+} from '@/services/api/taproot';
 import { useAuthStore, useConfigStore, useModelsStore } from '@/stores';
 import { useApiKeysForModels } from '@/hooks/useApiKeysForModels';
 import {
   REFRESH_CANCELLED,
-  REFRESH_OK,
-  refreshFailed,
+  outcomeFromError,
   type HeaderRefreshOutcome,
 } from '@/hooks/useHeaderRefresh';
-import { useProviderRecentRequests } from '@/components/providers/hooks/useProviderRecentRequests';
-import {
-  mergeRecentRequestBucketGroups,
-  normalizeRecentRequestUsageEntry,
-  type RecentRequestBucket,
-} from '@/utils/recentRequests';
+import { getErrorMessage } from '@/utils/helpers';
 import type { AuthFileItem } from '@/types/authFile';
-import {
-  TRAFFIC_BUCKET_MINUTES,
-  type CredentialHealth,
-  type DashboardCounts,
-  type ProviderTraffic,
-  type TrafficWindow,
-} from '../types';
+import { todayWindow, toIso } from '@/features/taproot-usage/logic/range';
+import { buildTraffic, credentialHealth, recentTrafficRange } from '../model';
 
-const EMPTY_TRAFFIC: TrafficWindow = {
-  buckets: [],
-  totalSuccess: 0,
-  totalFailure: 0,
-  total: 0,
-  successRate: null,
-  peakTotal: 0,
-  peakIndex: -1,
-  windowMinutes: 0,
-};
+/** How often the page rereads while the tab is visible. */
+export const DASHBOARD_POLL_MS = 30_000;
 
-/** `api-key-usage` 的键形如 `<baseUrl>|<apiKey>`，取第一个分隔符之后的部分 */
-const apiKeyFromCompositeKey = (compositeKey: string): string => {
-  const separatorIndex = compositeKey.indexOf('|');
-  return separatorIndex < 0 ? '' : compositeKey.slice(separatorIndex + 1).trim();
-};
-
-const providerIdOfAuthFile = (file: AuthFileItem): string => {
-  const candidate = String(file.type ?? file.provider ?? '')
-    .trim()
-    .toLowerCase();
-  return candidate && candidate !== 'empty' ? candidate : 'unknown';
-};
-
-const buildTrafficWindow = (bucketGroups: RecentRequestBucket[][]): TrafficWindow => {
-  const buckets = mergeRecentRequestBucketGroups(bucketGroups);
-  if (buckets.length === 0) {
-    return EMPTY_TRAFFIC;
-  }
-
-  let totalSuccess = 0;
-  let totalFailure = 0;
-  let peakTotal = 0;
-  let peakIndex = -1;
-
-  buckets.forEach((bucket, index) => {
-    const bucketTotal = bucket.success + bucket.failed;
-    totalSuccess += bucket.success;
-    totalFailure += bucket.failed;
-    if (bucketTotal > peakTotal) {
-      peakTotal = bucketTotal;
-      peakIndex = index;
-    }
-  });
-
-  const total = totalSuccess + totalFailure;
-
-  return {
-    buckets,
-    totalSuccess,
-    totalFailure,
-    total,
-    successRate: total > 0 ? (totalSuccess / total) * 100 : null,
-    peakTotal,
-    peakIndex,
-    windowMinutes: buckets.length * TRAFFIC_BUCKET_MINUTES,
-  };
-};
-
-interface ProviderAccumulator {
-  credentials: number;
-  success: number;
-  failure: number;
-  bucketGroups: RecentRequestBucket[][];
+/** The last good data, kept through a failed read, and that read's error. */
+export interface Read<T> {
+  data: T | null;
+  error: string | null;
 }
 
-const createAccumulator = (): ProviderAccumulator => ({
-  credentials: 0,
-  success: 0,
-  failure: 0,
-  bucketGroups: [],
+const EMPTY_READ = { data: null, error: null };
+
+const settle = <T>(previous: Read<T>, result: PromiseSettledResult<T>): Read<T> =>
+  result.status === 'fulfilled'
+    ? { data: result.value, error: null }
+    : { data: previous.data, error: getErrorMessage(result.reason, 'Request failed') };
+
+export type QuotaData = [{ accounts: TaprootAccount[] }, { accounts: AccountQuota[] }];
+
+export interface Reads {
+  authFiles: Read<AuthFileItem[]>;
+  recent: Read<UsageSummary>;
+  today: Read<UsageSummary>;
+  quota: Read<QuotaData>;
+  /** When the reads started; the clock for "today" and the quota projection. */
+  nowMs: number;
+  /** Start of the rolling window the `recent` read covers. */
+  fromMs: number;
+  /** When the `recent` read last succeeded. */
+  trafficAtMs: number | null;
+}
+
+export const initialReads = (nowMs: number): Reads => ({
+  authFiles: EMPTY_READ,
+  recent: EMPTY_READ,
+  today: EMPTY_READ,
+  quota: EMPTY_READ,
+  nowMs,
+  fromMs: recentTrafficRange(nowMs).fromMs,
+  trafficAtMs: null,
 });
 
 /**
- * 汇总仪表盘所需的全部数据。
- *
- * 流量数据有两个互不重叠的来源：`api-key-usage`（配置内联的 API Key 凭证）
- * 与 `auth-files`（文件/运行时凭证）。后端对二者的判定条件互斥，但插件提供的
- * 凭证理论上可同时命中，因此这里按 `account_type` + `account` 做一次防御性去重。
+ * Reads everything the dashboard shows as of `nowMs`. Resolves to the first failure's message and
+ * to an update that keeps the last good data of every read that failed.
+ */
+export async function readDashboard(
+  nowMs: number
+): Promise<{ error: string | null; apply: (previous: Reads) => Reads }> {
+  const recentRange = recentTrafficRange(nowMs);
+  const today = todayWindow(nowMs);
+  const [authFiles, recent, todaySummary, quota] = await Promise.allSettled([
+    authFilesApi.list().then((response) => response.files),
+    taprootApi.usageSummary({
+      from: toIso(recentRange.fromMs),
+      to: toIso(recentRange.toMs),
+      bucket: '5m',
+      groupBy: 'provider',
+    }),
+    taprootApi.usageSummary({
+      from: toIso(today.fromMs),
+      to: toIso(today.toMs),
+      bucket: '1h',
+      groupBy: 'provider',
+    }),
+    Promise.all([taprootApi.accounts(), taprootApi.quotaCurrent()]),
+  ]);
+  const failed = [authFiles, recent, todaySummary, quota].find(
+    (result) => result.status === 'rejected'
+  );
+  return {
+    error: failed ? getErrorMessage(failed.reason, 'Request failed') : null,
+    apply: (previous) => ({
+      authFiles: settle(previous.authFiles, authFiles),
+      recent: settle(previous.recent, recent),
+      today: settle(previous.today, todaySummary),
+      quota: settle(previous.quota, quota),
+      nowMs,
+      fromMs: recent.status === 'fulfilled' ? recentRange.fromMs : previous.fromMs,
+      trafficAtMs: recent.status === 'fulfilled' ? nowMs : previous.trafficAtMs,
+    }),
+  };
+}
+
+/**
+ * Everything the dashboard shows. Traffic comes from taproot's usage records, which survive
+ * restarts, rather than upstream's in-memory counters. The reads repeat every 30 s while the tab
+ * is visible and once more when it becomes visible.
  */
 export function useDashboardOverview() {
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
@@ -117,171 +120,86 @@ export function useDashboardOverview() {
   const connected = connectionStatus === 'connected';
   const resolveApiKeysForModels = useApiKeysForModels();
 
-  const { usageByProvider, refreshRecentRequests } = useProviderRecentRequests({
-    enabled: connected,
-  });
+  const [reads, setReads] = useState<Reads>(() => initialReads(Date.now()));
+  const loadSeq = useRef(0);
 
-  const [authFiles, setAuthFiles] = useState<AuthFileItem[] | null>(null);
-
-  /** Resolves to the read's failure, or null. */
-  const loadAuthFiles = useCallback(async (): Promise<HeaderRefreshOutcome | null> => {
+  /** Resolves to the first failure's message, or null. */
+  const load = useCallback(async (): Promise<string | null> => {
     if (!connected) return null;
-    try {
-      const response = await authFilesApi.list();
-      setAuthFiles(response.files);
-      return null;
-    } catch (err: unknown) {
-      setAuthFiles(null);
-      return refreshFailed(err);
-    }
+    const seq = ++loadSeq.current;
+    const { error, apply } = await readDashboard(Date.now());
+    // A newer read started meanwhile; its results win.
+    if (seq === loadSeq.current) setReads(apply);
+    return error;
   }, [connected]);
 
-  const loadModels = useCallback(async () => {
-    if (!connected || !apiBase) return;
+  /** Resolves to the model list's failure, or null. */
+  const loadModels = useCallback(async (): Promise<string | null> => {
+    if (!connected || !apiBase) return null;
     try {
       const apiKeys = await resolveApiKeysForModels();
       await fetchModelsFromStore(apiBase, apiKeys[0]);
-    } catch {
-      // 模型列表失败不应影响仪表盘其余部分
+      return null;
+    } catch (err: unknown) {
+      return getErrorMessage(err, 'Request failed');
     }
   }, [connected, apiBase, resolveApiKeysForModels, fetchModelsFromStore]);
 
   useEffect(() => {
     if (!connected) return;
     void fetchConfig().catch(() => undefined);
-    void loadAuthFiles();
     void loadModels();
-  }, [connected, fetchConfig, loadAuthFiles, loadModels]);
+  }, [connected, fetchConfig, loadModels]);
 
+  useEffect(() => {
+    if (!connected) return;
+    void load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load();
+    }, DASHBOARD_POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [connected, load]);
+
+  // The shell rereads the config for Refresh All, so the page rereads only its own data.
   const refresh = useCallback(async (): Promise<HeaderRefreshOutcome> => {
     if (!connected) return REFRESH_CANCELLED;
-    const [config, authFilesFailure] = await Promise.all([
-      fetchConfig(true).then(() => REFRESH_OK, refreshFailed),
-      loadAuthFiles(),
-      loadModels(),
-      refreshRecentRequests().catch(() => undefined),
-    ]);
-    return authFilesFailure ?? config;
-  }, [connected, fetchConfig, loadAuthFiles, loadModels, refreshRecentRequests]);
+    const [dataError, modelsFailure] = await Promise.all([load(), loadModels()]);
+    return outcomeFromError(dataError ?? modelsFailure);
+  }, [connected, load, loadModels]);
 
-  const { traffic, providers } = useMemo(() => {
-    const accumulators = new Map<string, ProviderAccumulator>();
-    const allBucketGroups: RecentRequestBucket[][] = [];
-    const apiKeysFromUsage = new Set<string>();
-
-    const accumulatorFor = (providerId: string): ProviderAccumulator => {
-      const existing = accumulators.get(providerId);
-      if (existing) return existing;
-      const created = createAccumulator();
-      accumulators.set(providerId, created);
-      return created;
-    };
-
-    usageByProvider.forEach((entriesByKey, providerId) => {
-      const accumulator = accumulatorFor(providerId);
-      entriesByKey.forEach((entry, compositeKey) => {
-        const apiKey = apiKeyFromCompositeKey(compositeKey);
-        if (apiKey) {
-          apiKeysFromUsage.add(apiKey);
-        }
-        accumulator.credentials += 1;
-        accumulator.success += entry.success;
-        accumulator.failure += entry.failed;
-        if (entry.recentRequests.length > 0) {
-          accumulator.bucketGroups.push(entry.recentRequests);
-          allBucketGroups.push(entry.recentRequests);
-        }
-      });
-    });
-
-    (authFiles ?? []).forEach((file) => {
-      const accountType = String(file.account_type ?? '')
-        .trim()
-        .toLowerCase();
-      const account = String(file.account ?? '').trim();
-      // 已经由 api-key-usage 统计过的凭证不再重复计入
-      if (accountType === 'api_key' && account && apiKeysFromUsage.has(account)) {
-        return;
-      }
-
-      const accumulator = accumulatorFor(providerIdOfAuthFile(file));
-      const entry = normalizeRecentRequestUsageEntry(file);
-      accumulator.credentials += 1;
-      accumulator.success += entry.success;
-      accumulator.failure += entry.failed;
-      if (entry.recentRequests.length > 0) {
-        accumulator.bucketGroups.push(entry.recentRequests);
-        allBucketGroups.push(entry.recentRequests);
-      }
-    });
-
-    const providerRows: ProviderTraffic[] = Array.from(accumulators.entries())
-      .map(([id, accumulator]) => {
-        const total = accumulator.success + accumulator.failure;
-        return {
-          id,
-          credentials: accumulator.credentials,
-          success: accumulator.success,
-          failure: accumulator.failure,
-          total,
-          successRate: total > 0 ? (accumulator.success / total) * 100 : null,
-          buckets: mergeRecentRequestBucketGroups(accumulator.bucketGroups),
-        };
-      })
-      .sort(
-        (a, b) => b.total - a.total || b.credentials - a.credentials || a.id.localeCompare(b.id)
-      );
-
-    return {
-      traffic: buildTrafficWindow(allBucketGroups),
-      providers: providerRows,
-    };
-  }, [usageByProvider, authFiles]);
-
-  const credentials = useMemo<CredentialHealth | null>(() => {
-    if (!authFiles) return null;
-
-    let disabled = 0;
-    let unavailable = 0;
-    const countsByType = new Map<string, number>();
-
-    authFiles.forEach((file) => {
-      if (file.disabled) {
-        disabled += 1;
-      } else if (file.unavailable) {
-        unavailable += 1;
-      }
-      const type = providerIdOfAuthFile(file);
-      countsByType.set(type, (countsByType.get(type) ?? 0) + 1);
-    });
-
-    return {
-      total: authFiles.length,
-      active: authFiles.length - disabled - unavailable,
-      disabled,
-      unavailable,
-      byType: Array.from(countsByType.entries())
-        .map(([type, count]) => ({ type, count }))
-        .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type)),
-    };
-  }, [authFiles]);
-
-  const counts = useMemo<DashboardCounts>(
-    () => ({
-      credentials: authFiles ? authFiles.length : null,
-      models: modelsLoading || modelsError ? null : models.length,
-    }),
-    [authFiles, models.length, modelsLoading, modelsError]
+  const { traffic, providers } = useMemo(
+    () => buildTraffic(reads.recent.data, reads.fromMs, reads.authFiles.data),
+    [reads.recent.data, reads.fromMs, reads.authFiles.data]
   );
+  const credentials = useMemo(() => credentialHealth(reads.authFiles.data), [reads.authFiles.data]);
 
   return {
     connectionStatus,
     connected,
     config,
-    counts,
     traffic,
+    /** When the traffic last read successfully; null before the first success. */
+    trafficAtMs: reads.trafficAtMs,
     providers,
     credentials,
+    models: {
+      count: modelsLoading || modelsError ? null : models.length,
+      error: modelsError,
+    },
+    errors: {
+      authFiles: reads.authFiles.error,
+      recent: reads.recent.error,
+    },
+    today: reads.today,
+    quota: reads.quota,
+    nowMs: reads.nowMs,
     refresh,
   };
 }

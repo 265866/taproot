@@ -237,7 +237,7 @@
       "title": "Today",
       "desc": "Since local midnight, from taproot's usage records.",
       "cost": "API-equivalent cost",
-      "requests": "Requests",
+      "requests": "Upstream requests",
       "failures": "{{count}} failed",
       "cache_hit": "Cache hit ratio",
       "pool": "{{provider}} pool",
