@@ -261,7 +261,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: Tag, attest, sign, and publish
+    name: Attest, sign, tag, and publish
     needs: [meta, codec-cross, image]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -289,16 +289,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Tag the multi-arch image
+      # Only the version tag names the index until it is signed and verified,
+      # so a failed signing never leaves X.Y or latest on an unsigned image.
+      - name: Create the multi-arch image
         id: index
-        env:
-          IMAGE_TAGS: ${{ needs.meta.outputs.image-tags }}
         run: |
-          args=()
-          for tag in $IMAGE_TAGS; do
-            args+=(-t "$IMAGE:$tag")
-          done
-          docker buildx imagetools create "${args[@]}" \
+          docker buildx imagetools create -t "$IMAGE:$VERSION" \
             "$IMAGE@$(cat "$RUNNER_TEMP/image/image-amd64/digest")" \
             "$IMAGE@$(cat "$RUNNER_TEMP/image/image-arm64/digest")"
           docker buildx imagetools inspect "$IMAGE:$VERSION"
@@ -329,6 +325,25 @@ jobs:
           cosign verify "$IMAGE@$DIGEST" --certificate-identity "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
           gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --cert-identity "$identity"
+      # With one index as its source, imagetools create copies it unchanged,
+      # so every tag names the digest that was signed.
+      - name: Tag the signed image
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+          IMAGE_TAGS: ${{ needs.meta.outputs.image-tags }}
+        run: |
+          args=()
+          for tag in $IMAGE_TAGS; do
+            [[ "$tag" == "$VERSION" ]] || args+=(-t "$IMAGE:$tag")
+          done
+          docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
+          for tag in $IMAGE_TAGS; do
+            got="$(docker buildx imagetools inspect "$IMAGE:$tag" --format '{{json .Manifest}}' | jq -r .digest)"
+            if [[ "$got" != "$DIGEST" ]]; then
+              echo "::error::$IMAGE:$tag names $got, not the signed $DIGEST"
+              exit 1
+            fi
+          done
       - name: Write checksums
         run: |
           mkdir dist
