@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/egress"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
@@ -236,5 +237,41 @@ func TestRefreshAccountsMarksLastCredentialRemoved(t *testing.T) {
 	}
 	if latest, err := i.LatestQuota(context.Background()); err != nil || len(latest) != 0 {
 		t.Fatalf("latest = %+v, err = %v", latest, err)
+	}
+}
+
+func TestPollUsesTheGlobalProxyAndRefusesAnInvalidOne(t *testing.T) {
+	i, _ := newTestIngest(t, Config{})
+	direct, directSeen := usageServer(t, http.StatusOK, `{"five_hour":{"utilization":20.0}}`)
+	proxied, proxiedSeen := usageServer(t, http.StatusOK, `{"five_hour":{"utilization":30.0}}`)
+	i.claudeUsageURL = direct.URL
+	global := proxied.URL
+	p := &egress.Proxy{}
+	p.SetGlobal(func() string { return global })
+	i.UseProxy(p)
+
+	a := &coreauth.Auth{ID: "a.json", Index: "idx-a", Provider: "claude", Metadata: map[string]any{"access_token": "tok-a"}}
+	obs, err := i.pollAccount(context.Background(), a, "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(directSeen()) != 0 || len(proxiedSeen()) != 1 || proxiedSeen()[0].auth != "Bearer tok-a" {
+		t.Fatalf("direct %v, proxy %v; want the poll through the global proxy", directSeen(), proxiedSeen())
+	}
+	if len(obs) != 1 || obs[0].Utilization != 0.3 {
+		t.Fatalf("observations %+v", obs)
+	}
+
+	a.ProxyURL = "socks5://user:pa ss@[::1"
+	if _, err := i.pollAccount(context.Background(), a, "claude"); err == nil {
+		t.Fatal("polled with an invalid credential proxy")
+	}
+	global = "not a url"
+	a.ProxyURL = ""
+	if _, err := i.pollAccount(context.Background(), a, "claude"); err == nil {
+		t.Fatal("polled with an invalid global proxy")
+	}
+	if len(directSeen()) != 0 || len(proxiedSeen()) != 1 {
+		t.Fatalf("direct %v, proxy %v; an invalid proxy must send nothing", directSeen(), proxiedSeen())
 	}
 }

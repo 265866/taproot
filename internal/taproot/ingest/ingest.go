@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/egress"
 	"github.com/265866/taproot/internal/taproot/store"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/265866/taproot/sdk/cliproxy/usage"
@@ -79,6 +80,7 @@ type Ingest struct {
 	claudeUsageURL string
 	codexUsageURL  string
 	lastPoll       map[string]time.Time
+	proxy          *egress.Proxy
 
 	refreshMu   sync.Mutex
 	lastRefresh map[string]time.Time
@@ -153,6 +155,12 @@ func (i *Ingest) signal() {
 	case i.wake <- struct{}{}:
 	default:
 	}
+}
+
+// UseProxy routes the poller and quota refresh through p. It must run before
+// Start.
+func (i *Ingest) UseProxy(p *egress.Proxy) {
+	i.proxy = p
 }
 
 // AttachAuthManager receives the runtime credential manager once the server is built.

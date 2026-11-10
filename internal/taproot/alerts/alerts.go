@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/egress"
 	"github.com/265866/taproot/internal/taproot/ingest"
 	"github.com/265866/taproot/internal/taproot/store"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
@@ -204,6 +205,11 @@ func (s *Service) webhook() string {
 		return ""
 	}
 	return s.Config().DiscordWebhook
+}
+
+// UseProxy routes the reset-grant read through p. It must run before Start.
+func (s *Service) UseProxy(p *egress.Proxy) {
+	s.grants.proxy = p
 }
 
 // AttachAuthManager receives the runtime credential manager once the server is built.

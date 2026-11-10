@@ -19,6 +19,7 @@ import (
 	"github.com/265866/taproot/internal/taproot/access"
 	"github.com/265866/taproot/internal/taproot/alerts"
 	"github.com/265866/taproot/internal/taproot/backup"
+	"github.com/265866/taproot/internal/taproot/egress"
 	"github.com/265866/taproot/internal/taproot/ingest"
 	"github.com/265866/taproot/internal/taproot/reqlog"
 	"github.com/265866/taproot/internal/taproot/settings"
@@ -159,6 +160,10 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot ingest: %w", err)
 	}
+	// The router configurator follows config reloads through the handler.
+	providerProxy := &egress.Proxy{}
+	providerProxy.SetGlobal(func() string { return cfg.ProxyURL })
+	usage.UseProxy(providerProxy)
 	usage.AttachDevices(guard)
 	plugins := &pluginCallers{}
 	usage.AttachPlugins(plugins)
@@ -184,6 +189,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot alerts: %w", err)
 	}
+	notify.UseProxy(providerProxy)
 	guard.AttachRequests(access.NewRequests(db, func(n access.RequestNotice) {
 		notify.AccessRequested(alerts.AccessRequest{NodeID: n.NodeID, Name: n.Name, Login: n.Login, Client: n.Client, At: n.At})
 	}))
@@ -228,6 +234,12 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		api.WithMiddleware(guard.Middleware(), web.Middleware(), accounts.middleware()),
 		api.WithRouterConfigurator(func(engine *gin.Engine, h *handlers.BaseAPIHandler, _ *config.Config) {
 			if h != nil {
+				providerProxy.SetGlobal(func() string {
+					if c := h.CurrentConfig(); c != nil {
+						return c.ProxyURL
+					}
+					return ""
+				})
 				usage.AttachAuthManager(h.AuthManager)
 				notify.AttachAuthManager(h.AuthManager)
 				plugins.attach(h)
