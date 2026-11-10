@@ -17,10 +17,6 @@ import {
   type WindowObservation,
 } from './projection';
 
-const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
-
 export const LEDGER_SORTS = [
   'default',
   'soonest_reset',
@@ -59,6 +55,8 @@ export interface LedgerRow {
   plan: string;
   disabled: boolean;
   lastSeen: number | null;
+  /** When taproot last read the account's quota, or null before the first read. */
+  observedAt: number | null;
   /** Fraction left on the account-wide windows, or null when none is reported. */
   remaining: number | null;
   cells: Map<string, LedgerCell>;
@@ -196,6 +194,8 @@ export function buildLedgerRow(
     plan: account.plan,
     disabled: account.disabled,
     lastSeen: account.lastSeen,
+    observedAt:
+      account.windows.length === 0 ? null : Math.max(...account.windows.map((w) => w.observedAt)),
     remaining: maxUsed === null ? null : Math.max(0, 1 - Math.min(1, maxUsed)),
     cells,
     cooldown,
@@ -294,15 +294,6 @@ export function sortLedgerRows(rows: LedgerRow[], sort: LedgerSort): LedgerRow[]
     case 'priority':
       return sorted.sort((a, b) => nullsLast(a.priority, b.priority, -1) || byOrder(a, b));
   }
-}
-
-export type RelativeUnit = 'minute' | 'hour' | 'day';
-
-/** A future delay as whole minutes, hours, or days, rounded down: 8h 58m is 8 hours. */
-export function relativeParts(ms: number): { value: number; unit: RelativeUnit } {
-  if (ms >= DAY_MS) return { value: Math.floor(ms / DAY_MS), unit: 'day' };
-  if (ms >= HOUR_MS) return { value: Math.floor(ms / HOUR_MS), unit: 'hour' };
-  return { value: Math.max(1, Math.floor(ms / MINUTE_MS)), unit: 'minute' };
 }
 
 export interface GrantSummary {

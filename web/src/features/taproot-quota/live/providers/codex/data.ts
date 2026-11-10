@@ -14,7 +14,7 @@ import type {
   CodexQuotaWindow,
   CodexUsagePayload,
 } from '@/types';
-import { apiCallApi, authFilesApi, getApiCallErrorMessage } from '@/services/api';
+import { apiCallApi, apiClient, authFilesApi, getApiCallErrorMessage } from '@/services/api';
 import { guardConfigConnection } from '@/services/api/configValue';
 import { isRecord } from '@/utils/helpers';
 import {
@@ -489,6 +489,35 @@ const createCodexRedeemRequestId = (): string => {
   });
 };
 
+/**
+ * Redeem ids of consume calls that got no definite answer (a transport error or a retryable
+ * status), per credential. A retry sends the same id, so the server can recognize it rather than
+ * spend a second credit after a lost response. Tab memory only, dropped when the connection
+ * changes.
+ */
+const unconfirmedRedeems = {
+  revision: apiClient.getConnectionRevision(),
+  ids: new Map<string, string>(),
+};
+
+const redeemRequestIdFor = (authIndex: string): string => {
+  const revision = apiClient.getConnectionRevision();
+  if (unconfirmedRedeems.revision !== revision) {
+    unconfirmedRedeems.revision = revision;
+    unconfirmedRedeems.ids.clear();
+  }
+  let id = unconfirmedRedeems.ids.get(authIndex);
+  if (!id) {
+    id = createCodexRedeemRequestId();
+    unconfirmedRedeems.ids.set(authIndex, id);
+  }
+  return id;
+};
+
+/** Answers that may hide an applied redeem, so a retry must send the same id. */
+const isRetryableRedeemStatus = (status: number): boolean =>
+  status >= 500 || status === 408 || status === 409 || status === 429;
+
 const consumeCodexRateLimitResetCredit = async (
   file: AuthFileItem,
   t: TFunction
@@ -501,16 +530,25 @@ const consumeCodexRateLimitResetCredit = async (
 
   const requestHeader = buildCodexRequestHeader(file);
 
-  const result = await apiCallApi.request({
-    authIndex,
-    method: 'POST',
-    url: CODEX_RATE_LIMIT_RESET_CREDITS_CONSUME_URL,
-    header: requestHeader,
-    data: JSON.stringify({
-      redeem_request_id: createCodexRedeemRequestId(),
-    }),
-  });
+  let result: Awaited<ReturnType<typeof apiCallApi.request>>;
+  try {
+    result = await apiCallApi.request({
+      authIndex,
+      method: 'POST',
+      url: CODEX_RATE_LIMIT_RESET_CREDITS_CONSUME_URL,
+      header: requestHeader,
+      data: JSON.stringify({
+        redeem_request_id: redeemRequestIdFor(authIndex),
+      }),
+    });
+  } catch {
+    // The server may have applied the request before the response was lost.
+    throw new Error(t('codex_quota.reset_not_confirmed'));
+  }
 
+  if (!isRetryableRedeemStatus(result.statusCode)) {
+    unconfirmedRedeems.ids.delete(authIndex);
+  }
   if (result.statusCode < 200 || result.statusCode >= 300) {
     throw createStatusError(getApiCallErrorMessage(result), result.statusCode);
   }

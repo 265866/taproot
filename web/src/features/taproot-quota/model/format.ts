@@ -39,15 +39,29 @@ export function formatWeekdayDay(t: number, locale?: string): string {
   return `${weekday} ${new Date(t).getDate()}`;
 }
 
-/** `Tue 10:00 AM` within a week of `now`, otherwise `Nov 12, 10:00 AM`. */
+/**
+ * A coming instant: `Tue 10:00 AM` within the next six days, otherwise `Nov 12, 10:00 AM`. Past
+ * instants always carry their date, so a weekday never stands for two different days.
+ */
 export function formatMoment(t: number, now: number, locale?: string): string {
-  const withinWeek = Math.abs(t - now) < 6 * 24 * 60 * MINUTE_MS;
+  const soon = t >= now && t - now < 6 * 24 * 60 * MINUTE_MS;
   return new Intl.DateTimeFormat(
     locale,
-    withinWeek
+    soon
       ? { weekday: 'short', hour: 'numeric', minute: '2-digit' }
       : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
   ).format(t);
+}
+
+/** Chart tooltip: `Sun, Nov 8, 4:19 PM`, dated, since the chart spans past and future weeks. */
+export function formatChartMoment(t: number, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(t);
 }
 
 /**

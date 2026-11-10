@@ -347,15 +347,33 @@ export function valueAt(points: Point[], t: number, side: 'left' | 'right'): num
  * adds a jump where it starts.
  */
 export function sumPolylines(lines: Point[][]): Point[] {
-  const times = [...new Set(lines.flatMap((line) => line.map((p) => p.t)))].sort((a, b) => a - b);
+  const live = lines.filter((line) => line.length > 0);
+  const times = [...new Set(live.flatMap((line) => line.map((p) => p.t)))].sort((a, b) => a - b);
+  // One sweep: times ascend, so each line keeps a cursor at its first point with `t >= time`.
+  const cursors = live.map(() => 0);
   const out: Point[] = [];
   for (const t of times) {
     let left = 0;
     let right = 0;
-    for (const line of lines) {
-      const starts = line.length > 0 && line[0].t === t;
-      left += starts ? 0 : (valueAt(line, t, 'left') ?? 0);
-      right += valueAt(line, t, 'right') ?? 0;
+    for (let k = 0; k < live.length; k++) {
+      const line = live[k];
+      if (t < line[0].t || t > line[line.length - 1].t) continue;
+      let i = cursors[k];
+      while (line[i].t < t) i++;
+      cursors[k] = i;
+      if (line[i].t === t) {
+        let j = i;
+        while (j + 1 < line.length && line[j + 1].t === t) j++;
+        // A line that starts at `t` adds nothing to the left limit.
+        if (i > 0) left += line[i].v;
+        right += line[j].v;
+      } else {
+        const a = line[i - 1];
+        const b = line[i];
+        const v = a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t);
+        left += v;
+        right += v;
+      }
     }
     if (out.length > 0) out.push({ t, v: left });
     if (out.length === 0 || Math.abs(right - left) > EPSILON) out.push({ t, v: right });

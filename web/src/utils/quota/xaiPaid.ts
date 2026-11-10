@@ -101,6 +101,18 @@ export const isPaidXaiAuthFile = (file: AuthFileItem | Record<string, unknown>):
   return tokens.some((token) => (resolveJwtTier(token) ?? 0) >= 1);
 };
 
+export type XaiPaidBlock = 'team_blocked' | 'key_blocked' | 'key_disabled';
+
+/** Why xAI refuses this credential's API requests, from its GET /v1/me profile, or null. */
+export const readXaiPaidBlock = (profile: unknown): XaiPaidBlock | null => {
+  const record = asRecord(profile);
+  if (record?.team_blocked === true) return 'team_blocked';
+  const apiKey = asRecord(record?.api_key);
+  if (apiKey?.blocked === true) return 'key_blocked';
+  if (apiKey?.disabled === true) return 'key_disabled';
+  return null;
+};
+
 export const buildXaiPaidHealthSummary = (profile: unknown): XaiBillingSummary => {
   const record = asRecord(profile);
   const userId = asString(record?.user_id ?? record?.userId) ?? undefined;
@@ -110,7 +122,7 @@ export const buildXaiPaidHealthSummary = (profile: unknown): XaiBillingSummary =
     mode: 'paid-health',
     source: 'api.x.ai-fallback',
     planType: 'paid',
-    healthStatus: 'chat-ok',
+    healthStatus: 'credential-ok',
     userId,
     teamId,
     periodType: 'unknown',

@@ -3,7 +3,6 @@ import type { TFunction } from 'i18next';
 import { XAI_CONFIG } from '@/features/taproot-quota/live/providers/xai/data';
 import { apiCallApi, type ApiCallRequest, type ApiCallResult } from '@/services/api';
 import {
-  XAI_API_CHAT_URL,
   XAI_API_ME_URL,
   XAI_BILLING_MONTHLY_URL,
   XAI_BILLING_WEEKLY_URL,
@@ -77,18 +76,15 @@ describe('xAI paid OAuth quota fallback', () => {
       t
     );
 
-    expect(requests.map((request) => request.url)).toEqual([XAI_API_ME_URL, XAI_API_CHAT_URL]);
-    const chatRequest = requests.find((request) => request.url === XAI_API_CHAT_URL);
-    expect(JSON.parse(chatRequest?.data ?? '{}')).toMatchObject({
-      model: 'grok-4.5',
-      max_tokens: 1,
-      stream: false,
-    });
+    // A read only: a chat request would spend the account's tokens.
+    expect(requests.map((request) => [request.method, request.url])).toEqual([
+      ['GET', XAI_API_ME_URL],
+    ]);
     expect(summary).toMatchObject({
       mode: 'paid-health',
       source: 'api.x.ai-fallback',
       planType: 'paid',
-      healthStatus: 'chat-ok',
+      healthStatus: 'credential-ok',
       userId: 'user-1',
       teamId: 'team-1',
     });
@@ -159,14 +155,69 @@ describe('xAI paid OAuth quota fallback', () => {
       XAI_BILLING_WEEKLY_URL,
       XAI_BILLING_MONTHLY_URL,
       XAI_API_ME_URL,
-      XAI_API_CHAT_URL,
     ]);
+    expect(requests.every((request) => request.method === 'GET')).toBe(true);
     expect(summary).toMatchObject({ mode: 'paid-health', userId: 'paid-user' });
+  });
+
+  test.each([
+    [{ team_blocked: true }, 'xai_quota.paid_team_blocked'],
+    [
+      { team_blocked: false, api_key: { blocked: true, disabled: false } },
+      'xai_quota.paid_key_blocked',
+    ],
+    [
+      { team_blocked: false, api_key: { blocked: false, disabled: true } },
+      'xai_quota.paid_key_disabled',
+    ],
+  ])('reports a credential xAI refuses (%o) instead of healthy', async (profile, message) => {
+    apiCallApi.request = async (payload) => {
+      if (payload.url === XAI_API_ME_URL) {
+        return result(200, { user_id: 'user-1', team_id: 'team-1', ...profile });
+      }
+      throw new Error(`Unexpected URL: ${payload.url}`);
+    };
+
+    await expect(
+      XAI_CONFIG.fetchQuota(
+        { name: 'paid.json', type: 'xai', auth_index: 'xai:6', using_api: true, prefix: 'paid' },
+        t
+      )
+    ).rejects.toThrow(message);
+  });
+
+  test('reports a refused credential found through the billing fallback', async () => {
+    apiCallApi.request = async (payload) => {
+      if (payload.url === XAI_API_ME_URL) {
+        return result(200, { user_id: 'paid-user', team_blocked: true });
+      }
+      return result(403, { error: 'Access denied' });
+    };
+
+    await expect(
+      XAI_CONFIG.fetchQuota({ name: 'unknown.json', type: 'xai', auth_index: 'xai:7' }, t)
+    ).rejects.toThrow('xai_quota.paid_team_blocked');
+  });
+
+  test('stays healthy when the profile says nothing is blocked', async () => {
+    apiCallApi.request = async () =>
+      result(200, {
+        user_id: 'user-1',
+        team_id: 'team-1',
+        team_blocked: false,
+        api_key: { blocked: false, disabled: false },
+      });
+
+    const summary = await XAI_CONFIG.fetchQuota(
+      { name: 'paid.json', type: 'xai', auth_index: 'xai:8', using_api: true, prefix: 'paid' },
+      t
+    );
+    expect(summary).toMatchObject({ mode: 'paid-health', healthStatus: 'credential-ok' });
   });
 
   test('preserves the billing error when the paid fallback also fails', async () => {
     apiCallApi.request = async (payload) => {
-      if (payload.url === XAI_API_CHAT_URL) return result(401, { error: 'Invalid token' });
+      if (payload.url === XAI_API_ME_URL) return result(401, { error: 'Invalid token' });
       return result(403, { error: 'Access denied' });
     };
 
