@@ -557,6 +557,20 @@ describe('daily buckets and time zones', () => {
     }
   });
 
+  test('a day that starts at a clock change is still a local day', () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'Atlantic/Azores';
+    try {
+      // 2026-03-29 has no midnight in the Azores: it starts at the 01:00Z switch to +00.
+      const days = ['2026-03-28T01:00:00Z', '2026-03-29T01:00:00Z', '2026-03-30T00:00:00Z'];
+      expect(dailyBucketZone(days.map((t) => ({ t })))).toBe('local');
+      expect(dailyBucketZone([{ t: '2026-03-28T00:00:00Z' }])).toBe('utc');
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
   test('labels say UTC only for UTC days', () => {
     const noon = Date.UTC(2026, 10, 3, 12);
     expect(formatBucketLabel(noon, '1d', 'utc')).toBe('Nov 3 (UTC)');
