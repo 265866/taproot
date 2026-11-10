@@ -17,6 +17,7 @@ export const device = (
   outside: false,
   online: true,
   lastSeen: null,
+  addresses: [],
   server: false,
   onTailnet: true,
   missingSince: null,
@@ -48,6 +49,7 @@ export const danaRequest: AccessRequest = {
   count: 7,
   outside: true,
   asked: 'admin',
+  addresses: ['100.64.0.31', 'fd7a:115c:a1e0::31'],
 };
 
 export const data: AccessDevices = {
@@ -57,7 +59,13 @@ export const data: AccessDevices = {
   requests: [danaRequest],
   devices: [
     device({ id: 'nHOSTCNTRL', name: 'taproot-host', server: true, proxy: true }),
-    device({ id: 'nDESKCNTRL', name: 'alice-desktop', proxy: true, admin: true }),
+    device({
+      id: 'nDESKCNTRL',
+      name: 'alice-desktop',
+      proxy: true,
+      admin: true,
+      addresses: ['100.64.0.2', 'fd7a:115c:a1e0::2'],
+    }),
     device({ id: 'nWORKCNTRL', name: 'alice-work-laptop', os: 'macOS', created: daysAgo(0.01) }),
     device({
       id: 'nTABCNTRL',
@@ -82,8 +90,9 @@ export const data: AccessDevices = {
       tags: ['tag:ci'],
       proxy: true,
     }),
-    sharee(1),
-    sharee(2, { online: false, lastSeen: daysAgo(2) }),
+    // A sharee's device is named by its IPv4, else its IPv6, else 4 characters of its ID.
+    sharee(1, { addresses: ['100.64.0.31', 'fd7a:115c:a1e0::31'] }),
+    sharee(2, { online: false, lastSeen: daysAgo(2), addresses: ['fd7a:115c:a1e0::32'] }),
     sharee(3, { online: false, lastSeen: daysAgo(40) }),
     device({
       id: 'nALIMBPCNTRL',

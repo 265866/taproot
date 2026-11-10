@@ -6,6 +6,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -154,6 +155,9 @@ type deviceView struct {
 	Outside  bool       `json:"outside"`
 	Online   bool       `json:"online"`
 	LastSeen *time.Time `json:"lastSeen,omitempty"`
+	// Addresses are the device's Tailscale IPs, IPv4 first; empty for a
+	// device the last read did not list.
+	Addresses []string `json:"addresses"`
 	// Server marks the taproot server's own node, which always has Proxy and
 	// never Admin.
 	Server bool `json:"server"`
@@ -216,7 +220,7 @@ func (g *Guard) handleDevices(c *gin.Context) {
 		for i, d := range tn.all() {
 			v := deviceView{
 				ID: d.ID, Name: d.Name, Label: byID[d.ID].Label, DNSName: d.DNSName, Login: d.Login, OwnerName: d.OwnerName,
-				Tags: d.Tags, OS: d.OS, Outside: d.Outside, Online: d.Online, OnTailnet: true,
+				Tags: d.Tags, OS: d.OS, Outside: d.Outside, Online: d.Online, OnTailnet: true, Addresses: addrStrings(d.Addresses),
 			}
 			if v.Tags == nil {
 				v.Tags = []string{}
@@ -242,7 +246,7 @@ func (g *Guard) handleDevices(c *gin.Context) {
 		if _, ok := listed[d.ID]; ok {
 			continue
 		}
-		v := deviceView{ID: d.ID, Name: d.Name, Label: d.Label, Tags: []string{}, Proxy: d.Proxy, Admin: d.Admin}
+		v := deviceView{ID: d.ID, Name: d.Name, Label: d.Label, Tags: []string{}, Addresses: []string{}, Proxy: d.Proxy, Admin: d.Admin}
 		if since, ok := g.missingSince(d.ID); ok {
 			since = since.UTC()
 			v.MissingSince = &since
@@ -283,4 +287,13 @@ func (g *Guard) requestViews(ctx context.Context, grants map[string]DeviceGrant,
 		views = append(views, v)
 	}
 	return views
+}
+
+// addrStrings formats addrs for the API, as an empty list rather than null.
+func addrStrings(addrs []netip.Addr) []string {
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		out = append(out, a.String())
+	}
+	return out
 }

@@ -121,22 +121,24 @@ describe('the device table', () => {
   test('the open fold lists the hidden devices; outside devices get Admin only from a request', () => {
     const html = render({ initiallyUnfolded: true });
     expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain('dana&#x27;s device ·0002');
+    expect(html).toContain('dana&#x27;s device · 100.64.0.31');
+    expect(html).toContain('dana&#x27;s device · fd7a:115c:a1e0::32');
+    expect(html).toContain('dana&#x27;s device ·0003');
     expect(html).toContain('bob-phone');
     expect(html).toContain('from a request');
-    expect(html).toContain('aria-label="Admin for dana&#x27;s device ·0001"');
+    expect(html).toContain('aria-label="Admin for dana&#x27;s device · 100.64.0.31"');
   });
 
-  test('rows show presence and keep OS and MagicDNS in the tooltip', () => {
+  test('rows show no presence and keep OS and MagicDNS in the tooltip', () => {
     const html = render({ initiallyUnfolded: true });
     expect(html).toContain('title="Linux · alice-desktop.tailnet-0000.ts.net"');
     expect(html).toContain(
       'title="alice-mbp.tailnet-1111.ts.net · Linux · alice-mbp.tailnet-1111.ts.net"'
     );
     expect(html).toContain('>Work laptop<');
-    expect(html).toContain('Online');
-    expect(html).toContain('Last seen 2 days ago');
-    expect(html).toContain('Last seen 45 days ago');
+    expect(html).not.toContain('Online');
+    expect(html).not.toContain('Last seen');
+    expect(html).not.toContain('days ago');
     expect(html).not.toContain('Joined');
   });
 
@@ -146,6 +148,22 @@ describe('the device table', () => {
     expect(html).toContain('dana@example.com · Claude Code · 14 minutes ago · 7 times');
     expect(html).toContain('aria-label="Allow Dana&#x27;s PC"');
     expect(html).toContain('aria-label="Deny Dana&#x27;s PC"');
+  });
+
+  test('a request from a nameless device shows its IP, else its ID', () => {
+    const nameless = { ...data, requests: [{ ...data.requests[0], name: '' }] };
+    const html = render({ data: nameless, draft: draftFrom(nameless) });
+    expect(html).toContain('aria-label="Allow dana&#x27;s device · 100.64.0.31"');
+    // The tailnet read did not list the device, so there is no IP to show.
+    const unlisted = {
+      ...nameless,
+      devices: nameless.devices.map((d) =>
+        d.id === nameless.requests[0].nodeId ? { ...d, addresses: [] } : d
+      ),
+    };
+    expect(render({ data: unlisted, draft: draftFrom(unlisted) })).toContain(
+      'aria-label="Allow dana&#x27;s device ·0001"'
+    );
   });
 
   test('a request for the dashboard says so, and one for Proxy does not', () => {

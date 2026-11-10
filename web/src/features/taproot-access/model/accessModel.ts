@@ -134,27 +134,41 @@ export function isIdle(device: AccessDevice, now: number): boolean {
 
 /**
  * How a row names a device: the owner's label, else the Tailscale name, else (when Tailscale
- * hides it) the owner and 4 characters of the stable ID, for the caller to phrase.
+ * hides it) the owner and the device's Tailscale IP, which the owner also sees in their own admin
+ * console, for the caller to phrase. A device without an IP, such as one no longer on the tailnet,
+ * gets 4 characters of its stable ID instead.
  */
 export type DeviceName =
-  { kind: 'named'; name: string } | { kind: 'unnamed'; owner: string; suffix: string };
+  | { kind: 'named'; name: string }
+  | { kind: 'unnamed'; owner: string; address: string; suffix: string };
+
+/** The IP a row names a device by: its IPv4, else its first IPv6, else empty. */
+function displayAddress(addresses: readonly string[]): string {
+  return addresses.find((a) => !a.includes(':')) ?? addresses[0] ?? '';
+}
 
 export function deviceName(
-  device: Pick<AccessDevice, 'label' | 'name' | 'ownerName' | 'login' | 'id'>
+  device: Pick<AccessDevice, 'label' | 'name' | 'ownerName' | 'login' | 'id' | 'addresses'>
 ): DeviceName {
   const name = device.label.trim() || device.name.trim();
   if (name) return { kind: 'named', name };
   return {
     kind: 'unnamed',
     owner: device.ownerName.trim() || device.login.trim(),
+    address: displayAddress(device.addresses),
     // Every stable ID ends in CNTRL, so the characters before it tell devices apart.
     suffix: device.id.replace(/CNTRL$/, '').slice(-4),
   };
 }
 
-/** The words a search matches for a device: names, owner, ID, and tags, not OS or MagicDNS. */
+/**
+ * The words a search matches for a device: names, owner, ID, tags, and Tailscale IPs, not OS or
+ * MagicDNS.
+ */
 function deviceText(d: AccessDevice): string {
-  return [d.label, d.name, d.login, d.ownerName, d.id, ...d.tags].join(' ').toLowerCase();
+  return [d.label, d.name, d.login, d.ownerName, d.id, ...d.tags, ...d.addresses]
+    .join(' ')
+    .toLowerCase();
 }
 
 export function matchesQuery(text: string, query: string): boolean {
@@ -186,10 +200,12 @@ export interface AccessLayout {
 
 const sortKey = (d: AccessDevice) => {
   const name = deviceName(d);
-  return (name.kind === 'named' ? name.name : `${name.owner} ${name.suffix}`).toLowerCase();
+  return (
+    name.kind === 'named' ? name.name : `${name.owner} ${name.address || name.suffix}`
+  ).toLowerCase();
 };
 const byName = (a: AccessDevice, b: AccessDevice) =>
-  sortKey(a).localeCompare(sortKey(b)) || a.id.localeCompare(b.id);
+  sortKey(a).localeCompare(sortKey(b), undefined, { numeric: true }) || a.id.localeCompare(b.id);
 
 /**
  * Sorts devices into the page's sections. Your logins are the viewer's and those of devices in

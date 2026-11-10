@@ -354,9 +354,15 @@ export function AccessView({
 /** A device's name as the page shows it. */
 function nameText(name: DeviceName, t: Translate): string {
   if (name.kind === 'named') return name.name;
-  return name.owner
-    ? t('taproot_access.unnamed', { owner: name.owner, suffix: name.suffix })
-    : t('taproot_access.unnamed_no_owner', { suffix: name.suffix });
+  const { owner, address, suffix } = name;
+  if (address) {
+    return owner
+      ? t('taproot_access.unnamed', { owner, address })
+      : t('taproot_access.unnamed_no_owner', { address });
+  }
+  return owner
+    ? t('taproot_access.unnamed_id', { owner, suffix })
+    : t('taproot_access.unnamed_id_no_owner', { suffix });
 }
 
 function relativeTime(iso: string | null, now: number): string {
@@ -404,6 +410,8 @@ function RequestRow({
       ownerName: request.ownerName,
       login: request.login,
       id: request.nodeId,
+      // The device entry from the same read; none when the read did not list it.
+      addresses: device?.addresses ?? [],
     }),
     t
   );
@@ -649,11 +657,6 @@ function DeviceRow({ device, draft, setDraft, me, now }: RowProps & { device: Ac
   const p = draftPermissions(device, draft);
   const set = (key: 'proxy' | 'admin', value: boolean) =>
     setDraft((d) => d && { ...d, devices: { ...d.devices, [device.id]: { ...p, [key]: value } } });
-  const presence = device.online
-    ? t('taproot_access.online')
-    : device.lastSeen
-      ? t('taproot_access.last_seen', { when: relativeTime(device.lastSeen, now) })
-      : '';
   const title = nameTitle({ ...device, label });
   const badges = (
     <>
@@ -684,7 +687,6 @@ function DeviceRow({ device, draft, setDraft, me, now }: RowProps & { device: Ac
             }
           />
         )}
-        {presence && <span className={styles.details}>{presence}</span>}
       </span>
       <CopyId id={device.id} name={name} />
       <Switch

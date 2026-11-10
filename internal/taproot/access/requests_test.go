@@ -27,6 +27,7 @@ const (
 // access.addresses entry, a request store, and a clock the test moves.
 type requestHarness struct {
 	g       *Guard
+	ts      *fakeTailscaled
 	asks    *Requests
 	now     time.Time
 	mu      sync.Mutex
@@ -39,7 +40,7 @@ func newRequestHarness(t *testing.T) *requestHarness {
 	peers[shareeIP] = fakePeer{login: "dana@example.com", displayName: "dana", node: "dana-1", sharee: true}
 	ts := newFakeTailscaled(t, peers)
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Addresses: []AddressGrant{{CIDR: "192.0.2.20"}}})
-	h := &requestHarness{g: g, now: time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)}
+	h := &requestHarness{g: g, ts: ts, now: time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)}
 	g.now = func() time.Time {
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -313,8 +314,10 @@ func TestDevicesListRequestsAndSharees(t *testing.T) {
 	if r := resp.Requests[1]; r.Name != "bob-pc" || r.Outside || r.Asked != AskProxy {
 		t.Fatalf("bob's request = %+v", r)
 	}
+	// Tailscale hides the sharee's name but not its address, which its owner
+	// sees in their own admin console.
 	dana, ok := findDevice(resp, shareeID)
-	if !ok || dana.Name != "" || !dana.Outside || dana.OwnerName != "dana" || dana.Login != "dana@example.com" || dana.OS != "" || dana.Created != nil {
+	if !ok || dana.Name != "" || !dana.Outside || dana.OwnerName != "dana" || dana.Login != "dana@example.com" || dana.OS != "" || dana.Created != nil || !slices.Equal(dana.Addresses, []string{shareeIP}) {
 		t.Fatalf("sharee device = %+v", dana)
 	}
 
@@ -586,9 +589,10 @@ func TestDecodeTailnet(t *testing.T) {
 			"nodekey:a": {"ID": "nlaptopCNTRL", "HostName": "Alice's MacBook", "DNSName": "laptop.tailnet-0000.ts.net.", "OS": "macOS", "UserID": 1,
 				"Created": "2026-01-02T03:04:05Z", "Online": false, "LastSeen": "2026-11-07T10:00:00Z"},
 			"nodekey:b": {"ID": "ndanaCNTRL", "HostName": "device-of-shared-to-user", "DNSName": "", "OS": "", "UserID": 2, "Tags": null,
+				"TailscaleIPs": ["fd7a:115c:a1e0::31", "100.64.0.31"],
 				"Created": "1973-11-11T00:00:00.1Z", "Online": true, "LastSeen": "0001-01-01T00:00:00Z", "ShareeNode": true},
 			"nodekey:c": {"ID": "nworkCNTRL", "HostName": "work", "DNSName": "work-laptop.tailnet-1111.ts.net.", "OS": "windows", "UserID": 3, "Online": true},
-			"nodekey:d": {"ID": "nbareCNTRL", "HostName": "bare-host", "DNSName": "", "OS": "linux", "UserID": 1}
+			"nodekey:d": {"ID": "nbareCNTRL", "HostName": "bare-host", "DNSName": "", "OS": "linux", "UserID": 1, "TailscaleIPs": ["fd7a:115c:a1e0::4", "bogus"]}
 		},
 		"User": {
 			"1": {"LoginName": "alice@github", "DisplayName": "Alice"},
@@ -609,12 +613,19 @@ func TestDecodeTailnet(t *testing.T) {
 	if dana.Name != "" || !dana.Outside || !dana.Online || !dana.LastSeen.IsZero() || !dana.Created.IsZero() || dana.Login != "dana@example.com" || dana.OwnerName != "dana" {
 		t.Errorf("sharee = %+v", dana)
 	}
+	// Tailscale hides a sharee's name but not its addresses, and IPv4 comes first.
+	if got := addrStrings(dana.Addresses); !slices.Equal(got, []string{"100.64.0.31", "fd7a:115c:a1e0::31"}) {
+		t.Errorf("sharee addresses = %v", got)
+	}
 	work := byID["nworkCNTRL"]
 	if work.Name != "work-laptop.tailnet-1111.ts.net" || !work.Outside || work.Login != "alice@example.org" {
 		t.Errorf("other tailnet's device = %+v, want its full name and outside", work)
 	}
-	if bare := byID["nbareCNTRL"]; bare.Name != "bare-host" || bare.Outside {
-		t.Errorf("device without MagicDNS = %+v", bare)
+	if bare := byID["nbareCNTRL"]; bare.Name != "bare-host" || bare.Outside || !slices.Equal(addrStrings(bare.Addresses), []string{"fd7a:115c:a1e0::4"}) {
+		t.Errorf("device without MagicDNS = %+v, want only its parsable IPv6", bare)
+	}
+	if laptop.Addresses != nil {
+		t.Errorf("laptop without TailscaleIPs has addresses %v", laptop.Addresses)
 	}
 	if tn.Self.Name != "server" || !tn.Self.Online {
 		t.Errorf("self = %+v", tn.Self)
