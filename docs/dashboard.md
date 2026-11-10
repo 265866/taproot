@@ -2,16 +2,84 @@
 
 Taproot serves its dashboard at `/` on the proxy port, such as `http://<server>:8317/`. Only devices with Admin can open it. See [Access](access.md).
 
-## Pages
+## The home page
 
-- **Dashboard:** answers "is everything OK, and what needs me?" first.
-  - **Verdict:** serving normally, degraded, or down, judged on the last 15 minutes and the accounts that can serve right now. A degraded or down verdict links to the failed requests of those 15 minutes.
-  - **Needs you:** each problem with a severity, how long it has waited, and one button that fixes it or opens the page that does. **Sign in again** opens the provider's sign-in, **Enable** and **Back up now** run in place and say how they went, and **Review** opens Access at that device's request. When file logging is off, a problem that points at the server's log says to read the server's own output, or `journalctl -u taproot`, rather than linking to an empty tab. The same problems put badges on Accounts, Access, and Backups in the sidebar and a dot in the tab title, on every page.
-  - **Pools:** each provider's accounts right now, with what is left on each, how many can serve, quota locked on signed-out accounts or waiting on cooling ones, the next reset, the burn over the last 3 hours, and when the pool runs out.
-  - **The window:** 1 hour, 24 hours, 7 days, or 30 days, remembered in this browser. It sets the request count, failures, median latency and time to first token, API-equivalent cost, the traffic chart (with its data as a table), the last 5 failed requests in the window, and the top devices and models, each linking into Request Logs or Usage. Client requests count once, however many accounts they tried; retries show beside them.
-  - **First run:** until the server has an account and has served its first request, the window gives way to a three-step checklist: add an account, point Claude Code or Codex at the server (with snippets that use its address), and approve devices. Each step ticks itself off.
-  - The page rereads everything every 30 seconds while the tab is visible. When a read fails, the section keeps its last numbers, marks them stale, and offers **Retry**. When the server can't be reached at all, the page says so once at the top, with one **Retry**, and keeps every section's last numbers; a section that had nothing to keep says "Not loaded".
-  - On a phone, the page reads top to bottom: the verdict, **Needs you**, the pools, then the window and its numbers. Text is a step larger than on a desktop, held upright or sideways, and every button and link is at least 44 pixels tall on a touch screen. Long device and model names wrap rather than cut off. Tap a bar of the chart to read it, and tap it again to close it. The model count is on **System**.
+The home page answers "is everything OK, and what needs me?" before anything else. The main column follows a window you choose. The right rail, **Needs you** and **Pools**, always shows the server right now.
+
+![The Dashboard: the verdict "Serving normally", the 24-hour tiles, traffic chart, recent failures, and top lists, and a rail with four items in Needs you and the Claude and Codex pools](screenshots/dashboard.png)
+
+### The verdict says whether the server is serving
+
+The verdict judges the last 15 minutes and the accounts that can serve right now. It ignores the window. Client requests count once, however many accounts they tried. A request the client abandoned is not a failure, and fewer than 20 requests are too few to judge.
+
+| Verdict | When |
+| --- | --- |
+| **Serving normally** | Neither of the rows below applies. The detail line says how many accounts can serve, per provider. |
+| **Degraded** | At least 5% of at least 20 client requests failed in the last 15 minutes, or a provider that had traffic in the last hour has only one usable account left. A provider with only one enabled account is not degraded by that. |
+| **Down** | At least 50% of at least 20 client requests failed in the last 15 minutes, or a provider that had traffic in the last hour has no account that can serve. |
+
+A degraded or down verdict has **See failures**, which opens Request Logs on the errors of the last 15 minutes. The header shows when the page last loaded and that it refreshes every 30 seconds.
+
+![The Dashboard degraded: "Degraded: 13% of requests failing in the last 15 min" with See failures, a Claude pool that runs out before its next reset, and five items in Needs you](screenshots/dashboard-degraded.png)
+
+### Needs you lists each problem with one fix
+
+Each item has a severity tag (**Blocking**, **At risk**, **Waiting**, or **Overdue**), a title, a detail line, how long it has waited, and one button. The most severe items come first, then the oldest. With nothing to do, the rail says **Nothing needs you**.
+
+| Problem | Button |
+| --- | --- |
+| An account is signed out, or its login can no longer refresh. | **Sign in again** opens Accounts and starts that provider's sign-in. |
+| An account is disabled while nothing else serves its provider and clients still ask for it. | **Enable** turns it on in place. |
+| A pool is projected to run out before its next reset, or has under 15% left. Cooling accounts are named here, not listed on their own. | **Open Accounts** opens that provider's tab. |
+| A device asks for access. | **Review** opens Access at that device's request. |
+| The newest backup is over 26 hours old, or the last scheduled backup failed. | **Back up now** runs a backup in place. |
+| Discord alerts fail to deliver. | **Open Settings** opens the alerts settings. |
+| Taproot can't reach `tailscaled`. | **Troubleshooting** opens the [troubleshooting guide](troubleshooting.md#every-tailnet-device-is-refused-after-tailscaled-restarts-or-updates). |
+| Taproot can't read its access requests or backups. | **Open the app log** opens Request Logs' app-log tab. When file logging is off, that tab is empty, so the item says to read the server's own output, or `journalctl -u taproot`, instead. |
+
+**Enable** and **Back up now** say how they went. A fix that clears its item leaves its result in the item's place.
+
+### Pools show what each provider can serve now
+
+Each provider has one bar per account, labelled with the part of its email before the @ and the share of quota left. Cooling, signed-out, and disabled accounts are hatched. The headline counts usable accounts only, such as "1.45 of 2 accounts usable". A note under the bars gives the quota locked on signed-out accounts, or the quota on cooling accounts and when they are back. Below that are the next reset, the burn over the last 3 hours as a share of the pool per hour, and when the pool runs out.
+
+### The window sets the numbers, the chart, and the lists
+
+Choose 1 hour, 24 hours, 7 days, or 30 days. The default is 24 hours, and this browser remembers your choice. The caption shows the range and your time zone. The window sets these sections:
+
+- **Tiles:** client requests with upstream retries, failed requests and their share, median latency with median time to first token, and the API-equivalent cost, which names the models without a price.
+- **Traffic chart:** succeeded and failed client requests per 5 minutes, hour, or day, with the failure rate on a right axis. It marks now and hatches the bucket in progress. Hover, tap, or use the arrow keys to read a bar. **Show the data as a table** shows the same numbers as a table.
+- **Recent failures:** the last five failed requests in the window, with time, device, model, status, error, and attempts. Each row opens its request in Request Logs, and **Open in Request Logs** opens Request Logs on the errors of the window. A failure without a stored log has nothing to open, so when its row cuts the device, model, or error, the row opens in place to show them in full.
+- **Top devices and top models:** requests and API-equivalent cost in the window. **Usage by device** and **Usage by model** open Usage.
+
+The Dashboard counts client requests, which taproot records from 0.5.0 on. On a server upgraded from 0.4, the tiles, chart, and lists start empty and fill with new requests. Usage keeps the earlier history.
+
+### A new server shows a setup checklist
+
+Until the server has an account and has served its first client request, a three-step checklist replaces the window. Each step ticks itself off:
+
+1. **Add an account** is done once the server has an account.
+2. **Point a client at taproot** has Claude Code and Codex snippets with the address you opened the dashboard at. It is done when the first client request arrives. If you opened the dashboard on the server itself, or through a proxy such as `tailscale serve`, the step says which address other devices need.
+3. **Approve devices** is done once a device other than the server has Admin, or while access control is off (`access.enabled: false`).
+
+![The first-run checklist: Add an account and Point a client at taproot pending, with snippets that use server.tailnet-0000.ts.net:8399, and Approve devices done](screenshots/dashboard-first-run.png)
+
+A server upgraded from 0.4 has usage history, so it shows the Dashboard rather than the checklist.
+
+### The page keeps its last numbers when a read fails
+
+The page rereads everything every 30 seconds while the tab is visible. When a read fails, the section keeps its last numbers, marks them stale, and offers **Retry**. When the server can't be reached at all, the page says so once at the top, with one **Retry**, and keeps every section's last numbers. A section that had nothing to keep says "Not loaded".
+
+### On a phone the page reads top to bottom
+
+The order is the verdict, **Needs you**, **Pools**, then the window and its numbers. On first run the checklist comes first. On a phone held upright or sideways, text is a step larger than on a desktop. On a touch screen, every button and link is at least 44 pixels tall. Long device and model names wrap rather than cut off. Tap a bar of the chart to read it, and tap it again to close it.
+
+### Badges show what needs you on every page
+
+The items in **Needs you** also put badges on **Accounts**, **Access**, and **Backups** in the sidebar. A badge counts the area's items and takes the color of its most severe one. **Backups** shows "!". While anything needs you, the tab title starts with a dot (●), and on a phone the menu button shows the count.
+
+## Other pages
+
 - **Accounts:** pool charts, the quota ledger, credentials, and sign-in. See [Accounts](accounts.md).
 - **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
 - **Request Logs:** search and view stored requests. The application log is a tab here.
@@ -28,6 +96,9 @@ The screenshots use synthetic data from the demo server that [CONTRIBUTING.md](.
 
 | Page | Desktop | Phone |
 | --- | --- | --- |
+| **Dashboard:** the verdict, Needs you, Pools, and the 24-hour window | [<img src="screenshots/dashboard.png" width="480" alt="Dashboard, desktop">](screenshots/dashboard.png) | [<img src="screenshots/dashboard-mobile.png" width="160" alt="Dashboard, phone">](screenshots/dashboard-mobile.png) |
+| **Dashboard, degraded:** failing requests and a pool that runs out before its reset | [<img src="screenshots/dashboard-degraded.png" width="480" alt="Dashboard degraded, desktop">](screenshots/dashboard-degraded.png) | [<img src="screenshots/dashboard-degraded-mobile.png" width="160" alt="Dashboard degraded, phone">](screenshots/dashboard-degraded-mobile.png) |
+| **Dashboard, first run:** the setup checklist | [<img src="screenshots/dashboard-first-run.png" width="480" alt="First-run checklist, desktop">](screenshots/dashboard-first-run.png) | [<img src="screenshots/dashboard-first-run-mobile.png" width="160" alt="First-run checklist, phone">](screenshots/dashboard-first-run-mobile.png) |
 | **Accounts:** pool chart and quota ledger | [<img src="screenshots/accounts.png" width="480" alt="Accounts, desktop">](screenshots/accounts.png) | [<img src="screenshots/accounts-mobile.png" width="160" alt="Accounts, phone">](screenshots/accounts-mobile.png) |
 | **Manage:** quota, resets, health, credential, and advanced settings for one account | [<img src="screenshots/accounts-manage.png" width="480" alt="Manage, desktop">](screenshots/accounts-manage.png) | [<img src="screenshots/accounts-manage-mobile.png" width="160" alt="Manage, phone">](screenshots/accounts-manage-mobile.png) |
 | **Usage:** cost, tokens, cache hits, and latency | [<img src="screenshots/usage-overview.png" width="480" alt="Usage, desktop">](screenshots/usage-overview.png) | [<img src="screenshots/usage-overview-mobile.png" width="160" alt="Usage, phone">](screenshots/usage-overview-mobile.png) |
