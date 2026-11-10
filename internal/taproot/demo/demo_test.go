@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -116,7 +117,7 @@ func TestGenerateShape(t *testing.T) {
 // request logs, and backups.
 func TestSeed(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := seed(context.Background(), dir, 8399, testStart, false); err != nil {
+	if _, err := seed(context.Background(), dir, 8399, testStart, scenarioNormal); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	ctx := context.Background()
@@ -245,7 +246,7 @@ func signedOutAccount(t *testing.T) *demoAccount {
 // failed, still with every usage event an attempt of one client request.
 func TestSeedDegraded(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := seed(context.Background(), dir, 8399, testStart, true); err != nil {
+	if _, err := seed(context.Background(), dir, 8399, testStart, scenarioDegraded); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	db, err := store.Open(context.Background(), store.Config{}, filepath.Join(dir, "taproot"))
@@ -262,6 +263,71 @@ func TestSeedDegraded(t *testing.T) {
 	}
 	if err := db.QueryRow(`SELECT (SELECT SUM(attempts) FROM client_requests), (SELECT COUNT(*) FROM usage_events)`).Scan(&attempts, &events); err != nil || attempts != events {
 		t.Errorf("attempts %d, usage events %d (%v)", attempts, events, err)
+	}
+}
+
+// -all-clear seeds nothing that needs the user: no signed-out account, no
+// access request, no failed backup run, and no alerts webhook.
+func TestSeedAllClear(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := seed(context.Background(), dir, 8399, testStart, scenarioAllClear); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "auths", ".codex-refresh")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("refresh journal: %v, want none (no account is signed out)", err)
+	}
+	tp, err := os.ReadFile(filepath.Join(dir, "taproot.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(tp), "discord-webhook") {
+		t.Error("taproot.yaml sets an alerts webhook")
+	}
+	db, err := store.Open(context.Background(), store.Config{}, filepath.Join(dir, "taproot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var requests, runs int
+	if err := db.QueryRow(`SELECT (SELECT COUNT(*) FROM access_requests), (SELECT COUNT(*) FROM client_requests)`).Scan(&runs, &requests); err != nil {
+		t.Fatal(err)
+	}
+	if runs != 0 || requests == 0 {
+		t.Errorf("%d access requests and %d client requests, want none and some", runs, requests)
+	}
+}
+
+// -first-run writes the config and nothing else, as a new server has it.
+func TestSeedFirstRun(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := seed(context.Background(), dir, 8399, testStart, scenarioFirstRun); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "auths"))
+	if err != nil || len(entries) != 0 {
+		t.Errorf("auth dir: %d entries (%v), want an empty directory", len(entries), err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "taproot")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("data dir: %v, want none until the server creates it", err)
+	}
+	for _, f := range []string{"config.yaml", "taproot.yaml"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+}
+
+func TestPickScenario(t *testing.T) {
+	if _, err := pickScenario(true, true, false); err == nil {
+		t.Error("two scenarios at once were accepted")
+	}
+	for _, c := range []struct {
+		degraded, allClear, firstRun bool
+		want                         scenario
+	}{{false, false, false, scenarioNormal}, {true, false, false, scenarioDegraded}, {false, true, false, scenarioAllClear}, {false, false, true, scenarioFirstRun}} {
+		if got, err := pickScenario(c.degraded, c.allClear, c.firstRun); err != nil || got != c.want {
+			t.Errorf("pickScenario(%v, %v, %v) = %v, %v; want %v", c.degraded, c.allClear, c.firstRun, got, err, c.want)
+		}
 	}
 }
 
@@ -305,7 +371,7 @@ func TestDemoDataIsSynthetic(t *testing.T) {
 	if err := writeAuthFiles(filepath.Join(dir, "auths"), demoAccounts(), start); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeConfig(dir, filepath.Join(dir, "auths"), 8399); err != nil {
+	if err := writeConfig(dir, filepath.Join(dir, "auths"), 8399, true); err != nil {
 		t.Fatal(err)
 	}
 	domain := regexp.MustCompile(`@[A-Za-z0-9.-]+`)
@@ -337,7 +403,7 @@ func TestSeedRefusesNonEmptyDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := seed(context.Background(), dir, 8399, testStart, false); err == nil {
+	if _, err := seed(context.Background(), dir, 8399, testStart, scenarioNormal); err == nil {
 		t.Fatal("seed wrote into a non-empty directory")
 	}
 }
