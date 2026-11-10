@@ -31,12 +31,23 @@ var newDevice = access.Identity{Via: access.ViaTailnet, Node: "new-laptop.tailne
 func newUnclaimed(t *testing.T) (*fixture, string) {
 	t.Helper()
 	f := newFixture(t, options{yaml: unclaimedYAML})
-	code, err := f.guard.StartClaim()
-	if err != nil || code == "" {
-		t.Fatalf("StartClaim = %q, %v", code, err)
+	code := startClaim(t, f.guard)
+	if code == "" {
+		t.Fatal("StartClaim made no code")
 	}
 	f.caller = newDevice
 	return f, code
+}
+
+// startClaim arms the guard's setup code as Setup does and returns the code
+// it announced, or "".
+func startClaim(t *testing.T, g *access.Guard) string {
+	t.Helper()
+	var code string
+	if err := g.StartClaim(t.Context(), func(c string) { code = c }); err != nil {
+		t.Fatalf("StartClaim: %v", err)
+	}
+	return code
 }
 
 func (f *fixture) postClaim(t *testing.T, code string) (int, string, http.Header) {
@@ -172,23 +183,38 @@ func TestClaimWriteFailureKeepsTheCode(t *testing.T) {
 }
 
 // Giving a device Admin through PUT /settings, as loopback can, uses up the
-// code too.
+// code too. Taking Admin away again starts a new claim with a new code.
 func TestAdminEditEndsTheClaim(t *testing.T) {
-	f, code := newUnclaimed(t)
+	f := newFixture(t, options{yaml: unclaimedYAML})
+	var codes []string
+	if err := f.guard.StartClaim(t.Context(), func(c string) { codes = append(codes, c) }); err != nil || len(codes) != 1 {
+		t.Fatalf("StartClaim = %v, codes %q", err, codes)
+	}
 	f.caller = access.Identity{Via: access.ViaLoopback}
 	f.access.tailnet = &access.Tailnet{Self: access.TailnetDevice{ID: serverID}, Peers: []access.TailnetDevice{{ID: "nworkerCNTRL", Name: "worker"}}}
 	if status, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nworkerCNTRL", "name": "worker", "proxy": true, "admin": true}]}}`); status != http.StatusOK {
 		t.Fatalf("PUT = %d %s", status, body)
 	}
+	f.caller = newDevice
+	if f.guard.Claimable() {
+		t.Fatal("claimable after Admin was given")
+	}
+	if status, body, _ := f.postClaim(t, codes[0]); status != http.StatusConflict {
+		t.Fatalf("claim after an admin edit = %d %s, want 409", status, body)
+	}
+	f.caller = access.Identity{Via: access.ViaLoopback}
 	if status, _, body := f.do(t, http.MethodPut, `{"access": {"devices": []}}`); status != http.StatusOK {
 		t.Fatalf("PUT = %d %s", status, body)
 	}
 	f.caller = newDevice
-	if f.guard.Claimable() {
-		t.Fatal("claimable again after Admin was given and taken away")
+	if !f.guard.Claimable() || len(codes) != 2 || codes[1] == codes[0] {
+		t.Fatalf("after the last Admin was removed: claimable %t, codes %q; want a new code", f.guard.Claimable(), codes)
 	}
-	if status, body, _ := f.postClaim(t, code); status != http.StatusConflict {
-		t.Fatalf("claim after an admin edit = %d %s, want 409", status, body)
+	if status, body, _ := f.postClaim(t, codes[0]); status != http.StatusForbidden || errorCode(t, body) != "wrong_code" {
+		t.Fatalf("claim with the used-up code = %d %s, want 403 wrong_code", status, body)
+	}
+	if status, body, _ := f.postClaim(t, codes[1]); status != http.StatusOK {
+		t.Fatalf("claim with the new code = %d %s, want 200", status, body)
 	}
 }
 
@@ -200,5 +226,34 @@ func TestClaimRefusesAMalformedBody(t *testing.T) {
 	f.engine.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest || errorCode(t, rec.Body.String()) != "invalid_body" {
 		t.Fatalf("claim with a number = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// When auto-forget removes the last device with Admin, the sweep's grant
+// change starts a new claim, so a new device can claim the server without a
+// restart.
+func TestSweepForgettingTheLastAdminStartsAClaim(t *testing.T) {
+	f := newFixture(t, options{yaml: unclaimedYAML})
+	f.caller = access.Identity{Via: access.ViaLoopback}
+	f.access.tailnet = &access.Tailnet{Self: access.TailnetDevice{ID: serverID}, Peers: []access.TailnetDevice{{ID: "nworkerCNTRL", Name: "worker"}}}
+	if status, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nworkerCNTRL", "name": "worker", "proxy": true, "admin": true}]}}`); status != http.StatusOK {
+		t.Fatalf("PUT = %d %s", status, body)
+	}
+	var codes []string
+	if err := f.guard.StartClaim(t.Context(), func(c string) { codes = append(codes, c) }); err != nil || len(codes) != 0 {
+		t.Fatalf("StartClaim with an admin = %v, codes %q", err, codes)
+	}
+	f.access.reconcile = func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool) {
+		return access.Grants{Devices: []access.DeviceGrant{}}, f.guard.Grants().Devices, true
+	}
+	if err := f.s.sweep(t.Context()); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if len(codes) != 1 || !f.guard.Claimable() {
+		t.Fatalf("after forgetting the last admin: codes %q, claimable %t", codes, f.guard.Claimable())
+	}
+	f.caller = newDevice
+	if status, body, _ := f.postClaim(t, codes[0]); status != http.StatusOK {
+		t.Fatalf("claim with the new code = %d %s, want 200", status, body)
 	}
 }

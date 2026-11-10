@@ -36,9 +36,14 @@ func (stubExecutor) HttpRequest(context.Context, *coreauth.Auth, *http.Request) 
 // session-affinity selector, as sdk/cliproxy/service_config.go does.
 func newAffinityManager(t *testing.T, model string, auths ...*coreauth.Auth) *coreauth.Manager {
 	t.Helper()
+	return newAffinityManagerWith(t, NewSoonestResetSelector(), model, auths...)
+}
+
+func newAffinityManagerWith(t *testing.T, selector *SoonestResetSelector, model string, auths ...*coreauth.Auth) *coreauth.Manager {
+	t.Helper()
 	manager := coreauth.NewManager(nil, nil, nil)
 	affinity := coreauth.NewSessionAffinitySelectorWithConfig(coreauth.SessionAffinityConfig{
-		Fallback: NewSoonestResetSelector(),
+		Fallback: selector,
 		TTL:      time.Hour,
 	})
 	t.Cleanup(affinity.Stop)
@@ -212,5 +217,77 @@ func TestHigherPriorityTierWinsOverSoonerReset(t *testing.T) {
 	}
 	if auth.ID != preferred.ID {
 		t.Fatalf("picked %s, want higher priority %s", auth.ID, preferred.ID)
+	}
+}
+
+// A count_tokens request uses up a fresh credential's probe without recording quota
+// headers. The credential is probed again after probeRetry instead of waiting for a
+// restart while every new session goes elsewhere.
+func TestAProbeThatObservedNothingIsRepeated(t *testing.T) {
+	const model = "srf-reprobe-model"
+	a := liveClaudeAuth("srf-reprobe-a", 0)
+	b := liveClaudeAuth("srf-reprobe-b", 0)
+	a.Quota, b.Quota = coreauth.QuotaState{}, coreauth.QuotaState{}
+	now := time.Now()
+	selector := &SoonestResetSelector{now: func() time.Time { return now }}
+	manager := newAffinityManagerWith(t, selector, model, a, b)
+	ctx := context.Background()
+
+	if _, err := manager.ExecuteCount(ctx, []string{"claude"}, cliproxyexecutor.Request{Model: model}, sessionOpts("count")); err != nil {
+		t.Fatalf("ExecuteCount: %v", err)
+	}
+	pick := func(sessionID string) string {
+		t.Helper()
+		auth, err := manager.SelectAuth(ctx, "claude", model, sessionOpts(sessionID))
+		if err != nil {
+			t.Fatalf("SelectAuth(%s): %v", sessionID, err)
+		}
+		return auth.ID
+	}
+	if got := pick("s-b"); got != b.ID {
+		t.Fatalf("s-b = %s, want the probe of %s", got, b.ID)
+	}
+	observe(t, manager, b, 96*time.Hour)
+	if got := pick("s-1"); got != b.ID {
+		t.Fatalf("s-1 = %s, want %s while %s's probe is recent", got, b.ID, a.ID)
+	}
+	now = now.Add(probeRetry)
+	if got := pick("s-2"); got != a.ID {
+		t.Fatalf("s-2 = %s, want a new probe of %s", got, a.ID)
+	}
+	observe(t, manager, a, 20*time.Hour)
+	if got := pick("s-3"); got != a.ID {
+		t.Fatalf("s-3 = %s, want the soonest reset %s", got, a.ID)
+	}
+}
+
+// After a restart, weekly readings from taproot's quota store order new sessions
+// without probing every credential.
+func TestStoredReadingsReplaceProbesAfterRestart(t *testing.T) {
+	const model = "srf-stored-model"
+	late := liveClaudeAuth("srf-stored-a-late", 0)
+	soon := liveClaudeAuth("srf-stored-b-soon", 0)
+	late.Quota, soon.Quota = coreauth.QuotaState{}, coreauth.QuotaState{}
+	readings := &Readings{}
+	manager := newAffinityManagerWith(t, &SoonestResetSelector{readings: readings}, model, late, soon)
+	now := time.Now()
+	var stored []Window
+	for _, a := range []struct {
+		auth  *coreauth.Auth
+		reset time.Duration
+	}{{late, 96 * time.Hour}, {soon, 20 * time.Hour}} {
+		current, _ := manager.GetByID(a.auth.ID)
+		stored = append(stored, Window{AuthIndex: current.Index, Provider: "claude", Name: "seven_day", Utilization: 0.4, ResetsAt: now.Add(a.reset), PeriodSeconds: 7 * 24 * 3600, ObservedAt: now})
+	}
+	readings.Observe(stored)
+
+	for _, sessionID := range []string{"s-1", "s-2", "s-3"} {
+		auth, err := manager.SelectAuth(context.Background(), "claude", model, sessionOpts(sessionID))
+		if err != nil {
+			t.Fatalf("SelectAuth(%s): %v", sessionID, err)
+		}
+		if auth.ID != soon.ID {
+			t.Fatalf("%s = %s, want the soonest stored reset %s", sessionID, auth.ID, soon.ID)
+		}
 	}
 }

@@ -47,7 +47,7 @@ Every key is optional. Sizes accept a number of bytes or a value such as `512MiB
 | `access.addresses` | empty | Addresses outside Tailscale that may use the proxy: `cidr` and an optional `note`. |
 | `access.extra-hosts` | empty | More `Host` names the server answers to. |
 | `access.tailscale-socket` | `/var/run/tailscale/tailscaled.sock` | The `tailscaled` LocalAPI socket. |
-| `access.cache-ttl` | `1m` | How long taproot caches which device an address belongs to. |
+| `access.cache-ttl` | `1m` | How long taproot caches which device an address belongs to, at most `10m`. A device that takes over another's tailnet address keeps the other device's access for up to this long. |
 | `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. |
 | `ingest.poll-interval` | `15m` | How often taproot polls the quota of idle accounts. `0` turns polling off. |
 | `request-logs.max-days` | `14` | Delete request logs older than this many days. A negative value keeps them forever. |

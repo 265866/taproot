@@ -28,6 +28,13 @@ const localAPIHost = "local-tailscaled.sock"
 // localAPITimeout bounds one LocalAPI call so a stuck tailscaled cannot stall every request.
 const localAPITimeout = 3 * time.Second
 
+// LocalAPI responses are read whole, so they are bounded. The peer list
+// grows about 1.5 KB per peer, so it gets room for some ten thousand.
+const (
+	localAPIMaxBody     = 1 << 20
+	localAPIMaxPeerList = 16 << 20
+)
+
 var errPeerNotFound = errors.New("tailscale: no peer with that address")
 
 // peer is the part of tailscaled's apitype.WhoIsResponse the guard uses.
@@ -105,8 +112,9 @@ func (g *Guard) CheckTailscaled(ctx context.Context) error {
 	return nil
 }
 
-// get returns the body of a 200 response, errPeerNotFound for a 404, or an error.
-func (l *localClient) get(ctx context.Context, path string) ([]byte, error) {
+// get returns the body of a 200 response, errPeerNotFound for a 404, or an
+// error, including for a body longer than limit bytes.
+func (l *localClient) get(ctx context.Context, path string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+localAPIHost+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -116,9 +124,12 @@ func (l *localClient) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("response is longer than %d MiB", limit>>20)
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -142,7 +153,7 @@ type whoisResponse struct {
 }
 
 func (l *localClient) whois(ctx context.Context, addr netip.Addr) (peer, error) {
-	body, err := l.get(ctx, "/localapi/v0/whois?addr="+url.QueryEscape(addr.String()))
+	body, err := l.get(ctx, "/localapi/v0/whois?addr="+url.QueryEscape(addr.String()), localAPIMaxBody)
 	if err != nil {
 		return peer{}, fmt.Errorf("tailscale whois %s: %w", addr, err)
 	}
@@ -249,7 +260,7 @@ func otherTailnet(a, b string) bool {
 // /localapi/v0/status?peers=true. A tailscaled that is not running is an
 // error, because its peer list is empty or stale.
 func (l *localClient) tailnet(ctx context.Context) (Tailnet, error) {
-	body, err := l.get(ctx, "/localapi/v0/status?peers=true")
+	body, err := l.get(ctx, "/localapi/v0/status?peers=true", localAPIMaxPeerList)
 	if err != nil {
 		return Tailnet{}, fmt.Errorf("tailscale status: %w", err)
 	}
@@ -325,7 +336,7 @@ func tailscaleAddrs(raw []string) []netip.Addr {
 
 // status returns the server's own node from GET /localapi/v0/status.
 func (l *localClient) status(ctx context.Context) (selfNode, error) {
-	body, err := l.get(ctx, "/localapi/v0/status?peers=false")
+	body, err := l.get(ctx, "/localapi/v0/status?peers=false", localAPIMaxBody)
 	if err != nil {
 		return selfNode{}, fmt.Errorf("tailscale status: %w", err)
 	}

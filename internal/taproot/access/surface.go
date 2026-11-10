@@ -1,12 +1,15 @@
 package access
 
 import (
+	"html"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 // surface is the part of the server a request targets. See the package
@@ -54,16 +57,19 @@ var adminPaths = map[string]bool{
 
 // navigablePaths accept a cross-site top-level navigation: following a link
 // to the dashboard, and a provider redirecting the browser to an OAuth
-// callback. Neither response is readable by the other site, the dashboard
+// callback, including the management callbacks plugin providers redirect to
+// on 127.0.0.1. Neither response is readable by the other site, the dashboard
 // cannot be framed, and a callback only completes a login whose random state
 // the caller already holds.
 var navigablePaths = map[string]bool{
-	"/":                     true,
-	"/anthropic/callback":   true,
-	"/codex/callback":       true,
-	"/antigravity/callback": true,
-	"/callback":             true,
-	"/devin/callback":       true,
+	"/":                             true,
+	"/anthropic/callback":           true,
+	"/codex/callback":               true,
+	"/antigravity/callback":         true,
+	"/callback":                     true,
+	"/devin/callback":               true,
+	"/v0/management/oauth-callback": true,
+	"/v8/management/oauth/callback": true,
 }
 
 // RequestHeader must be "1" on GETs that change state, from every caller. A
@@ -135,23 +141,76 @@ func classify(path string) surface {
 }
 
 // browserCheck rejects requests a browser makes on behalf of another site, and
-// requests addressed to a name that is not this server's (DNS rebinding).
+// requests addressed to a name that is not this server's (DNS rebinding). It
+// returns the denial reason and response body, or "" when the request passes.
 // Command-line clients send no Origin or Sec-Fetch-Site, so only the Host
 // check applies to them.
-func (g *Guard) browserCheck(r *http.Request, self func() *selfNode) string {
+func (g *Guard) browserCheck(r *http.Request, self func() *selfNode) (string, gin.H) {
 	if !g.ownHost(r.Host, self) {
-		return "host " + quoteHeader(r.Host) + " is not one of this server's names"
+		host := r.Host
+		if len(host) > 100 {
+			host = host[:100]
+		}
+		return "host " + quoteHeader(r.Host) + " is not one of this server's names", gin.H{
+			"code":    "unknown_host",
+			"message": "taproot does not answer to the host name " + strconv.Quote(host) + ": use its Tailscale name or address, or add the name under access.extra-hosts in taproot.yaml and restart taproot",
+			"host":    host,
+		}
 	}
 	if origin := r.Header.Get("Origin"); origin != "" && !sameOrigin(origin, r) {
-		return "origin " + quoteHeader(origin) + " is not this server"
+		return "origin " + quoteHeader(origin) + " is not this server", forbiddenDenial()
 	}
 	switch strings.ToLower(r.Header.Get("Sec-Fetch-Site")) {
 	case "cross-site", "same-site":
 		if !isTopLevelNavigation(r) || !navigablePaths[r.URL.Path] {
-			return "browser request from another site"
+			return "browser request from another site", forbiddenDenial()
 		}
 	}
-	return ""
+	return "", nil
+}
+
+// deny refuses the request with denial as a JSON 403, or, for a Host the
+// server does not answer to (the only denial with a host), with a page a
+// browser shows to a person.
+// namesUnknown says the server's own tailnet names could not be read.
+func deny(c *gin.Context, denial gin.H, namesUnknown bool) {
+	host, ok := denial["host"].(string)
+	if !ok || !strings.Contains(c.GetHeader("Accept"), "text/html") {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": denial})
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("X-Frame-Options", "DENY")
+	c.Data(http.StatusForbidden, "text/html; charset=utf-8", unknownHostPage(host, namesUnknown))
+	c.Abort()
+}
+
+// unknownHostPage explains a refused Host to the person whose browser sent it.
+// It names none of the server's names or addresses: a page that reached the
+// server through DNS rebinding reads this response.
+func unknownHostPage(host string, namesUnknown bool) []byte {
+	var b strings.Builder
+	b.WriteString(`<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Taproot doesn't answer to this name</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem}code{font-size:.95em}</style>
+<h1>Taproot doesn't answer to this name</h1>
+<p>This page was opened as <code>`)
+	b.WriteString(html.EscapeString(host))
+	b.WriteString(`</code>, which is not one of this taproot server's names. Taproot refuses names it does not know, so that another website cannot reach it through DNS rebinding.</p>
+<p>Open taproot by its Tailscale name, such as <code>http://server:8317/</code>, or by its Tailscale address. On the server itself, <code>localhost</code> works too.</p>
+<p>To use this name as well, add it under <code>access.extra-hosts</code> in <code>taproot.yaml</code> and restart taproot.</p>
+`)
+	if namesUnknown {
+		b.WriteString(`<p>Right now taproot cannot read its own Tailscale name and addresses from tailscaled, so only <code>localhost</code> and the names under <code>access.extra-hosts</code> work. Try again in a few seconds.</p>
+`)
+	}
+	b.WriteString("</html>\n")
+	return []byte(b.String())
 }
 
 func isTopLevelNavigation(r *http.Request) bool {

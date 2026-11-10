@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/egress"
 	"github.com/265866/taproot/internal/taproot/ingest"
 	"github.com/265866/taproot/internal/taproot/store"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
@@ -29,6 +30,9 @@ const (
 	settle       = 2 * time.Minute
 	// grantInterval is how often one Claude account's reset grants are read.
 	grantInterval = 3 * time.Hour
+	// grantMaxAge drops grants that failed reads left unrefreshed, so a grant
+	// redeemed since the last read does not keep warning.
+	grantMaxAge = 2 * grantInterval
 	// OriginEnv points deliveries at a local fake Discord for end-to-end tests.
 	OriginEnv = "TAPROOT_ALERTS_DISCORD_ORIGIN"
 )
@@ -52,8 +56,11 @@ type authLister interface {
 
 type quotaKey struct{ authIndex, window string }
 
+// grantRead is the last read attempt of one account's grants, and the
+// grants from the last successful read.
 type grantRead struct {
 	at     time.Time
+	readAt time.Time
 	grants []Grant
 }
 
@@ -83,6 +90,13 @@ type Service struct {
 	grantReads   map[string]grantRead
 	grantPolling bool
 
+	// deliveries holds the sender's outcomes for detector messages until the
+	// evaluation goroutine, which owns the detector, applies them. rearm asks
+	// it to treat the open alerts as unsent after the webhook changed.
+	deliveryMu sync.Mutex
+	deliveries []delivery
+	rearm      bool
+
 	// startedAt and restoredLogins belong to the evaluation goroutine;
 	// loadState sets them before that goroutine starts.
 	startedAt time.Time
@@ -91,6 +105,11 @@ type Service struct {
 	// a broken login looks healthy until a refresh fails again. These stay
 	// broken until the credential shows it works.
 	restoredLogins map[string]restoredLogin
+}
+
+type delivery struct {
+	msg Message
+	err error
 }
 
 type restoredLogin struct {
@@ -122,6 +141,7 @@ func New(cfg Config, db *store.DB, feed QuotaFeed) (*Service, error) {
 		grantReads:     map[string]grantRead{},
 	}
 	s.sender = NewSender(s.webhook, discordOrigin())
+	s.sender.onResult = s.delivered
 	feed.OnQuota(s.observe)
 	return s, nil
 }
@@ -167,6 +187,11 @@ func (s *Service) SetConfig(cfg Config) error {
 		s.webhookInvalid = false
 	}
 	s.cfgMu.Unlock()
+	if newWebhook {
+		s.deliveryMu.Lock()
+		s.rearm = true
+		s.deliveryMu.Unlock()
+	}
 	// AnnounceWebhook wakes the evaluation for a new webhook, so the
 	// connected message is posted before any alert.
 	if !newWebhook {
@@ -228,6 +253,11 @@ func (s *Service) webhook() string {
 	return s.Config().DiscordWebhook
 }
 
+// UseProxy routes the reset-grant read through p. It must run before Start.
+func (s *Service) UseProxy(p *egress.Proxy) {
+	s.grants.proxy = p
+}
+
 // AttachAuthManager receives the runtime credential manager once the server is built.
 func (s *Service) AttachAuthManager(m *coreauth.Manager) {
 	if m == nil {
@@ -260,6 +290,33 @@ func (s *Service) observe(obs []ingest.QuotaObservation) {
 	}
 	s.quotaMu.Unlock()
 	s.signal()
+}
+
+// delivered is the sender's result hook; it runs on the sender goroutine.
+func (s *Service) delivered(m Message, err error) {
+	if !m.tracked {
+		return
+	}
+	s.deliveryMu.Lock()
+	s.deliveries = append(s.deliveries, delivery{m, err})
+	s.deliveryMu.Unlock()
+	s.signal()
+}
+
+// applyDeliveries hands the pending delivery outcomes, and a webhook change,
+// to the detector.
+func (s *Service) applyDeliveries(now time.Time) (changed bool) {
+	s.deliveryMu.Lock()
+	results, rearm := s.deliveries, s.rearm
+	s.deliveries, s.rearm = nil, false
+	s.deliveryMu.Unlock()
+	for _, r := range results {
+		changed = s.detector.Delivered(now, r.msg, r.err) || changed
+	}
+	if rearm {
+		changed = s.detector.Rearm() || changed
+	}
+	return changed
 }
 
 func (s *Service) signal() {
@@ -303,18 +360,17 @@ func (s *Service) evaluate(ctx context.Context) {
 	if !s.Active() {
 		return
 	}
-	auths := s.authList()
-	if len(auths) == 0 {
-		return
-	}
 	now := s.now()
-	accounts := accountsFrom(auths, now, s.heldLogins(auths))
-	s.pollGrants(ctx, auths, now)
-	forgot := s.detector.Forget(accounts)
-	msgs, changed := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
-	changed = changed || forgot
-	for _, m := range msgs {
-		s.sender.Enqueue(m)
+	changed := s.applyDeliveries(now)
+	if auths := s.authList(); len(auths) > 0 {
+		accounts := accountsFrom(auths, now, s.heldLogins(auths))
+		s.pollGrants(ctx, auths, now)
+		forgot := s.detector.Forget(accounts)
+		msgs, stepped := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
+		changed = changed || forgot || stepped
+		for _, m := range msgs {
+			s.sender.Enqueue(m)
+		}
 	}
 	if changed {
 		if err := s.saveState(ctx); err != nil {
@@ -332,7 +388,9 @@ func (s *Service) snapshot(now time.Time, accounts []Account) Snapshot {
 	s.quotaMu.Unlock()
 	s.grantMu.Lock()
 	for idx, r := range s.grantReads {
-		snap.Grants[idx] = r.grants
+		if now.Sub(r.readAt) < grantMaxAge {
+			snap.Grants[idx] = r.grants
+		}
 	}
 	s.grantMu.Unlock()
 	return snap
@@ -429,7 +487,8 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 		if r, ok := s.grantReads[idx]; !ok || now.Sub(r.at) >= grantInterval {
 			due = append(due, a)
 			// Record the attempt now so a failure waits a full interval too.
-			s.grantReads[idx] = grantRead{at: now, grants: r.grants}
+			r.at = now
+			s.grantReads[idx] = r
 		}
 	}
 	for idx := range s.grantReads {
@@ -459,7 +518,7 @@ func (s *Service) pollGrants(ctx context.Context, auths []*coreauth.Auth, now ti
 			}
 			s.grantMu.Lock()
 			if r, ok := s.grantReads[idx]; ok {
-				s.grantReads[idx] = grantRead{at: r.at, grants: grants}
+				s.grantReads[idx] = grantRead{at: r.at, readAt: r.at, grants: grants}
 			}
 			s.grantMu.Unlock()
 		}
@@ -491,6 +550,12 @@ func (s *Service) loadState(ctx context.Context) error {
 		if err := json.Unmarshal([]byte(raw), &t); err != nil {
 			continue
 		}
+		// The queue lived in memory, so an alert that was waiting in it was
+		// never delivered, and a recovery that was is sent again.
+		if t.Queued {
+			t.undeliver()
+		}
+		t.Recovering = false
 		s.detector.tracks[key] = &t
 		if idx, ok := strings.CutPrefix(key, "login:"); ok && t.Active && t.Notified {
 			s.restoredLogins[idx] = restoredLogin{}

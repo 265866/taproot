@@ -30,7 +30,7 @@ func TestQuotaHookPublishesCommittedObservations(t *testing.T) {
 		t.Fatalf("published %+v, want one observation", got)
 	}
 	o := got[0]
-	if o.AuthIndex != "auth-a" || o.Window != "five_hour" || o.Utilization != 1 || o.Status != "rejected" || !o.ResetsAt.Equal(reset) || !o.AccountWide {
+	if o.AuthIndex != "auth-a" || o.Window != "five_hour" || o.Utilization != 1 || o.Status != "rejected" || !o.ResetsAt.Equal(reset) || !o.AccountWide || o.PeriodSeconds != 5*3600 {
 		t.Fatalf("observation = %+v", o)
 	}
 
@@ -44,7 +44,7 @@ func TestQuotaHookPublishesCommittedObservations(t *testing.T) {
 	}
 
 	latest, err := i.LatestQuota(context.Background())
-	if err != nil || len(latest) != 1 || latest[0].AuthIndex != "auth-a" || !latest[0].ResetsAt.Equal(reset) || latest[0].Provider != "claude" {
+	if err != nil || len(latest) != 1 || latest[0].AuthIndex != "auth-a" || !latest[0].ResetsAt.Equal(reset) || latest[0].Provider != "claude" || latest[0].PeriodSeconds != 5*3600 {
 		t.Fatalf("latest = %+v, err = %v", latest, err)
 	}
 }
@@ -83,5 +83,18 @@ func TestQuotaAfterClockStepsBack(t *testing.T) {
 		if len(a.Windows) != 1 || a.Windows[0].Utilization != 0.5 || a.Windows[0].ObservedAt != rfc(corrected) {
 			t.Fatalf("current %+v", a.Windows)
 		}
+	}
+}
+
+func TestQuotaHookPublishesToEverySubscriber(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	var first, second int
+	i.OnQuota(func(obs []QuotaObservation) { first += len(obs) })
+	i.OnQuota(func(obs []QuotaObservation) { second += len(obs) })
+	r := claudeRecord("r1", clock.t, hdr("Anthropic-Ratelimit-Unified-7d-Utilization", "0.5"))
+	i.HandleUsage(context.Background(), r)
+	mustFlush(t, i)
+	if first != 1 || second != 1 {
+		t.Fatalf("subscribers received %d and %d observations, want 1 each", first, second)
 	}
 }
