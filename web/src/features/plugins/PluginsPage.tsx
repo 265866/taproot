@@ -30,6 +30,7 @@ import type {
 import {
   buildPluginConfigDraft,
   buildPluginConfigPatch,
+  isSecretPluginField,
   normalizePluginConfigFieldType,
   type PluginConfigDraft,
 } from './pluginConfigDraft';
@@ -38,8 +39,9 @@ import {
   notifyPluginResourcesChanged,
   resolvePluginAssetURL,
 } from './pluginResources';
-import { waitForPluginState } from './pluginPolling';
+import { isPollAbort, waitForPluginState } from './pluginPolling';
 import { getPluginLogo } from './pluginLogo';
+import { SecretFieldInput } from './components/SecretFieldInput';
 import styles from './PluginsPage.module.scss';
 
 type PluginRuntimeWaitStatus = 'ready' | 'globalDisabled' | 'timeout';
@@ -85,7 +87,16 @@ export function PluginsPage() {
   const [mutatingID, setMutatingID] = useState('');
   const [deletingID, setDeletingID] = useState('');
   const [openingConfigID, setOpeningConfigID] = useState('');
+  // The switch position a toggle asked for, shown until the backend reports the new state.
+  const [pendingToggle, setPendingToggle] = useState<{ id: string; enabled: boolean } | null>(null);
   const configRequestSeq = useRef(0);
+  const pollAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    pollAbort.current = controller;
+    return () => controller.abort();
+  }, []);
 
   const connected = connectionStatus === 'connected';
 
@@ -116,10 +127,15 @@ export function PluginsPage() {
 
   const waitForPluginRuntimeState = useCallback(
     async (id: string, enabled: boolean): Promise<PluginRuntimeWaitStatus> => {
-      const result = await waitForPluginState(id, (item, response) =>
-        enabled
-          ? !response.pluginsEnabled || (item.registered && item.effectiveEnabled)
-          : !item.effectiveEnabled
+      const result = await waitForPluginState(
+        id,
+        (item, response) =>
+          enabled
+            ? !response.pluginsEnabled || (item.registered && item.effectiveEnabled)
+            : !item.effectiveEnabled,
+        undefined,
+        undefined,
+        pollAbort.current?.signal
       );
       setData(result.response);
       if (enabled && !result.response.pluginsEnabled) {
@@ -242,6 +258,7 @@ export function PluginsPage() {
   const handleTogglePlugin = async (plugin: PluginListEntry, enabled: boolean) => {
     if (deletingID) return;
     setMutatingID(plugin.id);
+    setPendingToggle({ id: plugin.id, enabled });
     try {
       await pluginsApi.updateEnabled(plugin.id, enabled);
       clearConfigCache();
@@ -260,6 +277,7 @@ export function PluginsPage() {
         );
       }
     } catch (err: unknown) {
+      if (isPollAbort(err)) return;
       showNotification(
         `${t('plugin_management.toggle_failed')}: ${getErrorMessage(
           err,
@@ -269,6 +287,7 @@ export function PluginsPage() {
       );
     } finally {
       setMutatingID('');
+      setPendingToggle(null);
     }
   };
 
@@ -358,6 +377,7 @@ export function PluginsPage() {
         );
       }
     } catch (err: unknown) {
+      if (isPollAbort(err)) return;
       showNotification(
         `${t('plugin_management.save_failed')}: ${getErrorMessage(
           err,
@@ -400,6 +420,8 @@ export function PluginsPage() {
     }));
   };
 
+  const savingConfig = Boolean(editingPlugin && mutatingID === editingPlugin.id);
+
   const renderFieldEditor = (field: PluginConfigField) => {
     if (!draft) return null;
     const fieldType = normalizePluginConfigFieldType(field);
@@ -420,6 +442,7 @@ export function PluginsPage() {
             checked={value === true}
             onChange={(nextValue) => handleFieldBooleanChange(field.name, nextValue)}
             ariaLabel={field.name}
+            disabled={savingConfig}
           />
         </div>
       );
@@ -442,6 +465,7 @@ export function PluginsPage() {
               }))
             }
             placeholder={t('plugin_management.select_placeholder')}
+            disabled={savingConfig}
           />
           {field.description ? <div className={styles.fieldHint}>{field.description}</div> : null}
           {errorText ? <div className={styles.fieldError}>{errorText}</div> : null}
@@ -460,6 +484,7 @@ export function PluginsPage() {
             onChange={handleFieldTextChange(field.name)}
             placeholder={fieldType === 'array' ? '[]' : '{}'}
             spellCheck={false}
+            disabled={savingConfig}
           />
           {field.description ? <div className={styles.fieldHint}>{field.description}</div> : null}
           {errorText ? <div className={styles.fieldError}>{errorText}</div> : null}
@@ -467,8 +492,9 @@ export function PluginsPage() {
       );
     }
 
+    const TextInput = isSecretPluginField(field) ? SecretFieldInput : Input;
     return (
-      <Input
+      <TextInput
         key={field.name}
         id={`plugin-field-${field.name}`}
         label={field.name}
@@ -477,11 +503,10 @@ export function PluginsPage() {
         inputMode={fieldType === 'integer' || fieldType === 'number' ? 'decimal' : undefined}
         hint={field.description || undefined}
         error={errorText || undefined}
+        disabled={savingConfig}
       />
     );
   };
-
-  const savingConfig = Boolean(editingPlugin && mutatingID === editingPlugin.id);
 
   return (
     <div className={styles.page}>
@@ -584,6 +609,16 @@ export function PluginsPage() {
             </div>
           ))}
         </div>
+      ) : visiblePlugins.length === 0 && (data?.plugins.length ?? 0) > 0 ? (
+        <EmptyState
+          title={t('plugin_management.no_matches')}
+          description={t('plugin_management.no_matches_desc', { query: filter.trim() })}
+          action={
+            <Button variant="secondary" size="sm" onClick={() => setFilter('')}>
+              {t('plugin_management.clear_search')}
+            </Button>
+          }
+        />
       ) : visiblePlugins.length === 0 ? (
         <EmptyState
           title={t('plugin_management.no_plugins')}
@@ -605,6 +640,7 @@ export function PluginsPage() {
             const actionBusy = Boolean(mutatingID || openingConfigID || deletingID);
             const version = plugin.metadata?.version;
             const author = plugin.metadata?.author;
+            const toggling = pendingToggle?.id === plugin.id ? pendingToggle : null;
 
             return (
               <article key={plugin.id} className={styles.pluginRow}>
@@ -673,8 +709,13 @@ export function PluginsPage() {
 
                 {/* Actions */}
                 <div className={styles.rowActions}>
+                  {toggling ? (
+                    <span className={styles.applying} role="status">
+                      {t('plugin_management.applying')}
+                    </span>
+                  ) : null}
                   <ToggleSwitch
-                    checked={plugin.enabled}
+                    checked={toggling ? toggling.enabled : plugin.enabled}
                     onChange={(enabled) => handleTogglePlugin(plugin, enabled)}
                     disabled={!connected || actionBusy}
                     ariaLabel={t('plugin_management.enabled')}
@@ -764,6 +805,7 @@ export function PluginsPage() {
                     }))
                   }
                   ariaLabel={t('plugin_management.enabled')}
+                  disabled={savingConfig}
                 />
               </div>
               <Input
@@ -772,6 +814,7 @@ export function PluginsPage() {
                 onChange={handlePriorityChange}
                 inputMode="numeric"
                 error={draft.errors.priority || undefined}
+                disabled={savingConfig}
               />
             </section>
 

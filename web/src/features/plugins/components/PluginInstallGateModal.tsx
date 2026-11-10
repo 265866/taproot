@@ -65,10 +65,9 @@ export function PluginInstallGateModal({
   const repoLabel = repoSlug || entry.id;
   const token = getPluginConfirmToken(entry);
   const logo = resolvePluginAssetURL(entry.logo, apiBase);
-  const rawSourceText = entry.sourceName || entry.sourceUrl;
   const sourceText = isDefaultPluginStoreSource(entry)
     ? t('plugin_store.cli_proxy_api_source')
-    : rawSourceText;
+    : entry.sourceUrl || entry.sourceName;
   const tokenMatches = typed.trim() === token;
 
   const handleClose = () => {

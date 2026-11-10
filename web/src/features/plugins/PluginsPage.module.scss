@@ -46,7 +46,7 @@
 .errorBox {
   border: 1px solid var(--danger-color);
   background: rgba($error-color, 0.1);
-  color: var(--danger-color);
+  color: var(--failure-badge-text);
 }
 
 .warningBox {
@@ -322,13 +322,13 @@
 .badgeSuccess {
   background: rgba($success-color, 0.1);
   border: 1px solid rgba($success-color, 0.2);
-  color: var(--success-color);
+  color: var(--success-badge-text);
 }
 
 .badgeWarning {
   background: rgba($warning-color, 0.1);
   border: 1px solid rgba($warning-color, 0.2);
-  color: var(--warning-color);
+  color: var(--failure-badge-text);
 }
 
 .badgeMuted {
@@ -338,6 +338,11 @@
 }
 
 // ─── Row Actions ────────────────────────────────────────
+
+.applying {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 
 .rowActions {
   display: flex;
@@ -544,7 +549,7 @@
   padding: 8px 10px;
   border-radius: $radius-sm;
   background: rgba($error-color, 0.1);
-  color: var(--danger-color);
+  color: var(--failure-badge-text);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -583,5 +588,28 @@
       width: 100%;
     }
   }
+}
 
+.secretInput:global(.input) {
+  padding-right: 40px;
+}
+
+.secretToggle {
+  @include button-reset;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: $radius-sm;
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
 }

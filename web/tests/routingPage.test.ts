@@ -156,6 +156,34 @@ describe('routing board rendering', () => {
     expect(html).toMatch(/<input type="checkbox" aria-label="Session affinity"[^>]*checked=""/);
   });
 
+  test('retry counts show stored values beyond the old caps', async () => {
+    await i18n.changeLanguage('en');
+    const html = renderToStaticMarkup(
+      createElement(PolicyPanel, {
+        settings: {
+          strategy: 'round-robin',
+          sessionAffinity: false,
+          requestRetry: 250,
+          maxRetryCredentials: 5000,
+        },
+        onChange: () => {},
+      })
+    );
+    expect(html).toContain('value="250"');
+    expect(html).toContain('value="5000"');
+    expect(html).not.toContain('max=');
+  });
+
+  test('keyboard moves are announced with the new tier and priority', async () => {
+    await i18n.changeLanguage('en');
+    expect(
+      i18n.t('routing.moved_announcement', { name: 'a', tier: 'Fallback 1', priority: -10 })
+    ).toBe('Moved a to Fallback 1, priority -10');
+    const source = readFileSync('src/features/routing/RoutingPage.tsx', 'utf8');
+    expect(source).toMatch(/role="status" aria-live="polite">\s*\{moveAnnouncement\}/);
+    expect(i18n.t('routing.footnote')).not.toContain('API-key');
+  });
+
   test('styles respect reduced motion and the route is registered behind navigation', () => {
     const page = readFileSync('src/features/routing/RoutingPage.module.scss', 'utf8');
     const card = readFileSync('src/features/routing/components/MemberCard.module.scss', 'utf8');

@@ -5,6 +5,7 @@ import { SERVER_FIELDS } from '@/features/config/visualConfigServer';
 import { readConfigBoolean } from '@/features/config/visualConfigBoolean';
 import { DEFAULT_VISUAL_VALUES } from '@/types/visualConfig';
 import { runVisualConfig } from './helpers/visualConfig';
+import { VisualConfigWriteError } from '@/hooks/useVisualConfig';
 
 const trueSpellings = ['y', 'Y', 'yes', 'Yes', 'YES', 'on', 'On', 'ON'];
 const falseSpellings = ['n', 'N', 'no', 'No', 'NO', 'off', 'Off', 'OFF'];
@@ -65,4 +66,47 @@ describe('backend-compatible visual booleans', () => {
       expect(runVisualConfig(doc.toString()).visualValues[key]).toBe(DEFAULT_VISUAL_VALUES[key]);
     });
   }
+});
+
+describe('core visual booleans read YAML 1.1 spellings like the backend', () => {
+  const cases: [keyof typeof DEFAULT_VISUAL_VALUES, string[], boolean][] = [
+    ['debug', ['observability', 'logs', 'debug'], false],
+    ['loggingToFile', ['observability', 'logs', 'logging-to-file'], false],
+    ['commercialMode', ['server', 'commercial-mode'], false],
+    ['tlsEnable', ['server', 'tls', 'enable'], false],
+    ['pluginsEnabled', ['plugins', 'enabled'], false],
+    ['routingSessionAffinity', ['routing', 'session-affinity'], false],
+    ['disableCooling', ['routing', 'cooldown', 'disable-cooling'], false],
+    [
+      'antigravitySignatureCacheEnabled',
+      ['oauth', 'providers', 'antigravity', 'signature-cache-enabled'],
+      true,
+    ],
+  ];
+
+  for (const [key, path, fallback] of cases) {
+    test(key, () => {
+      for (const [spelling, expected] of [
+        ['no', false],
+        ['off', false],
+        ['yes', true],
+        ['on', true],
+        ['nonsense', fallback],
+      ] as const) {
+        const doc = parseDocument('{}');
+        doc.setIn(path, 'BOOL_FIXTURE');
+        const yaml = doc.toString().replace('BOOL_FIXTURE', spelling);
+        expect(runVisualConfig(yaml).visualValues[key]).toBe(expected);
+      }
+    });
+  }
+});
+
+describe('visual writer failures', () => {
+  test('throw instead of returning the YAML unchanged', () => {
+    const yaml = 'observability:\n  # logs:\n  #   debug: true\n';
+    const config = runVisualConfig(yaml, [{ debug: true }]);
+    expect(config.visualDirty).toBe(true);
+    expect(() => config.applyVisualChangesToYaml(yaml)).toThrow(VisualConfigWriteError);
+  });
 });

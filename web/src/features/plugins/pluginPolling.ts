@@ -14,6 +14,10 @@ const wait = (ms: number) =>
     window.setTimeout(resolve, ms);
   });
 
+/** Polling stops once its page is gone, so no state or toast lands after navigation. */
+export const isPollAbort = (error: unknown): boolean =>
+  error instanceof DOMException && error.name === 'AbortError';
+
 export interface PluginStateWaitResult {
   response: PluginListResponse;
   plugin: PluginListEntry | null;
@@ -30,12 +34,15 @@ export async function waitForPluginState(
   id: string,
   predicate: (plugin: PluginListEntry, response: PluginListResponse) => boolean,
   timeoutMs = PLUGIN_STATE_TIMEOUT_MS,
-  intervalMs = PLUGIN_STATE_INTERVAL_MS
+  intervalMs = PLUGIN_STATE_INTERVAL_MS,
+  signal?: AbortSignal
 ): Promise<PluginStateWaitResult> {
   const deadline = Date.now() + timeoutMs;
+  signal?.throwIfAborted();
   let latest = await pluginsApi.list();
 
   for (;;) {
+    signal?.throwIfAborted();
     const plugin = latest.plugins.find((item) => item.id === id) ?? null;
     if (plugin && predicate(plugin, latest)) {
       return { response: latest, plugin, timedOut: false };
@@ -44,6 +51,7 @@ export async function waitForPluginState(
       return { response: latest, plugin, timedOut: true };
     }
     await wait(Math.min(intervalMs, Math.max(0, deadline - Date.now())));
+    signal?.throwIfAborted();
     latest = await pluginsApi.list();
   }
 }
@@ -53,12 +61,15 @@ export async function waitForPluginStoreState(
   sourceId: string,
   predicate: (plugin: PluginStoreEntry, response: PluginStoreResponse) => boolean,
   timeoutMs = PLUGIN_STATE_TIMEOUT_MS,
-  intervalMs = PLUGIN_STATE_INTERVAL_MS
+  intervalMs = PLUGIN_STATE_INTERVAL_MS,
+  signal?: AbortSignal
 ): Promise<PluginStoreStateWaitResult> {
   const deadline = Date.now() + timeoutMs;
+  signal?.throwIfAborted();
   let latest = await pluginStoreApi.list();
 
   for (;;) {
+    signal?.throwIfAborted();
     const plugin =
       latest.plugins.find((item) => item.id === id && (!sourceId || item.sourceId === sourceId)) ??
       null;
@@ -69,6 +80,7 @@ export async function waitForPluginStoreState(
       return { response: latest, plugin, timedOut: true };
     }
     await wait(Math.min(intervalMs, Math.max(0, deadline - Date.now())));
+    signal?.throwIfAborted();
     latest = await pluginStoreApi.list();
   }
 }

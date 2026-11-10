@@ -11,13 +11,14 @@ import type {
   PayloadParamEntry,
   PayloadParamValueType,
   PayloadRule,
-  RoutingStrategy,
   VisualConfigValues,
   VisualConfigValidationErrors,
   PayloadParamValidationErrorCode,
 } from '@/types/visualConfig';
 import { DEFAULT_VISUAL_VALUES } from '@/types/visualConfig';
 import { assertConfigListsUnchanged, ConfigDraftConflictError } from '@/services/api/configPatch';
+import { normalizeRoutingStrategy } from '@/services/api/routing';
+import { readConfigBoolean } from '@/features/config/visualConfigBoolean';
 import {
   ADDITION_FIELDS,
   ICE_KEY,
@@ -33,6 +34,14 @@ import {
   writeVisualServer,
   validateVisualServer,
 } from '@/features/config/visualConfigServer';
+
+/** The edited fields could not be written into the YAML document; the edits stay dirty. */
+export class VisualConfigWriteError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'VisualConfigWriteError';
+  }
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -415,20 +424,6 @@ function parsePayloadProtocol(raw: unknown): string | undefined {
   return raw.trim() ? raw : undefined;
 }
 
-export function parseRoutingStrategy(raw: unknown): RoutingStrategy {
-  const normalized = String(raw ?? '')
-    .trim()
-    .toLowerCase();
-  if (['weighted-round-robin', 'weightedroundrobin', 'wrr'].includes(normalized)) {
-    return 'weighted-round-robin';
-  }
-  if (['fill-first', 'fillfirst', 'ff'].includes(normalized)) return 'fill-first';
-  if (['soonest-reset-first', 'soonestresetfirst', 'srf'].includes(normalized)) {
-    return 'soonest-reset-first';
-  }
-  return 'round-robin';
-}
-
 export function parseDisableImageGenerationMode(raw: unknown): DisableImageGenerationMode {
   if (raw === true) return 'true';
   if (typeof raw === 'string') {
@@ -531,7 +526,7 @@ function parsePluginStoreAuthRules(raw: unknown): PluginStoreAuthRule[] {
         headerName: typeof record['header-name'] === 'string' ? record['header-name'] : '',
         headerValueEnv:
           typeof record['header-value-env'] === 'string' ? record['header-value-env'] : '',
-        allowInsecure: Boolean(record['allow-insecure'] ?? record.allow_insecure),
+        allowInsecure: readConfigBoolean(record['allow-insecure'] ?? record.allow_insecure, false),
       };
       return rule.match.trim() ||
         rule.type !== 'none' ||
@@ -1423,42 +1418,48 @@ function parseVisualValuesFromYaml(yamlContent: string): VisualConfigValues {
     host: typeof v8Server?.['host'] === 'string' ? v8Server?.['host'] : '',
     port: String(v8Server?.['port'] ?? ''),
 
-    tlsEnable: Boolean(tls?.enable),
+    tlsEnable: readConfigBoolean(tls?.enable, false),
     tlsCert: typeof tls?.cert === 'string' ? tls.cert : '',
     tlsKey: typeof tls?.key === 'string' ? tls.key : '',
 
-    rmAllowRemote: Boolean(remoteManagement?.['allow-remote']),
+    rmAllowRemote: readConfigBoolean(remoteManagement?.['allow-remote'], false),
     rmSecretKey:
       typeof remoteManagement?.['secret-key'] === 'string' ? remoteManagement['secret-key'] : '',
-    rmDisableControlPanel: Boolean(remoteManagement?.['disable-control-panel']),
-    rmDisableAutoUpdatePanel: Boolean(remoteManagement?.['disable-auto-update-panel']),
+    rmDisableControlPanel: readConfigBoolean(remoteManagement?.['disable-control-panel'], false),
+    rmDisableAutoUpdatePanel: readConfigBoolean(
+      remoteManagement?.['disable-auto-update-panel'],
+      false
+    ),
     rmPanelRepo:
       typeof remoteManagement?.['panel-github-repository'] === 'string'
         ? remoteManagement['panel-github-repository']
         : '',
 
     authDir: typeof v8Oauth?.['auth-dir'] === 'string' ? v8Oauth?.['auth-dir'] : '',
-    pluginsEnabled: Boolean(plugins?.enabled),
+    pluginsEnabled: readConfigBoolean(plugins?.enabled, false),
     pluginStoreSources: parseStringList(plugins?.['store-sources']),
     pluginStoreAuth: parsePluginStoreAuthRules(plugins?.['store-auth']),
 
-    debug: Boolean(v8ObservabilityLogs?.['debug']),
-    commercialMode: Boolean(v8Server?.['commercial-mode']),
-    loggingToFile: Boolean(v8ObservabilityLogs?.['logging-to-file']),
+    debug: readConfigBoolean(v8ObservabilityLogs?.['debug'], false),
+    commercialMode: readConfigBoolean(v8Server?.['commercial-mode'], false),
+    loggingToFile: readConfigBoolean(v8ObservabilityLogs?.['logging-to-file'], false),
     logsMaxTotalSizeMb: String(v8ObservabilityLogs?.['logs-max-total-size-mb'] ?? ''),
     errorLogsMaxFiles: String(v8ObservabilityLogs?.['error-logs-max-files'] ?? ''),
-    usageStatisticsEnabled: Boolean(v8ObservabilityUsage?.['usage-statistics-enabled']),
+    usageStatisticsEnabled: readConfigBoolean(
+      v8ObservabilityUsage?.['usage-statistics-enabled'],
+      false
+    ),
     redisUsageQueueRetentionSeconds: String(
       v8ObservabilityUsage?.['redis-usage-queue-retention-seconds'] ?? ''
     ),
 
     proxyUrl: typeof v8Requests?.['proxy-url'] === 'string' ? v8Requests?.['proxy-url'] : '',
-    forceModelPrefix: Boolean(v8Routing?.['force-model-prefix']),
-    passthroughHeaders: Boolean(v8Requests?.['passthrough-headers']),
+    forceModelPrefix: readConfigBoolean(v8Routing?.['force-model-prefix'], false),
+    passthroughHeaders: readConfigBoolean(v8Requests?.['passthrough-headers'], false),
     requestRetry: String(v8RoutingRetry?.['request-retry'] ?? ''),
     maxRetryCredentials: String(v8RoutingRetry?.['max-retry-credentials'] ?? ''),
     maxRetryInterval: String(v8RoutingRetry?.['max-retry-interval'] ?? ''),
-    disableCooling: Boolean(v8RoutingCooldown?.['disable-cooling']),
+    disableCooling: readConfigBoolean(v8RoutingCooldown?.['disable-cooling'], false),
     disableImageGeneration: parseDisableImageGenerationMode(
       v8Multimedia?.['disable-image-generation']
     ),
@@ -1467,13 +1468,15 @@ function parseVisualValuesFromYaml(yamlContent: string): VisualConfigValues {
         ? v8Multimedia?.['gpt-image-2-base-model']
         : '',
     authAutoRefreshWorkers: String(v8Oauth?.['auth-auto-refresh-workers'] ?? ''),
-    wsAuth: Boolean(v8OauthProvidersAistudio?.['ws-auth'] ?? DEFAULT_VISUAL_VALUES.wsAuth),
+    wsAuth: readConfigBoolean(v8OauthProvidersAistudio?.['ws-auth'], DEFAULT_VISUAL_VALUES.wsAuth),
     antigravitySensitiveWords: parseStringList(antigravity?.['sensitive-words']),
-    antigravitySignatureCacheEnabled: Boolean(
-      v8OauthProvidersAntigravity?.['signature-cache-enabled'] ?? true
+    antigravitySignatureCacheEnabled: readConfigBoolean(
+      v8OauthProvidersAntigravity?.['signature-cache-enabled'],
+      true
     ),
-    antigravitySignatureBypassStrict: Boolean(
-      v8OauthProvidersAntigravity?.['signature-bypass-strict']
+    antigravitySignatureBypassStrict: readConfigBoolean(
+      v8OauthProvidersAntigravity?.['signature-bypass-strict'],
+      false
     ),
 
     claudeHeaderUserAgent:
@@ -1493,7 +1496,10 @@ function parseVisualValuesFromYaml(yamlContent: string): VisualConfigValues {
       typeof claudeHeaderDefaults?.arch === 'string' ? claudeHeaderDefaults.arch : '',
     claudeHeaderTimeout:
       typeof claudeHeaderDefaults?.timeout === 'string' ? claudeHeaderDefaults.timeout : '',
-    claudeHeaderStabilizeDeviceProfile: Boolean(claudeHeaderDefaults?.['stabilize-device-profile']),
+    claudeHeaderStabilizeDeviceProfile: readConfigBoolean(
+      claudeHeaderDefaults?.['stabilize-device-profile'],
+      false
+    ),
     codexHeaderUserAgent:
       typeof codexHeaderDefaults?.['user-agent'] === 'string'
         ? codexHeaderDefaults['user-agent']
@@ -1503,10 +1509,10 @@ function parseVisualValuesFromYaml(yamlContent: string): VisualConfigValues {
         ? codexHeaderDefaults['beta-features']
         : '',
 
-    quotaAntigravityCredits: Boolean(antigravity?.['antigravity-credits'] ?? false),
+    quotaAntigravityCredits: readConfigBoolean(antigravity?.['antigravity-credits'], false),
 
-    routingStrategy: parseRoutingStrategy(routing?.strategy),
-    routingSessionAffinity: Boolean(routing?.['session-affinity']),
+    routingStrategy: normalizeRoutingStrategy(routing?.strategy),
+    routingSessionAffinity: readConfigBoolean(routing?.['session-affinity'], false),
     routingSessionAffinityTTL:
       typeof routing?.['session-affinity-ttl'] === 'string' ? routing['session-affinity-ttl'] : '',
 
@@ -2060,7 +2066,7 @@ export function useVisualConfig() {
         return draftYaml;
       } catch (error) {
         if (error instanceof ConfigDraftConflictError) throw error;
-        return currentYaml;
+        throw new VisualConfigWriteError(error);
       }
     },
     [baselineValues, baselineYaml, dirtyFields, visualValues, rebasedPayload]

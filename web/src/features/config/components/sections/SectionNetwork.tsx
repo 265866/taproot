@@ -75,7 +75,7 @@ export function SectionNetwork({
           size="sm"
           label={t('config_management.visual.sections.network.request_retry')}
           type="number"
-          placeholder="3"
+          placeholder="0"
           value={values.requestRetry}
           onChange={(requestRetry) => onChange({ requestRetry })}
           disabled={disabled}

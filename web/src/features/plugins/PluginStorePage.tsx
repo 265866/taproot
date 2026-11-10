@@ -38,7 +38,7 @@ import {
   supportsPluginVersionSelection,
   type PluginReleaseVersion,
 } from './pluginReleaseVersions';
-import { waitForPluginStoreState } from './pluginPolling';
+import { isPollAbort, waitForPluginStoreState } from './pluginPolling';
 import styles from './PluginStorePage.module.scss';
 
 type StoreStatusFilter = 'all' | 'installed' | 'notInstalled' | 'updates';
@@ -479,6 +479,13 @@ export function PluginStorePage() {
   const [expandedDescriptionKeys, setExpandedDescriptionKeys] = useState<string[]>([]);
   const [overflowingDescriptionKeys, setOverflowingDescriptionKeys] = useState<string[]>([]);
   const descriptionRefs = useRef<Record<string, HTMLParagraphElement | null>>({});
+  const pollAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    pollAbort.current = controller;
+    return () => controller.abort();
+  }, []);
 
   // Multi-step install gauntlet, shown only for non-official (third-party) plugins.
   const [gateOpen, setGateOpen] = useState(false);
@@ -679,7 +686,10 @@ export function PluginStorePage() {
           (plugin) =>
             plugin.installed &&
             plugin.configured &&
-            (!version || pluginVersionMatches(plugin.installedVersion, version))
+            (!version || pluginVersionMatches(plugin.installedVersion, version)),
+          undefined,
+          undefined,
+          pollAbort.current?.signal
         );
         setData(installedState.response);
         if (
@@ -716,7 +726,10 @@ export function PluginStorePage() {
           const registeredState = await waitForPluginStoreState(
             entry.id,
             sourceId,
-            (plugin) => plugin.registered && plugin.effectiveEnabled
+            (plugin) => plugin.registered && plugin.effectiveEnabled,
+            undefined,
+            undefined,
+            pollAbort.current?.signal
           );
           setData(registeredState.response);
           if (
@@ -735,6 +748,7 @@ export function PluginStorePage() {
           'success'
         );
       } catch (err: unknown) {
+        if (isPollAbort(err)) return;
         showNotification(`${t(failedKey)}: ${getErrorMessage(err, t(failedKey))}`, 'error');
         throw err;
       } finally {

@@ -200,6 +200,20 @@ describe('applyConfigPatch', () => {
     expect(revision).toHaveBeenCalledTimes(6);
   });
 
+  test('sends If-Match on the first write only', async () => {
+    const { calls } = setup();
+    const plan = buildConfigPatch('a: {x: 1}\nb: 2\nc: 1', 'a: {}\nc: 2');
+    await applyConfigPatch(plan, 7, '"etag-1"');
+    expect(calls).toEqual([
+      ['PATCH', '/config', { c: 2 }, { headers: { 'If-Match': '"etag-1"' } }],
+      ['PUT', '/config/a', {}],
+      ['DELETE', '/config/b'],
+    ]);
+    calls.length = 0;
+    await applyConfigPatch(buildConfigPatch('a: 1', '{}'), 7, '"etag-2"');
+    expect(calls).toEqual([['DELETE', '/config/a', { headers: { 'If-Match': '"etag-2"' } }]]);
+  });
+
   test('no-op performs no requests; deletion-only skips PATCH', async () => {
     const { calls } = setup();
     await applyConfigPatch(buildConfigPatch('{}', '{}'), 7);

@@ -19,6 +19,7 @@ import {
   type RoutingStrategy,
 } from '@/types/routing';
 import { isRecord } from '@/utils/helpers';
+import { readConfigBoolean } from '@/features/config/visualConfigBoolean';
 
 const MODEL_REQUEST_CONCURRENCY = 4;
 
@@ -37,15 +38,15 @@ const readText = (value: unknown): string => (typeof value === 'string' ? value.
 const readPath = (root: unknown, path: readonly string[]): unknown =>
   path.reduce<unknown>((value, key) => (isRecord(value) ? value[key] : undefined), root);
 
+/** Reads routing.strategy exactly as the server does, so the board shows the strategy it runs. */
 export function normalizeRoutingStrategy(value: unknown): RoutingStrategy {
-  const text = readText(value)
-    .toLowerCase()
-    .replace(/[\s_]+/g, '-');
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (['weighted-round-robin', 'weightedroundrobin', 'wrr'].includes(text)) {
     return 'weighted-round-robin';
   }
   if (['fill-first', 'fillfirst', 'ff'].includes(text)) return 'fill-first';
-  if (['soonest-reset-first', 'soonestresetfirst', 'srf'].includes(text)) {
+  // Only taproot's own strategy also accepts `_` and spaces for `-`.
+  if (['soonest-reset-first', 'soonestresetfirst', 'srf'].includes(text.replace(/[_ ]/g, '-'))) {
     return 'soonest-reset-first';
   }
   // CPA runs an unrecognised strategy as round-robin.
@@ -56,7 +57,7 @@ export function readRoutingSettings(raw: unknown): RoutingSettings {
   const routing = readPath(raw, ['routing']);
   return {
     strategy: normalizeRoutingStrategy(readPath(routing, ['strategy'])),
-    sessionAffinity: readPath(routing, ['session-affinity']) === true,
+    sessionAffinity: readConfigBoolean(readPath(routing, ['session-affinity']), false),
     requestRetry: Math.max(0, readInteger(readPath(routing, ['retry', 'request-retry'])) ?? 0),
     maxRetryCredentials: Math.max(
       0,

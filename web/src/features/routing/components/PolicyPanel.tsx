@@ -1,13 +1,45 @@
-import { useId, useRef, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { ROUTING_STRATEGIES, type RoutingSettings, type RoutingStrategy } from '@/types/routing';
+import { parseCount } from '../logic';
 import styles from '../RoutingPage.module.scss';
 
 const strategyKey = (strategy: RoutingStrategy) => strategy.replace(/-/g, '_');
 
-const RETRY_MAX = 100;
-const CREDENTIALS_MAX = 1000;
+/** Commits each valid count as typed; an empty or invalid entry reverts when the field blurs. */
+function CountInput({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    if (parseCount(text) !== value) setText(String(value));
+  }
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={0}
+      step={1}
+      value={text}
+      disabled={disabled}
+      onChange={(event) => {
+        setText(event.target.value);
+        const next = parseCount(event.target.value);
+        if (next !== null && next !== value) onChange(next);
+      }}
+      onBlur={() => setText(String(value))}
+    />
+  );
+}
 
 export interface PolicyPanelProps {
   settings: RoutingSettings;
@@ -70,12 +102,6 @@ export function PolicyPanel({ settings, disabled = false, onChange }: PolicyPane
       event.preventDefault();
       selectStrategy(current - 1);
     }
-  };
-
-  const readCount = (value: string, max: number): number => {
-    const parsed = Number.parseInt(value, 10);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.min(max, Math.max(0, parsed));
   };
 
   return (
@@ -154,15 +180,10 @@ export function PolicyPanel({ settings, disabled = false, onChange }: PolicyPane
             <span className={styles.policyRowLabel}>{t('routing.request_retry')}</span>
             <span className={styles.policyHint}>{t('routing.request_retry_desc')}</span>
           </span>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={RETRY_MAX}
-            step={1}
+          <CountInput
             value={settings.requestRetry}
             disabled={disabled}
-            onChange={(event) => update({ requestRetry: readCount(event.target.value, RETRY_MAX) })}
+            onChange={(requestRetry) => update({ requestRetry })}
           />
         </label>
         <label className={styles.numberField}>
@@ -170,17 +191,10 @@ export function PolicyPanel({ settings, disabled = false, onChange }: PolicyPane
             <span className={styles.policyRowLabel}>{t('routing.max_retry_credentials')}</span>
             <span className={styles.policyHint}>{t('routing.max_retry_credentials_desc')}</span>
           </span>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={CREDENTIALS_MAX}
-            step={1}
+          <CountInput
             value={settings.maxRetryCredentials}
             disabled={disabled}
-            onChange={(event) =>
-              update({ maxRetryCredentials: readCount(event.target.value, CREDENTIALS_MAX) })
-            }
+            onChange={(maxRetryCredentials) => update({ maxRetryCredentials })}
           />
         </label>
       </section>

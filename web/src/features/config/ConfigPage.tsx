@@ -1,6 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -8,6 +9,7 @@ import { useRevealGroup } from '@/hooks/motion';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useVisualConfig } from '@/hooks/useVisualConfig';
 import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import { getErrorMessage } from '@/utils/helpers';
 import {
   CONFIG_MODE_STORAGE_KEY,
   CONFIG_SECTION_STORAGE_KEY,
@@ -130,6 +132,8 @@ export function ConfigPage() {
     [t]
   );
 
+  useHeaderRefresh(doc.refresh);
+
   useUnsavedChangesGuard({
     enabled: isCurrentLayer,
     shouldBlock: doc.isDirty,
@@ -162,7 +166,16 @@ export function ConfigPage() {
       if (nextMode === 'source') {
         if (visualDirty) {
           // content may be an earlier local source preview, not a server readback.
-          const nextContent = applyVisualChangesToYaml(doc.content, 'draft');
+          let nextContent: string;
+          try {
+            nextContent = applyVisualChangesToYaml(doc.content, 'draft');
+          } catch (error: unknown) {
+            showNotification(
+              t('config_management.visual_write_failed', { message: getErrorMessage(error) }),
+              'error'
+            );
+            return;
+          }
           if (nextContent !== doc.content) {
             doc.syncContentFromVisual(nextContent);
           }
@@ -392,6 +405,9 @@ export function ConfigPage() {
         open={doc.diffModalOpen}
         original={doc.serverYaml}
         modified={doc.mergedYaml}
+        notice={
+          doc.reviewNotice ? t(`config_management.diff.notice_${doc.reviewNotice}`) : undefined
+        }
         onConfirm={doc.handleConfirmSave}
         onCancel={doc.closeDiff}
         loading={doc.saving}
