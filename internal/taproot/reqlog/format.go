@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -403,16 +404,19 @@ func sensitiveParam(name string) bool {
 
 // decodeResponse undoes Content-Encoding on non-streaming bodies the way
 // upstream's logger does, so stored responses are readable and compressible.
-func decodeResponse(headers map[string][]string, body []byte) ([]byte, error) {
+// The decoded bytes hold their share of b, returned as held, so a
+// decompression bomb stops at the budget; the caller releases held. On any
+// error the body stays as it came.
+func decodeResponse(headers map[string][]string, body []byte, b *budget) (decoded []byte, held int64, err error) {
 	if len(body) == 0 {
-		return body, nil
+		return body, 0, nil
 	}
 	var reader io.Reader
 	switch strings.ToLower(headerValue(headers, "Content-Encoding")) {
 	case "gzip":
 		gz, err := gzip.NewReader(bytes.NewReader(body))
 		if err != nil {
-			return body, fmt.Errorf("failed to create gzip reader: %w", err)
+			return body, 0, fmt.Errorf("failed to create gzip reader: %w", err)
 		}
 		defer func() { _ = gz.Close() }()
 		reader = gz
@@ -425,16 +429,34 @@ func decodeResponse(headers map[string][]string, body []byte) ([]byte, error) {
 	case "zstd":
 		dec, err := zstd.NewReader(bytes.NewReader(body), zstd.WithDecoderConcurrency(1))
 		if err != nil {
-			return body, fmt.Errorf("failed to create zstd reader: %w", err)
+			return body, 0, fmt.Errorf("failed to create zstd reader: %w", err)
 		}
 		defer dec.Close()
 		reader = dec
 	default:
-		return body, nil
+		return body, 0, nil
 	}
-	decoded, err := io.ReadAll(reader)
-	if err != nil {
-		return body, fmt.Errorf("failed to decompress response: %w", err)
+	out := &budgetWriter{budget: b}
+	if _, err := io.Copy(out, reader); err != nil {
+		b.release(out.held)
+		return body, 0, fmt.Errorf("failed to decompress response: %w", err)
 	}
-	return decoded, nil
+	return out.buf.Bytes(), out.held, nil
+}
+
+var errBudgetFull = errors.New("log queue full")
+
+// budgetWriter buffers what it is given, reserving each write in budget.
+type budgetWriter struct {
+	budget *budget
+	buf    bytes.Buffer
+	held   int64
+}
+
+func (w *budgetWriter) Write(p []byte) (int, error) {
+	if !w.budget.reserve(int64(len(p))) {
+		return 0, errBudgetFull
+	}
+	w.held += int64(len(p))
+	return w.buf.Write(p)
 }

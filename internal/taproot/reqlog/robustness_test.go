@@ -2,6 +2,7 @@ package reqlog
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -497,5 +498,62 @@ func TestIdleStreamReleasesBudget(t *testing.T) {
 	}
 	if d, err := h.logs.Get(context.Background(), "busy", true); err != nil || d.Response.Body != "data: 1\n\ndata: 2\n\n" {
 		t.Fatalf("busy stream: %v", err)
+	}
+}
+
+func TestDecodeResponseStopsAtBudget(t *testing.T) {
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write(make([]byte, 8<<20))
+	_ = zw.Close()
+	headers := map[string][]string{"Content-Encoding": {"gzip"}}
+
+	b := &budget{limit: 1 << 20}
+	got, held, err := decodeResponse(headers, gz.Bytes(), b)
+	if err == nil || held != 0 || !bytes.Equal(got, gz.Bytes()) {
+		t.Fatalf("bomb decoded to %d bytes, held %d, err %v; want the compressed body back and an error", len(got), held, err)
+	}
+	if used := b.used.Load(); used != 0 {
+		t.Fatalf("budget after a stopped decode: %d", used)
+	}
+
+	b = &budget{limit: 16 << 20}
+	got, held, err = decodeResponse(headers, gz.Bytes(), b)
+	if err != nil || len(got) != 8<<20 || held != 8<<20 || b.used.Load() != held {
+		t.Fatalf("decode within budget: %d bytes, held %d, used %d, err %v", len(got), held, b.used.Load(), err)
+	}
+}
+
+// TestSpooledSectionsOverBudgetStayOnDisk checks that a spooled section
+// larger than the free budget is not read into memory: the record keeps its
+// metadata, its bodies are dropped, and no budget stays held.
+func TestSpooledSectionsOverBudgetStayOnDisk(t *testing.T) {
+	h := newHarness(t, Config{QueueBytes: 1 << 20})
+	lg := h.logs.logger
+	src, err := lg.NewFileBodySource("api-response")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := src.AppendBytes(bytes.Repeat([]byte("x"), 2<<20)); err != nil {
+		t.Fatal(err)
+	}
+	if held, ok := lg.holdSpooled(src); ok || held != 0 {
+		t.Fatalf("holdSpooled = %d, %v for 2 MiB against a 1 MiB budget", held, ok)
+	}
+	ts := h.clock.now()
+	if err := lg.LogRequestWithOptionsAndAllSources("/v1/messages", "POST", nil, []byte(`{"model":"m"}`), 200, nil, []byte(`{}`), nil, nil,
+		[]byte("=== API REQUEST 1 ===\nx\n"), nil, nil, src, nil, nil, nil, false, "spooled", ts, ts); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+	d, err := h.logs.Get(context.Background(), "spooled", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Meta.Model != "m" || strings.Contains(d.Upstream.Response, "xxxx") || !strings.Contains(d.Request.Body, "log queue full") {
+		t.Fatalf("record: model %q, request body %q, upstream response %d bytes", d.Meta.Model, d.Request.Body, len(d.Upstream.Response))
+	}
+	if used := h.logs.engine.budget.used.Load(); used != 0 {
+		t.Fatalf("budget held after the record was written: %d", used)
 	}
 }

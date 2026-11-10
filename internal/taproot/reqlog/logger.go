@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -142,6 +143,10 @@ func (l *requestLogger) LogRequestWithOptionsAndAllSources(url, method string, r
 	if requestTimestamp.IsZero() {
 		requestTimestamp = l.now()
 	}
+	held, fits := l.holdSpooled(websocketTimelineSource, apiWebsocketTimelineSource, apiRequestSource, apiResponseSource)
+	if !fits {
+		websocketTimelineSource, apiWebsocketTimelineSource, apiRequestSource, apiResponseSource = nil, nil, nil, nil
+	}
 	c := &capture{
 		url:             url,
 		method:          method,
@@ -164,9 +169,48 @@ func (l *requestLogger) LogRequestWithOptionsAndAllSources(url, method string, r
 		// time and can finish an event stream through this buffered path.
 		streaming: isEventStream(responseHeaders),
 	}
-	c.responseBody, c.decompressErr = decodeResponse(responseHeaders, response)
-	l.engine.submit(c)
+	var decodedHeld int64
+	c.responseBody, decodedHeld, c.decompressErr = decodeResponse(responseHeaders, response, &l.engine.budget)
+	l.submitHeld(c, held+decodedHeld, fits)
 	return nil
+}
+
+// holdSpooled reserves budget for the spooled sections read into memory
+// before submit charges the record, so concurrent large records cannot
+// exceed the budget in between. It reports false, holding nothing, when they
+// do not fit; the caller then leaves them unread.
+func (l *requestLogger) holdSpooled(sources ...*logging.FileBodySource) (int64, bool) {
+	var n int64
+	for _, source := range sources {
+		if !source.HasPayload() {
+			continue
+		}
+		for _, path := range source.Paths() {
+			if info, err := os.Stat(path); err == nil {
+				n += info.Size()
+			}
+		}
+	}
+	if n == 0 {
+		return 0, true
+	}
+	if !l.engine.budget.reserve(n) {
+		return 0, false
+	}
+	return n, true
+}
+
+// submitHeld hands c to the engine, which charges its bodies itself, after
+// releasing what the caller held while reading them. A capture whose spooled
+// sections did not fit keeps its metadata only.
+func (l *requestLogger) submitHeld(c *capture, held int64, fits bool) {
+	l.engine.budget.release(held)
+	if !fits {
+		c.identify()
+		c.dropBodies("log queue full")
+		l.engine.stats.droppedBodies.Add(1)
+	}
+	l.engine.submit(c)
 }
 
 func (l *requestLogger) LogStreamingRequest(url, method string, headers map[string][]string, body []byte, requestID string) (logging.StreamingLogWriter, error) {
@@ -369,8 +413,11 @@ func (w *streamWriter) Close() error {
 		return nil
 	}
 	c := w.c
-	c.apiRequest = mergeSource(c.apiRequest, w.apiReqSrc)
-	c.apiResponse = mergeSource(c.apiResponse, w.apiResSrc)
+	held, fits := l.holdSpooled(w.apiReqSrc, w.apiResSrc)
+	if fits {
+		c.apiRequest = mergeSource(c.apiRequest, w.apiReqSrc)
+		c.apiResponse = mergeSource(c.apiResponse, w.apiResSrc)
+	}
 	c.responseBody = w.chunks.Bytes()
 	if w.truncated > 0 {
 		l.engine.stats.truncated.Add(1)
@@ -379,7 +426,7 @@ func (w *streamWriter) Close() error {
 	}
 	w.chunks = bytes.Buffer{}
 	c.finishedAt = l.now()
-	l.engine.submit(&c)
+	l.submitHeld(&c, held, fits)
 	return nil
 }
 
