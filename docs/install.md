@@ -114,7 +114,11 @@ The flake's NixOS module, `services.taproot`, builds taproot from source and run
 }
 ```
 
-The module keeps loopback callers out and requires `taprootSettings`, so give Admin there to the device you manage taproot from. Its stable ID is the `ID` that `tailscale status --json` prints under `Self` on that device.
+The module keeps loopback callers out and requires `taprootSettings`, so give Admin there to the device you manage taproot from. Its stable ID is the `ID` that `tailscale status --json` prints under `Self` on that device. Taproot listens only on a literal Tailscale address. An IPv6 `tailscale.address`, from `tailscale ip -6`, also works; the module puts it in brackets.
+
+With `follows`, taproot builds with your nixpkgs, which must have at least the Go version on the `go` line of taproot's `go.mod`. An older one stops the evaluation with a message that names both versions. Update your nixpkgs input, or remove the `follows` line so that taproot uses its own locked nixpkgs.
+
+Everything in `services.taproot.settings` and `taprootSettings` goes into the Nix store, which every local user can read. Keep secrets out of them: set the Discord webhook for alerts with `services.taproot.discordWebhookFile`, a file outside the store such as `/run/secrets/taproot-discord-webhook`, or in the dashboard. Like `taprootSettings`, the file seeds `taproot.yaml` only when that file is created. Put other secrets, such as `MANAGEMENT_PASSWORD`, in `services.taproot.environmentFile`.
 
 Nix owns `config.yaml` and writes it from `services.taproot.settings` on every start, so a dashboard change to it lasts until the next restart. Nix seeds `taproot.yaml` from `taprootSettings` only while the file does not exist. After that the dashboard owns `taproot.yaml`, and later changes to `taprootSettings` do not apply. The data directory is `/var/lib/taproot`. [`nix/module.nix`](../nix/module.nix) documents every option.
 
