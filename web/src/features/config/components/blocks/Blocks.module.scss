@@ -238,7 +238,7 @@
 
   &.apiKeyDelete:focus-visible {
     background: var(--destructive-10);
-    color: var(--error-color);
+    color: var(--failure-badge-text);
   }
 }
 
@@ -249,7 +249,7 @@
 
   .apiKeyRow .apiKeyActions :global(.btn.btn-ghost).apiKeyDelete:hover {
     background: var(--destructive-10);
-    color: var(--error-color);
+    color: var(--failure-badge-text);
   }
 }
 

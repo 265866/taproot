@@ -4,15 +4,21 @@
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
   min-width: 0;
   flex: 1;
 
-  &::-webkit-scrollbar {
-    display: none;
+  /* A pointer cannot scroll a hidden scrollbar, so wide screens wrap; phones swipe. */
+  @include mobile {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
   }
 }
 
@@ -103,7 +109,7 @@
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 1.6;
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
   padding: 0 6px;
   border-radius: $radius-full;
   background: color-mix(in srgb, var(--viz-failure) 12%, transparent);

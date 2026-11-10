@@ -64,11 +64,11 @@
 }
 
 .metaError {
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
 }
 
 .metaOk {
-  color: var(--viz-success);
+  color: var(--success-badge-text);
 }
 
 /* ---------- 动作区 ---------- */

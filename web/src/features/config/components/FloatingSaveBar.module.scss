@@ -44,7 +44,7 @@
 }
 
 .statusError {
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
 }
 
 .statusBusy,
@@ -53,7 +53,7 @@
 }
 
 .statusOk {
-  color: var(--viz-success);
+  color: var(--success-badge-text);
 }
 
 .actionsGroup {
