@@ -259,3 +259,27 @@ func TestAlertDroppedFromAFullQueueWaitsForItsRetry(t *testing.T) {
 		t.Fatalf("last post = %q, want the alert after its retry delay", got[len(got)-1])
 	}
 }
+
+// DeliveryHealth counts failed deliveries until one succeeds, for the
+// Dashboard's "alerts are not reaching Discord" item.
+func TestDeliveryHealthTracksFailuresUntilASuccess(t *testing.T) {
+	fake := &fakeDiscord{statuses: unavailable(maxAttempts)}
+	a, b := claudeAuth("a", "main"), claudeAuth("b", "spare")
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	if got := h.svc.DeliveryHealth(); got.Failures != 0 || !got.Active {
+		t.Fatalf("before any delivery: %+v, want active with no failures", got)
+	}
+	h.feed.hook(weeklyLimit(a.EnsureIndex(), t0.Add(48*time.Hour)))
+	h.step(t, 0)
+	h.posts(t)
+	got := h.svc.DeliveryHealth()
+	if got.Failures != 1 || got.FailingSince.IsZero() || !strings.Contains(got.LastError, "503") || strings.Contains(got.LastError, "s3cr") {
+		t.Fatalf("after a failed delivery: %+v, want one failure with Discord's status and no webhook token", got)
+	}
+	h.step(t, evalInterval)
+	h.step(t, retryFirst)
+	h.posts(t)
+	if got := h.svc.DeliveryHealth(); got.Failures != 0 || got.LastSuccess.IsZero() || got.LastError != "" {
+		t.Fatalf("after a delivered retry: %+v, want the failures cleared", got)
+	}
+}

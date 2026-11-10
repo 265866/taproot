@@ -436,3 +436,41 @@ func (i *Ingest) handleRequestsRecent(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"requests": out})
 }
+
+// RequestCounts is the client requests that started in a range.
+type RequestCounts struct {
+	Requests int64
+	// Failed leaves out requests the client abandoned (499 client_closed).
+	Failed int64
+	// ByProvider counts requests per provider; requests whose provider is
+	// unknown are under "".
+	ByProvider map[string]int64
+}
+
+// ClientRequestCounts counts the client requests that started in [from, to).
+// Requests still waiting for their late usage records are not written yet,
+// so the last two seconds or so may be missing.
+func (i *Ingest) ClientRequestCounts(ctx context.Context, from, to time.Time) (RequestCounts, error) {
+	out := RequestCounts{ByProvider: map[string]int64{}}
+	rows, err := i.db.QueryContext(ctx, `SELECT provider, COUNT(*), SUM(failed) FROM client_requests WHERE ts >= ? AND ts < ? GROUP BY provider`, ms(from), ms(to))
+	if err != nil {
+		return out, fmt.Errorf("count client requests: %w", err)
+	}
+	defer closeRows(rows)
+	for rows.Next() {
+		var (
+			provider         string
+			requests, failed int64
+		)
+		if err := rows.Scan(&provider, &requests, &failed); err != nil {
+			return out, fmt.Errorf("count client requests: %w", err)
+		}
+		out.Requests += requests
+		out.Failed += failed
+		out.ByProvider[provider] += requests
+	}
+	if err := rows.Err(); err != nil {
+		return out, fmt.Errorf("count client requests: %w", err)
+	}
+	return out, nil
+}

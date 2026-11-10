@@ -97,6 +97,9 @@ type Service struct {
 	deliveries []delivery
 	rearm      bool
 
+	healthMu sync.Mutex
+	health   DeliveryHealth
+
 	// startedAt and restoredLogins belong to the evaluation goroutine;
 	// loadState sets them before that goroutine starts.
 	startedAt time.Time
@@ -292,8 +295,52 @@ func (s *Service) observe(obs []ingest.QuotaObservation) {
 	s.signal()
 }
 
+// DeliveryHealth is how the latest deliveries to Discord went.
+type DeliveryHealth struct {
+	// Active is false while alerts are off, when nothing is delivered.
+	Active bool
+	// Failures counts the failed deliveries since the last success.
+	Failures int
+	// FailingSince is the first of those failures.
+	FailingSince time.Time
+	// LastError is the last failure, without the webhook URL.
+	LastError   string
+	LastSuccess time.Time
+}
+
+// DeliveryHealth reports the queue's recent delivery outcomes. The test
+// button's sends are not counted; nor are messages the queue skipped.
+func (s *Service) DeliveryHealth() DeliveryHealth {
+	s.healthMu.Lock()
+	h := s.health
+	s.healthMu.Unlock()
+	h.Active = s.Active()
+	return h
+}
+
+func (s *Service) recordDelivery(err error) {
+	if errors.Is(err, errNotSent) {
+		return
+	}
+	// This runs on the sender goroutine, so it reads the wall clock: s.now
+	// belongs to the evaluation.
+	now := time.Now()
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	if err == nil {
+		s.health = DeliveryHealth{LastSuccess: now}
+		return
+	}
+	if s.health.Failures == 0 {
+		s.health.FailingSince = now
+	}
+	s.health.Failures++
+	s.health.LastError = err.Error()
+}
+
 // delivered is the sender's result hook; it runs on the sender goroutine.
 func (s *Service) delivered(m Message, err error) {
+	s.recordDelivery(err)
 	if !m.tracked {
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -687,5 +688,30 @@ func TestClientRequestIndexes(t *testing.T) {
 		if !slices.Equal(cols, []string{"ts"}) {
 			t.Errorf("%s columns = %v, want [ts]", name, cols)
 		}
+	}
+}
+
+// The status verdict reads these counts: a request the client abandoned
+// (499 client_closed) is recorded as not failed and must not count as one.
+func TestClientRequestCounts(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	from := clock.t
+	seedClientRows(t, i, []ClientRequest{
+		{Start: from.Add(-time.Second), RequestID: "before", Provider: "claude", Status: 500, Failed: true, ErrorCode: "http_5xx"},
+		{Start: from, RequestID: "ok", Provider: "claude", Status: 200},
+		{Start: from.Add(time.Minute), RequestID: "fail", Provider: "codex", Status: 529, Failed: true, ErrorCode: "overloaded"},
+		{Start: from.Add(2 * time.Minute), RequestID: "closed", Provider: "claude", Status: 499, ErrorCode: "client_closed"},
+		{Start: from.Add(3 * time.Minute), RequestID: "noacct", Status: 400, Failed: true, ErrorCode: "no_accounts"},
+		{Start: from.Add(15 * time.Minute), RequestID: "after", Provider: "claude", Status: 500, Failed: true, ErrorCode: "http_5xx"},
+	})
+	got, err := i.ClientRequestCounts(context.Background(), from, from.Add(15*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Requests != 4 || got.Failed != 2 {
+		t.Errorf("requests %d failed %d, want 4 and 2 (the 499 is not a failure; the range is half-open)", got.Requests, got.Failed)
+	}
+	if want := map[string]int64{"claude": 2, "codex": 1, "": 1}; !reflect.DeepEqual(got.ByProvider, want) {
+		t.Errorf("by provider = %v, want %v", got.ByProvider, want)
 	}
 }

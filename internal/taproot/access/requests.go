@@ -439,6 +439,32 @@ func (g *Guard) HasOpenRequest(ctx context.Context, nodeID string) bool {
 	return open
 }
 
+// OpenRequests lists the open requests the Access page shows: those of
+// devices that lack Proxy or Admin, newest first. It is empty when requests
+// are not attached.
+func (g *Guard) OpenRequests(ctx context.Context) ([]AccessRequest, error) {
+	asks := g.asks.Load()
+	if asks == nil {
+		return nil, nil
+	}
+	open, err := asks.Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	grants := map[string]DeviceGrant{}
+	for _, d := range g.Grants().Devices {
+		grants[d.ID] = d
+	}
+	out := open[:0]
+	for _, a := range open {
+		if grant := grants[a.NodeID]; grant.Proxy && grant.Admin {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
 // ResolveRequests marks allowed the request of every device that after
 // gives a permission before did not, once a settings change granting it is
 // saved.
