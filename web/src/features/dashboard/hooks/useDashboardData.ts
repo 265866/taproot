@@ -30,8 +30,9 @@ export interface Read<T> {
   data: T | null;
   error: string | null;
   /**
-   * The page shows `error` in its one banner, because every read failed alike, and this read holds
-   * data: the section shows no error of its own, only its last data marked stale.
+   * The page shows `error` in its one banner, with the one Retry, because every read failed alike:
+   * the section shows no error of its own, only its last data marked stale, or a quiet "Not
+   * loaded" when it has none.
    */
   quiet?: boolean;
 }
@@ -47,7 +48,7 @@ export const quietRead = <R extends Read<unknown>>(read: R): R => ({ ...read, qu
 /** A `Section`'s loading, error, and stale props for a read. */
 export const sectionState = (read: Read<unknown>, loading: boolean) =>
   read.quiet
-    ? { loading: false, error: null, stale: read.error !== null }
+    ? { loading: false, error: null, stale: read.error !== null, unavailable: true }
     : { loading, error: read.error };
 
 const EMPTY: Read<never> = { data: null, error: null };

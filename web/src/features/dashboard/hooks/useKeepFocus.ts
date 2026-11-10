@@ -1,41 +1,67 @@
-import { useCallback, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 
-/** A control's identity across a remount: its element and accessible name. */
+/** A control's identity across copies and remounts: its element and accessible name. */
 const focusKey = (element: Element) =>
   `${element.tagName}|${element.getAttribute('aria-label') ?? element.textContent?.trim() ?? ''}`;
 
 const CONTROLS = 'a[href], button, summary, [tabindex]';
 
-const findControl = (root: ParentNode, key: string) =>
-  [...root.querySelectorAll<HTMLElement>(CONTROLS)].find(
-    (element) => focusKey(element) === key && element.getClientRects().length > 0
-  );
+const shown = (element: Element) => element.isConnected && element.getClientRects().length > 0;
 
 /**
- * A callback ref for a subtree that remounts in another place, as the Dashboard's rail does when
- * the window crosses `$breakpoint-page-aside`. When the old subtree goes while it holds the focus,
- * the new one gives it back to the same control; failing that, to the same control under
- * `fallback`, such as the page's own copy of the verdict.
+ * Keeps the keyboard on the same control when the Dashboard's layout crosses
+ * `$breakpoint-page-aside`. There the rail remounts in another place and one verdict copy hides
+ * while the other shows, so the focused control either goes or hides, and the browser drops the
+ * focus to the page. When the rail mounts in its new place (in the shell's rail, a render after
+ * the layout changes), the same control in a visible copy takes the focus back. A control the user
+ * left on purpose, which stays shown, is not refocused. Returns the rail's ref.
  */
-export function useKeepFocus(fallback: RefObject<HTMLElement | null>) {
-  const saved = useRef<string | null>(null);
+export function useKeepFocus(page: RefObject<HTMLElement | null>) {
+  const rail = useRef<HTMLElement | null>(null);
+  const last = useRef<{ element: HTMLElement; key: string } | null>(null);
+
+  const restore = useCallback(() => {
+    const left = last.current;
+    if (!left || shown(left.element)) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== left.element && shown(active)) return;
+    const target = [page.current, rail.current]
+      .flatMap((root) => [...(root?.querySelectorAll<HTMLElement>(CONTROLS) ?? [])])
+      .find((element) => focusKey(element) === left.key && shown(element));
+    target?.focus({ preventScroll: true });
+  }, [page]);
+
+  useEffect(() => {
+    const inside = (target: EventTarget | null): target is HTMLElement =>
+      target instanceof HTMLElement &&
+      [page.current, rail.current].some((root) => root?.contains(target));
+    const onFocusIn = (event: FocusEvent) => {
+      last.current = inside(event.target)
+        ? { element: event.target, key: focusKey(event.target) }
+        : null;
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      const left = last.current;
+      if (event.relatedTarget || !left || left.element !== event.target) return;
+      // A remount or a hidden copy has taken the control away by the next microtask; a click on
+      // the page's background has not.
+      queueMicrotask(() => {
+        if (last.current === left && shown(left.element)) last.current = null;
+      });
+    };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+    };
+  }, [page]);
+
   return useCallback(
     (node: HTMLElement | null) => {
-      if (!node) return;
-      const key = saved.current;
-      saved.current = null;
-      if (key) {
-        const target =
-          findControl(node, key) ??
-          (fallback.current ? findControl(fallback.current, key) : undefined);
-        target?.focus({ preventScroll: true });
-      }
-      // React runs this before it removes the old subtree, so the focus is still inside it.
-      return () => {
-        const active = document.activeElement;
-        if (active && active !== node && node.contains(active)) saved.current = focusKey(active);
-      };
+      rail.current = node;
+      if (node) restore();
     },
-    [fallback]
+    [restore]
   );
 }

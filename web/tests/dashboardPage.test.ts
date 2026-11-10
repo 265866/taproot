@@ -365,7 +365,7 @@ describe('one banner when every read fails alike', () => {
     expect(count(html, '>Stale<')).toBeGreaterThanOrEqual(5);
   });
 
-  test('on a cold load, a section with nothing to keep shows its own error, and the banner claims no data', () => {
+  test('on a cold load, the banner has the one Retry and the sections say quietly that nothing loaded', () => {
     const cold = reads({
       status: { data: null, error: down },
       pools: { data: null, error: down },
@@ -378,13 +378,15 @@ describe('one banner when every read fails alike', () => {
     expect(html).toContain('Nothing has loaded yet');
     expect(html).not.toContain('Showing the last data');
     expect(html).not.toContain('>Stale<');
-    // The banner, then the verdict's two copies, Needs you, the pools, the chart, the failures,
-    // and the two top lists each say so in place, with their own Retry.
-    expect(count(html, 'role="alert"')).toBe(9);
-    expect(count(html, '>Retry<')).toBe(9);
+    expect(count(html, 'role="alert"')).toBe(1);
+    expect(count(html, '>Retry<')).toBe(1);
+    expect(count(html, down)).toBe(1);
+    // The verdict's two copies, Needs you, the pools, the chart, the failures, and the two top
+    // lists each say so quietly.
+    expect(count(html, '>Not loaded<')).toBe(8);
   });
 
-  test('a section that holds data stays quiet while one without data shows its own error', () => {
+  test('a section that holds data stays stale while one without data says quietly that nothing loaded', () => {
     const mixed = reads({
       status: { data: null, error: down },
       pools: { data: null, error: down },
@@ -396,9 +398,10 @@ describe('one banner when every read fails alike', () => {
     // The tiles, the chart, and the top lists keep the summary's numbers, marked stale.
     expect(html).toContain('4,517');
     expect(count(html, '>Stale<')).toBeGreaterThanOrEqual(3);
-    // The verdict, Needs you, the pools, and the failures have nothing to keep.
-    expect(html).toContain('Couldn&#x27;t read the server&#x27;s status');
-    expect(count(html, 'role="alert"')).toBeGreaterThanOrEqual(5);
+    // The verdict's two copies, Needs you, the pools, and the failures have nothing to keep.
+    expect(count(html, '>Not loaded<')).toBe(5);
+    expect(count(html, 'role="alert"')).toBe(1);
+    expect(count(html, '>Retry<')).toBe(1);
   });
 
   test('different errors stay with their sections', () => {

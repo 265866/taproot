@@ -13,6 +13,7 @@
     "updated_at": "Last updated {{time}}",
     "section_error": "Couldn't load this: {{message}}",
     "section_error_bare": "Couldn't load this.",
+    "not_loaded": "Not loaded",
     "retry": "Retry",
     "stale": "Stale",
     "stale_hint": "Showing the last data that loaded",

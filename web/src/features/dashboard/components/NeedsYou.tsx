@@ -13,6 +13,7 @@ import {
   IconXCircle,
 } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { useReservedHeight } from '../hooks/useReservedHeight';
 import type { Attention, AttentionItem } from '@/services/api/taprootStatus';
 import { formatFileSize } from '@/utils/format';
 import {
@@ -61,6 +62,10 @@ export function NeedsYou({
   const items = data?.items ?? [];
   const resolved = resolvedResults(runs, items, nowMs);
   const blocking = items.some((item) => item.severity === 'blocking');
+  const [sectionRef, reservedStyle] = useReservedHeight('needs', {
+    loading: !data && !error,
+    loaded: data !== null,
+  });
 
   const errorRow =
     error && !attention.quiet ? (
@@ -79,12 +84,21 @@ export function NeedsYou({
 
   let body: ReactNode;
   if (!data) {
-    body = error ? null : (
+    // Shaped like two items, for a browser that has not loaded the rail before.
+    body = !error ? (
       <div className={styles.skeleton} aria-hidden="true">
-        <Skeleton height={12} width="70%" />
-        <Skeleton height={12} width="90%" />
+        {[0, 1].map((index) => (
+          <div key={index} className={styles.skeletonItem}>
+            <Skeleton height={14} width="40%" />
+            <Skeleton height={12} width="90%" />
+            <Skeleton height={12} width="70%" />
+            <Skeleton height={28} width={96} />
+          </div>
+        ))}
       </div>
-    );
+    ) : attention.quiet ? (
+      <p className={styles.unavailable}>{t('console.not_loaded')}</p>
+    ) : null;
   } else if (items.length === 0) {
     body = (
       <>
@@ -125,7 +139,13 @@ export function NeedsYou({
   }
 
   return (
-    <section className={styles.block} aria-labelledby={headingId} aria-busy={!data && !error}>
+    <section
+      ref={sectionRef}
+      style={reservedStyle}
+      className={styles.block}
+      aria-labelledby={headingId}
+      aria-busy={!data && !error}
+    >
       <div className={styles.head}>
         <h2 id={headingId} className={styles.title}>
           {t('dashboard.needs.title')}

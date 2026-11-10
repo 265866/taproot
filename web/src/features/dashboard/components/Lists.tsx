@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { DataTable, DataTableCell, DataTableHead, StatusPill } from '@/components/ui/DataTable';
@@ -11,7 +11,7 @@ import { sectionState, type Read, type WindowSummary } from '../hooks/useDashboa
 import { formatClock, formatCost, formatCount } from '../model/format';
 import { failedLogsLink, requestLogLink, usageDevicesLink, usageModelsLink } from '../model/links';
 import { modelProvider, providerColor } from '../model/providers';
-import { failuresInWindow, type DashboardWindow } from '../model/window';
+import { failureKeys, failuresInWindow, type DashboardWindow } from '../model/window';
 import styles from './Main.module.scss';
 
 function ArrowLink({ to, children }: { to: string; children: string }) {
@@ -25,6 +25,29 @@ function ArrowLink({ to, children }: { to: string; children: string }) {
 
 const deviceLabel = (request: Pick<ClientRequest, 'deviceName' | 'deviceId'>, unknown: string) =>
   request.deviceName || request.deviceId || unknown;
+
+/**
+ * A row's expand toggle. It shows while a cell is cut, and once opened it stays while it holds the
+ * focus, so a window widened while the row is open does not unmount the control under the keyboard
+ * when the row closes.
+ */
+function useExpander() {
+  const [open, setOpen] = useState(false);
+  const [held, setHeld] = useState(false);
+  return {
+    open,
+    held,
+    toggleProps: {
+      'aria-expanded': open,
+      // Safari does not focus a clicked button, and then no blur would ever release it.
+      onClick: (event: MouseEvent<HTMLButtonElement>) => {
+        setOpen(!open);
+        setHeld(event.currentTarget === document.activeElement);
+      },
+      onBlur: () => setHeld(false),
+    },
+  };
+}
 
 /**
  * A failure in the wide table. A row with a log opens it, and the log has everything. A row
@@ -47,13 +70,13 @@ function FailureTableRow({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const { open, held, toggleProps } = useExpander();
   const model = row.model || '—';
   const [deviceRef, deviceCut] = useTextOverflow<HTMLSpanElement>(device, open);
   const [modelRef, modelCut] = useTextOverflow<HTMLSpanElement>(model, open);
   const [errorRef, errorCut] = useTextOverflow<HTMLSpanElement>(errorText, open);
   const to = row.requestId ? requestLogLink(row.requestId) : null;
-  const expandable = !to && (deviceCut || modelCut || errorCut);
+  const expandable = !to && (deviceCut || modelCut || errorCut || held);
   const errorLine = (
     <span ref={errorRef} className={styles.cellLine}>
       {errorText || '—'}
@@ -94,12 +117,7 @@ function FailureTableRow({
       </DataTableCell>
       <DataTableCell muted className={styles.errorCell}>
         {expandable ? (
-          <button
-            type="button"
-            className={styles.errorToggle}
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
+          <button type="button" className={styles.errorToggle} {...toggleProps}>
             {errorLine}
             <IconChevronDown size={12} className={styles.errorChevron} aria-hidden="true" />
           </button>
@@ -133,7 +151,7 @@ function FailureCard({
   errorText: string;
   label: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, held, toggleProps } = useExpander();
   const [lineRef, cut] = useTextOverflow<HTMLSpanElement>(errorText, open);
   const content = (
     <>
@@ -166,15 +184,9 @@ function FailureCard({
       </Link>
     );
   }
-  if (errorText && cut) {
+  if (errorText && (cut || held)) {
     return (
-      <button
-        type="button"
-        className={styles.failureRow}
-        aria-expanded={open}
-        aria-label={label}
-        onClick={() => setOpen(!open)}
-      >
+      <button type="button" className={styles.failureRow} aria-label={label} {...toggleProps}>
         {content}
       </button>
     );
@@ -202,6 +214,7 @@ export function RecentFailures({
   const windowFailed = summary.data?.summary.totals.failed ?? null;
   const unknown = t('dashboard.failures.unknown_device');
   const errorText = (row: ClientRequest) => mask(row.errorMessage || row.errorCode || '');
+  const keys = rows ? failureKeys(rows) : [];
 
   return (
     <Section
@@ -254,7 +267,7 @@ export function RecentFailures({
                 <tbody>
                   {rows.map((row, index) => (
                     <FailureTableRow
-                      key={`${row.ts}-${index}`}
+                      key={keys[index]}
                       row={row}
                       time={formatClock(Date.parse(row.ts), nowMs)}
                       device={mask(deviceLabel(row, unknown))}
@@ -270,7 +283,7 @@ export function RecentFailures({
                 const device = mask(deviceLabel(row, unknown));
                 const error = errorText(row);
                 return (
-                  <li key={`${row.ts}-${index}`}>
+                  <li key={keys[index]}>
                     <FailureCard
                       row={row}
                       time={time}

@@ -1,4 +1,5 @@
 import type { UsageBucket } from '@/services/api/taproot';
+import type { ClientRequest } from '@/services/api/taprootStatus';
 
 /** The main column's windows. The rail and the verdict ignore them: they are always right now. */
 export const DASHBOARD_WINDOWS = ['1h', '24h', '7d', '30d'] as const;
@@ -77,6 +78,24 @@ export function failuresInWindow<T extends { ts: string }>(
 ): T[] {
   const fromMs = nowMs - SPECS[window].durationMs;
   return rows.filter((row) => Date.parse(row.ts) >= fromMs);
+}
+
+/**
+ * A React key per failure that stays with it as newer failures arrive above it, so an open row
+ * stays open and keeps the focus through a poll: its request ID, else its time, device, model, and
+ * status. Identical failures are numbered in order.
+ */
+export function failureKeys(
+  rows: Pick<ClientRequest, 'ts' | 'deviceId' | 'deviceName' | 'model' | 'status' | 'requestId'>[]
+): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    const base =
+      row.requestId || [row.ts, row.deviceId || row.deviceName, row.model, row.status].join('|');
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return count ? `${base}#${count}` : base;
+  });
 }
 
 /** The browser's IANA zone, which daily buckets start at the midnight of. */

@@ -103,8 +103,9 @@ export interface DashboardViewProps {
  * shows one copy. Inline, the rail is part of the page rather than the shell's `PageAside`, so it
  * mounts with the page instead of above an already painted one. On first run on a narrow screen,
  * the rail's empty Needs you and pools would push the checklist off a phone's screen, so they
- * follow the checklist instead. When every read fails with the same error, the page says it once:
- * a section with data keeps it, marked stale, and one without shows its own error.
+ * follow the checklist instead. When every read fails with the same error, the page says it once,
+ * with the one Retry: a section with data keeps it, marked stale, and one without says quietly
+ * that nothing loaded.
  */
 export function DashboardView({
   timeWindow,
@@ -130,7 +131,7 @@ export function DashboardView({
     givenAttention.error,
   ]);
   const quiet = <R extends Read<unknown>>(read: R): R =>
-    pageError !== null && read.data !== null ? quietRead(read) : read;
+    pageError !== null ? quietRead(read) : read;
   const reads: DashboardReads = {
     ...given,
     status: quiet(given.status),
@@ -140,7 +141,7 @@ export function DashboardView({
   };
   const attention = quiet(givenAttention);
   const anyHeld = [reads.status, reads.pools, reads.summary, reads.failures, attention].some(
-    (read) => read.quiet
+    (read) => read.data !== null
   );
   const summary = windowSummary(reads.summary, timeWindow);
   const retryAttention = () => void refreshAttention();
@@ -158,14 +159,14 @@ export function DashboardView({
 
   const fixes = useFixRuns(onChanged);
   const pageRef = useRef<HTMLDivElement>(null);
-  const keepFocus = useKeepFocus(pageRef);
+  const railRef = useKeepFocus(pageRef);
 
   const verdict = (className: string) => (
     <Verdict status={reads.status} onRetry={retry} className={className} />
   );
 
   const rail: ReactNode = (
-    <div className={styles.rail} ref={keepFocus}>
+    <div className={styles.rail} ref={railRef}>
       {firstRun ? null : verdict(styles.verdictInRail)}
       <NeedsYou
         attention={attention}

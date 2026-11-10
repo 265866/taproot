@@ -22,6 +22,11 @@ interface SectionProps {
   onRetry?: () => void;
   /** Marks the content as out of date even without an error. */
   stale?: boolean;
+  /**
+   * Nothing loaded, and the page explains why once, with its own Retry: without content, the body
+   * says so quietly instead of showing an error.
+   */
+  unavailable?: boolean;
   /** A placeholder shaped like the content; defaults to a few skeleton rows. */
   skeleton?: ReactNode;
   /** Draws the body in a hairline card (the default) or leaves it bare. */
@@ -43,6 +48,7 @@ export function Section({
   error,
   onRetry,
   stale,
+  unavailable,
   skeleton,
   card = true,
   headingLevel = 2,
@@ -86,7 +92,12 @@ export function Section({
       )}
     </div>
   );
-  const body = hasContent ? children : (errorRow ?? (showSkeleton ? skeletonBody : null));
+  const unavailableBody = unavailable ? (
+    <p className={styles.unavailable}>{t('console.not_loaded')}</p>
+  ) : null;
+  const body = hasContent
+    ? children
+    : (errorRow ?? (showSkeleton ? skeletonBody : unavailableBody));
 
   return (
     <section

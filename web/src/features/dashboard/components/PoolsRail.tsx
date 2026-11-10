@@ -12,6 +12,7 @@ import {
   IconXCircle,
 } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { useReservedHeight } from '../hooks/useReservedHeight';
 import type { Pool, PoolAccount, Pools } from '@/services/api/taprootStatus';
 import type { Read } from '../hooks/useDashboardData';
 import { formatAccounts, formatClock, formatIn, formatPercent } from '../model/format';
@@ -36,16 +37,27 @@ export function PoolsRail({ pools, nowMs, onRetry }: PoolsRailProps) {
   const headingId = useId();
   const { data, error } = pools;
   const shown = data?.pools.filter((pool) => pool.totalAccounts > 0) ?? [];
+  const [sectionRef, reservedStyle] = useReservedHeight('pools', {
+    loading: !data && !error,
+    loaded: data !== null,
+  });
 
   let body: ReactNode;
   if (!data) {
-    body = error ? null : (
-      <div className={styles.skeleton} aria-hidden="true">
-        <Skeleton height={20} width="40%" />
-        <Skeleton height={14} width="100%" />
-        <Skeleton height={12} width="70%" />
-      </div>
-    );
+    // Shaped like two pools of two accounts, for a browser that has not loaded the rail before.
+    body = !error ? (
+      [0, 1].map((index) => (
+        <div key={index} className={styles.skeletonPool} aria-hidden="true">
+          <Skeleton height={20} width="40%" />
+          <Skeleton height={14} width="100%" />
+          <Skeleton height={12} width="70%" />
+          <Skeleton height={36} width="100%" />
+          <Skeleton height={36} width="100%" />
+        </div>
+      ))
+    ) : pools.quiet ? (
+      <p className={styles.unavailable}>{t('console.not_loaded')}</p>
+    ) : null;
   } else if (shown.length === 0) {
     body = EMPTY_PROVIDERS.map((provider) => <EmptyPool key={provider} provider={provider} />);
   } else {
@@ -53,7 +65,13 @@ export function PoolsRail({ pools, nowMs, onRetry }: PoolsRailProps) {
   }
 
   return (
-    <section className={styles.block} aria-labelledby={headingId} aria-busy={!data && !error}>
+    <section
+      ref={sectionRef}
+      style={reservedStyle}
+      className={styles.block}
+      aria-labelledby={headingId}
+      aria-busy={!data && !error}
+    >
       <div className={styles.head}>
         <h2 id={headingId} className={styles.title}>
           {t('dashboard.pools.title')}

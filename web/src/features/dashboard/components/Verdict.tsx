@@ -52,7 +52,9 @@ export function Verdict({ status, onRetry, className }: VerdictProps) {
           <h2 id={headingId} className={styles.headline}>
             {status.error ? t('dashboard.verdict.unknown') : t('dashboard.verdict.loading')}
           </h2>
-          {status.error ? (
+          {status.error && status.quiet ? (
+            <p className={styles.detail}>{t('console.not_loaded')}</p>
+          ) : status.error ? (
             errorRow(status.error)
           ) : (
             <div className={styles.detail}>
