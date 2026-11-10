@@ -527,7 +527,7 @@ The Dashboard's right rail and verdict answer "is everything OK, and what needs 
   - Near-black background and hairline borders, with a 13px body and compact rows.
   - Provider accents mark identity only: Claude orange, Codex blue. State uses the status tokens (ok, warning, danger, and a neutral info), whose text meets WCAG AA in every theme.
   - A collapsible left nav, with the version and the theme menu in its footer, and a drawer on phones.
-  - A page header on every page: the page's name, when its data loaded, and Refresh All.
+  - A page header on every page: the page's name, when its data loaded, and Refresh All. A page can add a full-height right rail beside it; on phones the rail follows the header.
   - Sidebar badges and a dot in the tab title for what needs the user. The shell holds them in a store that nothing feeds yet; the attention endpoint will.
   - Shared console primitives (stat tiles, sections with loading, error, and stale states, severity tags, compact tables, a segmented control, and the updated stamp). `web/README.md` lists them.
   - Recharts for charts.

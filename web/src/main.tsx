@@ -20,6 +20,12 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('demo
   );
 }
 
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('demo-aside')) {
+  void import('@/components/layout/DemoPageAside').then(({ DemoPageAside }) =>
+    createRoot(document.createElement('div')).render(<DemoPageAside />)
+  );
+}
+
 try {
   purgeLegacyStorage(window.localStorage);
 } catch {

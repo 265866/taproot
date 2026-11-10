@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { PageTransition } from '@/components/common/PageTransition';
 import { NavBadgeMark } from '@/components/layout/NavBadgeMark';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { setPageAsideTarget, usePageAsideState } from '@/components/layout/pageAsideStore';
 import { MainRoutes } from '@/router/MainRoutes';
 import { pluginsApi } from '@/services/api';
 import {
@@ -344,6 +345,8 @@ export function MainLayout() {
     location.pathname === ROUTES.requestLogs &&
     new URLSearchParams(location.search).get('tab') === 'app';
   const isPluginResourcePage = location.pathname.startsWith('/plugin-pages');
+  const pageAside = usePageAsideState();
+  const hasPageAside = pageAside.owner !== null;
   const showSidebarLabels = !sidebarCollapsed || sidebarOpen;
 
   // Keep the page header height available to sticky bars inside pages and to phone overlays.
@@ -1092,7 +1095,7 @@ export function MainLayout() {
         <div
           className={`content${isLogsPage ? ' content-logs' : ''}${
             isPluginResourcePage ? ' content-plugin-resource' : ''
-          }`}
+          }${hasPageAside ? ' content-has-aside' : ''}`}
           ref={contentRef}
         >
           <PageHeader
@@ -1123,6 +1126,9 @@ export function MainLayout() {
               </button>
             }
           />
+          {hasPageAside ? (
+            <aside ref={setPageAsideTarget} className="page-aside" aria-label={pageAside.label} />
+          ) : null}
           <main
             id={MAIN_CONTENT_ID}
             ref={mainRef}

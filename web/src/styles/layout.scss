@@ -44,6 +44,7 @@
   --sidebar-panel-width: 200px;
   --sidebar-collapsed-width: 52px;
   --sidebar-active-width: var(--sidebar-panel-width);
+  --page-aside-width: 344px;
 }
 
 .app-shell {
@@ -724,6 +725,25 @@
   }
 }
 
+// A page's rail (PageAside): the header and the page take the first column, and the rail spans
+// the full height of the second. It comes before <main> in the document, as on phones.
+.content.content-has-aside {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--page-aside-width);
+  grid-template-rows: auto 1fr;
+
+  > * {
+    grid-column: 1;
+  }
+
+  > .page-aside {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    min-width: 0;
+    border-left: 1px solid var(--border-color);
+  }
+}
+
 .main-content {
   flex: 1 0 auto;
   padding: 6px var(--console-gutter) 40px;
@@ -898,6 +918,18 @@
     // height of its own (AppLogsPanel.module.scss).
     &.content-logs {
       overflow: visible;
+    }
+
+    // One column: the header, the rail inline, then the page.
+    &.content-has-aside {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto 1fr;
+
+      > .page-aside {
+        grid-column: 1;
+        grid-row: auto;
+        border-left: 0;
+      }
     }
 
     &.content-plugin-resource {
