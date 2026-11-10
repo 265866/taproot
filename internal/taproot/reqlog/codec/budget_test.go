@@ -197,6 +197,27 @@ func TestReserveClampsToBudget(t *testing.T) {
 	nativeWork.Release(nativeBudget)
 }
 
+// TestOversizedPackRunsAlone checks that a pack estimated over the whole
+// budget holds all of nativeWork, while it takes only packBudget of packWork.
+func TestOversizedPackRunsAlone(t *testing.T) {
+	release, err := reservePack(context.Background(), 2*nativeBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nativeWork.TryAcquire(1) {
+		t.Fatal("a read ran beside a pack estimated over the budget")
+	}
+	release()
+	if !nativeWork.TryAcquire(nativeBudget) {
+		t.Fatal("budget not returned")
+	}
+	nativeWork.Release(nativeBudget)
+	if !packWork.TryAcquire(packBudget) {
+		t.Fatal("pack budget not returned")
+	}
+	packWork.Release(packBudget)
+}
+
 // holdPacks takes all of packWork, as running packs would, and queues more
 // packs behind it. It returns once the holder releases everything.
 func holdPacks(t *testing.T) {

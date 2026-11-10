@@ -54,23 +54,26 @@ func reserve(ctx context.Context, cost int64) (release func(), err error) {
 	return func() { nativeWork.Release(cost) }, nil
 }
 
-// reservePack is reserve for Pack, which first takes its share of packWork.
+// reservePack is reserve for Pack, which first takes its share of packWork,
+// at most packBudget so reads keep headroom while packs queue. Its nativeWork
+// share is the full cost, so a pack estimated over the budget still runs
+// alone.
 func reservePack(ctx context.Context, cost int64) (release func(), err error) {
-	cost = min(cost, packBudget)
 	if cost <= 0 {
 		return func() {}, nil
 	}
-	if err := packWork.Acquire(ctx, cost); err != nil {
+	packCost := min(cost, packBudget)
+	if err := packWork.Acquire(ctx, packCost); err != nil {
 		return nil, err
 	}
 	releaseNative, err := reserve(ctx, cost)
 	if err != nil {
-		packWork.Release(cost)
+		packWork.Release(packCost)
 		return nil, err
 	}
 	return func() {
 		releaseNative()
-		packWork.Release(cost)
+		packWork.Release(packCost)
 	}, nil
 }
 

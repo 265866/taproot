@@ -354,8 +354,12 @@ func writeRedacted(out *bytes.Buffer, section []byte) {
 			inPreamble, inHeaders = false, true
 		case string(trimmed) == "Body:":
 			inPreamble = false
-		case bytes.HasPrefix(trimmed, []byte("=== API ")), bytes.HasPrefix(trimmed, []byte("Event: api.websocket.")):
+		case bytes.HasPrefix(trimmed, []byte("=== API ")):
 			inPreamble = true
+		case bytes.HasPrefix(trimmed, []byte("Event: ")):
+			// Only a websocket request event carries Upstream URL and Auth
+			// lines; a response event's frame text follows directly.
+			inPreamble = bytes.HasPrefix(trimmed, []byte("Event: api.websocket.request"))
 		case inPreamble && bytes.HasPrefix(trimmed, []byte("Upstream URL: ")):
 			out.WriteString("Upstream URL: " + redactQuery(string(trimmed[len("Upstream URL: "):])))
 			out.Write(eol)

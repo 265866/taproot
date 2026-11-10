@@ -343,7 +343,8 @@ func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 	timeline := []byte("Timestamp: 2026-11-02T12:00:00Z\nEvent: api.websocket.request\nUpstream URL: wss://example.com/v1/responses?key=" + secretToken + "&model=m\n" +
 		"Auth: provider=xai auth_id=a1 label=l type=api_key value=" + secretToken + "\nHeaders:\n" +
 		"Authorization: Bear****cret\nChatgpt-Account-Id: acct\nCookie: __cf_bm=" + secretToken + "\n\nBody:\n{\"type\":\"response.create\"}\n" +
-		"Timestamp: 2026-11-02T12:00:01Z\nEvent: api.websocket.handshake\nStatus: 101\nHeaders:\nSet-Cookie: __cf_bm=" + secretToken + "\nX-Codex-Primary-Used-Percent: 12\n\n")
+		"Timestamp: 2026-11-02T12:00:01Z\nEvent: api.websocket.handshake\nStatus: 101\nHeaders:\nSet-Cookie: __cf_bm=" + secretToken + "\nX-Codex-Primary-Used-Percent: 12\n\n" +
+		"Timestamp: 2026-11-02T12:00:02Z\nEvent: api.websocket.response\nUpstream URL: https://example.com/doc?token=abc\nAuth: type=x value=frame-text\n\n")
 	if err := h.logs.logger.LogRequest("/v1/responses", "GET", nil, nil, 101, nil, nil, nil, nil, nil, timeline, nil, "ws", ts, ts); err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +360,8 @@ func TestAPIWebsocketTimelineIsRedacted(t *testing.T) {
 		}
 	}
 	for _, kept := range []string{"Chatgpt-Account-Id: acct", "X-Codex-Primary-Used-Percent: 12", `{"type":"response.create"}`, "Cookie: " + redacted, "Set-Cookie: " + redacted,
-		"Upstream URL: wss://example.com/v1/responses?key=" + redacted + "&model=m", "type=api_key value=" + redacted} {
+		"Upstream URL: wss://example.com/v1/responses?key=" + redacted + "&model=m", "type=api_key value=" + redacted,
+		"Upstream URL: https://example.com/doc?token=abc\nAuth: type=x value=frame-text"} {
 		if !strings.Contains(got, kept) {
 			t.Fatalf("timeline lost %q:\n%s", kept, got)
 		}
