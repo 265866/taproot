@@ -58,7 +58,12 @@ func packPNG(b []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	plain, corrections, deflateLen, err := deflateUnpack(idat[zlibHeaderLen:], maxPlain)
+	// The IHDR size bounds preflate's memory, which nativePlan charged.
+	plainLen, ok := pngPlainLen(b)
+	if !ok || plainLen > maxPlain {
+		return nil, errors.New("codec: png IHDR unusable")
+	}
+	plain, corrections, deflateLen, err := deflateUnpack(idat[zlibHeaderLen:], int(plainLen))
 	if err != nil {
 		return nil, err
 	}

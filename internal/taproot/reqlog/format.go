@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -320,11 +323,14 @@ func redactHeaders(headers map[string][]string) map[string][]string {
 	return out
 }
 
-// writeRedacted copies an executor-formatted API section, masking credential
-// headers. Those sections list headers after a "Headers:" line until a blank
-// line, and bodies follow a "Body:" line, so only header blocks are touched.
+// writeRedacted copies an executor-formatted API section, masking
+// credentials. Each attempt opens with an "=== API ..." line, and each
+// websocket request event with "Event: api.websocket.request", then a preamble
+// that can carry "Upstream URL:" and "Auth: ... value=<key>" lines, which
+// upstream masks only partly; headers follow a "Headers:" line until a blank
+// line, and bodies follow a "Body:" line, so bodies are never touched.
 func writeRedacted(out *bytes.Buffer, section []byte) {
-	inHeaders := false
+	inPreamble, inHeaders := false, false
 	rest := section
 	for len(rest) > 0 {
 		line := rest
@@ -333,6 +339,7 @@ func writeRedacted(out *bytes.Buffer, section []byte) {
 		}
 		rest = rest[len(line):]
 		trimmed := bytes.TrimRight(line, "\r\n")
+		eol := line[len(trimmed):]
 		switch {
 		case inHeaders && len(trimmed) == 0:
 			inHeaders = false
@@ -340,28 +347,79 @@ func writeRedacted(out *bytes.Buffer, section []byte) {
 			if name, _, ok := bytes.Cut(trimmed, []byte(": ")); ok && sensitiveHeader(string(name)) {
 				out.Write(name)
 				out.WriteString(": " + redacted)
-				out.Write(line[len(trimmed):])
+				out.Write(eol)
 				continue
 			}
 		case string(trimmed) == "Headers:":
-			inHeaders = true
+			inPreamble, inHeaders = false, true
+		case string(trimmed) == "Body:":
+			inPreamble = false
+		case bytes.HasPrefix(trimmed, []byte("=== API ")):
+			inPreamble = true
+		case bytes.HasPrefix(trimmed, []byte("Event: ")):
+			inPreamble = bytes.HasPrefix(trimmed, []byte("Event: api.websocket.request"))
+		case inPreamble && bytes.HasPrefix(trimmed, []byte("Upstream URL: ")):
+			out.WriteString("Upstream URL: " + redactQuery(string(trimmed[len("Upstream URL: "):])))
+			out.Write(eol)
+			continue
+		case inPreamble && bytes.HasPrefix(trimmed, []byte("Auth: ")):
+			out.Write(authValue.ReplaceAll(trimmed, []byte("${1}"+redacted)))
+			out.Write(eol)
+			continue
 		}
 		out.Write(line)
 	}
 }
 
+// authValue matches the credential in upstream's "Auth:" line, which ends
+// the line ("type=api_key value=AIza...wxyz").
+var authValue = regexp.MustCompile(`(\bvalue=).*`)
+
+// redactQuery replaces the value of every credential-like query parameter in
+// raw, a URL or path with an optional query. Upstream keeps 4 characters from
+// each end of these; taproot stores none.
+func redactQuery(raw string) string {
+	base, query, ok := strings.Cut(raw, "?")
+	if !ok {
+		return raw
+	}
+	params := strings.Split(query, "&")
+	for i, param := range params {
+		key, _, hasValue := strings.Cut(param, "=")
+		name, err := url.QueryUnescape(key)
+		if err != nil {
+			name = key
+		}
+		if hasValue && sensitiveParam(name) {
+			params[i] = key + "=" + redacted
+		}
+	}
+	return base + "?" + strings.Join(params, "&")
+}
+
+// sensitiveParam covers the query parameters upstream masks ("key", "value",
+// which the management API uses for client keys, and api_key forms) and the
+// names sensitiveHeader treats as credentials.
+func sensitiveParam(name string) bool {
+	name = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), "[]")
+	return name == "key" || name == "value" || strings.Contains(name, "api_key") || sensitiveHeader(name)
+}
+
 // decodeResponse undoes Content-Encoding on non-streaming bodies the way
 // upstream's logger does, so stored responses are readable and compressible.
-func decodeResponse(headers map[string][]string, body []byte) ([]byte, error) {
+// The decoded bytes hold their share of b, returned as held, so a
+// decompression bomb stops at the budget; the caller releases held. On any
+// error the body stays as it came.
+func decodeResponse(headers map[string][]string, body []byte, b *budget) (decoded []byte, held int64, err error) {
 	if len(body) == 0 {
-		return body, nil
+		return body, 0, nil
 	}
 	var reader io.Reader
 	switch strings.ToLower(headerValue(headers, "Content-Encoding")) {
 	case "gzip":
 		gz, err := gzip.NewReader(bytes.NewReader(body))
 		if err != nil {
-			return body, fmt.Errorf("failed to create gzip reader: %w", err)
+			return body, 0, fmt.Errorf("failed to create gzip reader: %w", err)
 		}
 		defer func() { _ = gz.Close() }()
 		reader = gz
@@ -374,16 +432,34 @@ func decodeResponse(headers map[string][]string, body []byte) ([]byte, error) {
 	case "zstd":
 		dec, err := zstd.NewReader(bytes.NewReader(body), zstd.WithDecoderConcurrency(1))
 		if err != nil {
-			return body, fmt.Errorf("failed to create zstd reader: %w", err)
+			return body, 0, fmt.Errorf("failed to create zstd reader: %w", err)
 		}
 		defer dec.Close()
 		reader = dec
 	default:
-		return body, nil
+		return body, 0, nil
 	}
-	decoded, err := io.ReadAll(reader)
-	if err != nil {
-		return body, fmt.Errorf("failed to decompress response: %w", err)
+	out := &budgetWriter{budget: b}
+	if _, err := io.Copy(out, reader); err != nil {
+		b.release(out.held)
+		return body, 0, fmt.Errorf("failed to decompress response: %w", err)
 	}
-	return decoded, nil
+	return out.buf.Bytes(), out.held, nil
+}
+
+var errBudgetFull = errors.New("log queue full")
+
+// budgetWriter buffers what it is given, reserving each write in budget.
+type budgetWriter struct {
+	budget *budget
+	buf    bytes.Buffer
+	held   int64
+}
+
+func (w *budgetWriter) Write(p []byte) (int, error) {
+	if !w.budget.reserve(int64(len(p))) {
+		return 0, errBudgetFull
+	}
+	w.held += int64(len(p))
+	return w.buf.Write(p)
 }
