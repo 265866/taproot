@@ -7,6 +7,17 @@
  */
 
 import { reportAccessDenial } from './accessEvents';
+import {
+  normalizeAttention,
+  normalizeClientRequests,
+  normalizePools,
+  normalizeRequestSummary,
+  normalizeStatus,
+  type Attention,
+  type Pools,
+  type RequestSummary,
+  type ServerStatus,
+} from './taprootStatus';
 
 export const TAPROOT_API_BASE = '/taproot/api/v1';
 
@@ -681,6 +692,24 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       request<{ sessions: UsageSession[]; nextCursor: string | null }>('GET', '/usage/sessions', {
         query: { ...query },
       }),
+
+    /** Client requests in a window: totals, buckets, and the top devices and models. */
+    requestsSummary: async (
+      query: TimeRange & { bucket: UsageBucket; tz?: string; top?: number }
+    ): Promise<RequestSummary> =>
+      normalizeRequestSummary(
+        await request<unknown>('GET', '/requests/summary', { query: { ...query } })
+      ),
+    /** The newest client requests, newest first; `failed` filters them. */
+    requestsRecent: async (query: { failed?: boolean; limit?: number } = {}) =>
+      normalizeClientRequests(await request<unknown>('GET', '/requests/recent', { query })),
+    /** The right-now verdict; it ignores the Dashboard's window. */
+    status: async (): Promise<ServerStatus> =>
+      normalizeStatus(await request<unknown>('GET', '/status')),
+    /** What needs the user, with counts per sidebar area. */
+    attention: async (): Promise<Attention> =>
+      normalizeAttention(await request<unknown>('GET', '/attention')),
+    pools: async (): Promise<Pools> => normalizePools(await request<unknown>('GET', '/pools')),
 
     prices: () => request<{ prices: Price[] }>('GET', '/prices'),
     putPrices: (prices: Price[]) =>

@@ -45,6 +45,7 @@ import {
   type NavBadge,
   type NavBadgeKey,
 } from '@/stores/useAttentionStore';
+import { useAttentionFeed } from '@/stores/useAttentionFeed';
 import { usePageFreshnessStore } from '@/hooks/usePageFreshness';
 import {
   collectPluginResourceEntries,
@@ -310,6 +311,7 @@ export function MainLayout() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useAttentionFeed(connectionStatus === 'connected', location.pathname);
   const navBadges = useAttentionStore((state) => state.badges);
   const attentionCount = useAttentionStore((state) => state.count);
   const updatedAt = usePageFreshnessStore((state) => state.updatedAt);

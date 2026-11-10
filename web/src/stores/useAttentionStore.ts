@@ -27,8 +27,8 @@ interface AttentionState extends AttentionSnapshot {
 const EMPTY: AttentionSnapshot = { badges: {}, count: 0 };
 
 /**
- * What needs the user, as the shell shows it: sidebar badges and the dot in the tab title. Empty
- * until something feeds it; a later change sets it from taproot's attention endpoint.
+ * What needs the user, as the shell shows it: sidebar badges and the dot in the tab title.
+ * `useAttentionFeed` sets it from taproot's attention endpoint.
  */
 export const useAttentionStore = create<AttentionState>((set) => ({
   ...EMPTY,
