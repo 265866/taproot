@@ -73,6 +73,20 @@ describe('usage KPI tiles', () => {
   });
 });
 
+describe('usage cost hint', () => {
+  test('names the models without a price', () => {
+    expect(render(createElement(KpiTiles, { totals: zero }))).toContain(
+      'Models without a price count as $0.'
+    );
+    const one = render(createElement(KpiTiles, { totals: { ...zero, unpricedModels: ['m-1'] } }));
+    expect(one).toContain('No price matches m-1, so it counts as $0.');
+    const two = render(
+      createElement(KpiTiles, { totals: { ...zero, unpricedModels: ['m-1', 'm-2'] } })
+    );
+    expect(two).toContain('No price matches 2 models (m-1, m-2), so they count as $0.');
+  });
+});
+
 describe('usage overview', () => {
   test('an empty range shows the no-data state instead of empty charts', () => {
     const summary: UsageSummary = {

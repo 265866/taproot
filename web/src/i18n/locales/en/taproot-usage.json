@@ -44,6 +44,8 @@
       "cost": "API-equivalent cost",
       "cost_hint": "What these requests would cost at API list prices. Claude and Codex are subscriptions, so this is not a bill.",
       "unpriced_hint": "Models without a price count as $0.",
+      "unpriced_models_one": "No price matches {{models}}, so it counts as $0. Add one under Pricing.",
+      "unpriced_models_other": "No price matches {{count}} models ({{models}}), so they count as $0. Add prices under Pricing.",
       "requests": "Requests",
       "failures": "{{count}} failed",
       "failure_rate": "Failure rate",

@@ -192,6 +192,8 @@ export interface UsageTotals {
   latencyP95Ms: number | null;
   ttftP50Ms: number | null;
   ttftP95Ms: number | null;
+  /** Models that used tokens but match no price; costUSD leaves them out. Absent when none. */
+  unpricedModels?: string[];
 }
 
 export interface UsageSummary {
