@@ -680,7 +680,7 @@
     padding: 12px;
   }
   // The page scrolls on phones, so the viewer cannot take the space left under the header,
-  // tabs, and filters. It fills the screen below the floating header once scrolled to instead.
+  // tabs, and filters. It fills the screen below the page header once scrolled to instead.
   .logCard:not(.logCardFullscreen) {
     flex: none;
     height: calc(100dvh - var(--header-height) - 24px);

@@ -1,2 +1,2 @@
 [test]
-preload = ["./tests/helpers/viteGlobPlugin.ts"]
+preload = ["./tests/helpers/viteGlobPlugin.ts", "./tests/helpers/viteDefines.ts"]
