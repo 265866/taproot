@@ -88,3 +88,40 @@ func TestRenovateRegexManagers(t *testing.T) {
 		}
 	}
 }
+
+// TestRenovateNeverAutomergesActionDigests checks that no rule merges a GitHub
+// Actions update by itself. An action's digest update means its version tag
+// now names another commit, and ci.yml never runs the release workflow's
+// actions, so passing CI says nothing about the new code.
+func TestRenovateNeverAutomergesActionDigests(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "renovate.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Automerge    bool `json:"automerge"`
+		PackageRules []struct {
+			MatchManagers []string `json:"matchManagers"`
+			Automerge     bool     `json:"automerge"`
+		} `json:"packageRules"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("renovate.json: %v", err)
+	}
+	if config.Automerge {
+		t.Fatal("renovate.json turns on automerge for every update")
+	}
+	for i, rule := range config.PackageRules {
+		if !rule.Automerge {
+			continue
+		}
+		if len(rule.MatchManagers) == 0 {
+			t.Errorf("packageRules[%d] automerges without naming its managers", i)
+		}
+		for _, manager := range rule.MatchManagers {
+			if manager != "dockerfile" {
+				t.Errorf("packageRules[%d] automerges %s updates; only base-image digests may merge themselves", i, manager)
+			}
+		}
+	}
+}

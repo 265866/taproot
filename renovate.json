@@ -147,12 +147,21 @@
       "matchManagers": ["nix"]
     },
     {
-      "description": "Digest pins and digest updates of GitHub Actions and the image's base images merge themselves once CI passes. Everything else waits for a person.",
+      "description": "Digest pins and digest updates of the image's base images merge themselves once CI passes. Everything else waits for a person.",
       "groupName": "digests",
-      "matchManagers": ["github-actions", "dockerfile"],
+      "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["pinDigest", "digest"],
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "An action's digest update means its version tag now names another commit. release.yml runs these actions with signing and package permissions, and CI never runs release.yml, so a person reviews each one.",
+      "groupName": "GitHub Actions digests",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["pinDigest", "digest"],
+      "prBodyNotes": [
+        "Before merging: a digest update keeps the version tag but points it at another commit. Releases normally get a new tag, so check the action's repository for why the tag moved, and compare the old and new commits. CI does not run `release.yml`, so passing checks do not cover these actions."
+      ]
     }
   ]
 }
