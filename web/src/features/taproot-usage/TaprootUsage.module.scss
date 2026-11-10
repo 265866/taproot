@@ -180,6 +180,14 @@
   }
 }
 
+// 44 px targets on a touch screen; a mouse keeps the compact segments.
+@media (pointer: coarse) {
+  .segment {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .customRange {
   display: flex;
   align-items: center;

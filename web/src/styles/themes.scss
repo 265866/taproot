@@ -57,8 +57,9 @@
 }
 
 // Phones read the console a step larger than the dense desktop scale: body, table, and detail text
-// at 13 px or more, tags and small labels at 11 px or more.
-@media (max-width: $breakpoint-mobile) {
+// at 13 px or more, tags and small labels at 11 px or more. A phone held sideways is wider than the
+// phone breakpoint but no taller than 500 px, and reads at the same distance.
+@media (max-width: $breakpoint-mobile), (pointer: coarse) and (max-height: 500px) {
   :root {
     --fs-tag: 11px;
     --fs-small: 11px;

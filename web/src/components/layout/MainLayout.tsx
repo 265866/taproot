@@ -344,10 +344,7 @@ export function MainLayout() {
   const mainRef = useRef<HTMLElement | null>(null);
   const isMobile = useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`);
   const drawerOpen = isMobile && sidebarOpen;
-  const { tag: Sidebar, props: sidebarRoles } = sidebarSemantics(
-    isMobile,
-    t('shell.navigation_drawer')
-  );
+  const sidebarRoles = sidebarSemantics(isMobile, t('shell.navigation_drawer'));
 
   const brandName = t('title.main');
   // The app log tail sizes itself to the viewport, so its tab gets the fixed-height layout.
@@ -973,7 +970,7 @@ export function MainLayout() {
           aria-hidden="true"
         />
 
-        <Sidebar
+        <div
           id={SIDEBAR_ID}
           ref={setSidebarNode}
           className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}
@@ -1086,7 +1083,7 @@ export function MainLayout() {
               )}
             </div>
           </div>
-        </Sidebar>
+        </div>
 
         {railTooltip && (
           <div
