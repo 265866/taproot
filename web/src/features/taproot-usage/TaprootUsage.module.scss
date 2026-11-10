@@ -233,6 +233,23 @@
   border-bottom: 1px solid var(--border-color);
   overflow-x: auto;
   scrollbar-width: none;
+  // Scroll shadows: a shade marks each edge that has tabs past it, and page-colored covers that
+  // scroll with the content hide the shade once that edge is reached.
+  background:
+    linear-gradient(to right, var(--bg-secondary) 40%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--bg-secondary) 40%, transparent) right / 32px 100% no-repeat local,
+    radial-gradient(
+        farthest-side at 0 50%,
+        color-mix(in srgb, var(--text-primary) 28%, transparent),
+        transparent
+      )
+      left / 14px 100% no-repeat scroll,
+    radial-gradient(
+        farthest-side at 100% 50%,
+        color-mix(in srgb, var(--text-primary) 28%, transparent),
+        transparent
+      )
+      right / 14px 100% no-repeat scroll;
 }
 
 .tab {
@@ -316,6 +333,17 @@
   background: var(--destructive-10);
   color: var(--text-primary);
   font-size: 14px;
+}
+
+.staleNote {
+  display: block;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Figures left over from another selection while its own load or after it failed. */
+.stale {
+  opacity: 0.6;
 }
 
 .loadingBar {

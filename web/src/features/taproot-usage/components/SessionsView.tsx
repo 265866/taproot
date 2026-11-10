@@ -5,6 +5,7 @@ import { taprootApi, type UsageSession } from '@/services/api/taproot';
 import {
   affinityStats,
   sessionDurationMs,
+  sessionLabel,
   sessionRequestsLabel,
   type AffinityStats,
 } from '../logic/sessions';
@@ -41,15 +42,15 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
   const { mask } = useEmailMask();
   const rangeKey = `${window.fromMs}-${window.toMs}-${refreshKey}`;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const [onlySwitched, setOnlySwitched] = useState(false);
   const currentKey = useRef(rangeKey);
 
   const fetchPage = useCallback(
     async (cursor: string | null, key: string, previous: UsageSession[]) => {
-      setLoading(true);
-      setError(null);
+      setFetching(true);
+      setFailure(null);
       try {
         const page = await taprootApi.usageSessions({
           from: toIso(window.fromMs),
@@ -61,9 +62,11 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
         if (currentKey.current !== key) return;
         setLoaded({ key, sessions: [...previous, ...page.sessions], nextCursor: page.nextCursor });
       } catch (err) {
-        if (currentKey.current === key) setError(err instanceof Error ? err.message : String(err));
+        if (currentKey.current === key) {
+          setFailure({ key, message: err instanceof Error ? err.message : String(err) });
+        }
       } finally {
-        if (currentKey.current === key) setLoading(false);
+        if (currentKey.current === key) setFetching(false);
       }
     },
     [window.fromMs, window.toMs]
@@ -75,20 +78,21 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
     void fetchPage(null, rangeKey, []);
   }, [fetchPage, rangeKey]);
 
-  const sessions = useMemo(
-    () => (loaded?.key === rangeKey ? loaded.sessions : []),
-    [loaded, rangeKey]
-  );
+  const current = loaded?.key === rangeKey ? loaded : null;
+  const sessions = useMemo(() => current?.sessions ?? [], [current]);
+  const nextCursor = current?.nextCursor ?? null;
+  const error = failure?.key === rangeKey ? failure.message : null;
+  // Until the first page of this range lands, the range has no answer yet, not an empty one.
+  const loading = fetching || (current === null && error === null);
   const stats = useMemo(() => affinityStats(sessions), [sessions]);
   const visible = onlySwitched ? sessions.filter((s) => s.accountSwitches > 0) : sessions;
+  // A failed "Load more" retries from where it stopped, keeping the pages already loaded.
+  const retry = () =>
+    current ? fetchPage(current.nextCursor, rangeKey, sessions) : fetchPage(null, rangeKey, []);
 
   return (
     <>
-      <AffinityPanel
-        stats={stats}
-        loadedCount={sessions.length}
-        hasMore={loaded?.key === rangeKey && loaded.nextCursor !== null}
-      />
+      <AffinityPanel stats={stats} loadedCount={sessions.length} hasMore={nextCursor !== null} />
 
       <section className={styles.panel}>
         <div className={styles.panelHead}>
@@ -105,11 +109,7 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
         {error ? (
           <div className={styles.error} role="alert">
             <span>{mask(t('taproot_usage.load_failed', { message: error }))}</span>
-            <button
-              type="button"
-              className={styles.ghostButton}
-              onClick={() => fetchPage(null, rangeKey, [])}
-            >
+            <button type="button" className={styles.ghostButton} onClick={retry}>
               {t('taproot_usage.retry')}
             </button>
           </div>
@@ -118,7 +118,12 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
         {!loading && visible.length === 0 && !error ? (
           <div className={styles.empty}>
             {onlySwitched && sessions.length > 0
-              ? t('taproot_usage.sessions.empty_switched')
+              ? t(
+                  nextCursor
+                    ? 'taproot_usage.sessions.empty_switched_partial'
+                    : 'taproot_usage.sessions.empty_switched',
+                  { count: sessions.length }
+                )
               : t('taproot_usage.sessions.empty')}
           </div>
         ) : null}
@@ -155,7 +160,7 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
                             id: mask(s.sessionId),
                           })}
                         >
-                          {mask(s.sessionId).slice(0, 8)}
+                          {sessionLabel(mask(s.sessionId))}
                         </button>
                       </td>
                       <td>{formatDateTime(s.lastAt)}</td>
@@ -194,7 +199,7 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
         {visible.some((s) => s.truncated) ? (
           <p className={styles.tableFooter}>{t('taproot_usage.sessions.truncated_note')}</p>
         ) : null}
-        {loaded?.nextCursor && loaded.key === rangeKey ? (
+        {nextCursor ? (
           <div className={styles.tableFooter}>
             <span>
               {t('taproot_usage.sessions.switched_of', {
@@ -206,7 +211,7 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
               type="button"
               className={styles.ghostButton}
               disabled={loading}
-              onClick={() => fetchPage(loaded.nextCursor, rangeKey, sessions)}
+              onClick={() => fetchPage(nextCursor, rangeKey, sessions)}
             >
               {t('taproot_usage.sessions.load_more')}
             </button>

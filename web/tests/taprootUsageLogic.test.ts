@@ -12,6 +12,9 @@ import {
   localTimeZone,
   parseLocalDate,
   presetWindow,
+  rangeQuery,
+  requestsSelection,
+  resolveWindow,
   summaryZone,
   todayWindow,
   toIso,
@@ -28,7 +31,9 @@ import {
   breakdownRows,
   chooseSeries,
   costRows,
+  isIsolatedPoint,
   latencyRows,
+  peakOf,
   rankGroups,
   requestRows,
   sortBreakdown,
@@ -37,6 +42,7 @@ import {
 import {
   affinityStats,
   sessionDurationMs,
+  sessionLabel,
   sessionRequestsLabel,
 } from '@/features/taproot-usage/logic/sessions';
 import { accountName, indexAccounts } from '@/features/taproot-usage/logic/accounts';
@@ -53,11 +59,13 @@ import {
   formatAxisNumber,
   formatBucketLabel,
   formatBucketTick,
+  formatDuration,
   formatMs,
   formatRatio,
   formatUSD,
 } from '@/features/taproot-usage/logic/format';
-import { groupColor } from '@/features/taproot-usage/logic/viz';
+import { groupColors } from '@/features/taproot-usage/logic/viz';
+import { queryView, settleQuery } from '@/features/taproot-usage/hooks/useTaprootQuery';
 import { requestLogHref } from '@/features/taproot-usage/logic/links';
 
 const HOUR = 3_600_000;
@@ -489,6 +497,19 @@ describe('formatting', () => {
     expect(formatMs(6743)).toBe('6.74 s');
     expect(formatMs(null)).toBe('—');
   });
+
+  test('round to the shown unit before choosing it', () => {
+    expect(formatMs(999.6)).toBe('1.00 s');
+    expect(formatMs(9999)).toBe('10.0 s');
+    expect(formatMs(59_999)).toBe('1m 0s');
+    expect(formatMs(119_700)).toBe('2m 0s');
+    expect(formatMs(179_600)).toBe('3m 0s');
+    expect(formatMs(140_400)).toBe('2m 20s');
+    expect(formatDuration(59_600)).toBe('1m');
+    expect(formatDuration(59_400)).toBe('59s');
+    expect(formatUSD(999.996)).toBe('$1,000');
+    expect(formatUSD(999.994)).toBe('$999.99');
+  });
 });
 
 describe('axis labels', () => {
@@ -508,11 +529,24 @@ describe('series colors and links', () => {
   test('accounts keep their /accounts slot whatever their rank', () => {
     const order = ['8dc6f68dec36dcc4', 'f2a3f5069de30215'];
     // f2a3 ranks first by cost but stays in slot 2.
-    expect(groupColor('account', 'f2a3f5069de30215', 0, order)).toBe('var(--usage-series-2)');
-    expect(groupColor('account', '8dc6f68dec36dcc4', 1, order)).toBe('var(--usage-series-1)');
-    expect(groupColor('provider', 'claude', 3, [])).toBe('var(--provider-claude)');
-    expect(groupColor('model', 'claude-opus-5-5', 2, [])).toBe('var(--usage-series-3)');
-    expect(groupColor('model', OTHER_GROUP, 7, [])).toBe('var(--usage-series-other)');
+    const accounts = groupColors('account', ['f2a3f5069de30215', '8dc6f68dec36dcc4'], order);
+    expect(accounts.get('f2a3f5069de30215')).toBe('var(--usage-series-2)');
+    expect(accounts.get('8dc6f68dec36dcc4')).toBe('var(--usage-series-1)');
+    expect(groupColors('provider', ['codex', 'claude'], []).get('claude')).toBe(
+      'var(--provider-claude)'
+    );
+    const models = groupColors('model', ['a', 'b', 'claude-opus-5-5', OTHER_GROUP], []);
+    expect(models.get('claude-opus-5-5')).toBe('var(--usage-series-3)');
+    expect(models.get(OTHER_GROUP)).toBe('var(--usage-series-other)');
+  });
+
+  test('an account past the fixed slots takes a color no other series has', () => {
+    const order = ['a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'];
+    const ranked = ['a0', 'a8', 'a2', 'a1', 'a3', 'a4', 'a5', OTHER_GROUP];
+    const colors = groupColors('account', ranked, order);
+    expect(colors.get('a1')).toBe('var(--usage-series-2)');
+    expect(colors.get('a8')).toBe('var(--usage-series-7)');
+    expect(new Set(colors.values()).size).toBe(ranked.length);
   });
 
   test('request log links use the Request Logs query contract', () => {
@@ -571,11 +605,163 @@ describe('daily buckets and time zones', () => {
     }
   });
 
+  test('seven whole local days stay hourly across a clock change', () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const now = Date.UTC(2026, 10, 9);
+      for (const [from, to] of [
+        ['2026-10-26', '2026-11-01'], // 169 h: fall back on Nov 1
+        ['2026-03-02', '2026-03-08'], // 167 h: spring forward on Mar 8
+      ]) {
+        const result = customWindow(from, to, now);
+        if (!('window' in result)) throw new Error(result.error);
+        expect(chooseBucket(result.window)).toBe('1h');
+      }
+      const eight = customWindow('2026-10-25', '2026-11-01', now);
+      if (!('window' in eight)) throw new Error(eight.error);
+      expect(chooseBucket(eight.window)).toBe('1d');
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  test('hourly ticks keep the minutes where local hours start off the hour', () => {
+    const script = `
+      const { formatBucketTick } = await import('@/features/taproot-usage/logic/format');
+      console.log(formatBucketTick(Date.UTC(2026, 10, 2), '1h', 7 * 86_400_000, 'local'));
+      console.log(formatBucketTick(Date.UTC(2026, 10, 2), '1h', 86_400_000, 'local'));
+    `;
+    const tick = (tz: string) => {
+      // A fresh process: Intl formatters fix their zone when created.
+      const proc = Bun.spawnSync([process.execPath, '-e', script], {
+        cwd: `${import.meta.dir}/..`,
+        env: { ...process.env, TZ: tz },
+      });
+      return proc.stdout.toString().trim().split('\n');
+    };
+    expect(tick('Asia/Kolkata')).toEqual(['Mon 5:30 AM', '5:30 AM']);
+    expect(tick('Etc/UTC')).toEqual(['Mon 12 AM', '12:00 AM']);
+  });
+
   test('labels say UTC only for UTC days', () => {
     const noon = Date.UTC(2026, 10, 3, 12);
     expect(formatBucketLabel(noon, '1d', 'utc')).toBe('Nov 3 (UTC)');
     expect(formatBucketLabel(noon, '1d', 'local')).not.toContain('UTC');
     expect(formatBucketTick(noon, '1d', 30 * 86_400_000, 'utc')).toBe('Nov 3');
     expect(formatBucketTick(noon, '1d', 30 * 86_400_000, 'local')).toMatch(/^Nov [0-9]+$/);
+  });
+});
+
+describe('custom range errors', () => {
+  test('an invalid range has no window to load', () => {
+    const now = Date.UTC(2026, 10, 9);
+    expect(resolveWindow('custom', '2026-11-08', '2026-11-01', now)).toEqual({
+      window: null,
+      error: 'order',
+    });
+    expect(resolveWindow('custom', 'nope', '2026-11-01', now).window).toBeNull();
+    expect(resolveWindow('7d', '', '', now).window).toEqual(presetWindow('7d', now));
+  });
+});
+
+describe('session labels', () => {
+  test('keep the client and eight ID characters, so sessions stay apart', () => {
+    const a = 'claude:4f1c9a2e-0000-4000-8000-000000000001';
+    const b = 'claude:4a77d0b3-0000-4000-8000-000000000002';
+    expect(sessionLabel(a)).toBe('claude · 4f1c9a2e');
+    expect(sessionLabel(a)).not.toBe(sessionLabel(b));
+    expect(sessionLabel('codex:019a2b3c-4d5e')).toBe('codex · 019a2b3c');
+    expect(sessionLabel('0123456789abcdef')).toBe('0123456789ab');
+  });
+});
+
+describe('latency points', () => {
+  const rows = [
+    { t: 0, a: null, b: 10 },
+    { t: 1, a: 120_000, b: 12 },
+    { t: 2, a: null, b: null },
+    { t: 3, a: 5, b: 9 },
+    { t: 4, a: 6, b: null },
+  ];
+
+  test('a value between two gaps is isolated, a value beside another is not', () => {
+    expect(isIsolatedPoint(rows, 'a', 1)).toBe(true);
+    expect(isIsolatedPoint(rows, 'a', 3)).toBe(false);
+    expect(isIsolatedPoint(rows, 'a', 0)).toBe(false);
+    expect(isIsolatedPoint(rows, 'b', 3)).toBe(true);
+    expect(isIsolatedPoint(rows, 'b', 0)).toBe(false);
+  });
+
+  test('the peak sums stacked series and skips empty rows', () => {
+    expect(peakOf(rows, ['a'])).toEqual({ t: 1, value: 120_000 });
+    expect(peakOf(rows, ['a', 'b'])).toEqual({ t: 1, value: 120_012 });
+    expect(peakOf([{ t: 0, a: 0 }], ['a'])).toBeNull();
+  });
+});
+
+describe('query state after a failure', () => {
+  test('keeps the last data, marked with the key and time it loaded for', () => {
+    const loaded = settleQuery(null, '24h#0', '24h', { data: 'day', at: 1000 });
+    expect(queryView(loaded, '24h', '24h#0')).toMatchObject({
+      data: 'day',
+      current: true,
+      updatedAt: 1000,
+      error: null,
+      loading: false,
+    });
+    // Switching to 30d: the 24h data stays, but is not the current key's while it loads...
+    expect(queryView(loaded, '30d', '30d#0')).toMatchObject({ current: false, loading: true });
+    // ...or after it failed.
+    const failed = settleQuery(loaded, '30d#0', '30d', { error: new Error('database is locked') });
+    expect(queryView(failed, '30d', '30d#0')).toMatchObject({
+      data: 'day',
+      current: false,
+      updatedAt: 1000,
+      loading: false,
+    });
+    expect(queryView(failed, '30d', '30d#0').error?.message).toBe('database is locked');
+    // A failed retry of the same key keeps data that is still for that key.
+    const retried = settleQuery(loaded, '24h#1', '24h', { error: new Error('x') });
+    expect(queryView(retried, '24h', '24h#1')).toMatchObject({ current: true, updatedAt: 1000 });
+  });
+
+  test('a failed refresh or tab return keeps figures that answer the same selection current', () => {
+    const at = Date.UTC(2026, 10, 9, 10, 0);
+    const opened = rangeQuery('24h', '', '', presetWindow('24h', at), 0);
+    // A header refresh two hours later moves the anchor and bumps the refresh count.
+    const refreshed = rangeQuery('24h', '', '', presetWindow('24h', at + 7_200_000), 1);
+    expect(refreshed.key).not.toBe(opened.key);
+    expect(refreshed.selection).toBe(opened.selection);
+
+    const loaded = settleQuery(null, `${opened.key}#0`, opened.selection, { data: 'day', at });
+    const failed = settleQuery(loaded, `${refreshed.key}#0`, refreshed.selection, {
+      error: new Error('database is locked'),
+    });
+    expect(queryView(failed, refreshed.selection, `${refreshed.key}#0`)).toMatchObject({
+      current: true,
+      updatedAt: at,
+    });
+
+    // Another range, or other custom dates, is another selection.
+    const week = rangeQuery('7d', '', '', presetWindow('7d', at), 1);
+    expect(queryView(failed, week.selection, `${week.key}#0`).current).toBe(false);
+    const custom = (from: string, to: string) =>
+      rangeQuery('custom', from, to, presetWindow('7d', at), 0).selection;
+    expect(custom('2026-11-01', '2026-11-07')).not.toBe(custom('2026-11-02', '2026-11-07'));
+  });
+
+  test('rows from another Requests page are not current for the page shown', () => {
+    const page1 = requestsSelection('24h', 'a|m|||', 0);
+    const page2 = requestsSelection('24h', 'a|m|||', 1);
+    expect(page2).not.toBe(page1);
+    const loaded = settleQuery(null, 'k|', page1, { data: 'rows', at: 1000 });
+    // Older failed: page 1's rows stay, but they do not answer page 2.
+    const older = settleQuery(loaded, 'k|c2', page2, { error: new Error('x') });
+    expect(queryView(older, page2, 'k|c2')).toMatchObject({ data: 'rows', current: false });
+    // A failed refresh of the same page keeps them current.
+    const refreshed = settleQuery(loaded, 'k2|', page1, { error: new Error('x') });
+    expect(queryView(refreshed, page1, 'k2|').current).toBe(true);
   });
 });

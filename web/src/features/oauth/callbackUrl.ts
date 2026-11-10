@@ -69,6 +69,28 @@ const buildXaiCallbackUrl = (input: string, state?: string): string | null => {
   return callbackUrl.toString();
 };
 
+/** True when the pasted text carries a `state` that is not this attempt's. */
+export const isCallbackFromOtherAttempt = (input: string, state?: string): boolean => {
+  const pastedState = readQueryLikeCallbackInput(input)?.get('state')?.trim();
+  return Boolean(pastedState && state && pastedState !== state.trim());
+};
+
+/**
+ * An example callback for this sign-in, built from the auth URL's `redirect_uri`, so the
+ * placeholder names the host and port the provider really sends the browser to.
+ */
+export const callbackExampleFromAuthUrl = (authUrl?: string): string | null => {
+  if (!authUrl) return null;
+  try {
+    const redirect = new URL(authUrl).searchParams.get('redirect_uri');
+    if (!redirect || !isAbsoluteHttpUrl(redirect)) return null;
+    const { origin, pathname } = new URL(redirect);
+    return `${origin}${pathname}?code=...&state=...`;
+  } catch {
+    return null;
+  }
+};
+
 export const resolveCallbackUrl = (
   provider: string,
   input: string,

@@ -17,7 +17,14 @@ import {
 } from 'recharts';
 import type { UsageBucket } from '@/services/api/taproot';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import type { ChartRow, LatencySeries, RequestRow, TokenRow } from '../logic/summary';
+import {
+  isIsolatedPoint,
+  peakOf,
+  type ChartRow,
+  type LatencySeries,
+  type RequestRow,
+  type TokenRow,
+} from '../logic/summary';
 import {
   formatAxisMs,
   formatAxisNumber,
@@ -161,8 +168,24 @@ export function StackedSeries({
   className,
   ariaLabel,
 }: StackedSeriesProps) {
+  const { t } = useTranslation();
   const animate = useAnimate();
   const last = entries.length - 1;
+  const summary = useMemo(() => {
+    const ids = entries.map((entry) => entry.id);
+    const peak = peakOf(rows, ids);
+    if (!peak) return t('taproot_usage.charts.summary_empty', { title: ariaLabel });
+    const total = (rows as readonly Record<string, unknown>[]).reduce(
+      (sum, row) => sum + ids.reduce((acc, id) => acc + (Number(row[id]) || 0), 0),
+      0
+    );
+    return t('taproot_usage.charts.summary_total', {
+      title: ariaLabel,
+      total: format(total),
+      peak: format(peak.value),
+      bucket: formatBucketLabel(peak.t, axis.bucket, axis.dayZone),
+    });
+  }, [rows, entries, axis, format, ariaLabel, t]);
   const yAxis = (
     <YAxis
       tick={AXIS_TICK}
@@ -177,9 +200,9 @@ export function StackedSeries({
   );
   if (rows.length > MAX_BAR_BUCKETS) {
     return (
-      <div className={`${styles.chartBox} ${className ?? ''}`} role="img" aria-label={ariaLabel}>
+      <div className={`${styles.chartBox} ${className ?? ''}`} role="img" aria-label={summary}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={rows as object[]} margin={CHART_MARGIN}>
+          <AreaChart data={rows as object[]} margin={CHART_MARGIN} accessibilityLayer={false}>
             <CartesianGrid vertical={false} stroke="var(--usage-grid)" />
             <XAxisFor axis={axis} />
             {yAxis}
@@ -206,9 +229,14 @@ export function StackedSeries({
     );
   }
   return (
-    <div className={`${styles.chartBox} ${className ?? ''}`} role="img" aria-label={ariaLabel}>
+    <div className={`${styles.chartBox} ${className ?? ''}`} role="img" aria-label={summary}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows as object[]} margin={CHART_MARGIN} barCategoryGap="18%">
+        <BarChart
+          data={rows as object[]}
+          margin={CHART_MARGIN}
+          barCategoryGap="18%"
+          accessibilityLayer={false}
+        >
           <CartesianGrid vertical={false} stroke="var(--usage-grid)" />
           <XAxisFor axis={axis} />
           {yAxis}
@@ -368,11 +396,28 @@ export function PercentileChart({
       }),
     [series, t]
   );
+  const summary = useMemo(() => {
+    let best: { label: string; t: number; value: number } | null = null;
+    for (const entry of entries) {
+      if (!entry.dashed) continue;
+      const peak = peakOf(rows, [entry.id]);
+      if (peak && (best === null || peak.value > best.value)) {
+        best = { label: entry.label, ...peak };
+      }
+    }
+    if (!best) return t('taproot_usage.charts.summary_empty', { title: ariaLabel });
+    return t('taproot_usage.charts.summary_peak', {
+      title: ariaLabel,
+      series: best.label,
+      peak: formatMs(best.value),
+      bucket: formatBucketLabel(best.t, axis.bucket, axis.dayZone),
+    });
+  }, [entries, rows, axis, ariaLabel, t]);
   return (
     <>
-      <div className={styles.chartBox} role="img" aria-label={ariaLabel}>
+      <div className={styles.chartBox} role="img" aria-label={summary}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={rows} margin={CHART_MARGIN}>
+          <LineChart data={rows} margin={CHART_MARGIN} accessibilityLayer={false}>
             <CartesianGrid vertical={false} stroke="var(--usage-grid)" />
             <XAxisFor axis={axis} />
             <YAxis
@@ -396,7 +441,20 @@ export function PercentileChart({
                 stroke={entry.color}
                 strokeWidth={2}
                 strokeDasharray={entry.dashed ? '5 4' : undefined}
-                dot={false}
+                dot={(props) =>
+                  isIsolatedPoint(rows, entry.id, props.index) ? (
+                    <circle
+                      key={props.index}
+                      cx={props.cx}
+                      cy={props.cy}
+                      r={2.5}
+                      fill={entry.color}
+                      stroke="none"
+                    />
+                  ) : (
+                    <g key={props.index} />
+                  )
+                }
                 activeDot={{ r: 4, stroke: 'var(--bg-primary)', strokeWidth: 2 }}
                 connectNulls={false}
                 isAnimationActive={animate}

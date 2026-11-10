@@ -60,7 +60,7 @@ const resolveXaiPlanLabelKey = (monthlyLimitCents: number | null): string | null
   return null;
 };
 
-export function XaiQuotaBody({ quota, classes }: QuotaBodyProps<XaiQuotaState>) {
+export function XaiQuotaBody({ quota, classes, readAt }: QuotaBodyProps<XaiQuotaState>) {
   const { t, i18n } = useTranslation();
   // Ahead of the early return below — hooks cannot be conditional.
   const now = useNow();
@@ -104,7 +104,8 @@ export function XaiQuotaBody({ quota, classes }: QuotaBodyProps<XaiQuotaState>) 
     resetLabel,
     parseIsoToMs(billing.billingPeriodEnd),
     now,
-    locale
+    locale,
+    readAt
   );
   const onDemandCap = billing.onDemandCapCents ?? 0;
   const clampedOnDemandUsed =
@@ -126,7 +127,8 @@ export function XaiQuotaBody({ quota, classes }: QuotaBodyProps<XaiQuotaState>) 
     weeklyResetLabel === '-' ? null : t('xai_quota.reset_at', { time: weeklyResetLabel }),
     billing.resetAtMs,
     now,
-    locale
+    locale,
+    readAt
   );
   const hasWeeklyData =
     billing.periodType === 'weekly' &&

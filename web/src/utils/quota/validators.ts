@@ -8,6 +8,7 @@ export function resolveAuthProvider(file: AuthFileItem): string {
   const raw = file.provider ?? file.type ?? '';
   const key = String(raw).trim().toLowerCase().replace(/_/g, '-');
   if (key === 'x-ai' || key === 'grok') return 'xai';
+  if (key === 'muse') return 'meta';
   // Kimi International (kimi.ai) accounts share Kimi's quota API on another host.
   if (key === 'kimi-ai') return 'kimi';
   return key;

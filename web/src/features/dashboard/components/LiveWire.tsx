@@ -10,6 +10,8 @@ const TOP_PADDING = 6;
 interface LiveWireProps {
   points: number[];
   ariaLabel: string;
+  /** The line's color, such as the window's success-rate tone. */
+  color?: string;
   className?: string;
 }
 
@@ -18,7 +20,7 @@ interface LiveWireProps {
  * 真实桶数据 → 平滑曲线 + 渐变面积，最新一桶的末端带呼吸光点；
  * 无流量时退化为一条安静的虚线基线。
  */
-export function LiveWire({ points, ariaLabel, className }: LiveWireProps) {
+export function LiveWire({ points, ariaLabel, color, className }: LiveWireProps) {
   const gradientId = useId();
 
   const geometry = useMemo(() => {
@@ -49,7 +51,10 @@ export function LiveWire({ points, ariaLabel, className }: LiveWireProps) {
   const idle = !geometry || geometry.isFlat;
 
   return (
-    <div className={[styles.wire, className].filter(Boolean).join(' ')}>
+    <div
+      className={[styles.wire, className].filter(Boolean).join(' ')}
+      style={color ? ({ '--wire-color': color } as React.CSSProperties) : undefined}
+    >
       {idle ? (
         <svg
           className={styles.canvas}
@@ -61,14 +66,13 @@ export function LiveWire({ points, ariaLabel, className }: LiveWireProps) {
           <path
             className={styles.idleLine}
             d={`M0 ${VIEW_HEIGHT - 1} L${VIEW_WIDTH} ${VIEW_HEIGHT - 1}`}
-            pathLength={1}
             vectorEffect="non-scaling-stroke"
           />
         </svg>
       ) : (
         <>
           <svg
-            className={styles.canvas}
+            className={`${styles.canvas} ${styles.reveal}`}
             viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
             preserveAspectRatio="none"
             role="img"
@@ -84,7 +88,6 @@ export function LiveWire({ points, ariaLabel, className }: LiveWireProps) {
             <path
               className={styles.line}
               d={geometry.line}
-              pathLength={1}
               fill="none"
               vectorEffect="non-scaling-stroke"
             />

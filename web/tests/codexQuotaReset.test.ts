@@ -63,7 +63,7 @@ describe('Codex reset gateway cooldown', () => {
   test('does not clear on transport failure', async () => {
     const { request, clear } = setup({});
     request.mockRejectedValue(new Error('timeout'));
-    await expect(reset()).rejects.toThrow('timeout');
+    await expect(reset()).rejects.toThrow('codex_quota.reset_not_confirmed');
     expect(clear).not.toHaveBeenCalled();
   });
 
@@ -88,5 +88,56 @@ describe('Codex reset gateway cooldown', () => {
     mocks.push(revision);
     await expect(reset()).rejects.toThrow('codex_quota.reset_cooldown_failed');
     expect(clear).not.toHaveBeenCalled();
+  });
+
+  const redeemIds = (request: ReturnType<typeof setup>['request']) =>
+    request.mock.calls
+      .map(([payload]) => payload)
+      .filter((payload) => payload.url === CODEX_RATE_LIMIT_RESET_CREDITS_CONSUME_URL)
+      .map((payload) => JSON.parse(String(payload.data)).redeem_request_id as string);
+
+  test.each([
+    ['a lost response', () => Promise.reject(new Error('socket hang up'))],
+    ['a gateway error', () => Promise.resolve(response({}, 502))],
+    ['a request timeout', () => Promise.resolve(response({}, 408))],
+    ['a conflict', () => Promise.resolve(response({}, 409))],
+    ['rate limiting', () => Promise.resolve(response({}, 429))],
+  ])('retries after %s with the same redeem id', async (_name, fail) => {
+    const { request } = setup({ code: 'reset' });
+    const succeed = request.getMockImplementation()!;
+    request.mockImplementationOnce(fail);
+    await expect(reset()).rejects.toThrow();
+    await reset();
+    const [first, retry] = redeemIds(request);
+    expect(first).toBeString();
+    expect(retry).toBe(first);
+
+    // A confirmed answer settles the id; the next reset is a new request.
+    request.mockImplementation(succeed);
+    await reset();
+    expect(redeemIds(request)[2]).not.toBe(first);
+  });
+
+  test.each([400, 401, 403, 404, 422])(
+    'an HTTP %i refusal settles the redeem id',
+    async (status) => {
+      const { request } = setup({ code: 'reset' });
+      const succeed = request.getMockImplementation()!;
+      request.mockImplementationOnce(() => Promise.resolve(response({}, status)));
+      await expect(reset()).rejects.toThrow();
+      request.mockImplementation(succeed);
+      await reset();
+      const [first, second] = redeemIds(request);
+      expect(first).toBeString();
+      expect(second).not.toBe(first);
+    }
+  );
+
+  test('a confirmed refusal settles the redeem id', async () => {
+    const { request } = setup({ code: 'no_credit' });
+    await expect(reset()).rejects.toThrow('codex_quota.reset_not_confirmed');
+    await expect(reset()).rejects.toThrow('codex_quota.reset_not_confirmed');
+    const [first, second] = redeemIds(request);
+    expect(second).not.toBe(first);
   });
 });

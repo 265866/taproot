@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type { ChartRow, ChartView } from '../model/chart';
-import { formatMoment, formatWeekdayDay } from '../model/format';
+import { formatChartMoment, formatWeekdayDay } from '../model/format';
 import { dayTicks } from '../model/range';
 import styles from '../quota.module.scss';
 
@@ -54,7 +54,7 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
         : t('taproot_quota.chart.tooltip_drain', { value: value.toFixed(1) });
     return (
       <div className={styles.tooltip}>
-        {formatMoment(row.t, now, locale)} · {figure}
+        {formatChartMoment(row.t, locale)} · {figure}
         {projected && ` · ${t('taproot_quota.chart.projected')}`}
       </div>
     );
@@ -67,8 +67,14 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
       role="img"
       aria-label={ariaLabel}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={{ top: 28, right: 12, bottom: 0, left: 0 }}>
+      {/* The wrapper is the one named image. Hidden, the chart inside exposes neither a second
+          image named by its tick text nor a focusable layer that steps through every row. */}
+      <ResponsiveContainer width="100%" height="100%" aria-hidden="true">
+        <ComposedChart
+          data={rows}
+          margin={{ top: 28, right: 12, bottom: 0, left: 0 }}
+          accessibilityLayer={false}
+        >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" className={styles.gradientTop} />

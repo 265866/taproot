@@ -21,7 +21,6 @@ import {
 } from '@/features/authFiles/constants';
 import { useAuthFilesData } from '@/features/authFiles/hooks/useAuthFilesData';
 import { useAuthFilesModels } from '@/features/authFiles/hooks/useAuthFilesModels';
-import { useAuthFilesOauth } from '@/features/authFiles/hooks/useAuthFilesOauth';
 import { useAuthFilesPrefixProxyEditor } from '@/features/authFiles/hooks/useAuthFilesPrefixProxyEditor';
 import { useAuthFilesStatusBarCache } from '@/features/authFiles/hooks/useAuthFilesStatusBarCache';
 import { getAuthFileRefreshKey } from '@/features/authFiles/manualRefresh';
@@ -67,6 +66,7 @@ import {
   matchesAccountSearch,
   matchesStatusFilter,
   mergeAccountGroups,
+  pageNow,
   type StatusFilter,
 } from './model';
 import styles from './AccountsPage.module.scss';
@@ -160,7 +160,6 @@ export function AccountsPage() {
     loadFiles: loadFilesInBackground,
     onFilesMutated: invalidateDerivedCaches,
   });
-  const { excluded, loadExcluded } = useAuthFilesOauth({ viewMode: 'list', files });
   const statusBarCache = useAuthFilesStatusBarCache(files);
 
   /* ---------- loading ---------- */
@@ -375,7 +374,7 @@ export function AccountsPage() {
 
   const firstLoad = (!quotaData && quotaLoading) || (filesLoading && files.length === 0);
   const loadError = quotaError || filesError;
-  const now = quotaData?.now ?? clock;
+  const now = pageNow(clock, quotaData?.now);
 
   return (
     <div className={`${quotaStyles.page} ${styles.page}`}>
@@ -631,8 +630,6 @@ export function AccountsPage() {
           handleDelete,
         }}
         models={models}
-        excluded={excluded}
-        onLoadExcluded={loadExcluded}
         editor={editor}
         onCopyText={(text) => void copyText(text)}
         onClose={() => setManageOpen(false)}

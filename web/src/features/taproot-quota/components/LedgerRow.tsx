@@ -2,13 +2,18 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getTypeLabel } from '@/features/authFiles/constants';
 import {
+  formatElapsed,
+  formatInstantShort,
+  formatRelativeInstant,
+} from '@/utils/quota/relativeTime';
+import {
   QUOTA_PROGRESS_HIGH_THRESHOLD,
   QUOTA_PROGRESS_MEDIUM_THRESHOLD,
 } from '../live/components/QuotaMeter';
 import { accountName, compactDuration } from '../model/format';
 import type { LedgerCell, LedgerColumn, LedgerRow as LedgerRowModel } from '../model/ledger';
 import { REFRESHABLE_PROVIDERS } from '../useQuotaRefresh';
-import { formatShortMoment, relativeTime, windowTitle } from './ledgerText';
+import { windowTitle } from './ledgerText';
 import styles from './Ledger.module.scss';
 
 export function WindowCell({
@@ -66,8 +71,8 @@ export function WindowCell({
         {cell.nextReset === null
           ? t('taproot_quota.ledger.no_reset')
           : t('taproot_quota.ledger.reset_at', {
-              relative: relativeTime(cell.nextReset - now, locale),
-              time: formatShortMoment(cell.nextReset, locale),
+              relative: formatRelativeInstant(cell.nextReset, now, locale),
+              time: formatInstantShort(cell.nextReset, locale),
             })}
       </div>
     </div>
@@ -98,6 +103,7 @@ export function LedgerRow({
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage;
   const name = accountName(row, showEmails);
+  const readAge = row.observedAt === null ? null : formatElapsed(row.observedAt, now, locale);
 
   return (
     <li
@@ -132,11 +138,20 @@ export function LedgerRow({
           )}
         </div>
         <div className={styles.lastSeen}>
-          {row.lastSeen === null
-            ? t('taproot_quota.ledger.never_seen')
-            : t('taproot_quota.ledger.last_seen', {
-                time: formatShortMoment(row.lastSeen, locale),
-              })}
+          <span>
+            {row.lastSeen === null
+              ? t('taproot_quota.ledger.never_seen')
+              : t('taproot_quota.ledger.last_seen', {
+                  time: formatInstantShort(row.lastSeen, locale),
+                })}
+          </span>
+          {row.observedAt !== null && (
+            <span title={formatInstantShort(row.observedAt, locale)}>
+              {readAge === null
+                ? t('taproot_quota.ledger.quota_read_just_now')
+                : t('taproot_quota.ledger.quota_read', { relative: readAge })}
+            </span>
+          )}
         </div>
       </div>
       <div className={styles.windows}>

@@ -106,6 +106,14 @@ export function mergeAccountGroups(
   return [...out.values()].sort((a, b) => compareProviders(a.provider, b.provider));
 }
 
+/**
+ * The instant the page renders health, cooldowns, and quota against: the ticking clock, or the
+ * quota fetch when it is newer. The fetch instant alone stays put for the 5-minute reload.
+ */
+export function pageNow(clock: number, quotaFetchedAt: number | undefined): number {
+  return Math.max(clock, quotaFetchedAt ?? clock);
+}
+
 /** One word for whether the account can serve now, most pressing first. */
 export function accountHealth(
   account: { disabled: boolean; cooldown: Cooldown },

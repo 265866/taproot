@@ -15,9 +15,12 @@ import { useAuthStore, useNotificationStore } from '@/stores';
 import { authFilesApi } from '@/services/api';
 import { buildOAuthProviderOptions, normalizeProviderKey } from '@/features/authFiles/constants';
 import {
+  getMissingMappingField,
   getModelAliasDraftSignature,
+  isEditorBackEscape,
   isOAuthEditorDirty,
 } from '@/features/authFiles/oauthEditorState';
+import { hasOpenLayer } from '@/components/ui/layerStack';
 import type { AuthFileItem, OAuthModelAliasEntry } from '@/types';
 import { generateId, getErrorMessage } from '@/utils/helpers';
 import styles from '@/features/authFiles/components/OAuthEditor.module.scss';
@@ -47,6 +50,7 @@ const normalizeMappingEntries = (
     alias: entry.alias ?? '',
     fork: Boolean(entry.fork),
     forceMapping: entry.forceMapping,
+    extra: entry.extra,
   }));
 };
 
@@ -79,6 +83,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<'unsupported' | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showIncomplete, setShowIncomplete] = useState(false);
 
   useEffect(() => {
     setProvider(providerFromParams);
@@ -159,7 +164,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (isEditorBackEscape(event, hasOpenLayer())) {
         handleBack();
       }
     };
@@ -340,6 +345,12 @@ export function AuthFilesOAuthModelAliasEditPage() {
       return;
     }
 
+    if (mappings.some((entry) => getMissingMappingField(entry))) {
+      setShowIncomplete(true);
+      showNotification(t('oauth_model_alias.incomplete_rows'), 'error');
+      return;
+    }
+
     const seenAlias = new Set<string>();
     let hasDuplicateAlias = false;
     const normalized = mappings
@@ -353,7 +364,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
           return null;
         }
         seenAlias.add(aliasKey);
-        const normalizedEntry: OAuthModelAliasEntry = { name, alias };
+        const normalizedEntry: OAuthModelAliasEntry = { name, alias, extra: entry.extra };
         if (entry.fork) normalizedEntry.fork = true;
         if (typeof entry.forceMapping === 'boolean') {
           normalizedEntry.forceMapping = entry.forceMapping;
@@ -490,6 +501,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
                   }))}
                   disabled={disableControls || saving}
                   canRemove={mappings.length > 1}
+                  missingField={showIncomplete ? getMissingMappingField(entry) : undefined}
                   onChange={(field, value) => updateMappingEntry(index, field, value)}
                   onRemove={() => removeMappingEntry(index)}
                 />

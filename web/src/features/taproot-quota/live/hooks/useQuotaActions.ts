@@ -26,12 +26,9 @@ export function useQuotaActions(disableControls: boolean) {
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const [resettingQuotaName, setResettingQuotaName] = useState<string | null>(null);
 
-  const refreshQuota = useCallback(
-    async (file: AuthFileItem, adapter: QuotaAdapter) => {
-      if (disableControls || file.disabled) return;
+  const readQuota = useCallback(
+    async (file: AuthFileItem, adapter: QuotaAdapter, notifySuccess: boolean) => {
       const cacheKey = getQuotaCacheKey(file);
-      if (resettingQuotaName === cacheKey) return;
-      if (getQuotaState(adapter, file)?.status === 'loading') return;
       const cacheGeneration = captureQuotaCacheGeneration(file.name);
       const setQuota = getQuotaSetter(adapter);
 
@@ -43,13 +40,15 @@ export function useQuotaActions(disableControls: boolean) {
       try {
         const data = await adapter.fetchQuota(file, t);
         commitIfQuotaCacheCurrent(cacheGeneration, () => {
-          const successState = adapter.buildSuccessState(data);
+          const successState = { ...adapter.buildSuccessState(data), readAt: Date.now() };
           setQuota((prev) => ({
             ...prev,
             [cacheKey]: successState,
           }));
           void enrichQuotaInBackground(adapter, file, data, successState, t);
-          showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
+          if (notifySuccess) {
+            showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
+          }
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('common.unknown_error');
@@ -66,7 +65,17 @@ export function useQuotaActions(disableControls: boolean) {
         });
       }
     },
-    [disableControls, resettingQuotaName, showNotification, t]
+    [showNotification, t]
+  );
+
+  const refreshQuota = useCallback(
+    async (file: AuthFileItem, adapter: QuotaAdapter) => {
+      if (disableControls || file.disabled) return;
+      if (resettingQuotaName === getQuotaCacheKey(file)) return;
+      if (getQuotaState(adapter, file)?.status === 'loading') return;
+      await readQuota(file, adapter, true);
+    },
+    [disableControls, readQuota, resettingQuotaName]
   );
 
   const resetQuota = useCallback(
@@ -92,25 +101,28 @@ export function useQuotaActions(disableControls: boolean) {
             commitIfQuotaCacheCurrent(cacheGeneration, () => {
               setQuota((prev) => ({
                 ...prev,
-                [cacheKey]: adapter.buildSuccessState(data),
+                [cacheKey]: { ...adapter.buildSuccessState(data), readAt: Date.now() },
               }));
               showNotification(t('codex_quota.reset_success', { name: file.name }), 'success');
             });
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : t('common.unknown_error');
-            commitIfQuotaCacheCurrent(cacheGeneration, () => {
+            const current = commitIfQuotaCacheCurrent(cacheGeneration, () => {
               showNotification(
                 t('codex_quota.reset_failed', { name: file.name, message }),
                 'error'
               );
             });
+            // The credit may be spent even though the call failed: replace the card's old
+            // credit count and windows before Reset can be pressed again.
+            if (current) await readQuota(file, adapter, false);
           } finally {
             setResettingQuotaName((current) => (current === cacheKey ? null : current));
           }
         },
       });
     },
-    [disableControls, resettingQuotaName, showConfirmation, showNotification, t]
+    [disableControls, readQuota, resettingQuotaName, showConfirmation, showNotification, t]
   );
 
   return { resettingQuotaName, refreshQuota, resetQuota };

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useEmailMask } from '@/hooks/useEmailMask';
 import { taprootApi, type UsageDevice } from '@/services/api/taproot';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
+import { QueryError } from './QueryError';
 import { toIso, type TimeWindow } from '../logic/range';
 import type { SortDirection } from '../logic/summary';
 import {
@@ -19,35 +19,41 @@ import styles from '../TaprootUsage.module.scss';
 
 interface Props {
   window: TimeWindow;
+  /** The range as chosen, which a refresh or a tab switch leaves unchanged. */
+  rangeSelection: string;
   refreshKey: number;
   showEmails: boolean;
   /** Opens Requests filtered to a device; the empty ID means requests without a device. */
   onViewRequests: (deviceId: string) => void;
 }
 
-export function DevicesView({ window, refreshKey, showEmails, onViewRequests }: Props) {
-  const { t } = useTranslation();
-  const { mask } = useEmailMask();
-  const query = useTaprootQuery(`devices|${window.fromMs}|${window.toMs}|${refreshKey}`, () =>
-    taprootApi.usageDevices({ from: toIso(window.fromMs), to: toIso(window.toMs) })
+export function DevicesView({
+  window,
+  rangeSelection,
+  refreshKey,
+  showEmails,
+  onViewRequests,
+}: Props) {
+  const query = useTaprootQuery(
+    `devices|${window.fromMs}|${window.toMs}|${refreshKey}`,
+    () => taprootApi.usageDevices({ from: toIso(window.fromMs), to: toIso(window.toMs) }),
+    `devices|${rangeSelection}`
   );
   const devices = useMemo(() => query.data?.devices ?? [], [query.data]);
   const flagged = devices.filter((d) => ttlStatus(d) === 'flag');
 
   return (
     <>
-      {query.error ? (
-        <div className={styles.error} role="alert">
-          <span>{mask(t('taproot_usage.load_failed', { message: query.error.message }))}</span>
-          <button type="button" className={styles.ghostButton} onClick={query.reload}>
-            {t('taproot_usage.retry')}
-          </button>
-        </div>
-      ) : null}
+      <QueryError query={query} />
       {query.loading ? <div className={styles.loadingBar} /> : null}
-      {flagged.length > 0 ? <TtlAdvice devices={flagged} /> : null}
       {query.data ? (
-        <DevicesTable devices={devices} showEmails={showEmails} onViewRequests={onViewRequests} />
+        <div
+          className={`${styles.page} ${query.current ? '' : styles.stale}`}
+          aria-busy={query.loading}
+        >
+          {flagged.length > 0 ? <TtlAdvice devices={flagged} /> : null}
+          <DevicesTable devices={devices} showEmails={showEmails} onViewRequests={onViewRequests} />
+        </div>
       ) : null}
     </>
   );
@@ -96,13 +102,22 @@ export function TtlAdvice({ devices }: { devices: readonly UsageDevice[] }) {
                 requests: m.splitRequests.toLocaleString(),
               })}
             </p>
-            <p className={styles.callout}>
-              {t('taproot_usage.devices.ttl_fix_before', { device: name })}{' '}
-              <code className={styles.mono}>&quot;promptCacheTtl&quot;: &quot;1h&quot;</code>{' '}
-              {t('taproot_usage.devices.ttl_fix_after')}{' '}
-              <code className={styles.mono}>~/.claude/settings.json</code>
-              {t('taproot_usage.devices.ttl_fix_version')}
-            </p>
+            {e.netSavingsUSD < 0 ? (
+              <p className={styles.ttlMeasured}>
+                {t('taproot_usage.devices.ttl_keep', {
+                  device: name,
+                  amount: formatUSD(-e.netSavingsUSD),
+                })}
+              </p>
+            ) : (
+              <p className={styles.callout}>
+                {t('taproot_usage.devices.ttl_fix_before', { device: name })}{' '}
+                <code className={styles.mono}>&quot;promptCacheTtl&quot;: &quot;1h&quot;</code>{' '}
+                {t('taproot_usage.devices.ttl_fix_after')}{' '}
+                <code className={styles.mono}>~/.claude/settings.json</code>
+                {t('taproot_usage.devices.ttl_fix_version')}
+              </p>
+            )}
             <p className={styles.ttlEstimate}>
               <span className={`${styles.badge} ${styles.badgeWarn}`}>
                 {t('taproot_usage.devices.estimate_badge')}
@@ -126,7 +141,6 @@ export function TtlAdvice({ devices }: { devices: readonly UsageDevice[] }) {
                       amount: formatUSD(-e.netSavingsUSD),
                     })}
               </strong>
-              {e.netSavingsUSD < 0 ? ` ${t('taproot_usage.devices.estimate_net_cost_hint')}` : null}
             </p>
           </div>
         );

@@ -6,6 +6,7 @@
  * rather than here, so the relative half stays independently styleable.
  */
 
+import { useTranslation } from 'react-i18next';
 import type { ResetDisplay } from '@/utils/quota';
 import type { QuotaClassMap } from '../types';
 
@@ -17,6 +18,7 @@ export interface QuotaResetLabelProps {
 }
 
 export function QuotaResetLabel({ display, classes, soon = false }: QuotaResetLabelProps) {
+  const { t } = useTranslation();
   return (
     <>
       <span className={classes.quotaReset}>{display.absolute}</span>
@@ -28,7 +30,7 @@ export function QuotaResetLabel({ display, classes, soon = false }: QuotaResetLa
               : classes.quotaResetRelative
           }
         >
-          {display.relative}
+          {display.resetSinceRead ? t('taproot_quota.live.reset_since_read') : display.relative}
         </span>
       )}
     </>

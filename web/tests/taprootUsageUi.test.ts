@@ -8,6 +8,9 @@ import { KpiTiles } from '@/features/taproot-usage/components/KpiTiles';
 import { Overview } from '@/features/taproot-usage/components/Overview';
 import { BreakdownTable } from '@/features/taproot-usage/components/BreakdownTable';
 import { AffinityPanel } from '@/features/taproot-usage/components/SessionsView';
+import { StackedSeries } from '@/features/taproot-usage/components/Charts';
+import { QueryError } from '@/features/taproot-usage/components/QueryError';
+import { RequestsView } from '@/features/taproot-usage/components/RequestsView';
 import { affinityStats } from '@/features/taproot-usage/logic/sessions';
 import { breakdownRows, rankGroups } from '@/features/taproot-usage/logic/summary';
 import { en } from '@/i18n/resources';
@@ -139,6 +142,117 @@ describe('breakdown table', () => {
     expect(html.match(/title="View requests"/g)?.length).toBe(1);
     expect(html).toContain('75%'); // 1.5 of 2.0
     expect(html).toContain('25%'); // failure rate 1 / 4
+  });
+});
+
+describe('breakdown drill-down', () => {
+  const summary: UsageSummary = {
+    totals: zero,
+    buckets: [
+      {
+        t: '2026-11-01T00:00:00Z',
+        groups: {
+          '(none)': { ...zero, requests: 1, costUSD: 0.5 },
+          'node:desktop': { ...zero, requests: 4, costUSD: 1.5 },
+        },
+      },
+    ],
+  };
+
+  test('links requests without a device, which Requests can filter by', () => {
+    const html = render(
+      createElement(BreakdownTable, {
+        rows: breakdownRows(rankGroups(summary)),
+        groupBy: 'device',
+        labelFor: (key: string) => key,
+        colorFor: () => null,
+        onViewRequests: () => {},
+      })
+    );
+    expect(html.match(/title="View requests"/g)?.length).toBe(2);
+  });
+});
+
+describe('usage chart summaries', () => {
+  test('the chart image names its total and its highest bucket', () => {
+    const rows = [
+      { t: Date.UTC(2026, 10, 1, 10), a: 1.5, b: 0.25 },
+      { t: Date.UTC(2026, 10, 1, 11), a: 3, b: 1 },
+    ];
+    const html = render(
+      createElement(StackedSeries, {
+        rows,
+        entries: [
+          { id: 'a', label: 'A', color: 'red' },
+          { id: 'b', label: 'B', color: 'blue' },
+        ],
+        axis: { bucket: '1h', spanMs: 86_400_000, dayZone: 'local' },
+        format: (v: number) => `$${v.toFixed(2)}`,
+        tickFormat: String,
+        ariaLabel: 'Cost',
+      })
+    );
+    expect(html).toMatch(/role="img" aria-label="Cost: \$5.75 in total, highest \$4.00 at Nov 1, /);
+  });
+});
+
+describe('usage load errors', () => {
+  const base = { error: new Error('database is locked'), loading: false, reload: () => {} };
+
+  test('say when the data still on screen loaded, and that it is for another selection', () => {
+    const html = render(
+      createElement(QueryError, {
+        query: { ...base, data: {}, current: false, updatedAt: Date.UTC(2026, 10, 9, 10, 42) },
+      })
+    );
+    expect(html).toContain('Could not load usage: database is locked');
+    expect(html).toContain('from the previous selection, loaded at Nov 9,');
+  });
+
+  test('say when the data still on screen loaded, without blaming the selection, after a refresh', () => {
+    const html = render(
+      createElement(QueryError, {
+        query: { ...base, data: {}, current: true, updatedAt: Date.UTC(2026, 10, 9, 10, 42) },
+      })
+    );
+    expect(html).toContain('The figures below loaded at Nov 9,');
+    expect(html).toContain('may be out of date');
+    expect(html).not.toContain('previous selection');
+  });
+
+  test('say only the error when nothing loaded before', () => {
+    const html = render(
+      createElement(QueryError, { query: { ...base, data: null, current: false, updatedAt: null } })
+    );
+    expect(html).toContain('database is locked');
+    expect(html).not.toContain('loaded at');
+  });
+});
+
+describe('request filters', () => {
+  test('an account filter outside /accounts still shows its label', () => {
+    const html = render(
+      createElement(RequestsView, {
+        window: { fromMs: 0, toMs: 86_400_000 },
+        refreshKey: 0,
+        filters: { account: 'deadbeefcafe0001', model: '', session: '', device: '', failed: '' },
+        onFiltersChange: () => {},
+        accounts: [],
+        models: [],
+        devices: [],
+        accountLabel: (key: string) => `acct ${key.slice(0, 6)}`,
+        deviceLabel: (key: string) => key,
+        showEmails: false,
+      })
+    );
+    expect(html).toContain('acct deadbe');
+  });
+});
+
+describe('session plurals', () => {
+  test('one switch is singular', () => {
+    expect(i18n.t('taproot_usage.sessions.switched_badge', { count: 1 })).toBe('1 switch');
+    expect(i18n.t('taproot_usage.sessions.switched_badge', { count: 3 })).toBe('3 switches');
   });
 });
 
