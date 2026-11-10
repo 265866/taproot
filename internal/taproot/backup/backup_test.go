@@ -16,11 +16,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	// TestNextRunAcrossDST needs tzdata on hosts that do not ship it.
 	_ "time/tzdata"
 
+	"github.com/265866/taproot/internal/taproot/access"
 	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
@@ -36,17 +38,19 @@ const (
 	origTaproot = "backups:\n  keep: 3\n"
 )
 
+// origAuth are the credentials. Upstream's startup load reads every *.json
+// file under the auth dir, subdirectories included.
 var origAuth = map[string]string{
-	"claude-a.json": `{"type":"claude","token":"a"}`,
-	"claude-b.json": `{"type":"claude","token":"b"}`,
+	"claude-a.json":     `{"type":"claude","token":"a"}`,
+	"claude-b.json":     `{"type":"claude","token":"b"}`,
+	"nested/codex.json": `{"type":"codex","token":"c"}`,
 }
 
 // otherAuthDirFiles are files upstream does not load as credentials. Backups
 // leave them out and restores leave them alone.
 var otherAuthDirFiles = map[string]string{
-	"nested/codex.json": `{"type":"codex","token":"c"}`,
-	"logs/main.log":     "app log line\n",
-	"notes.txt":         "not a credential\n",
+	"logs/main.log": "app log line\n",
+	"notes.txt":     "not a credential\n",
 }
 
 type fixture struct {
@@ -57,6 +61,9 @@ type fixture struct {
 	srv     *httptest.Server
 	restart chan struct{}
 	clock   time.Time
+	// caller is the identity the restore handler sees; the zero value is a
+	// loopback caller.
+	caller access.Identity
 }
 
 func newFixture(t *testing.T, cfg Config) *fixture {
@@ -90,12 +97,21 @@ func newFixture(t *testing.T, cfg Config) *fixture {
 	}
 	b.now = func() time.Time { return f.clock }
 	b.restart = func() error { f.restart <- struct{}{}; return nil }
+	b.identityFrom = func(*gin.Context) (access.Identity, bool) { return f.caller, true }
 	f.b = b
 	engine := gin.New()
 	b.Routes(engine.Group("/api"))
 	f.srv = httptest.NewServer(engine)
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+// restarted forgets a finished restore, as the process restart that follows
+// one does.
+func (f *fixture) restarted() {
+	f.b.cfgMu.Lock()
+	f.b.restartPending = false
+	f.b.cfgMu.Unlock()
 }
 
 func (f *fixture) openDB(t *testing.T) {
@@ -219,7 +235,7 @@ func TestCreateListDownloadRestoreRoundTrip(t *testing.T) {
 	f := newFixture(t, Config{})
 
 	e := f.create(t)
-	if e.ID != "20261102T031300Z-manual" || e.Reason != ReasonManual || e.Files != 5 || e.Bytes <= 0 {
+	if e.ID != "20261102T031300Z-manual" || e.Reason != ReasonManual || e.Files != 6 || e.Bytes <= 0 {
 		t.Fatalf("unexpected entry %+v", e)
 	}
 	if got := f.list(t); len(got) != 1 || got[0] != e {
@@ -262,7 +278,7 @@ func TestCreateListDownloadRestoreRoundTrip(t *testing.T) {
 	}
 
 	// Drift from the backed-up state in every covered place.
-	writeFile(t, f.paths.ConfigFile, "port: 9999\n")
+	writeFile(t, f.paths.ConfigFile, "port: 9999\nauth-dir: auths\n")
 	if err := os.Remove(filepath.Join(f.paths.AuthDir, "claude-b.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +321,7 @@ func TestCreateListDownloadRestoreRoundTrip(t *testing.T) {
 	// The pre-restore backup holds the drifted state.
 	_, pre := f.do(t, http.MethodGet, "/api/backups/"+rr.PreRestoreBackupID+"/download", nil)
 	_, preMembers := untar(t, pre)
-	if string(preMembers["config.yaml"]) != "port: 9999\n" || preMembers["auth/added.json"] == nil {
+	if string(preMembers["config.yaml"]) != "port: 9999\nauth-dir: auths\n" || preMembers["auth/added.json"] == nil {
 		t.Errorf("pre-restore backup does not hold the state it replaced")
 	}
 
@@ -361,8 +377,8 @@ func TestBackupIncludesRefreshJournal(t *testing.T) {
 	f := newFixture(t, Config{})
 	f.writeJournal(t)
 	e := f.create(t)
-	if e.Files != 6 {
-		t.Fatalf("entry counts %d files, want the 5 plus one receipt", e.Files)
+	if e.Files != 7 {
+		t.Fatalf("entry counts %d files, want the 6 plus one receipt", e.Files)
 	}
 	raw, err := os.ReadFile(filepath.Join(f.b.dir, e.ID+archiveExt))
 	if err != nil {
@@ -408,7 +424,7 @@ func TestRestoreMergesRefreshJournal(t *testing.T) {
 	writeFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json"), `{"token":"drifted"}`)
 	f.clock = f.clock.Add(time.Hour)
 
-	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(f.journalPath(journalPending))
@@ -442,7 +458,7 @@ func TestRestoreRecreatesLostRefreshJournal(t *testing.T) {
 	}
 	f.clock = f.clock.Add(time.Hour)
 
-	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, f.journalPath(journalDone, "receipt")); got != journalReceipt {
@@ -472,7 +488,7 @@ func TestRestoreWritesJournalBeforeCredentials(t *testing.T) {
 	writeFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json"), `{"token":"drifted"}`)
 	f.clock = f.clock.Add(time.Hour)
 
-	if _, err := f.b.Restore(context.Background(), e.ID); err == nil {
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err == nil {
 		t.Fatal("restore succeeded without its journal")
 	}
 	if got := readFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json")); got != `{"token":"drifted"}` {
@@ -500,7 +516,7 @@ func TestRestoreBackupWithoutJournal(t *testing.T) {
 	writeFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json"), `{"token":"drifted"}`)
 	f.clock = f.clock.Add(time.Hour)
 
-	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, filepath.Join(f.paths.AuthDir, "claude-a.json")); got != origAuth["claude-a.json"] {
@@ -549,7 +565,7 @@ func TestManyRefreshClaimsRoundTrip(t *testing.T) {
 	}
 	f.clock = f.clock.Add(time.Hour)
 
-	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(f.journalPath())
@@ -891,7 +907,7 @@ func TestArchiveAndDirModes(t *testing.T) {
 	if dirInfo.Mode().Perm() != 0o700 {
 		t.Errorf("backups dir mode %v", dirInfo.Mode().Perm())
 	}
-	if _, err := f.b.Restore(context.Background(), e.ID); err != nil {
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{f.paths.ConfigFile, filepath.Join(f.paths.AuthDir, "claude-a.json")} {
@@ -1044,9 +1060,10 @@ func TestSetScheduleAppliesAtRuntime(t *testing.T) {
 	}
 
 	// The loop starts while the schedule is off; turning it on must wake it.
-	// The fake clock sits 50ms before 03:13, so the timer fires almost at once.
-	clock := time.Date(2026, 11, 2, 3, 12, 59, 950_000_000, time.Local)
-	f.b.now = func() time.Time { return clock }
+	// The fake clock sits 50ms before 03:13, so the timer fires at once.
+	clock := newFakeClock(time.Date(2026, 11, 2, 3, 12, 59, 950_000_000, time.Local))
+	clock.until = time.Date(2026, 11, 2, 3, 14, 0, 0, time.Local)
+	clock.attach(f.b)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	f.b.Start(ctx)
@@ -1118,5 +1135,29 @@ func TestRestoreRefusesBackupMissingDeclaredColumns(t *testing.T) {
 		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s exists after refused restore: %v", p, err)
 		}
+	}
+}
+
+// Some SMB, 9p, and FUSE mounts refuse hard links; a restore there still
+// puts the journal back.
+func TestRestoreJournalWithoutHardLinks(t *testing.T) {
+	linkFile = func(string, string) error { return &os.LinkError{Op: "link", Err: syscall.EPERM} }
+	t.Cleanup(func() { linkFile = os.Link })
+	f := newFixture(t, Config{})
+	f.writeJournal(t)
+	e := f.create(t)
+	if err := os.RemoveAll(f.journalPath()); err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(time.Hour)
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, f.journalPath(journalDone, "receipt")); got != journalReceipt {
+		t.Errorf("restored receipt = %q", got)
+	}
+	entries, err := os.ReadDir(f.journalPath(journalDone))
+	if err != nil || len(entries) != 1 {
+		t.Errorf("claim directory holds %v, %v; want only the receipt", entries, err)
 	}
 }

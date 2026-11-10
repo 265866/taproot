@@ -1,9 +1,13 @@
 package backup
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 
+	"github.com/265866/taproot/internal/taproot/access"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
@@ -58,8 +62,27 @@ type restoreResponse struct {
 	Message string `json:"message"`
 }
 
+// restoreRequest is the optional restore body.
+type restoreRequest struct {
+	// AllowLockout restores a backup that takes Admin from the calling device.
+	AllowLockout bool `json:"allowLockout"`
+}
+
 func (b *Backups) handleRestore(c *gin.Context) {
-	result, err := b.Restore(c.Request.Context(), c.Param("id"))
+	var body restoreRequest
+	if c.Request.ContentLength != 0 {
+		dec := json.NewDecoder(c.Request.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "invalid_body", "message": fmt.Sprintf("restore body: %v", err)}})
+			return
+		}
+	}
+	opts := RestoreOptions{AllowLockout: body.AllowLockout}
+	if id, ok := b.identityFrom(c); ok && id.Via == access.ViaTailnet {
+		opts.CallerNodeID = id.NodeID
+	}
+	result, err := b.Restore(c.Request.Context(), c.Param("id"), opts)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -93,6 +116,10 @@ func writeError(c *gin.Context, err error) {
 		status, code = http.StatusUnprocessableEntity, "corrupt_backup"
 	case errors.Is(err, errIncompatible):
 		status, code = http.StatusConflict, "incompatible_backup"
+	case errors.Is(err, errWouldLockOut):
+		status, code = http.StatusConflict, "would_lock_out"
+	case errors.Is(err, ErrRestartPending):
+		status, code = http.StatusConflict, "restart_pending"
 	default:
 		log.WithError(err).Error("taproot backups: request failed")
 	}

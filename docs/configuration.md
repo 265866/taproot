@@ -17,7 +17,9 @@ The containers mount the data directory at `/taproot/config`. The NixOS module a
 
 The data directory holds your OAuth refresh tokens and every prompt. Treat it, and every backup, like a password. Mount the whole directory into a container, not single files, because a restore replaces the files by rename, which fails on a single-file mount.
 
-A backup holds `config.yaml`, `taproot.yaml`, the database, the credential files in `auths/`, and the Codex refresh journal. It leaves out the request logs and `auths/kv.db`, a cache that taproot rebuilds. A restore adds the journal entries that the auth directory lacks and never deletes one, so taproot does not send a Codex refresh token again that the journal records as sent.
+A backup holds `config.yaml`, `taproot.yaml`, the database, the credential files in `auths/` and its subfolders, and the Codex refresh journal. A credential that is a symlink is backed up as the file it points to, and a restore writes it back through the link. A backup leaves out the request logs and `auths/kv.db`, a cache that taproot rebuilds. A restore adds the journal entries that the auth directory lacks and never deletes one, so taproot does not send a Codex refresh token again that the journal records as sent.
+
+A restore keeps where this server keeps its files: `data-dir` and `store.path` in `taproot.yaml`, and `auth-dir` in `config.yaml`, stay as they are now. It refuses a backup whose `taproot.yaml` this release would not start with, such as one with a key that a later release renamed, and changes nothing. From the dashboard, it also refuses a backup that would take Admin from the device you restore it on. After a restore, settings, backups, and further restores wait until taproot restarts.
 
 ## The two configuration files
 

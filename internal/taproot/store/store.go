@@ -58,15 +58,21 @@ type DB struct {
 	path string
 }
 
-// Open opens or creates the database and applies every registered schema.
-func Open(ctx context.Context, cfg Config, dataDir string) (*DB, error) {
-	path := cfg.Path
+// File is the database file Open uses with dataDir.
+func (c Config) File(dataDir string) string {
+	path := c.Path
 	if path == "" {
 		path = "taproot.db"
 	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(dataDir, path)
 	}
+	return path
+}
+
+// Open opens or creates the database and applies every registered schema.
+func Open(ctx context.Context, cfg Config, dataDir string) (*DB, error) {
+	path := cfg.File(dataDir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
 	}

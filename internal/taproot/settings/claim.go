@@ -106,7 +106,7 @@ func (s *Settings) claim(ctx context.Context, code string, caller access.Identit
 		return false
 	})
 	devices = append(devices, grant)
-	if err := s.apply(ctx, update{Access: &accessUpdate{Devices: &devices}}, caller); err != nil {
+	if err := s.save(ctx, update{Access: &accessUpdate{Devices: &devices}}, caller); err != nil {
 		return access.DeviceGrant{}, fmt.Errorf("grant %s Admin: %w", grant.ID, err)
 	}
 	log.Infof("taproot access: %s (%s) claimed this server with the setup code and now has Proxy and Admin; the setup code is used up", name, grant.ID)

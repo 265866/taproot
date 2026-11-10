@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -24,8 +25,20 @@ const (
 // pendingRestore is written to the data dir when a restore stages a database
 // snapshot. ApplyPendingRestore consumes it on the next start.
 type pendingRestore struct {
+	// DB is the database path, relative to the data dir when it lies inside
+	// it, so a data dir mounted at another path still finds it. Markers from
+	// before this hold an absolute path.
 	DB       string `json:"db"`
 	BackupID string `json:"backupId"`
+}
+
+// RestoreOptions are the caller's side of a restore.
+type RestoreOptions struct {
+	// CallerNodeID is the stable node ID of the tailnet device asking, or ""
+	// for a caller that the access guard admits whatever the lists say.
+	CallerNodeID string
+	// AllowLockout restores a backup that takes the caller's Admin away.
+	AllowLockout bool
 }
 
 // RestoreResult reports a completed restore.
@@ -33,17 +46,21 @@ type RestoreResult struct {
 	PreRestoreBackupID string
 }
 
-// Restore verifies the backup, saves the current state as a pre-restore
-// backup, adds the backup's refresh journal entries, replaces the config and
-// auth files, and stages the database snapshot for ApplyPendingRestore on
-// the next start. A backup that fails verification changes nothing. The
-// restore marker is written last, so a failure while replacing files leaves
-// the database alone; the files are then put back from the pre-restore
-// backup. Journal entries the restore added stay, because a claim is never
-// removed.
-func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error) {
+// Restore verifies the backup and checks that the next start can load it,
+// saves the current state as a pre-restore backup, adds the backup's refresh
+// journal entries, replaces the config and auth files, and stages the
+// database snapshot for ApplyPendingRestore on the next start. A backup that
+// fails a check changes nothing. The restore marker is written last, so a
+// failure while replacing files leaves the database alone; the files are then
+// put back from the pre-restore backup. Journal entries the restore added
+// stay, because a claim is never removed. After a restore, writes to
+// taproot.yaml, backups, and restores are refused until the process restarts.
+func (b *Backups) Restore(ctx context.Context, id string, opts RestoreOptions) (RestoreResult, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.isRestartPending() {
+		return RestoreResult{}, ErrRestartPending
+	}
 
 	archive, err := b.archivePath(id)
 	if err != nil {
@@ -68,8 +85,16 @@ func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error)
 	// The code holds no migrations, so a snapshot from before a schema change
 	// would stop the next start. Refuse it now, before anything changes.
 	if err := store.CheckFile(ctx, dbTmp); err != nil {
-		return RestoreResult{}, fmt.Errorf("%w: %v", errIncompatible, err)
+		return RestoreResult{}, fmt.Errorf("%w: its database predates this release's schema: %v", errIncompatible, err)
 	}
+	if err := b.prepareConfigFiles(c, dbPath, opts); err != nil {
+		return RestoreResult{}, err
+	}
+
+	// Settings must not edit taproot.yaml between the pre-restore backup and
+	// the restore replacing it.
+	b.cfgMu.Lock()
+	defer b.cfgMu.Unlock()
 	// Pruning waits until the restore is done and spares its source, which
 	// may be the oldest archive.
 	pre, err := b.createLocked(ctx, ReasonPreRestore)
@@ -86,9 +111,57 @@ func (b *Backups) Restore(ctx context.Context, id string) (RestoreResult, error)
 		}
 		return RestoreResult{}, fmt.Errorf("%w; files put back from %s", err, pre.ID)
 	}
+	b.restartPending = true
 	b.prune(id)
 	log.WithFields(log.Fields{"id": id, "preRestore": pre.ID}).Info("taproot backups: restored; database swaps in on next start")
 	return RestoreResult{PreRestoreBackupID: pre.ID}, nil
+}
+
+// prepareConfigFiles makes the backup's config files fit this server: it
+// keeps the current data-dir, store.path, and auth-dir, since the database
+// is staged and the credentials are written where this server keeps them,
+// and checks that the next start loads the result and leaves the caller
+// Admin.
+func (b *Backups) prepareConfigFiles(c contents, dbPath string, opts RestoreOptions) error {
+	for name, current := range map[string]string{configEntry: b.paths.ConfigFile, taprootEntry: b.paths.TaprootFile} {
+		data, ok := c.files[name]
+		if !ok || current == "" {
+			continue
+		}
+		kept, err := keepPathKeys(data, current, pathKeys[name])
+		if err != nil {
+			return fmt.Errorf("%w: %s: %v", errIncompatible, name, err)
+		}
+		c.files[name] = kept
+	}
+	data, ok := c.files[taprootEntry]
+	if !ok || b.paths.TaprootFile == "" || b.paths.CheckTaproot == nil {
+		return nil
+	}
+	next, err := b.paths.CheckTaproot(data)
+	if err != nil {
+		return fmt.Errorf("%w: this release cannot start with the backup's taproot.yaml: %v", errIncompatible, err)
+	}
+	if !samePath(next.DataDir, b.paths.DataDir) || !samePath(next.DBPath, dbPath) {
+		return fmt.Errorf("%w: taproot.yaml now keeps data in %s (database %s), but taproot is running with %s (database %s); restart taproot, then restore", errIncompatible, next.DataDir, next.DBPath, b.paths.DataDir, dbPath)
+	}
+	if opts.CallerNodeID == "" || opts.AllowLockout {
+		return nil
+	}
+	const howTo = "restore it from the server itself, or from a device the backup gives Admin"
+	if !next.AccessEnabled {
+		return fmt.Errorf("%w: the backup's taproot.yaml turns the access guard off, which leaves the dashboard to the server itself; %s", errWouldLockOut, howTo)
+	}
+	if !slices.Contains(next.Admins, opts.CallerNodeID) {
+		return fmt.Errorf("%w: the backup's taproot.yaml does not give this device (%s) Admin; %s", errWouldLockOut, opts.CallerNodeID, howTo)
+	}
+	return nil
+}
+
+func samePath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && absA == absB
 }
 
 // stageDatabase moves the extracted snapshot to its pending name and then
@@ -97,7 +170,13 @@ func (b *Backups) stageDatabase(dbTmp, dbStaged, dbPath, id string) error {
 	if err := os.Rename(dbTmp, dbStaged); err != nil {
 		return fmt.Errorf("stage database: %w", err)
 	}
-	marker, err := json.Marshal(pendingRestore{DB: dbPath, BackupID: id})
+	markerDB := dbPath
+	if dataDir, err := filepath.Abs(b.paths.DataDir); err == nil {
+		if rel, errRel := filepath.Rel(dataDir, dbPath); errRel == nil && filepath.IsLocal(rel) {
+			markerDB = rel
+		}
+	}
+	marker, err := json.Marshal(pendingRestore{DB: markerDB, BackupID: id})
 	if err == nil {
 		err = writeFileAtomic(filepath.Join(b.paths.DataDir, pendingMarkerName), marker)
 	}
@@ -164,6 +243,10 @@ func (b *Backups) restoreAuth(c contents) error {
 		}
 		keep[rel] = true
 		dest := filepath.Join(b.paths.AuthDir, filepath.FromSlash(rel))
+		// A symlinked credential keeps its link; the content goes to its target.
+		if target, errResolve := filepath.EvalSymlinks(dest); errResolve == nil {
+			dest = target
+		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return fmt.Errorf("create auth subdir: %w", err)
 		}
@@ -176,7 +259,7 @@ func (b *Backups) restoreAuth(c contents) error {
 		return err
 	}
 	for rel, path := range current {
-		if keep[rel] {
+		if keep[rel] || !c.manifest.AuthTree && strings.Contains(rel, "/") {
 			continue
 		}
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -227,9 +310,15 @@ func (b *Backups) restoreJournal(c contents) error {
 	return nil
 }
 
+// linkFile is os.Link; a test replaces it to act as a filesystem without
+// hard links.
+var linkFile = os.Link
+
 // writeFileExclusive creates path with data unless it already exists. Readers
 // see no file or the whole file: the data is written to a temp file and then
 // hard-linked into place, which fails rather than replace an existing file.
+// Some SMB, 9p, and FUSE mounts have no hard links; there the temp file is
+// renamed into place after a fresh check, as upstream writes its receipts.
 func writeFileExclusive(path string, data []byte) error {
 	if _, errStat := os.Lstat(path); errStat == nil {
 		return nil
@@ -254,8 +343,18 @@ func writeFileExclusive(path string, data []byte) error {
 	if err = tmp.Sync(); err != nil {
 		return fmt.Errorf("sync temp for %s: %w", base, err)
 	}
-	if err = os.Link(tmp.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
-		return fmt.Errorf("link %s: %w", base, err)
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("close temp for %s: %w", base, err)
+	}
+	errLink := linkFile(tmp.Name(), path)
+	if errLink == nil || errors.Is(errLink, os.ErrExist) {
+		return nil
+	}
+	if _, errStat := os.Lstat(path); errStat == nil {
+		return nil
+	}
+	if errRename := os.Rename(tmp.Name(), path); errRename != nil {
+		return fmt.Errorf("link %s: %w; rename: %w", base, errLink, errRename)
 	}
 	return nil
 }
@@ -305,6 +404,9 @@ func writeFileAtomic(path string, data []byte) (err error) {
 	if err = os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replace %s: %w", base, err)
 	}
+	if err = syncDir(dir); err != nil {
+		return fmt.Errorf("sync directory of %s: %w", base, err)
+	}
 	return nil
 }
 
@@ -324,20 +426,31 @@ func ApplyPendingRestore(dataDir string) error {
 	if err := json.Unmarshal(raw, &p); err != nil || p.DB == "" {
 		return fmt.Errorf("parse restore marker %s: invalid", markerPath)
 	}
-	staged := p.DB + restorePendingSuffix
+	db := p.DB
+	if !filepath.IsAbs(db) {
+		db = filepath.Join(dataDir, db)
+	}
+	staged := db + restorePendingSuffix
 	if _, err := os.Stat(staged); err == nil {
 		// A WAL left by the old database would be replayed onto the snapshot.
 		for _, suffix := range []string{"-wal", "-shm"} {
-			if err := os.Remove(p.DB + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err := os.Remove(db + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("remove old database %s: %w", suffix, err)
 			}
 		}
-		if err := os.Rename(staged, p.DB); err != nil {
+		if err := os.Rename(staged, db); err != nil {
+			return fmt.Errorf("swap in restored database: %w", err)
+		}
+		if err := syncDir(filepath.Dir(db)); err != nil {
 			return fmt.Errorf("swap in restored database: %w", err)
 		}
 		log.WithField("backup", p.BackupID).Info("taproot backups: restored database swapped in")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("stat staged database: %w", err)
+	} else if _, errDB := os.Stat(db); errDB != nil {
+		// The swap finished before an interruption only when the database is
+		// there; otherwise the restore cannot finish.
+		log.WithFields(log.Fields{"backup": p.BackupID, "db": db}).Warn("taproot backups: a restore was pending, but its staged database is missing; the database was not restored")
 	}
 	if err := os.Remove(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove restore marker: %w", err)

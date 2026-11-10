@@ -71,7 +71,7 @@ func TestRestoreKeepsItsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.clock = f.clock.Add(time.Hour)
-	res, err := f.b.Restore(ctx, oldest.ID)
+	res, err := f.b.Restore(ctx, oldest.ID, RestoreOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,8 @@ func TestRestoreKeepsItsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.clock = f.clock.Add(time.Hour)
-	res2, err := f.b.Restore(ctx, res.PreRestoreBackupID)
+	f.restarted()
+	res2, err := f.b.Restore(ctx, res.PreRestoreBackupID, RestoreOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

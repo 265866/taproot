@@ -44,11 +44,14 @@ const (
 var maxManifestBytes int64 = 64 << 20
 
 type manifest struct {
-	Version   int            `json:"version"`
-	ID        string         `json:"id"`
-	CreatedAt time.Time      `json:"createdAt"`
-	Reason    Reason         `json:"reason"`
-	Files     []manifestFile `json:"files"`
+	Version   int       `json:"version"`
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	Reason    Reason    `json:"reason"`
+	// AuthTree marks a backup that holds the credentials in the auth dir's
+	// subdirectories too. A restore of an older backup leaves those alone.
+	AuthTree bool           `json:"authTree,omitempty"`
+	Files    []manifestFile `json:"files"`
 }
 
 type manifestFile struct {

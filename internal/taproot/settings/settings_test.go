@@ -831,3 +831,49 @@ func TestPutRefusesUnknownFields(t *testing.T) {
 		t.Fatalf("keep = %d after refused updates", keep)
 	}
 }
+
+// After a restore replaced taproot.yaml, settings must not write the running
+// state over it before the restart that applies it.
+func TestPutRefusedWhileARestoreWaitsForRestart(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML})
+	e, err := f.backups.Create(context.Background(), backup.ReasonManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, body := f.do(t, http.MethodPut, `{"backups": {"keep": 5}}`)
+	if code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	if _, err := f.backups.Restore(context.Background(), e.ID, backup.RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	restored := f.file(t)
+	if !strings.Contains(restored, "keep: 3") {
+		t.Fatalf("restored taproot.yaml = %s", restored)
+	}
+
+	code, _, body = f.do(t, http.MethodPut, `{"access": {"devices": [{"id": "nlaptopCNTRL", "proxy": true, "admin": true}, {"id": "nphoneCNTRL", "proxy": true}]}}`)
+	if code != http.StatusConflict || errorCode(t, body) != "restart_pending" {
+		t.Fatalf("PUT after restore = %d %s", code, body)
+	}
+	if got := f.access.Grants().Devices; len(got) != 1 {
+		t.Fatalf("live devices changed: %+v", got)
+	}
+	if f.file(t) != restored {
+		t.Fatalf("taproot.yaml changed after the restore:\n%s", f.file(t))
+	}
+
+	// The sweep leaves the restored device list alone too.
+	renamed := laptop
+	renamed.Name = "alice-laptop"
+	f.access.tailnet = &access.Tailnet{}
+	f.access.reconcile = func(access.Tailnet) (access.Grants, []access.DeviceGrant, bool) {
+		return access.Grants{Devices: []access.DeviceGrant{renamed}}, nil, true
+	}
+	if err := f.s.sweep(t.Context()); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if f.file(t) != restored || !slices.Equal(f.guard.Grants().Devices, []access.DeviceGrant{laptop}) {
+		t.Fatalf("the sweep changed state after the restore:\n%s", f.file(t))
+	}
+}

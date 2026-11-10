@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/access"
 	"github.com/265866/taproot/internal/taproot/store"
+	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -42,6 +44,21 @@ type Paths struct {
 	TaprootFile string
 	AuthDir     string
 	DataDir     string
+	// CheckTaproot reads a taproot.yaml the way the next start will. A
+	// restore whose taproot.yaml it refuses changes nothing. Without it, a
+	// restore writes the backup's taproot.yaml unchecked.
+	CheckTaproot func(raw []byte) (NextStart, error)
+}
+
+// NextStart is what the next start reads from a restored taproot.yaml.
+type NextStart struct {
+	// DataDir and DBPath are where it keeps its data and its database.
+	DataDir, DBPath string
+	// AccessEnabled is false when the file turns the access guard off, which
+	// leaves the dashboard to loopback callers.
+	AccessEnabled bool
+	// Admins are the device IDs access.devices gives Admin.
+	Admins []string
 }
 
 // Reason records why a backup was taken.
@@ -66,9 +83,16 @@ var (
 	errInvalidID = errors.New("invalid backup id")
 	errNotFound  = errors.New("backup not found")
 	errCorrupt   = errors.New("corrupt backup")
-	// errIncompatible is a backup whose database lacks columns this release
-	// declares; it needs the schema change applied by hand first.
-	errIncompatible = errors.New("backup database predates the current schema")
+	// errIncompatible is a backup this release cannot start with: its
+	// database lacks columns this release declares, or its taproot.yaml does
+	// not load.
+	errIncompatible = errors.New("incompatible backup")
+	// errWouldLockOut is a restore that takes the dashboard from the
+	// calling device.
+	errWouldLockOut = errors.New("this restore would lock this device out of the dashboard")
+	// ErrRestartPending refuses a change while a restore waits for the
+	// process to restart.
+	ErrRestartPending = errors.New("a restore is waiting for taproot to restart; restart taproot first")
 )
 
 // idPattern is the only id shape accepted from callers, which keeps ids from
@@ -93,6 +117,22 @@ type Backups struct {
 
 	mu  sync.Mutex
 	now func() time.Time
+	// newTimer is time.NewTimer, replaceable in tests.
+	newTimer func(time.Duration) (<-chan time.Time, func() bool)
+
+	// cfgMu serializes the writers of taproot.yaml: a restore and the
+	// settings module. restartPending is set once a restore replaced the
+	// files, and refuses later writes, backups, and restores, which would
+	// mix the restored files with the running database and settings.
+	cfgMu          sync.Mutex
+	restartPending bool
+
+	// manifests caches each archive's file count, keyed by name, since
+	// reading it allocates the decoder's whole window.
+	manifestsMu sync.Mutex
+	manifests   map[string]manifestCount
+	// identityFrom reads the caller the access guard admitted.
+	identityFrom func(*gin.Context) (access.Identity, bool)
 	// restart asks the process to exit gracefully so a supervisor restarts it.
 	// It is nil where the process cannot signal itself.
 	restart func() error
@@ -107,13 +147,19 @@ func New(cfg Config, db *store.DB, paths Paths) (*Backups, error) {
 		return nil, errors.New("backups need a data dir")
 	}
 	b := &Backups{
-		db:      db,
-		paths:   paths,
-		dir:     filepath.Join(paths.DataDir, "backups"),
-		keep:    cfg.Keep,
-		wake:    make(chan struct{}, 1),
-		now:     time.Now,
-		restart: selfRestart,
+		db:    db,
+		paths: paths,
+		dir:   filepath.Join(paths.DataDir, "backups"),
+		keep:  cfg.Keep,
+		wake:  make(chan struct{}, 1),
+		now:   time.Now,
+		newTimer: func(d time.Duration) (<-chan time.Time, func() bool) {
+			t := time.NewTimer(d)
+			return t.C, t.Stop
+		},
+		restart:      selfRestart,
+		identityFrom: access.IdentityFrom,
+		manifests:    map[string]manifestCount{},
 	}
 	if b.keep <= 0 {
 		b.keep = defaultKeep
@@ -210,6 +256,24 @@ func (b *Backups) removeLeftovers() {
 	}
 }
 
+func (b *Backups) isRestartPending() bool {
+	b.cfgMu.Lock()
+	defer b.cfgMu.Unlock()
+	return b.restartPending
+}
+
+// WriteConfig runs write, which changes taproot.yaml, so that no restore
+// replaces the file while it runs. It returns ErrRestartPending without
+// running write once a restore is waiting for a restart.
+func (b *Backups) WriteConfig(write func() error) error {
+	b.cfgMu.Lock()
+	defer b.cfgMu.Unlock()
+	if b.restartPending {
+		return ErrRestartPending
+	}
+	return write()
+}
+
 // Start runs the schedule until ctx ends. The loop runs even while the
 // schedule is off, so SetSchedule can turn it on.
 func (b *Backups) Start(ctx context.Context) {
@@ -219,22 +283,29 @@ func (b *Backups) Start(ctx context.Context) {
 	go b.runSchedule(ctx)
 }
 
+// maxScheduleWait bounds one wait of the schedule loop. Its timer runs on
+// the monotonic clock, which stops while the host is suspended and ignores
+// wall clock steps, so the loop rechecks the wall clock this often.
+const maxScheduleWait = time.Minute
+
 func (b *Backups) runSchedule(ctx context.Context) {
+	// last is the run time of the last scheduled backup, so a wall clock
+	// that steps back after it cannot run the same day's backup again.
+	var last time.Time
 	for {
 		b.schedMu.Lock()
 		scheduled, hour, minute := b.scheduled, b.hour, b.minute
 		b.schedMu.Unlock()
-		var timer *time.Timer
 		var fire <-chan time.Time
+		stop := func() bool { return false }
+		var target time.Time
 		if scheduled {
 			now := b.now()
-			timer = time.NewTimer(nextRun(now, hour, minute).Sub(now))
-			fire = timer.C
-		}
-		stop := func() {
-			if timer != nil {
-				timer.Stop()
+			target = nextRun(now, hour, minute)
+			if !target.After(last) {
+				target = nextRun(last, hour, minute)
 			}
+			fire, stop = b.newTimer(min(target.Sub(now), maxScheduleWait))
 		}
 		select {
 		case <-ctx.Done():
@@ -245,7 +316,15 @@ func (b *Backups) runSchedule(ctx context.Context) {
 			continue
 		case <-fire:
 		}
+		if b.now().Before(target) {
+			continue
+		}
+		last = target
 		entry, err := b.Create(ctx, ReasonScheduled)
+		if errors.Is(err, ErrRestartPending) {
+			log.Info("taproot backups: scheduled backup skipped: a restore is waiting for a restart")
+			continue
+		}
 		if err != nil {
 			log.WithError(err).Error("taproot backups: scheduled backup failed")
 			continue
@@ -307,6 +386,9 @@ func wallTime(y int, m time.Month, d, hour, minute int, loc *time.Location) time
 func (b *Backups) Create(ctx context.Context, reason Reason) (Entry, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.isRestartPending() {
+		return Entry{}, ErrRestartPending
+	}
 	entry, err := b.createLocked(ctx, reason)
 	if err == nil {
 		b.prune("")
@@ -343,7 +425,7 @@ func (b *Backups) createLocked(ctx context.Context, reason Reason) (Entry, error
 	}
 	sources = append(sources, source{name: dbEntry, path: snapshot})
 
-	m := manifest{Version: manifestVersion, ID: id, CreatedAt: createdAt, Reason: reason}
+	m := manifest{Version: manifestVersion, ID: id, CreatedAt: createdAt, Reason: reason, AuthTree: true}
 	tmpArchive := filepath.Join(staging, id+archiveExt)
 	if err := writeArchive(tmpArchive, &m, sources); err != nil {
 		return Entry{}, err
@@ -351,6 +433,9 @@ func (b *Backups) createLocked(ctx context.Context, reason Reason) (Entry, error
 	final := filepath.Join(b.dir, id+archiveExt)
 	if err := os.Rename(tmpArchive, final); err != nil {
 		return Entry{}, fmt.Errorf("move backup into place: %w", err)
+	}
+	if err := syncDir(b.dir); err != nil {
+		return Entry{}, fmt.Errorf("sync backups dir: %w", err)
 	}
 	info, err := os.Stat(final)
 	if err != nil {
@@ -391,12 +476,12 @@ func (b *Backups) collect() ([]source, error) {
 		if f.path == "" {
 			continue
 		}
-		data, err := os.ReadFile(f.path)
+		data, err := readSmallFile(f.path, f.name)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", f.name, err)
+			return nil, err
 		}
 		sources = append(sources, source{name: f.name, data: data})
 	}
@@ -405,12 +490,12 @@ func (b *Backups) collect() ([]source, error) {
 		return nil, err
 	}
 	for rel, path := range auth {
-		data, err := os.ReadFile(path)
+		data, err := readSmallFile(path, "auth file "+rel)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read auth file %s: %w", rel, err)
+			return nil, err
 		}
 		sources = append(sources, source{name: authPrefix + rel, data: data})
 	}
@@ -421,6 +506,22 @@ func (b *Backups) collect() ([]source, error) {
 	sources = append(sources, journal...)
 	sort.Slice(sources, func(i, j int) bool { return sources[i].name < sources[j].name })
 	return sources, nil
+}
+
+// readSmallFile reads a config, auth, or journal file. One larger than a
+// restore reads fails the backup now, rather than making it unrestorable.
+func readSmallFile(path, what string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("read %s: %w", what, err)
+	}
+	if len(data) > maxSmallFileBytes {
+		return nil, fmt.Errorf("%s is %d bytes, over the %d-byte limit a restore reads", what, len(data), maxSmallFileBytes)
+	}
+	return data, nil
 }
 
 // authRoot returns the absolute auth dir with symlinks resolved, or "" when
@@ -475,12 +576,12 @@ func (b *Backups) journalSources() ([]source, error) {
 		if !d.Type().IsRegular() || rel == "." {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := readSmallFile(path, "refresh journal "+rel)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("read refresh journal %s: %w", rel, err)
+			return err
 		}
 		sources = append(sources, source{name: name, data: data})
 		return nil
@@ -491,32 +592,52 @@ func (b *Backups) journalSources() ([]source, error) {
 	return sources, nil
 }
 
-// authFiles maps credential file names to their paths. Upstream loads only
-// top-level *.json files from the auth dir as credentials, so subdirectories
-// (upstream may write app logs to <auth-dir>/logs, and the data dir may sit
-// inside the auth dir) and other files are neither backed up nor touched by a
-// restore. The refresh journal is backed up and restored on its own.
+// authFiles maps credential file names to their paths: every *.json file
+// under the auth dir, as upstream's startup load reads them, including
+// symlinked files and files in subdirectories. It leaves out the refresh
+// journal, which is backed up on its own, and the data dir, which may sit
+// inside the auth dir. A subdirectory that cannot be read is skipped with a
+// warning, so it cannot stop every backup.
 func (b *Backups) authFiles() (map[string]string, error) {
 	files := map[string]string{}
 	root, err := b.authRoot()
 	if err != nil || root == "" {
 		return files, err
 	}
+	skip := map[string]bool{filepath.Join(root, journalDir): true}
+	if dataDir, errAbs := filepath.Abs(b.paths.DataDir); errAbs == nil {
+		if resolved, errResolve := filepath.EvalSymlinks(dataDir); errResolve == nil {
+			dataDir = resolved
+		}
+		skip[dataDir] = true
+	}
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			if path == root && errors.Is(err, os.ErrNotExist) {
+			if path == root {
+				if errors.Is(err, os.ErrNotExist) {
+					return filepath.SkipDir
+				}
+				return err
+			}
+			log.WithError(err).WithField("path", path).Warn("taproot backups: skip unreadable part of the auth dir")
+			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
-			return err
+			return nil
 		}
 		if d.IsDir() {
-			if path == root {
+			if skip[path] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(strings.ToLower(d.Name()), ".json") {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			if info, errStat := os.Stat(path); errStat != nil || !info.Mode().IsRegular() {
 				return nil
 			}
-			return filepath.SkipDir
-		}
-		if !d.Type().IsRegular() || !strings.HasSuffix(strings.ToLower(d.Name()), ".json") {
-			return nil
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
@@ -555,6 +676,14 @@ func (b *Backups) prune(protect string) {
 	}
 }
 
+// manifestCount is an archive's file count and the size and modification
+// time it was read at. Archives are never rewritten in place.
+type manifestCount struct {
+	size    int64
+	modTime time.Time
+	files   int
+}
+
 // List returns the backups newest first.
 func (b *Backups) List() ([]Entry, error) {
 	dirEntries, err := os.ReadDir(b.dir)
@@ -566,6 +695,10 @@ func (b *Backups) List() ([]Entry, error) {
 		seq int
 	}
 	var found []keyed
+	b.manifestsMu.Lock()
+	counts := b.manifests
+	b.manifestsMu.Unlock()
+	seen := make(map[string]manifestCount, len(counts))
 	for _, de := range dirEntries {
 		name := de.Name()
 		if !de.Type().IsRegular() || !strings.HasSuffix(name, archiveExt) {
@@ -581,13 +714,22 @@ func (b *Backups) List() ([]Entry, error) {
 			continue
 		}
 		e := Entry{ID: id, CreatedAt: createdAt, Bytes: info.Size(), Reason: reason}
-		if m, errManifest := readManifest(filepath.Join(b.dir, name)); errManifest == nil {
+		key := manifestCount{size: info.Size(), modTime: info.ModTime()}
+		if cached, ok := counts[name]; ok && cached.size == key.size && cached.modTime.Equal(key.modTime) {
+			e.Files = cached.files
+			key.files = cached.files
+		} else if m, errManifest := readManifest(filepath.Join(b.dir, name)); errManifest == nil {
 			e.Files = fileCount(m)
+			key.files = e.Files
 		} else {
 			log.WithError(errManifest).WithField("id", id).Warn("taproot backups: unreadable manifest")
 		}
+		seen[name] = key
 		found = append(found, keyed{Entry: e, seq: seq})
 	}
+	b.manifestsMu.Lock()
+	b.manifests = seen
+	b.manifestsMu.Unlock()
 	sort.Slice(found, func(i, j int) bool {
 		if !found[i].CreatedAt.Equal(found[j].CreatedAt) {
 			return found[i].CreatedAt.After(found[j].CreatedAt)
