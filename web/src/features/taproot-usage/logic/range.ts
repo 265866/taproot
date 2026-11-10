@@ -124,8 +124,7 @@ export function resolveWindow(
 
 /**
  * The Requests table's selection: its range, its filters, and the page shown. The page counts
- * because rows from another page do not answer the one on screen; its cursor does not, since a
- * refresh of the same page gets a fresh cursor.
+ * because rows from another page do not answer the one on screen.
  */
 export function requestsSelection(rangeSelection: string, filterSelection: string, page: number) {
   return `${rangeSelection}|${filterSelection}|${page}`;
