@@ -56,7 +56,7 @@ export type UseAuthFilesDataResult = {
   cooldownResetting: Record<string, boolean>;
   batchStatusUpdating: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  loadFiles: (options?: LoadFilesOptions) => Promise<void>;
+  loadFiles: (options?: LoadFilesOptions) => Promise<string>;
   handleUploadClick: () => void;
   handleFileChange: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
   handleDelete: (name: string) => void;
@@ -215,7 +215,8 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
   }, [files, selectedFiles.size]);
 
   const loadFiles = useCallback(
-    async (options?: LoadFilesOptions) => {
+    /** Resolves to the error it showed, or '' (also when a newer load took over). */
+    async (options?: LoadFilesOptions): Promise<string> => {
       const background = options?.background === true;
       const requestId = ++loadRequestIdRef.current;
       const connectionRevision = apiClient.getConnectionRevision();
@@ -232,13 +233,15 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
 
       try {
         const data = await authFilesApi.list();
-        if (!isCurrentRequest()) return; // 已被更新的请求/连接/变更取代
+        if (!isCurrentRequest()) return ''; // 已被更新的请求/连接/变更取代
         setFiles(data?.files || []);
         setError('');
+        return '';
       } catch (err: unknown) {
-        if (!isCurrentRequest()) return;
+        if (!isCurrentRequest()) return '';
         const errorMessage = err instanceof Error ? err.message : t('notification.refresh_failed');
         setError(errorMessage);
+        return errorMessage;
       } finally {
         if (isCurrentRequest()) {
           setLoading(false);

@@ -18,6 +18,13 @@ interface ThemeState {
   initializeTheme: () => () => void;
 }
 
+const THEMES: readonly Theme[] = ['light', 'white', 'dark', 'auto'];
+const DEFAULT_THEME: Theme = 'dark';
+
+/** The stored theme, or the default when storage holds something else (the key is shared). */
+export const validTheme = (value: unknown): Theme =>
+  THEMES.includes(value as Theme) ? (value as Theme) : DEFAULT_THEME;
+
 const getSystemTheme = (): ResolvedTheme => {
   if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
     return 'dark';
@@ -60,7 +67,7 @@ const applyTheme = (resolved: AppliedTheme) => {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      theme: 'dark',
+      theme: DEFAULT_THEME,
       resolvedTheme: 'dark',
 
       setTheme: (theme) => {
@@ -76,7 +83,7 @@ export const useThemeStore = create<ThemeState>()(
         const { theme, setTheme } = get();
 
         // 应用已保存的主题
-        setTheme(theme);
+        setTheme(validTheme(theme));
 
         // 监听系统主题变化（仅在 auto 模式下生效）
         if (!window.matchMedia) {

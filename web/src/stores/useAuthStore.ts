@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import type { ConnectionFailure, ConnectionStatus, DeniedDevice } from '@/types';
 import { apiClient } from '@/services/api/client';
+import { ADMIN_REVOKED_EVENT } from '@/services/api/accessEvents';
 import { detectApiBaseFromLocation } from '@/utils/connection';
 import { isRecord } from '@/utils/helpers';
 import { useConfigStore } from './useConfigStore';
@@ -114,13 +115,22 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
 }));
 
 if (typeof window !== 'undefined') {
-  // A 401 after connecting means the server stopped admitting this caller.
+  // A 401 after connecting means the server stopped admitting this caller. Failures before that
+  // belong to connect() and the gate's own screens.
   window.addEventListener('unauthorized', () => {
+    if (useAuthStore.getState().connectionStatus !== 'connected') return;
     useAuthStore.setState({
       connectionStatus: 'error',
       connectionFailure: 'forbidden',
       connectionFailureDevice: null,
     });
+  });
+
+  // Admin removed mid-session: reconnect, so the gate shows the request-access screen with the
+  // device the guard names, instead of the dashboard on stale data.
+  window.addEventListener(ADMIN_REVOKED_EVENT, () => {
+    if (useAuthStore.getState().connectionStatus !== 'connected') return;
+    void useAuthStore.getState().connect();
   });
 
   window.addEventListener('server-version-update', ((e: CustomEvent) => {

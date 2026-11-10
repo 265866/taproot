@@ -17,7 +17,7 @@ import {
   IconSidebarStore,
   IconTrash2,
 } from '@/components/ui/icons';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { pluginsApi, pluginStoreApi } from '@/services/api';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { getErrorMessage, isRecord } from '@/utils/helpers';
@@ -92,8 +92,9 @@ export function PluginsPage() {
   const loadPlugins = useCallback(async () => {
     if (!connected) {
       setLoading(false);
-      setError(t('notification.connection_required'));
-      return;
+      const message = t('notification.connection_required');
+      setError(message);
+      return refreshFailed(message);
     }
 
     setLoading(true);
@@ -101,12 +102,13 @@ export function PluginsPage() {
     try {
       const plugins = await pluginsApi.list();
       setData(plugins);
+      return REFRESH_OK;
     } catch (err: unknown) {
-      setError(
-        hasStatus(err, 404)
-          ? t('plugin_management.unsupported_backend')
-          : getErrorMessage(err, t('plugin_management.load_failed'))
-      );
+      const message = hasStatus(err, 404)
+        ? t('plugin_management.unsupported_backend')
+        : getErrorMessage(err, t('plugin_management.load_failed'));
+      setError(message);
+      return refreshFailed(message);
     } finally {
       setLoading(false);
     }

@@ -23,12 +23,12 @@
     "server": "Server"
   },
   "sidebar": {
-    "toggle_expand": "Expand sidebar",
-    "toggle_collapse": "Collapse sidebar",
     "expand": "Expand",
     "collapse": "Collapse",
     "subtitle": "Claude and Codex pool",
-    "accounts_count": "Accounts: {{count}}"
+    "accounts_count": "Accounts: {{count}}",
+    "open_navigation": "Open navigation",
+    "close_navigation": "Close navigation"
   },
   "header": {
     "refresh_all": "Refresh All"
@@ -76,5 +76,13 @@
     "api_version": "CLI Proxy API Version",
     "build_date": "Build Time",
     "version": "Dashboard Version"
+  },
+  "shell": {
+    "skip_to_content": "Skip to content",
+    "main_navigation": "Main",
+    "page_title": "{{page}} · Taproot",
+    "page_error_title": "This page failed to load",
+    "page_error_body": "Something went wrong while showing it. Reload to try again.",
+    "page_error_reload": "Reload"
   }
 }

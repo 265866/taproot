@@ -6,6 +6,8 @@
  * by Tailscale identity, so requests carry no credentials of their own.
  */
 
+import { reportAccessDenial } from './accessEvents';
+
 export const TAPROOT_API_BASE = '/taproot/api/v1';
 
 /**
@@ -465,7 +467,7 @@ export interface TaprootSettingsUpdate {
     addresses?: AddressGrant[];
   };
   requestLogs?: Partial<TaprootSettings['requestLogs']>;
-  backups?: Partial<TaprootSettings['backups']>;
+  backups?: Partial<Pick<TaprootSettings['backups'], 'dailyAt' | 'keep'>>;
   ingest?: { pollInterval?: string };
   /** `discordWebhook: ''` clears the webhook. */
   alerts?: { discordWebhook?: string; enabled?: boolean };
@@ -639,7 +641,11 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       credentials: 'same-origin',
     });
-    if (!response.ok) throw await readError(response);
+    if (!response.ok) {
+      const error = await readError(response);
+      reportAccessDenial(error.status, error.code);
+      throw error;
+    }
     return (await response.json()) as T;
   };
 

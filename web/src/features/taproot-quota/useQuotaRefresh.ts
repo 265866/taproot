@@ -20,7 +20,7 @@ export const REFRESHABLE_PROVIDERS: ReadonlySet<string> = new Set(['claude', 'co
  * Manual quota refresh: asks taproot to read an account's usage endpoint now, then reloads the
  * page data so the chart and the ledger row pick up the new observation.
  */
-export function useQuotaRefresh(reload: () => Promise<void>) {
+export function useQuotaRefresh(reload: () => Promise<unknown>) {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());

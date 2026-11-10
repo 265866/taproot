@@ -15,6 +15,7 @@ import {
 } from '@/utils/constants';
 import { computeApiUrl } from '@/utils/connection';
 import { parseApiErrorResponse } from './apiError';
+import { reportAccessDenial } from './accessEvents';
 import { TAPROOT_REQUEST_HEADERS } from './taproot';
 
 class ApiClient {
@@ -177,9 +178,8 @@ class ApiClient {
       apiError.details = responseData;
       apiError.data = responseData;
 
-      // Dispatch logout for unauthorized responses
-      if (this.emitEvents() && error.response?.status === 401) {
-        window.dispatchEvent(new Event('unauthorized'));
+      if (this.emitEvents()) {
+        reportAccessDenial(error.response?.status, parsedError.apiCode);
       }
 
       return apiError;

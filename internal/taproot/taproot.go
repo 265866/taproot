@@ -53,14 +53,19 @@ type Config struct {
 // LoadConfig reads taproot.yaml. A missing or empty file yields defaults. Unknown
 // keys are an error, so a misspelled access setting cannot fall back silently.
 func LoadConfig(path string) (Config, error) {
-	var cfg Config
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
+		return Config{}, nil
 	}
 	if err != nil {
-		return cfg, fmt.Errorf("read %s: %w", path, err)
+		return Config{}, fmt.Errorf("read %s: %w", path, err)
 	}
+	return parseConfig(raw, path)
+}
+
+// parseConfig decodes taproot.yaml's content strictly; path names it in errors.
+func parseConfig(raw []byte, path string) (Config, error) {
+	var cfg Config
 	// A removed access key gets a message naming its replacement. The strict
 	// decode below reports any other problem, so a parse error here is ignored.
 	var keys struct {
@@ -96,6 +101,30 @@ func LoadConfig(path string) (Config, error) {
 
 func emptyDocument(doc *yaml.Node) bool {
 	return len(doc.Content) == 0 || (len(doc.Content) == 1 && doc.Content[0].Tag == "!!null")
+}
+
+// restoreCheck reads a backup's taproot.yaml the way setup will on the next
+// start, and refuses one that setup would refuse before the server serves
+// the dashboard again.
+func restoreCheck(tpPath, upstreamConfigPath string) func([]byte) (backup.NextStart, error) {
+	return func(raw []byte) (backup.NextStart, error) {
+		tp, err := parseConfig(raw, tpPath)
+		if err != nil {
+			return backup.NextStart{}, err
+		}
+		if err := access.CheckGrants(access.Grants{Devices: tp.Access.Devices, Addresses: tp.Access.Addresses}); err != nil {
+			return backup.NextStart{}, err
+		}
+		next := backup.NextStart{AccessEnabled: tp.Access.Enabled == nil || *tp.Access.Enabled}
+		next.DataDir = DataDir(tp, upstreamConfigPath)
+		next.DBPath = tp.Store.File(next.DataDir)
+		for _, d := range tp.Access.Devices {
+			if d.Admin {
+				next.Admins = append(next.Admins, strings.TrimSpace(d.ID))
+			}
+		}
+		return next, nil
+	}
 }
 
 // ConfigPath returns taproot.yaml's location: TAPROOT_CONFIG, otherwise beside config.yaml.
@@ -227,10 +256,11 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		return nil, nil, fmt.Errorf("taproot auth dir: %w", err)
 	}
 	backups, err := backup.New(tp.Backups, db, backup.Paths{
-		ConfigFile:  upstreamConfigPath,
-		TaprootFile: tpPath,
-		AuthDir:     authDir,
-		DataDir:     dataDir,
+		ConfigFile:   upstreamConfigPath,
+		TaprootFile:  tpPath,
+		AuthDir:      authDir,
+		DataDir:      dataDir,
+		CheckTaproot: restoreCheck(tpPath, upstreamConfigPath),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot backups: %w", err)
