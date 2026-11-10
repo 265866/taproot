@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	// The zone tests need tzdata on hosts that do not ship it.
@@ -721,6 +722,31 @@ func TestWriteYAMLHandlesNullSections(t *testing.T) {
 	raw, _ = os.ReadFile(commentOnly)
 	if err := decodeStrict(raw, &cfg); err != nil || cfg.Backups.Keep != 2 {
 		t.Fatalf("comment-only file: %+v %v:\n%s", cfg.Backups, err, raw)
+	}
+}
+
+// A directory sync that fails after the rename does not fail the write: the
+// file is already replaced, and some filesystems cannot sync a directory.
+func TestReplaceFileSurvivesFailedDirectorySync(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not sync directories")
+	}
+	orig := syncFile
+	t.Cleanup(func() { syncFile = orig })
+	path := filepath.Join(t.TempDir(), "taproot.yaml")
+	for _, errno := range []syscall.Errno{syscall.EINVAL, syscall.EIO} {
+		syncFile = func(f *os.File) error { return &os.PathError{Op: "sync", Path: f.Name(), Err: errno} }
+		body := "backups:\n  keep: " + errno.Error() + "\n"
+		if err := replaceFile(path, []byte(body), 0o600); err != nil {
+			t.Errorf("%v: replaceFile = %v, want nil", errno, err)
+		}
+		if raw, _ := os.ReadFile(path); string(raw) != body {
+			t.Errorf("%v: file %q", errno, raw)
+		}
+	}
+	syncFile = func(*os.File) error { return syscall.EINVAL }
+	if err := syncDir(t.TempDir()); err != nil {
+		t.Errorf("syncDir with EINVAL = %v, want nil", err)
 	}
 }
 

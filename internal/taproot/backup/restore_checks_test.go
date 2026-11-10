@@ -11,9 +11,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/265866/taproot/internal/taproot/access"
 )
 
@@ -343,6 +345,41 @@ func TestBackupHoldsNestedAndSymlinkedCredentials(t *testing.T) {
 	}
 }
 
+// A restore writes a symlinked credential's target in place, as upstream
+// does: the target keeps its mode, and its directory need not be writable.
+func TestRestoreWritesSymlinkTargetInPlace(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks needs a privilege on Windows")
+	}
+	f := newFixture(t, Config{})
+	secrets := filepath.Join(f.root, "secrets")
+	secret := filepath.Join(secrets, "linked.json")
+	writeFile(t, secret, `{"type":"claude","token":"linked"}`)
+	if err := os.Chmod(secret, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(f.paths.AuthDir, "linked.json")); err != nil {
+		t.Fatal(err)
+	}
+	e := f.create(t)
+	writeFile(t, secret, `{"type":"claude","token":"rotated"}`)
+	if err := os.Chmod(secrets, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(secrets, 0o700) })
+	f.clock = f.clock.Add(time.Hour)
+
+	if _, err := f.b.Restore(context.Background(), e.ID, RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, secret); got != `{"type":"claude","token":"linked"}` {
+		t.Errorf("link target = %q, want the backed-up content", got)
+	}
+	if info, err := os.Stat(secret); err != nil || info.Mode().Perm() != 0o640 {
+		t.Errorf("link target mode = %v, %v; want 0640 kept", info.Mode().Perm(), err)
+	}
+}
+
 // A backup from before subdirectories were backed up says nothing about
 // them, so restoring it leaves them alone.
 func TestRestoreOfOlderBackupLeavesNestedCredentials(t *testing.T) {
@@ -410,5 +447,145 @@ func TestListReadsEachManifestOnce(t *testing.T) {
 	}
 	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 1<<20 {
 		t.Fatalf("listing 3 archives allocated %d bytes", allocated)
+	}
+}
+
+// config.yaml names the auth dir as oauth.auth-dir or, in the layout before
+// upstream v8, as top-level auth-dir. The restored file names the current
+// auth dir in the current file's form and drops the other form.
+func TestKeepPathKeysAuthDirForms(t *testing.T) {
+	cases := []struct {
+		name, current, restored string
+		want, gone              []string
+	}{
+		{
+			name:     "nested current, old backup",
+			current:  "oauth:\n  auth-dir: /srv/new/auths\n",
+			restored: "port: 8317\nauth-dir: /var/lib/old/auths\n",
+			want:     []string{"oauth", "auth-dir"},
+			gone:     []string{"auth-dir"},
+		},
+		{
+			name:     "nested current, nested backup",
+			current:  "oauth:\n  auth-dir: /srv/new/auths\n",
+			restored: "port: 8317\noauth:\n  auth-dir: /var/lib/old/auths\n  auth-auto-refresh-workers: 2\n",
+			want:     []string{"oauth", "auth-dir"},
+			gone:     []string{"auth-dir"},
+		},
+		{
+			name:     "old current, nested backup",
+			current:  "auth-dir: /srv/new/auths\n",
+			restored: "port: 8317\noauth:\n  auth-dir: /var/lib/old/auths\n",
+			want:     []string{"auth-dir"},
+			gone:     []string{"oauth", "auth-dir"},
+		},
+		{
+			name:     "old current, both forms in backup",
+			current:  "auth-dir: /srv/new/auths\n",
+			restored: "port: 8317\nauth-dir: /var/lib/old/auths\noauth:\n  auth-dir: /var/lib/old/auths\n",
+			want:     []string{"auth-dir"},
+			gone:     []string{"oauth", "auth-dir"},
+		},
+		{
+			name:     "nested current, null oauth in backup",
+			current:  "oauth:\n  auth-dir: /srv/new/auths\n",
+			restored: "port: 8317\nauth-dir: /var/lib/old/auths\noauth:\n",
+			want:     []string{"oauth", "auth-dir"},
+			gone:     []string{"auth-dir"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			current := filepath.Join(t.TempDir(), "config.yaml")
+			writeFile(t, current, tc.current)
+			got, err := keepPathKeys([]byte(tc.restored), current, pathKeys[configEntry])
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, err := yamlRoot(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v := lookup(root, tc.want); v == nil || v.Value != "/srv/new/auths" {
+				t.Errorf("%v not kept as the current file sets it:\n%s", tc.want, got)
+			}
+			if lookup(root, tc.gone) != nil {
+				t.Errorf("%v left in the restored file:\n%s", tc.gone, got)
+			}
+			if !strings.Contains(string(got), "port: 8317") {
+				t.Errorf("other keys lost:\n%s", got)
+			}
+			cfg, err := config.ParseConfigBytes(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.AuthDir != "/srv/new/auths" {
+				t.Errorf("upstream reads auth dir %q from:\n%s", cfg.AuthDir, got)
+			}
+		})
+	}
+}
+
+// With the auth dir and the data dir the same directory, the credentials
+// at its top level are still backed up.
+func TestBackupHoldsCredentialsWhenAuthDirIsDataDir(t *testing.T) {
+	f := newFixture(t, Config{})
+	f.b.paths.AuthDir = f.paths.DataDir
+	writeFile(t, filepath.Join(f.paths.DataDir, "claude-a.json"), `{"type":"claude","token":"a"}`)
+	files, err := f.b.authFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files["claude-a.json"]; !ok {
+		t.Fatalf("authFiles = %v, want claude-a.json", files)
+	}
+}
+
+// failDirSync makes every directory sync fail with err until the test ends.
+func failDirSync(t *testing.T, err error) {
+	orig := syncFile
+	syncFile = func(f *os.File) error { return &os.PathError{Op: "sync", Path: f.Name(), Err: err} }
+	t.Cleanup(func() { syncFile = orig })
+}
+
+func TestSyncDirIgnoresFilesystemsWithoutDirectorySync(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not sync directories")
+	}
+	for _, errno := range []syscall.Errno{syscall.EINVAL, syscall.EBADF, syscall.ENOTSUP} {
+		failDirSync(t, errno)
+		if err := syncDir(t.TempDir()); err != nil {
+			t.Errorf("%v: syncDir = %v, want nil", errno, err)
+		}
+	}
+	failDirSync(t, syscall.EIO)
+	if err := syncDir(t.TempDir()); !errors.Is(err, syscall.EIO) {
+		t.Errorf("syncDir = %v, want EIO", err)
+	}
+}
+
+// Once a rename has put a file in place, a failed directory sync does not
+// make the write, the backup, the restore, or the swap fail.
+func TestDirectorySyncFailureAfterRenameIsNotAFailedWrite(t *testing.T) {
+	f := newFixture(t, Config{})
+	failDirSync(t, syscall.EIO)
+
+	path := filepath.Join(t.TempDir(), "x.json")
+	if err := writeFileAtomic(path, []byte("new")); err != nil || readFile(t, path) != "new" {
+		t.Fatalf("writeFileAtomic = %v, file %q", err, readFile(t, path))
+	}
+	e := f.create(t)
+	f.clock = f.clock.Add(time.Hour)
+	if code, _, body := f.restore(t, e.ID, ""); code != http.StatusOK {
+		t.Fatalf("restore: %d %s", code, body)
+	}
+	if err := f.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyPendingRestore(f.paths.DataDir); err != nil {
+		t.Fatalf("ApplyPendingRestore: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.paths.DataDir, pendingMarkerName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("marker left behind: %v", err)
 	}
 }

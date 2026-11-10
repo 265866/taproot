@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -132,10 +134,19 @@ func replaceFile(path string, data []byte, mode fs.FileMode) (err error) {
 	if err = os.Rename(tmp.Name(), path); err != nil {
 		return err
 	}
-	return syncDir(filepath.Dir(path))
+	// The file is replaced, so a failed sync must not report a failed write.
+	if errSync := syncDir(filepath.Dir(path)); errSync != nil {
+		log.WithError(errSync).WithField("path", path).Warn("taproot settings: sync directory after rename")
+	}
+	return nil
 }
 
-// syncDir makes a rename in dir durable. Windows cannot sync a directory.
+// syncFile is (*os.File).Sync; a test replaces it.
+var syncFile = (*os.File).Sync
+
+// syncDir makes a rename in dir durable. Windows cannot sync a directory,
+// and some filesystems refuse to with EINVAL, EBADF, or ENOTSUP, as
+// PostgreSQL's fsync_fname allows; there is nothing more to do on those.
 func syncDir(dir string) error {
 	if runtime.GOOS == "windows" {
 		return nil
@@ -144,6 +155,10 @@ func syncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	errSync := f.Sync()
+	errSync := syncFile(f)
+	if errors.Is(errSync, syscall.EINVAL) || errors.Is(errSync, syscall.EBADF) || errors.Is(errSync, errors.ErrUnsupported) {
+		log.WithError(errSync).WithField("dir", dir).Debug("taproot settings: the filesystem cannot sync a directory")
+		errSync = nil
+	}
 	return errors.Join(errSync, f.Close())
 }

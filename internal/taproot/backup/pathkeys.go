@@ -13,9 +13,13 @@ import (
 // its data. A restore keeps their current values: the database is staged in
 // the current data dir and the credentials go to the current auth dir, so a
 // backup's older values would point the next start somewhere else.
+// config.yaml names the auth dir as oauth.auth-dir, or as top-level auth-dir
+// in the layout before upstream v8, which upstream still reads. Each form
+// takes the current file's value or goes away, so the restored file names
+// the auth dir the way the current file does.
 var pathKeys = map[string][][]string{
 	taprootEntry: {{"data-dir"}, {"store", "path"}},
-	configEntry:  {{"auth-dir"}},
+	configEntry:  {{"oauth", "auth-dir"}, {"auth-dir"}},
 }
 
 // keepPathKeys returns restored with each key in keys set as the file at
@@ -128,6 +132,10 @@ func setOrDelete(mapping *yaml.Node, key []string, value *yaml.Node) error {
 		}
 		if len(key) > 1 {
 			child := mapping.Content[i+1]
+			if child.Kind == yaml.ScalarNode && child.Tag == "!!null" && value != nil {
+				child = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+				mapping.Content[i+1] = child
+			}
 			if child.Kind != yaml.MappingNode {
 				if value == nil {
 					return nil

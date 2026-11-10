@@ -461,7 +461,7 @@ export interface TaprootSettingsUpdate {
     addresses?: AddressGrant[];
   };
   requestLogs?: Partial<TaprootSettings['requestLogs']>;
-  backups?: Partial<TaprootSettings['backups']>;
+  backups?: Partial<Pick<TaprootSettings['backups'], 'dailyAt' | 'keep'>>;
   ingest?: { pollInterval?: string };
   /** `discordWebhook: ''` clears the webhook. */
   alerts?: { discordWebhook?: string; enabled?: boolean };

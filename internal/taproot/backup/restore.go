@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/265866/taproot/internal/taproot/store"
 	log "github.com/sirupsen/logrus"
@@ -243,9 +244,16 @@ func (b *Backups) restoreAuth(c contents) error {
 		}
 		keep[rel] = true
 		dest := filepath.Join(b.paths.AuthDir, filepath.FromSlash(rel))
-		// A symlinked credential keeps its link; the content goes to its target.
-		if target, errResolve := filepath.EvalSymlinks(dest); errResolve == nil {
-			dest = target
+		// A symlinked credential keeps its link, and its target keeps its
+		// mode and needs no write access to its directory: it is rewritten
+		// in place, as upstream's FileTokenStore.Save rewrites a credential.
+		if info, errLstat := os.Lstat(dest); errLstat == nil && info.Mode()&os.ModeSymlink != 0 {
+			if target, errResolve := filepath.EvalSymlinks(dest); errResolve == nil {
+				if err := writeFileInPlace(target, data); err != nil {
+					return err
+				}
+				continue
+			}
 		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return fmt.Errorf("create auth subdir: %w", err)
@@ -359,7 +367,12 @@ func writeFileExclusive(path string, data []byte) error {
 	return nil
 }
 
-// syncDir makes new entries in dir durable. Windows cannot sync a directory.
+// syncFile is (*os.File).Sync; a test replaces it.
+var syncFile = (*os.File).Sync
+
+// syncDir makes new entries in dir durable. Windows cannot sync a directory,
+// and some filesystems refuse to with EINVAL, EBADF, or ENOTSUP, as
+// PostgreSQL's fsync_fname allows; there is nothing more to do on those.
 func syncDir(dir string) error {
 	if runtime.GOOS == "windows" {
 		return nil
@@ -368,8 +381,20 @@ func syncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	errSync := f.Sync()
+	errSync := syncFile(f)
+	if errors.Is(errSync, syscall.EINVAL) || errors.Is(errSync, syscall.EBADF) || errors.Is(errSync, errors.ErrUnsupported) {
+		log.WithError(errSync).WithField("dir", dir).Debug("taproot backups: the filesystem cannot sync a directory")
+		errSync = nil
+	}
 	return errors.Join(errSync, f.Close())
+}
+
+// syncRenamed syncs dir after a rename into it. The rename has happened, so
+// a failure is logged rather than reported as a failed write.
+func syncRenamed(dir string) {
+	if err := syncDir(dir); err != nil {
+		log.WithError(err).WithField("dir", dir).Warn("taproot backups: sync directory after rename")
+	}
 }
 
 // writeFileAtomic replaces path with data through a temp file in the same
@@ -404,8 +429,25 @@ func writeFileAtomic(path string, data []byte) (err error) {
 	if err = os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replace %s: %w", base, err)
 	}
-	if err = syncDir(dir); err != nil {
-		return fmt.Errorf("sync directory of %s: %w", base, err)
+	syncRenamed(dir)
+	return nil
+}
+
+// writeFileInPlace overwrites the existing file at path with data.
+func writeFileInPlace(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", filepath.Base(path), err)
+	}
+	_, errWrite := f.Write(data)
+	if errWrite == nil {
+		errWrite = f.Sync()
+	}
+	if errClose := f.Close(); errWrite == nil {
+		errWrite = errClose
+	}
+	if errWrite != nil {
+		return fmt.Errorf("write %s: %w", filepath.Base(path), errWrite)
 	}
 	return nil
 }
@@ -441,9 +483,7 @@ func ApplyPendingRestore(dataDir string) error {
 		if err := os.Rename(staged, db); err != nil {
 			return fmt.Errorf("swap in restored database: %w", err)
 		}
-		if err := syncDir(filepath.Dir(db)); err != nil {
-			return fmt.Errorf("swap in restored database: %w", err)
-		}
+		syncRenamed(filepath.Dir(db))
 		log.WithField("backup", p.BackupID).Info("taproot backups: restored database swapped in")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("stat staged database: %w", err)

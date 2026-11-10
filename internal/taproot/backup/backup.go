@@ -434,9 +434,7 @@ func (b *Backups) createLocked(ctx context.Context, reason Reason) (Entry, error
 	if err := os.Rename(tmpArchive, final); err != nil {
 		return Entry{}, fmt.Errorf("move backup into place: %w", err)
 	}
-	if err := syncDir(b.dir); err != nil {
-		return Entry{}, fmt.Errorf("sync backups dir: %w", err)
-	}
+	syncRenamed(b.dir)
 	info, err := os.Stat(final)
 	if err != nil {
 		return Entry{}, fmt.Errorf("stat backup: %w", err)
@@ -609,7 +607,11 @@ func (b *Backups) authFiles() (map[string]string, error) {
 		if resolved, errResolve := filepath.EvalSymlinks(dataDir); errResolve == nil {
 			dataDir = resolved
 		}
-		skip[dataDir] = true
+		// When the auth dir is the data dir, skipping it would skip the
+		// whole walk.
+		if dataDir != root {
+			skip[dataDir] = true
+		}
 	}
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
