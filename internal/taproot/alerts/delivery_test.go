@@ -341,4 +341,10 @@ func TestDeliveryHealthClearsOnATestSendOrANewWebhook(t *testing.T) {
 	if got := h.svc.DeliveryHealth(); got.Failures != 1 || h.svc.webhook() != testWebhook {
 		t.Fatalf("after undoing the save: %+v, want the old webhook and its failure back", got)
 	}
+	h.svc.deliveryMu.Lock()
+	rearm := h.svc.rearm
+	h.svc.deliveryMu.Unlock()
+	if rearm {
+		t.Fatal("after undoing the save: the open alerts would be re-sent to the old webhook")
+	}
 }

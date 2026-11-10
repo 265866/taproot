@@ -209,8 +209,8 @@ func (s *Service) SetConfig(cfg Config) error {
 }
 
 // SnapshotConfig returns a function that puts back the current webhook,
-// switch, invalid mark, and delivery health exactly, without validating
-// them, to undo a SetConfig.
+// switch, invalid mark, delivery health, and pending re-arm exactly, without
+// validating them, to undo a SetConfig.
 func (s *Service) SnapshotConfig() (restore func()) {
 	s.cfgMu.RLock()
 	cfg, invalid := s.cfg, s.webhookInvalid
@@ -218,6 +218,9 @@ func (s *Service) SnapshotConfig() (restore func()) {
 	s.healthMu.Lock()
 	health := s.health
 	s.healthMu.Unlock()
+	s.deliveryMu.Lock()
+	rearm := s.rearm
+	s.deliveryMu.Unlock()
 	return func() {
 		s.cfgMu.Lock()
 		s.cfg, s.webhookInvalid = cfg, invalid
@@ -225,6 +228,12 @@ func (s *Service) SnapshotConfig() (restore func()) {
 		s.healthMu.Lock()
 		s.health = health
 		s.healthMu.Unlock()
+		// An undone webhook change must not re-send the open alerts to the
+		// webhook that already has them, if the evaluation has not yet
+		// taken the change.
+		s.deliveryMu.Lock()
+		s.rearm = rearm
+		s.deliveryMu.Unlock()
 		s.signal()
 	}
 }
