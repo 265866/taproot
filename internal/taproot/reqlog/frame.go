@@ -137,6 +137,11 @@ func encodeFrame(meta *recordMeta, text []byte, onBlob func(blobHash, []byte)) (
 	if err != nil {
 		return frame{}, nil, fmt.Errorf("encode record meta: %w", err)
 	}
+	// Recovery stops at a frame it cannot parse and truncates the segment
+	// there, so a frame it would reject must never be written.
+	if len(metaJSON) > maxFrameMeta {
+		return frame{}, nil, fmt.Errorf("record meta is %d bytes, over the %d-byte frame limit", len(metaJSON), maxFrameMeta)
+	}
 	refsBin := encodeRefs(refs)
 	head := make([]byte, 0, len(frameMagic)+64)
 	head = append(head, frameMagic...)

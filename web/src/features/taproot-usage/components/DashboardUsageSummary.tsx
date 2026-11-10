@@ -8,7 +8,7 @@ import { taprootApi } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
 import { todayWindow, toIso } from '../logic/range';
-import { cacheHitRatio } from '../logic/totals';
+import { cacheHitRatio, unpricedHint } from '../logic/totals';
 import { providerName } from '../logic/accounts';
 import { providerColor } from '../logic/viz';
 import { formatDateTime, formatRatio, formatUSD } from '../logic/format';
@@ -72,7 +72,7 @@ export function DashboardUsageSummary() {
         <article className={styles.kpi}>
           <span className={styles.kpiLabel}>{t('taproot_usage.dashboard.cost')}</span>
           <strong className={styles.kpiValue}>{totals ? formatUSD(totals.costUSD) : '—'}</strong>
-          <span className={styles.kpiHint}>{t('taproot_usage.kpi.unpriced_hint')}</span>
+          <span className={styles.kpiHint}>{unpricedHint(t, totals ?? {})}</span>
         </article>
         <article className={styles.kpi}>
           <span className={styles.kpiLabel}>{t('taproot_usage.dashboard.requests')}</span>

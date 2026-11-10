@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { taprootApi, type UsageSession } from '@/services/api/taproot';
-import { affinityStats, sessionDurationMs, type AffinityStats } from '../logic/sessions';
+import {
+  affinityStats,
+  sessionDurationMs,
+  sessionRequestsLabel,
+  type AffinityStats,
+} from '../logic/sessions';
 import {
   DASH,
   formatDateTime,
@@ -155,7 +160,7 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
                       </td>
                       <td>{formatDateTime(s.lastAt)}</td>
                       <td className={styles.num}>{formatDuration(sessionDurationMs(s))}</td>
-                      <td className={styles.num}>{s.requests.toLocaleString()}</td>
+                      <td className={styles.num}>{sessionRequestsLabel(s)}</td>
                       <td>{s.accounts.map(accountLabel).join(', ') || DASH}</td>
                       <td className={styles.num}>
                         {switched ? (
@@ -185,6 +190,9 @@ export function SessionsView({ window, refreshKey, accountLabel, onViewRequests 
               </tbody>
             </table>
           </div>
+        ) : null}
+        {visible.some((s) => s.truncated) ? (
+          <p className={styles.tableFooter}>{t('taproot_usage.sessions.truncated_note')}</p>
         ) : null}
         {loaded?.nextCursor && loaded.key === rangeKey ? (
           <div className={styles.tableFooter}>

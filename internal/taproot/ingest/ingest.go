@@ -121,10 +121,7 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 // The context is the execution's, read here because only it says whether a
 // plugin made the request in-process.
 func (i *Ingest) HandleUsage(ctx context.Context, record usage.Record) {
-	p := pendingRecord{Record: record}
-	if src := i.plugins.Load(); src != nil {
-		p.pluginID, p.inPlugin = (*src).CallerPlugin(ctx)
-	}
+	p := pendingRecord{Record: record, device: i.recordDevice(ctx, record.TraceID)}
 	i.mu.Lock()
 	if len(i.pending) >= maxPending {
 		i.dropped++
@@ -248,7 +245,7 @@ func (i *Ingest) flush(ctx context.Context) error {
 	for _, p := range records {
 		r := p.Record
 		e := eventFromRecord(r, now)
-		e.Device = i.recordDevice(p)
+		e.Device = p.device
 		events = append(events, e)
 		if e.AuthIndex == "" || len(r.ResponseHeaders) == 0 {
 			continue
@@ -264,7 +261,7 @@ func (i *Ingest) flush(ctx context.Context) error {
 		if _, err := insertEvents(ctx, c, events); err != nil {
 			return err
 		}
-		_, err := i.tracker.write(ctx, c, allObs)
+		_, err := i.tracker.write(ctx, c, allObs, now)
 		return err
 	})
 	if err != nil {

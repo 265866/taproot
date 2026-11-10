@@ -84,6 +84,12 @@ CREATE TABLE IF NOT EXISTS reqlog_blobs (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS reqlog_blobs_pack ON reqlog_blobs (pack_id);
 CREATE INDEX IF NOT EXISTS reqlog_blobs_last_ts ON reqlog_blobs (last_ts);
+
+-- Blobs whose encoding started and never finished, because the process died
+-- during it. Pack rewrites store them unencoded instead of dying again.
+CREATE TABLE IF NOT EXISTS reqlog_pack_attempts (
+	hash BLOB PRIMARY KEY
+) WITHOUT ROWID;
 `})
 }
 
