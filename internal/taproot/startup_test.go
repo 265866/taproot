@@ -52,9 +52,14 @@ func TestSetupRequiresTailscaledSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	missing := filepath.Join(dir, "missing.sock")
+	// tailscaled's own file name, so the advice is a folder mount.
+	missing := filepath.Join(dir, "gone", "tailscaled.sock")
 	// A socket file nobody listens on: it exists, but connecting is refused.
-	stale := filepath.Join(dir, "stale.sock")
+	staleDir := filepath.Join(dir, "stale")
+	if err := os.Mkdir(staleDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(staleDir, "tailscaled.sock")
 	ln, err := net.Listen("unix", stale)
 	if err != nil {
 		t.Fatal(err)
@@ -63,15 +68,19 @@ func TestSetupRequiresTailscaledSocket(t *testing.T) {
 	if err := ln.Close(); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ name, socket, want string }{
-		{"missing", missing, "tailscaled socket " + missing + " does not exist"},
-		{"nobody listening", stale, "tailscaled socket " + stale + " is unreachable"},
+	// Another file name: a folder mount would not create it, so the advice
+	// mounts the socket file itself.
+	custom := filepath.Join(dir, "custom.sock")
+	for _, tc := range []struct{ name, socket, want, mount string }{
+		{"missing", missing, "tailscaled socket " + missing + " does not exist", "Volume=/var/run/tailscale:" + filepath.ToSlash(filepath.Dir(missing)) + ":ro"},
+		{"nobody listening", stale, "tailscaled socket " + stale + " is unreachable", "Volume=/var/run/tailscale:" + filepath.ToSlash(staleDir) + ":ro"},
+		{"another file name", custom, "tailscaled socket " + custom + " does not exist", "Volume=/var/run/tailscale/tailscaled.sock:" + filepath.ToSlash(custom) + ":ro"},
 	} {
 		tp := "access:\n  tailscale-socket: " + filepath.ToSlash(tc.socket) + "\n"
 		_, err := setupServer(t, tp)
-		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "Volume=/var/run/tailscale/tailscaled.sock:"+tc.socket) ||
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), tc.mount) ||
 			!strings.Contains(err.Error(), "access.enabled: false") || !strings.Contains(err.Error(), "taproot.yaml") {
-			t.Errorf("%s: Setup = %v, want %q with how to mount the socket", tc.name, err, tc.want)
+			t.Errorf("%s: Setup = %v, want %q and %q", tc.name, err, tc.want, tc.mount)
 		}
 	}
 

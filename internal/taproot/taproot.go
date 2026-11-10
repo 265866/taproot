@@ -219,6 +219,9 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	backups.Start(ctx)
 	notify.Start(ctx)
 	editable.Start(ctx)
+	guard.MonitorTailscaled(ctx, func(n access.TailscaledNotice) {
+		notify.Tailscaled(alerts.TailscaledOutage{Socket: n.Socket, Down: n.Down, Since: n.Since, At: n.At, Err: n.Err, StaleSocket: n.StaleSocket})
+	})
 
 	opts := []api.ServerOption{
 		// The guard must run first so the dashboard is access-checked too.

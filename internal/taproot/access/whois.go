@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,8 +82,14 @@ func (g *Guard) CheckTailscaled(ctx context.Context) error {
 	if !g.enabled {
 		return nil
 	}
-	fix := fmt.Sprintf("mount the host's tailscaled socket there (podman or docker: -v %s:%s; a quadlet: Volume=%s:%s), set access.tailscale-socket in taproot.yaml to where it is, or set access.enabled: false",
-		hostSocket, g.socket, hostSocket, g.socket)
+	hostDir, dir := filepath.ToSlash(filepath.Dir(hostSocket)), filepath.ToSlash(filepath.Dir(g.socket))
+	mount := fmt.Sprintf("the host's tailscaled folder there (podman or docker: -v %s:%s:ro; a quadlet: Volume=%s:%s:ro)", hostDir, dir, hostDir, dir)
+	if filepath.Base(g.socket) != filepath.Base(hostSocket) {
+		// A folder mount keeps tailscaled's file name, so a socket path with
+		// another name needs the file itself.
+		mount = fmt.Sprintf("the host's tailscaled socket there (podman or docker: -v %s:%s:ro; a quadlet: Volume=%s:%s:ro)", hostSocket, g.socket, hostSocket, g.socket)
+	}
+	fix := "mount " + mount + ", set access.tailscale-socket in taproot.yaml to where it is, or set access.enabled: false"
 	if _, err := os.Stat(g.socket); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("tailscaled socket %s does not exist: %s", g.socket, fix)
 	}

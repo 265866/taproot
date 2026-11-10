@@ -24,9 +24,21 @@ echo "$v"
 
 `${v%.*}` is the release's minor version, such as `0.2`, which is also the image tag that follows its patch releases.
 
+## Keep tailscaled's folder for a container
+
+A container reaches `tailscaled` through the host's `/var/run/tailscale` folder, which the Quick start container, the quadlet, and the Compose file mount. Run this once on the host before you start one:
+
+```sh
+sudo mkdir -p /etc/systemd/system/tailscaled.service.d
+printf '[Service]\nRuntimeDirectoryPreserve=yes\n' | sudo tee /etc/systemd/system/tailscaled.service.d/taproot.conf
+sudo systemctl daemon-reload
+```
+
+`tailscaled` does not need a restart now; the setting applies from its next restart. Without it, systemd deletes and recreates the folder each time `tailscaled` restarts or updates, and the running container keeps the deleted one, so taproot refuses every tailnet device until you restart it. NixOS and the plain binary run without a container and do not need this.
+
 ## Run the Quick start container with Docker
 
-The [Quick start](../README.md#quick-start) command works with rootful Docker too. Run it with `docker run`, leave out `--network pasta`, and add `--user "$(id -u):$(id -g)"`, so the process runs as the owner of the data directory. Find the setup code with `docker logs taproot 2>&1 | grep 'setup code [A-Z0-9]'`.
+The [Quick start](../README.md#quick-start) command works with rootful Docker too, after the host setting in [Keep tailscaled's folder for a container](#keep-tailscaleds-folder-for-a-container). Run it with `docker run`, leave out `--network pasta`, and add `--user "$(id -u):$(id -g)"`, so the process runs as the owner of the data directory. Find the setup code with `docker logs taproot 2>&1 | grep 'setup code [A-Z0-9]'`.
 
 On the first start, taproot writes `config.yaml` and `taproot.yaml` into `~/taproot/data`. `--network pasta` keeps each caller's source address. `TZ` sets the time of the daily backup. On an SELinux host, add `:Z` to the data volume, as in `-v "$HOME/taproot/data:/taproot/config:Z"`.
 
@@ -34,7 +46,7 @@ Rootless Podman does not start this container again after the host reboots. For 
 
 ## Podman quadlet
 
-[`examples/taproot/taproot.container`](../examples/taproot/taproot.container) runs taproot as a systemd user service under rootless Podman. It uses a read-only root filesystem, drops every capability, and publishes the port on the host's Tailscale address only. If you started the Quick start container, run `podman rm -f taproot` first.
+[`examples/taproot/taproot.container`](../examples/taproot/taproot.container) runs taproot as a systemd user service under rootless Podman. It uses a read-only root filesystem, drops every capability, and publishes the port on the host's Tailscale address only. If you started the Quick start container, run `podman rm -f taproot` first. Before you start it, make the host setting in [Keep tailscaled's folder for a container](#keep-tailscaleds-folder-for-a-container).
 
 ```sh
 mkdir -p "$HOME/taproot/data" "$HOME/.config/containers/systemd"
@@ -53,7 +65,7 @@ The quadlet runs the minor version's tag, such as `ghcr.io/265866/taproot:0.3`, 
 
 ## Docker Compose
 
-[`examples/taproot/compose.yaml`](../examples/taproot/compose.yaml) runs taproot under rootful Docker with the same restrictions as the quadlet. It reads the host's Tailscale address and your user and group IDs from a `.env` file beside it.
+[`examples/taproot/compose.yaml`](../examples/taproot/compose.yaml) runs taproot under rootful Docker with the same restrictions as the quadlet. It reads the host's Tailscale address and your user and group IDs from a `.env` file beside it. Before you start it, make the host setting in [Keep tailscaled's folder for a container](#keep-tailscaleds-folder-for-a-container).
 
 ```sh
 mkdir -p "$HOME/taproot/data"
