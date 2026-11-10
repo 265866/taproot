@@ -1,15 +1,19 @@
 package access
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // ClaimPath is where a tailnet device posts the setup code. The settings
@@ -21,10 +25,13 @@ const (
 	// claimAlphabet leaves out 0, O, 1, I, and L, which read alike.
 	claimAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 	claimCodeLen  = 8
-	// claimMaxFailures wrong codes within claimWindow lock the claim for
-	// everyone until the oldest one is claimWindow old.
-	claimMaxFailures = 5
-	claimWindow      = time.Minute
+	// claimMaxFailures wrong codes from one device within claimWindow lock
+	// the claim for that device until the oldest one is claimWindow old, and
+	// claimMaxTotalFailures from all devices lock it for everyone. One device
+	// alone cannot lock out the others, and guessing stays infeasible.
+	claimMaxFailures      = 5
+	claimMaxTotalFailures = 30
+	claimWindow           = time.Minute
 )
 
 var (
@@ -46,9 +53,12 @@ func (e *ClaimRateLimitedError) Error() string {
 // setupClaim is the one-time setup code and the wrong attempts against it.
 type setupClaim struct {
 	mu sync.Mutex
-	// code is "" before StartClaim and after the claim ends.
-	code     string
-	failures []time.Time
+	// code is "" while no claim waits.
+	code string
+	// failures are each device's recent wrong codes, by stable node ID.
+	failures map[string][]time.Time
+	// announce receives each new code; it is nil until StartClaim.
+	announce func(code string)
 }
 
 // newClaimCode returns claimCodeLen characters of claimAlphabet from crypto/rand.
@@ -84,54 +94,92 @@ func normalizeClaimCode(raw string) string {
 	}, strings.ToUpper(strings.TrimSpace(raw)))
 }
 
-// StartClaim makes a new setup code when the guard is on and no device has
-// Admin, and returns it; otherwise it returns "". Setup calls it once per
-// start and logs the code, so removing every admin: true entry and restarting
-// brings the claim back.
-func (g *Guard) StartClaim() (string, error) {
-	if !g.enabled || g.grants.Load().hasAdmin() {
-		return "", nil
+// StartClaim arms the setup code when the guard is on. From then on, while
+// no device can use Admin, a code waits, and announce receives each new one:
+// at once, and again whenever a change leaves no device that can use Admin
+// after a code was used up. Setup calls it once and logs the code.
+func (g *Guard) StartClaim(ctx context.Context, announce func(code string)) error {
+	if !g.enabled {
+		return nil
+	}
+	g.claim.mu.Lock()
+	g.claim.announce = announce
+	g.claim.mu.Unlock()
+	if self := g.self(context.WithoutCancel(ctx)); self != nil {
+		if d, ok := g.grants.Load().byID[self.StableID]; ok && d.Admin {
+			log.Warnf("taproot access: access.devices gives Admin to %s (%s), which is this server's own node and never gets Admin; remove admin: true from that entry", cmp.Or(d.Name, self.DNSName), d.ID)
+		}
+	}
+	return g.reviewClaim()
+}
+
+// reviewClaim makes a setup code and announces it when the claim is armed,
+// no code waits, and no device can use Admin.
+func (g *Guard) reviewClaim() error {
+	g.claim.mu.Lock()
+	if g.claim.announce == nil || g.claim.code != "" || g.hasAdmin() {
+		g.claim.mu.Unlock()
+		return nil
 	}
 	code, err := newClaimCode()
 	if err != nil {
-		return "", err
+		g.claim.mu.Unlock()
+		return err
 	}
-	g.claim.mu.Lock()
-	defer g.claim.mu.Unlock()
 	g.claim.code, g.claim.failures = code, nil
-	return code, nil
+	announce := g.claim.announce
+	g.claim.mu.Unlock()
+	announce(code)
+	return nil
 }
 
-// Claimable reports whether a setup code is waiting and no device has Admin.
+// restartClaim runs reviewClaim after a change that may have removed the last
+// device that can use Admin.
+func (g *Guard) restartClaim() {
+	if err := g.reviewClaim(); err != nil {
+		log.WithError(err).Error("taproot access: no device can use Admin, and taproot could not make a setup code")
+	}
+}
+
+// Claimable reports whether a setup code is waiting and no device can use Admin.
 func (g *Guard) Claimable() bool {
 	g.claim.mu.Lock()
 	defer g.claim.mu.Unlock()
-	return g.claim.code != "" && !g.grants.Load().hasAdmin()
+	return g.claim.code != "" && !g.hasAdmin()
 }
 
-// CheckClaimCode compares code with the setup code. Wrong codes count
-// against claimMaxFailures per claimWindow for the whole server; while that
-// limit is reached, every code is refused unchecked with a
-// *ClaimRateLimitedError, so guessing gains nothing. now is the caller's
-// clock.
-func (g *Guard) CheckClaimCode(code string, now time.Time) error {
+// CheckClaimCode compares code, sent by the device nodeID, with the setup
+// code. Wrong codes count against claimMaxFailures per claimWindow for that
+// device and claimMaxTotalFailures for all of them; while a limit is reached,
+// every code is refused unchecked with a *ClaimRateLimitedError, so guessing
+// gains nothing. now is the caller's clock.
+func (g *Guard) CheckClaimCode(nodeID, code string, now time.Time) error {
 	g.claim.mu.Lock()
 	defer g.claim.mu.Unlock()
-	if g.claim.code == "" || g.grants.Load().hasAdmin() {
+	if g.claim.code == "" || g.hasAdmin() {
 		return ErrClaimClosed
 	}
-	recent := g.claim.failures[:0]
-	for _, at := range g.claim.failures {
-		if now.Sub(at) < claimWindow {
-			recent = append(recent, at)
+	var all []time.Time
+	for id, times := range g.claim.failures {
+		recent := slices.DeleteFunc(times, func(at time.Time) bool { return now.Sub(at) >= claimWindow })
+		if len(recent) == 0 {
+			delete(g.claim.failures, id)
+			continue
 		}
+		g.claim.failures[id] = recent
+		all = append(all, recent...)
 	}
-	g.claim.failures = recent
-	if len(recent) >= claimMaxFailures {
-		return &ClaimRateLimitedError{RetryAfter: recent[0].Add(claimWindow).Sub(now)}
+	if own := g.claim.failures[nodeID]; len(own) >= claimMaxFailures {
+		return &ClaimRateLimitedError{RetryAfter: own[0].Add(claimWindow).Sub(now)}
+	}
+	if len(all) >= claimMaxTotalFailures {
+		return &ClaimRateLimitedError{RetryAfter: slices.MinFunc(all, time.Time.Compare).Add(claimWindow).Sub(now)}
 	}
 	if subtle.ConstantTimeCompare([]byte(normalizeClaimCode(code)), []byte(g.claim.code)) != 1 {
-		g.claim.failures = append(g.claim.failures, now)
+		if g.claim.failures == nil {
+			g.claim.failures = map[string][]time.Time{}
+		}
+		g.claim.failures[nodeID] = append(g.claim.failures[nodeID], now)
 		return ErrClaimWrongCode
 	}
 	return nil
@@ -159,11 +207,12 @@ func (g *Guard) ServerDNSName(ctx context.Context) string {
 	return ""
 }
 
-func (s *grantSet) hasAdmin() bool {
-	for _, d := range s.Devices {
-		if d.Admin {
-			return true
-		}
-	}
-	return false
+// hasAdmin reports whether a device the guard can give Admin has it. Once the
+// server's own node is known, its grant does not count, since admit never
+// gives it Admin.
+func (g *Guard) hasAdmin() bool {
+	self, _ := g.cachedSelf()
+	return slices.ContainsFunc(g.grants.Load().Devices, func(d DeviceGrant) bool {
+		return d.Admin && (self == nil || d.ID != self.StableID)
+	})
 }

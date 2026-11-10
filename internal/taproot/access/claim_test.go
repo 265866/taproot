@@ -6,11 +6,48 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// announcedCodes records the setup codes the guard announces.
+type announcedCodes struct {
+	mu    sync.Mutex
+	codes []string
+}
+
+func (a *announcedCodes) last() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.codes) == 0 {
+		return ""
+	}
+	return a.codes[len(a.codes)-1]
+}
+
+func (a *announcedCodes) count() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.codes)
+}
+
+// startClaim arms g's setup code as Setup does.
+func startClaim(t *testing.T, g *Guard) *announcedCodes {
+	t.Helper()
+	a := &announcedCodes{}
+	err := g.StartClaim(t.Context(), func(code string) {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.codes = append(a.codes, code)
+	})
+	if err != nil {
+		t.Fatalf("StartClaim: %v", err)
+	}
+	return a
+}
 
 func TestClaimCodeFormat(t *testing.T) {
 	valid := regexp.MustCompile(`^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$`)
@@ -43,11 +80,11 @@ func TestClaimCodeFormat(t *testing.T) {
 // removing every admin entry and restarting brings the claim back.
 func TestStartClaimOnlyWhileUnclaimed(t *testing.T) {
 	ts := newFakeTailscaled(t, defaultPeers())
-	if code, err := newTestGuard(t, Config{TailscaleSocket: ts.socket}).StartClaim(); err != nil || code != "" {
-		t.Fatalf("StartClaim with an admin device = %q, %v; want no code", code, err)
+	if code := startClaim(t, newTestGuard(t, Config{TailscaleSocket: ts.socket})).last(); code != "" {
+		t.Fatalf("StartClaim with an admin device = %q; want no code", code)
 	}
 	off := false
-	if code, _ := newTestGuard(t, Config{Enabled: &off, Devices: []DeviceGrant{}}).StartClaim(); code != "" {
+	if code := startClaim(t, newTestGuard(t, Config{Enabled: &off, Devices: []DeviceGrant{}})).last(); code != "" {
 		t.Fatalf("StartClaim with the guard off = %q, want no code", code)
 	}
 	// Recovery: the same devices without admin: true.
@@ -55,51 +92,48 @@ func TestStartClaimOnlyWhileUnclaimed(t *testing.T) {
 	if g.Claimable() {
 		t.Fatal("claimable before StartClaim")
 	}
-	code, err := g.StartClaim()
-	if err != nil || len(code) != claimCodeLen || !g.Claimable() {
-		t.Fatalf("StartClaim without admin = %q, %v, claimable %t", code, err, g.Claimable())
+	code := startClaim(t, g).last()
+	if len(code) != claimCodeLen || !g.Claimable() {
+		t.Fatalf("StartClaim without admin = %q, claimable %t", code, g.Claimable())
 	}
 	// A device given Admin by any means closes the claim, even before EndClaim.
 	if err := g.SetGrants(Grants{Devices: []DeviceGrant{{ID: laptopID, Admin: true}}}); err != nil {
 		t.Fatal(err)
 	}
-	if g.Claimable() || !errors.Is(g.CheckClaimCode(code, time.Now()), ErrClaimClosed) {
+	if g.Claimable() || !errors.Is(g.CheckClaimCode(laptopID, code, time.Now()), ErrClaimClosed) {
 		t.Fatal("claim still open with an admin device")
 	}
 }
 
-// Five wrong codes a minute lock the claim for the whole server, the right
-// code included, until the oldest wrong one is a minute old.
+// Five wrong codes a minute lock the claim for the device that sent them, the
+// right code included, until the oldest wrong one is a minute old.
 func TestClaimCodeRateLimit(t *testing.T) {
 	g := newTestGuard(t, Config{TailscaleSocket: newFakeTailscaled(t, defaultPeers()).socket, Devices: []DeviceGrant{}})
-	code, err := g.StartClaim()
-	if err != nil {
-		t.Fatal(err)
-	}
+	code := startClaim(t, g).last()
 	wrong := "AAAAAAAA"
 	if code == wrong {
 		wrong = "BBBBBBBB"
 	}
 	start := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
 	for i := range claimMaxFailures {
-		if err := g.CheckClaimCode(wrong, start.Add(time.Duration(i)*10*time.Second)); !errors.Is(err, ErrClaimWrongCode) {
+		if err := g.CheckClaimCode(bobID, wrong, start.Add(time.Duration(i)*10*time.Second)); !errors.Is(err, ErrClaimWrongCode) {
 			t.Fatalf("wrong code %d = %v, want ErrClaimWrongCode", i+1, err)
 		}
 	}
 	// 40 s after the first failure: locked for another 20 s, right code or not.
 	var limited *ClaimRateLimitedError
-	if err := g.CheckClaimCode(FormatClaimCode(code), start.Add(40*time.Second)); !errors.As(err, &limited) || limited.RetryAfter != 20*time.Second {
+	if err := g.CheckClaimCode(bobID, FormatClaimCode(code), start.Add(40*time.Second)); !errors.As(err, &limited) || limited.RetryAfter != 20*time.Second {
 		t.Fatalf("right code while locked = %v, want a rate limit with 20s left", err)
 	}
 	// Refused attempts are not counted, so the lock ends a minute after the first failure.
-	if err := g.CheckClaimCode(wrong, start.Add(59*time.Second)); !errors.As(err, &limited) {
+	if err := g.CheckClaimCode(bobID, wrong, start.Add(59*time.Second)); !errors.As(err, &limited) {
 		t.Fatalf("wrong code while locked = %v, want a rate limit", err)
 	}
-	if err := g.CheckClaimCode(strings.ToLower(code), start.Add(time.Minute)); err != nil {
+	if err := g.CheckClaimCode(bobID, strings.ToLower(code), start.Add(time.Minute)); err != nil {
 		t.Fatalf("right code once the first failure is a minute old = %v", err)
 	}
 	g.EndClaim()
-	if g.Claimable() || !errors.Is(g.CheckClaimCode(code, start.Add(2*time.Minute)), ErrClaimClosed) {
+	if g.Claimable() || !errors.Is(g.CheckClaimCode(bobID, code, start.Add(2*time.Minute)), ErrClaimClosed) {
 		t.Fatal("the code still works after EndClaim")
 	}
 }
@@ -134,9 +168,7 @@ func TestGuardOpensOnlyTheClaimRouteWhileUnclaimed(t *testing.T) {
 	if code := post(outsiderIP + ":1"); code != http.StatusForbidden || claimable(outsiderIP+":1") {
 		t.Fatalf("claim before StartClaim = %d, want the guard's 403 without claimable", code)
 	}
-	if _, err := g.StartClaim(); err != nil {
-		t.Fatal(err)
-	}
+	startClaim(t, g)
 	if code := post(outsiderIP + ":1"); code != http.StatusNoContent || reached != 1 {
 		t.Fatalf("claim from a tailnet device = %d, want the handler", code)
 	}
