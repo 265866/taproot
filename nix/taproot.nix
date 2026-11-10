@@ -3,13 +3,26 @@
 {
   lib,
   buildGo126Module,
+  go_1_26,
   buildInfo,
   taproot-codec,
   taproot-web,
 }:
 let
   root = ./..;
+  # nixpkgs builds with GOTOOLCHAIN=local, so a Go older than go.mod's go line,
+  # from a nixpkgs that taproot's input follows, fails deep in the module
+  # fetch. Upstream raises that line on most syncs.
+  goLine = lib.findFirst (lib.hasPrefix "go ") "go 0" (
+    lib.splitString "\n" (lib.readFile (root + "/go.mod"))
+  );
+  goModVersion = lib.removePrefix "go " goLine;
 in
+assert lib.assertMsg (lib.versionAtLeast go_1_26.version goModVersion) ''
+  taproot needs Go ${goModVersion} or later, and this nixpkgs has Go ${go_1_26.version}. Update the
+  nixpkgs input that taproot follows, or remove inputs.taproot.inputs.nixpkgs.follows so that taproot
+  builds with its own locked nixpkgs.
+'';
 buildGo126Module {
   pname = "taproot";
   inherit (buildInfo) version;
