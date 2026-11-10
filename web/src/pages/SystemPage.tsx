@@ -268,6 +268,18 @@ export function SystemPage() {
               <div className={styles.tileValue}>{t(`common.${auth.connectionStatus}_status`)}</div>
               <div className={styles.tileSub}>{auth.apiBase || '-'}</div>
             </div>
+
+            <div className={styles.infoTile}>
+              <div className={styles.tileHeader}>
+                <div className={styles.tileLabel}>{t('system_info.models_tile')}</div>
+              </div>
+              <div className={styles.tileValue}>
+                {modelsLoading ? '…' : modelsError ? '—' : models.length.toLocaleString()}
+              </div>
+              <div className={styles.tileSub}>
+                {modelsError ? t('system_info.models_error') : t('system_info.models_tile_sub')}
+              </div>
+            </div>
           </div>
         </Card>
 

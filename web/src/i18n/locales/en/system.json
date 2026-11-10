@@ -3,6 +3,8 @@
     "title": "System",
     "about_title": "Taproot",
     "models_title": "Available Models",
+    "models_tile": "Models",
+    "models_tile_sub": "served at /v1/models",
     "models_desc": "The models the proxy serves, as /v1/models lists them.",
     "models_loading": "Loading available models...",
     "models_empty": "No models returned by /models",
