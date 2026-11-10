@@ -1,11 +1,13 @@
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/access"
@@ -49,11 +51,12 @@ type pluginSource interface {
 	PluginName(pluginID string) string
 }
 
-// pendingRecord is a queued usage record with the plugin, if any, that made it.
+// pendingRecord is a queued usage record with the device that made it,
+// resolved when it was queued: the guard keeps a request's device for ten
+// minutes only, and a flush can come later.
 type pendingRecord struct {
 	usage.Record
-	pluginID string
-	inPlugin bool
+	device access.Device
 }
 
 // AttachDevices sets where usage events get their device from. Without it,
@@ -80,20 +83,25 @@ func (i *Ingest) AttachPlugins(src pluginSource) {
 // host, such as an interceptor's fallback execution, carries that request's
 // ID, and the usage belongs to the client. A plugin's own work, such as a
 // timer or a dashboard action, runs without a proxy request ID.
-func (i *Ingest) recordDevice(p pendingRecord) access.Device {
+func (i *Ingest) recordDevice(ctx context.Context, requestID string) access.Device {
 	if src := i.devices.Load(); src != nil {
-		if d, ok := (*src).RequestDevice(p.TraceID); ok {
+		if d, ok := (*src).RequestDevice(requestID); ok {
 			return d
 		}
 	}
-	if !p.inPlugin {
+	src := i.plugins.Load()
+	if src == nil {
+		return access.Device{}
+	}
+	pluginID, inPlugin := (*src).CallerPlugin(ctx)
+	if !inPlugin {
 		return access.Device{}
 	}
 	name := ""
-	if src := i.plugins.Load(); src != nil && p.pluginID != "" {
-		name = (*src).PluginName(p.pluginID)
+	if pluginID != "" {
+		name = (*src).PluginName(pluginID)
 	}
-	return access.PluginDevice(p.pluginID, name)
+	return access.PluginDevice(pluginID, name)
 }
 
 // deviceName is the name to show for a stored device.
@@ -152,7 +160,11 @@ func (d deviceRollup) apply(ctx context.Context, c *sql.Conn) error {
 		return err
 	}
 	defer w.close()
-	for k, r := range d {
+	for _, k := range keysInOrder(d, func(a, b deviceRollupKey) int {
+		return cmp.Or(cmp.Compare(a.Hour, b.Hour), strings.Compare(a.DeviceID, b.DeviceID),
+			strings.Compare(a.Model, b.Model), cmp.Compare(boolInt(a.Main), boolInt(b.Main)))
+	}) {
+		r := d[k]
 		if err := w.upsert(ctx, []any{k.Hour, k.DeviceID, k.Model, boolInt(k.Main)}, &r.rollupDelta, r.splitRequests); err != nil {
 			return err
 		}

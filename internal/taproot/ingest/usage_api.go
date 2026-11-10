@@ -30,6 +30,8 @@ type Totals struct {
 	LatencyP95Ms       *float64 `json:"latencyP95Ms"`
 	TTFTP50Ms          *float64 `json:"ttftP50Ms"`
 	TTFTP95Ms          *float64 `json:"ttftP95Ms"`
+	// UnpricedModels used tokens but match no price, so CostUSD leaves them out.
+	UnpricedModels []string `json:"unpricedModels,omitempty"`
 }
 
 // agg accumulates rows. Tokens stay per model so cost can be priced at the
@@ -66,8 +68,11 @@ func (a *agg) totals(pb *priceBook) Totals {
 		out.CacheWrite1hTokens += t.CacheWrite1h
 		if usd, ok := pb.cost(model, *t); ok {
 			out.CostUSD += usd
+		} else if *t != (tokenSums{}) {
+			out.UnpricedModels = append(out.UnpricedModels, model)
 		}
 	}
+	sort.Strings(out.UnpricedModels)
 	out.LatencyP50Ms, out.LatencyP95Ms = a.lat.percentile(0.5), a.lat.percentile(0.95)
 	out.TTFTP50Ms, out.TTFTP95Ms = a.ttft.percentile(0.5), a.ttft.percentile(0.95)
 	return out
@@ -113,26 +118,42 @@ func (s *summaryBuilder) bucketStart(tsMs int64) int64 {
 		return tsMs - tsMs%s.bucketMs
 	}
 	y, m, d := time.UnixMilli(tsMs).In(s.loc).Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, s.loc).UnixMilli()
+	start := time.Date(y, m, d, 0, 0, 0, 0, s.loc)
+	// When the clocks skip midnight, time.Date answers with the previous
+	// day's last hour, and the day starts at the transition instead.
+	if _, _, sd := start.Date(); sd != d {
+		_, start = start.ZoneBounds()
+	}
+	return start.UnixMilli()
 }
 
 func (s *summaryBuilder) nextBucket(start int64) int64 {
 	if s.loc == nil {
 		return start + s.bucketMs
 	}
+	// Noon of the next date is on that date whatever its midnight does.
 	y, m, d := time.UnixMilli(start).In(s.loc).Date()
-	return time.Date(y, m, d+1, 0, 0, 0, 0, s.loc).UnixMilli()
+	next := s.bucketStart(time.Date(y, m, d+1, 12, 0, 0, 0, s.loc).UnixMilli())
+	if next <= start {
+		return start + 24*hourMs
+	}
+	return next
 }
 
-// hourAligned reports whether every bucket boundary in [fromMs, toMs) falls on
-// a UTC hour, which the hourly rollup needs. Zones with half-hour offsets fail.
-func (s *summaryBuilder) hourAligned(fromMs, toMs int64) bool {
+// splitHours are the whole UTC hours in [fromMs, toMs) that a day boundary
+// cuts, as in zones with half-hour offsets. Their rollup rows cannot be
+// assigned to one day, so they are read from raw events.
+func (s *summaryBuilder) splitHours(fromMs, toMs int64) map[int64]bool {
+	split := map[int64]bool{}
+	if s.loc == nil {
+		return split
+	}
 	for b := s.bucketStart(fromMs); b < toMs; b = s.nextBucket(b) {
-		if b%hourMs != 0 {
-			return false
+		if b > fromMs && b%hourMs != 0 {
+			split[b/hourMs] = true
 		}
 	}
-	return true
+	return split
 }
 
 func (s *summaryBuilder) target(tsMs int64, key string) *agg {
@@ -187,7 +208,7 @@ func (s *summaryBuilder) scanRaw(ctx context.Context, q querier, fromMs, toMs in
 	return rows.Err()
 }
 
-func (s *summaryBuilder) scanRollup(ctx context.Context, q querier, fromHour, toHour int64) error {
+func (s *summaryBuilder) scanRollup(ctx context.Context, q querier, fromHour, toHour int64, skip map[int64]bool) error {
 	// Each rollup has the key columns of the groupings it serves.
 	keys, table := "provider, auth_index, '', ''", "usage_rollup_hourly"
 	switch s.groupBy {
@@ -213,6 +234,9 @@ func (s *summaryBuilder) scanRollup(ctx context.Context, q querier, fromHour, to
 		if err := rows.Scan(&hour, &provider, &authIndex, &session, &device, &model, &requests, &failures,
 			&t.Input, &t.Output, &t.Reasoning, &t.CacheRead, &t.CacheWrite, &t.CacheWrite5m, &t.CacheWrite1h, &latBlob, &ttftBlob); err != nil {
 			return fmt.Errorf("scan rollup: %w", err)
+		}
+		if skip[hour] {
+			continue
 		}
 		for _, a := range []*agg{s.target(hour*hourMs, s.groupKey(provider, authIndex, model, session, device)), s.total} {
 			a.requests += requests
@@ -261,8 +285,9 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 	}
 	fromMs, toMs := ms(from), ms(to)
 	firstBucket := s.bucketStart(fromMs)
-	// Days are at least 23 hours, so this bounds the count in any zone.
-	if (toMs-firstBucket)/min(s.bucketMs, 23*hourMs) >= maxBucketCount {
+	// Days are at least 22 hours (Antarctica/Troll moves its clocks by two),
+	// so this bounds the count in any zone.
+	if (toMs-firstBucket)/min(s.bucketMs, 22*hourMs) >= maxBucketCount {
 		badRequest(c, "range holds more than %d %s buckets", maxBucketCount, bucketName)
 		return
 	}
@@ -271,8 +296,7 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	useRollup := bucketName != "5m" && s.hourAligned(fromMs, toMs)
-	if err := s.collect(ctx, i.db, fromMs, toMs, useRollup); err != nil {
+	if err := s.collect(ctx, i.db, fromMs, toMs, bucketName != "5m"); err != nil {
 		internalError(c, err)
 		return
 	}
@@ -288,7 +312,8 @@ func (i *Ingest) handleUsageSummary(c *gin.Context) {
 }
 
 // collect reads whole hours from the rollup and the partial hours at either
-// edge from raw events, so any from/to gives exact counts.
+// edge, and any hour a day boundary splits, from raw events, so any from/to
+// gives exact counts.
 func (s *summaryBuilder) collect(ctx context.Context, q querier, fromMs, toMs int64, useRollup bool) error {
 	if !useRollup {
 		return s.scanRaw(ctx, q, fromMs, toMs)
@@ -298,8 +323,14 @@ func (s *summaryBuilder) collect(ctx context.Context, q querier, fromMs, toMs in
 	if fullStart >= fullEnd {
 		return s.scanRaw(ctx, q, fromMs, toMs)
 	}
-	if err := s.scanRollup(ctx, q, fullStart/hourMs, fullEnd/hourMs); err != nil {
+	split := s.splitHours(fullStart, fullEnd)
+	if err := s.scanRollup(ctx, q, fullStart/hourMs, fullEnd/hourMs, split); err != nil {
 		return err
+	}
+	for h := range split {
+		if err := s.scanRaw(ctx, q, h*hourMs, (h+1)*hourMs); err != nil {
+			return err
+		}
 	}
 	if err := s.scanRaw(ctx, q, fromMs, fullStart); err != nil {
 		return err
@@ -468,6 +499,9 @@ type sessionJSON struct {
 	Models          []string `json:"models"`
 	Totals          Totals   `json:"totals"`
 	AccountSwitches int      `json:"accountSwitches"`
+	// Truncated means the session has more than sessionsMaxRows requests in
+	// range, and everything above covers only the first of them.
+	Truncated bool `json:"truncated"`
 }
 
 func (i *Ingest) handleUsageSessions(c *gin.Context) {
@@ -527,7 +561,7 @@ func (i *Ingest) handleUsageSessions(c *gin.Context) {
 func (i *Ingest) loadSession(ctx context.Context, id string, fromMs, toMs int64, pb *priceBook) (sessionJSON, error) {
 	rows, err := i.db.QueryContext(ctx, `SELECT ts, auth_index, model, failed, latency_ms, COALESCE(ttft_ms, 0),
 		input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens, cache_write_1h_tokens
-		FROM usage_events WHERE session_id = ? AND ts >= ? AND ts < ? ORDER BY ts, id LIMIT ?`, id, fromMs, toMs, sessionsMaxRows)
+		FROM usage_events WHERE session_id = ? AND ts >= ? AND ts < ? ORDER BY ts, id LIMIT ?`, id, fromMs, toMs, sessionsMaxRows+1)
 	if err != nil {
 		return sessionJSON{}, fmt.Errorf("query session: %w", err)
 	}
@@ -538,6 +572,10 @@ func (i *Ingest) loadSession(ctx context.Context, id string, fromMs, toMs int64,
 	var first, last int64
 	prevAccount := ""
 	for rows.Next() {
+		if a.requests == sessionsMaxRows {
+			s.Truncated = true
+			break
+		}
 		var (
 			ts, latency, ttft int64
 			authIndex, model  string

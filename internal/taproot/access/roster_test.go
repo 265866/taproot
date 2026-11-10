@@ -47,7 +47,7 @@ func TestDevicesEndpointJoinsTailnetAndGrants(t *testing.T) {
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: devices, Addresses: []AddressGrant{{CIDR: "192.0.2.20", Note: "agents"}}})
 	resp := getDevices(t, g)
 
-	if !resp.Enabled || resp.TailnetError != "" || resp.ForgetAfterHours != 24 {
+	if !resp.Enabled || resp.TailnetError != "" || resp.ForgetAfterHours != 24 || resp.Version == "" || resp.Version != g.Grants().Version() {
 		t.Fatalf("response = %+v", resp)
 	}
 	if !slices.Equal(resp.Addresses, []AddressGrant{{CIDR: "192.0.2.20/32", Note: "agents"}}) {

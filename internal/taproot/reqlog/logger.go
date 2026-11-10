@@ -2,7 +2,9 @@ package reqlog
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -10,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/265866/taproot/internal/interfaces"
 	"github.com/265866/taproot/internal/logging"
@@ -31,10 +34,22 @@ type requestLogger struct {
 
 	// streams holds writers that may still hold budget. Upstream's Finalize
 	// skips Close when request-log was switched off mid-stream, so SetEnabled
-	// releases what those writers hold.
-	streamsMu sync.Mutex
-	streams   map[*streamWriter]struct{}
+	// releases what those writers hold. It also returns early without Close
+	// when reading a spooled section fails, so LogStreamingRequest releases
+	// the budget of writers idle for streamIdleLimit.
+	streamsMu  sync.Mutex
+	streams    map[*streamWriter]struct{}
+	lastExpiry time.Time
+	// switchOffs counts SetEnabled(false) calls. A writer that expired, and so
+	// left streams, compares it at Close to learn that logging was switched
+	// off since it started.
+	switchOffs atomic.Uint64
 }
+
+// streamIdleLimit is how long a stream writer may go without a call before
+// its buffered body is dropped and its budget released. A Close that still
+// comes stores the record, marked truncated.
+const streamIdleLimit = 30 * time.Minute
 
 var (
 	_ logging.RequestLogger      = (*requestLogger)(nil)
@@ -50,6 +65,7 @@ func (l *requestLogger) SetEnabled(enabled bool) {
 	if enabled {
 		return
 	}
+	l.switchOffs.Add(1)
 	l.streamsMu.Lock()
 	live := l.streams
 	l.streams = nil
@@ -66,6 +82,26 @@ func (l *requestLogger) trackStream(w *streamWriter) {
 		l.streams = make(map[*streamWriter]struct{})
 	}
 	l.streams[w] = struct{}{}
+}
+
+// expireIdleStreams releases the budget of writers idle past
+// streamIdleLimit, at most once a minute.
+func (l *requestLogger) expireIdleStreams() {
+	now := l.now()
+	l.streamsMu.Lock()
+	if now.Sub(l.lastExpiry) < time.Minute {
+		l.streamsMu.Unlock()
+		return
+	}
+	l.lastExpiry = now
+	live := make([]*streamWriter, 0, len(l.streams))
+	for w := range l.streams {
+		live = append(live, w)
+	}
+	l.streamsMu.Unlock()
+	for _, w := range live {
+		w.expireIfIdle(now)
+	}
 }
 
 func (l *requestLogger) untrackStream(w *streamWriter) {
@@ -112,6 +148,10 @@ func (l *requestLogger) LogRequestWithOptionsAndAllSources(url, method string, r
 	if requestTimestamp.IsZero() {
 		requestTimestamp = l.now()
 	}
+	held, fits := l.holdSpooled(websocketTimelineSource, apiWebsocketTimelineSource, apiRequestSource, apiResponseSource)
+	if !fits {
+		websocketTimelineSource, apiWebsocketTimelineSource, apiRequestSource, apiResponseSource = nil, nil, nil, nil
+	}
 	c := &capture{
 		url:             url,
 		method:          method,
@@ -134,15 +174,58 @@ func (l *requestLogger) LogRequestWithOptionsAndAllSources(url, method string, r
 		// time and can finish an event stream through this buffered path.
 		streaming: isEventStream(responseHeaders),
 	}
-	c.responseBody, c.decompressErr = decodeResponse(responseHeaders, response)
-	l.engine.submit(c)
+	c.responseBody = response
+	if fits {
+		var decodedHeld int64
+		c.responseBody, decodedHeld, c.decompressErr = decodeResponse(responseHeaders, response, &l.engine.budget)
+		held += decodedHeld
+	}
+	l.submitHeld(c, held, fits)
 	return nil
+}
+
+// holdSpooled reserves budget for the spooled sections read into memory
+// before submit charges the record, so concurrent large records cannot
+// exceed the budget in between. It reports false, holding nothing, when they
+// do not fit; the caller then leaves them unread.
+func (l *requestLogger) holdSpooled(sources ...*logging.FileBodySource) (int64, bool) {
+	var n int64
+	for _, source := range sources {
+		if !source.HasPayload() {
+			continue
+		}
+		for _, path := range source.Paths() {
+			if info, err := os.Stat(path); err == nil {
+				n += info.Size()
+			}
+		}
+	}
+	if n == 0 {
+		return 0, true
+	}
+	if !l.engine.budget.reserve(n) {
+		return 0, false
+	}
+	return n, true
+}
+
+// submitHeld hands c to the engine with the budget the caller held while
+// reading its bodies. A capture whose spooled sections did not fit keeps its
+// metadata only.
+func (l *requestLogger) submitHeld(c *capture, held int64, fits bool) {
+	if !fits {
+		c.identify()
+		c.dropBodies("log queue full")
+		l.engine.stats.droppedBodies.Add(1)
+	}
+	l.engine.submit(c, held)
 }
 
 func (l *requestLogger) LogStreamingRequest(url, method string, headers map[string][]string, body []byte, requestID string) (logging.StreamingLogWriter, error) {
 	if !l.IsEnabled() {
 		return &logging.NoOpStreamingLogWriter{}, nil
 	}
+	now := l.now()
 	w := &streamWriter{
 		logger: l,
 		c: capture{
@@ -151,10 +234,13 @@ func (l *requestLogger) LogStreamingRequest(url, method string, headers map[stri
 			requestHeaders: redactHeaders(headers),
 			requestBody:    body,
 			requestID:      requestID,
-			requestTime:    l.now(),
+			requestTime:    now,
 			streaming:      true,
 		},
+		lastActive: now,
+		switchOffs: l.switchOffs.Load(),
 	}
+	l.expireIdleStreams()
 	l.trackStream(w)
 	// A switch-off between the check above and tracking would miss w.
 	if !l.IsEnabled() {
@@ -201,15 +287,20 @@ func mergeSource(payload []byte, source *logging.FileBodySource) []byte {
 // budget as they arrive; once it is exhausted the rest of the body is skipped
 // and the record notes the truncation.
 type streamWriter struct {
-	logger    *requestLogger
-	mu        sync.Mutex
-	c         capture
-	chunks    bytes.Buffer
-	reserved  int64
-	truncated int64
-	apiReqSrc *logging.FileBodySource
-	apiResSrc *logging.FileBodySource
-	closed    bool
+	logger     *requestLogger
+	mu         sync.Mutex
+	c          capture
+	chunks     bytes.Buffer
+	reserved   int64
+	truncated  int64
+	apiReqSrc  *logging.FileBodySource
+	apiResSrc  *logging.FileBodySource
+	closed     bool
+	lastActive time.Time
+	switchOffs uint64
+	// expired is set once expireIfIdle released the budget; later chunks
+	// count as truncated, since nothing would release them again.
+	expired bool
 }
 
 func (w *streamWriter) WriteChunkAsync(chunk []byte) {
@@ -218,7 +309,8 @@ func (w *streamWriter) WriteChunkAsync(chunk []byte) {
 	if w.closed || len(chunk) == 0 {
 		return
 	}
-	if w.truncated > 0 || !w.logger.engine.budget.reserve(int64(len(chunk))) {
+	w.lastActive = w.logger.now()
+	if w.expired || w.truncated > 0 || !w.logger.engine.budget.reserve(int64(len(chunk))) {
 		w.truncated += int64(len(chunk))
 		return
 	}
@@ -322,27 +414,55 @@ func (w *streamWriter) Close() error {
 	w.closed = true
 	l := w.logger
 	l.untrackStream(w)
-	l.engine.budget.release(w.reserved)
+	reserved := w.reserved
 	w.reserved = 0
+	if w.expired && w.switchOffs != l.switchOffs.Load() {
+		return nil // switching off abandons writers, expired ones too
+	}
 
 	reachedUpstream := hasPayload(w.c.apiRequest) || w.apiReqSrc.HasPayload() || hasPayload(w.c.apiResponse) || w.apiResSrc.HasPayload() ||
 		hasPayload(w.c.apiWSTimeline) || len(w.c.apiErrors) > 0
 	if l.excluder.Load().excluded(w.c.method, w.c.url, w.c.status, reachedUpstream) {
+		l.engine.budget.release(reserved)
 		return nil
 	}
 	c := w.c
-	c.apiRequest = mergeSource(c.apiRequest, w.apiReqSrc)
-	c.apiResponse = mergeSource(c.apiResponse, w.apiResSrc)
+	held, fits := l.holdSpooled(w.apiReqSrc, w.apiResSrc)
+	if fits {
+		c.apiRequest = mergeSource(c.apiRequest, w.apiReqSrc)
+		c.apiResponse = mergeSource(c.apiResponse, w.apiResSrc)
+	}
 	c.responseBody = w.chunks.Bytes()
 	if w.truncated > 0 {
 		l.engine.stats.truncated.Add(1)
-		c.responseBody = append(c.responseBody, []byte("\n[taproot: response truncated, "+strconv.FormatInt(w.truncated, 10)+" bytes dropped, log queue full]")...)
+		why := "log queue full"
+		if w.expired {
+			why = "no activity for " + streamIdleLimit.String()
+		}
+		c.responseBody = append(c.responseBody, []byte("\n[taproot: response truncated, "+strconv.FormatInt(w.truncated, 10)+" bytes dropped, "+why+"]")...)
 		c.dropped = "response truncated"
 	}
 	w.chunks = bytes.Buffer{}
 	c.finishedAt = l.now()
-	l.engine.submit(&c)
+	l.submitHeld(&c, reserved+held, fits)
 	return nil
+}
+
+// expireIfIdle drops the buffered body of a writer idle since before
+// now-streamIdleLimit and returns its budget. Its record survives, marked
+// truncated, if Close still comes.
+func (w *streamWriter) expireIfIdle(now time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed || now.Sub(w.lastActive) < streamIdleLimit {
+		return
+	}
+	w.expired = true
+	w.logger.untrackStream(w)
+	w.logger.engine.budget.release(w.reserved)
+	w.truncated += int64(w.chunks.Len())
+	w.reserved = 0
+	w.chunks = bytes.Buffer{}
 }
 
 // abandon drops the record and returns its budget without storing anything.
@@ -411,6 +531,7 @@ func (c *capture) build() (*recordMeta, []byte, error) {
 		}
 		c.requestID = id.String()
 	}
+	c.url = redactQuery(c.url)
 	text, sections := renderText(c)
 	path := c.url
 	if i := strings.IndexByte(path, '?'); i >= 0 {
@@ -446,11 +567,26 @@ func (c *capture) build() (*recordMeta, []byte, error) {
 		}
 		view := apiErrorView{Status: apiErr.StatusCode}
 		if apiErr.Error != nil {
-			view.Message = apiErr.Error.Error()
+			view.Message = truncateMessage(apiErr.Error.Error())
 		}
 		meta.APIErrors = append(meta.APIErrors, view)
 	}
 	return meta, text, nil
+}
+
+// maxMetaMessage bounds each upstream error message in the record meta, which
+// must stay under maxFrameMeta. The API errors section keeps the full text.
+const maxMetaMessage = 64 << 10
+
+func truncateMessage(msg string) string {
+	if len(msg) <= maxMetaMessage {
+		return msg
+	}
+	cut := maxMetaMessage
+	for cut > 0 && !utf8.RuneStart(msg[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s\n[truncated %d bytes; the raw log has the full text]", msg[:cut], len(msg)-cut)
 }
 
 func isEventStream(headers map[string][]string) bool {

@@ -1,10 +1,12 @@
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -264,12 +266,22 @@ func (h hourlyRollup) apply(ctx context.Context, c *sql.Conn) error {
 		return err
 	}
 	defer w.close()
-	for k, d := range h {
-		if err := w.upsert(ctx, []any{k.Hour, k.Provider, k.AuthIndex, k.Model}, d); err != nil {
+	for _, k := range keysInOrder(h, func(a, b rollupKey) int {
+		return cmp.Or(cmp.Compare(a.Hour, b.Hour), strings.Compare(a.Provider, b.Provider),
+			strings.Compare(a.AuthIndex, b.AuthIndex), strings.Compare(a.Model, b.Model))
+	}) {
+		if err := w.upsert(ctx, []any{k.Hour, k.Provider, k.AuthIndex, k.Model}, h[k]); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// keysInOrder returns m's keys sorted by compare, which must follow the
+// table's primary key. Rows written in key order append to the table's
+// B-tree, where map order would touch a random page per row.
+func keysInOrder[K comparable, V any](m map[K]V, compare func(a, b K) int) []K {
+	return slices.SortedFunc(maps.Keys(m), compare)
 }
 
 // rollupWriter adds deltas to one rollup table's rows by key. Each table has
@@ -278,6 +290,10 @@ func (h hourlyRollup) apply(ctx context.Context, c *sql.Conn) error {
 type rollupWriter struct {
 	table       string
 	read, write *sql.Stmt
+	// empty means the table had no rows when prepared. A delta holds each key
+	// once, so no upsert then has a stored row to merge, which spares a rebuild
+	// a read per row.
+	empty bool
 }
 
 func prepareRollup(ctx context.Context, c *sql.Conn, table string, keys []string, extra ...string) (*rollupWriter, error) {
@@ -290,6 +306,9 @@ func prepareRollup(ctx context.Context, c *sql.Conn, table string, keys []string
 	sets = append(sets, "latency_hist = excluded.latency_hist", "ttft_hist = excluded.ttft_hist")
 	cols := slices.Concat(keys, counters, []string{"latency_hist", "ttft_hist"})
 	w := &rollupWriter{table: table}
+	if err := c.QueryRowContext(ctx, `SELECT NOT EXISTS (SELECT 1 FROM `+table+`)`).Scan(&w.empty); err != nil {
+		return nil, fmt.Errorf("check %s: %w", table, err)
+	}
 	var err error
 	if w.read, err = c.PrepareContext(ctx, `SELECT latency_hist, ttft_hist FROM `+table+` WHERE `+
 		strings.Join(keys, " = ? AND ")+` = ?`); err != nil {
@@ -308,8 +327,10 @@ func prepareRollup(ctx context.Context, c *sql.Conn, table string, keys []string
 // with key, merging its histograms with the stored ones.
 func (w *rollupWriter) upsert(ctx context.Context, key []any, d *rollupDelta, extra ...any) error {
 	var latBlob, ttftBlob []byte
-	if err := w.read.QueryRowContext(ctx, key...).Scan(&latBlob, &ttftBlob); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read %s: %w", w.table, err)
+	if !w.empty {
+		if err := w.read.QueryRowContext(ctx, key...).Scan(&latBlob, &ttftBlob); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read %s: %w", w.table, err)
+		}
 	}
 	lat, ttft := histogram{}, histogram{}
 	decodeHistogram(latBlob, lat)
@@ -393,12 +414,14 @@ func (q *quotaTracker) load(ctx context.Context, c querier, k quotaKey) (*quotaL
 	return &l, nil
 }
 
-func (q *quotaTracker) shouldWrite(prev *quotaLast, o observation) bool {
+func (q *quotaTracker) shouldWrite(prev *quotaLast, o observation, now time.Time) bool {
 	if prev == nil {
 		return true
 	}
+	// An older reading arrived late, unless the stored one came from a clock
+	// that has since been stepped back.
 	if o.ObservedAt.Before(prev.ObservedAt) {
-		return false
+		return prev.ObservedAt.After(now.Add(clockSlack))
 	}
 	if o.Source == sourceRefresh {
 		return true
@@ -415,7 +438,7 @@ func (q *quotaTracker) shouldWrite(prev *quotaLast, o observation) bool {
 	return o.ObservedAt.Sub(prev.ObservedAt) >= quotaHeartbeat
 }
 
-func (q *quotaTracker) write(ctx context.Context, c *sql.Conn, obs []observation) (int, error) {
+func (q *quotaTracker) write(ctx context.Context, c *sql.Conn, obs []observation, now time.Time) (int, error) {
 	written := 0
 	for _, o := range obs {
 		if o.AuthIndex == "" || o.Window == "" {
@@ -426,7 +449,7 @@ func (q *quotaTracker) write(ctx context.Context, c *sql.Conn, obs []observation
 		if err != nil {
 			return written, err
 		}
-		if !q.shouldWrite(prev, o) {
+		if !q.shouldWrite(prev, o, now) {
 			continue
 		}
 		if _, err := c.ExecContext(ctx, `INSERT OR IGNORE INTO quota_observations

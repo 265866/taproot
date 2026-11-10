@@ -157,7 +157,9 @@ func (s *Settings) Routes(r *gin.RouterGroup) {
 }
 
 type accessView struct {
-	Enabled   bool                  `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// Version identifies the lists; see accessUpdate.
+	Version   string                `json:"version"`
 	Devices   []access.DeviceGrant  `json:"devices"`
 	Addresses []access.AddressGrant `json:"addresses"`
 }
@@ -240,9 +242,15 @@ type update struct {
 	} `json:"alerts"`
 }
 
-// accessUpdate replaces whole lists: devices with a permission, and addresses.
+// accessUpdate replaces whole lists: devices with a permission, and
+// addresses. Device instead sets one device's entry and leaves the others as
+// saved, so a client can grant one device without sending lists it may hold
+// a stale copy of. Version, when sent, is the version the client's copy had;
+// a save from an older copy is refused.
 type accessUpdate struct {
+	Version   *string                `json:"version"`
 	Devices   *[]access.DeviceGrant  `json:"devices"`
+	Device    *access.DeviceGrant    `json:"device"`
 	Addresses *[]access.AddressGrant `json:"addresses"`
 }
 
@@ -264,7 +272,7 @@ func (s *Settings) current() view {
 		}
 	}
 	return view{
-		Access: accessView{Enabled: s.deps.AccessEnabled, Devices: grants.Devices, Addresses: grants.Addresses},
+		Access: accessView{Enabled: s.deps.AccessEnabled, Version: grants.Version(), Devices: grants.Devices, Addresses: grants.Addresses},
 		RequestLogs: requestLogsView{
 			MaxDays: ret.MaxDays, MaxBytes: int64(ret.MaxBytes), ExcludePaths: nonNilStrings(ret.ExcludePaths), KeepUnrouted404: ret.KeepUnrouted404,
 		},
@@ -342,11 +350,23 @@ func (s *Settings) apply(ctx context.Context, u update, caller access.Identity) 
 		}
 	}
 
-	if a := u.Access; a != nil && (a.Devices != nil || a.Addresses != nil) {
+	if a := u.Access; a != nil && (a.Devices != nil || a.Device != nil || a.Addresses != nil) {
 		before := s.deps.Access.Grants()
+		if a.Version != nil && *a.Version != before.Version() {
+			return &apiError{
+				status: http.StatusConflict, code: "access_changed",
+				message: "the device or address list changed since this copy was read; reload it and save again",
+			}
+		}
+		if a.Devices != nil && a.Device != nil {
+			return badRequest("invalid_access", "send access.devices or access.device, not both")
+		}
 		next := before
 		if a.Devices != nil {
 			next.Devices = *a.Devices
+		}
+		if a.Device != nil {
+			next.Devices = withDevice(before.Devices, *a.Device)
 		}
 		if a.Addresses != nil {
 			next.Addresses = *a.Addresses
@@ -535,6 +555,17 @@ func (s *Settings) checkAccess(ctx context.Context, before, next access.Grants, 
 		}
 	}
 	return nil
+}
+
+// withDevice returns devices with d's entry replaced, or d appended.
+func withDevice(devices []access.DeviceGrant, d access.DeviceGrant) []access.DeviceGrant {
+	out := slices.Clone(devices)
+	id := strings.TrimSpace(d.ID)
+	if i := slices.IndexFunc(out, func(e access.DeviceGrant) bool { return e.ID == id }); i >= 0 {
+		out[i] = d
+		return out
+	}
+	return append(out, d)
 }
 
 // accessEdits are the taproot.yaml edits that turn before into after.

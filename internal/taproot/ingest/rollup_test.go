@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -59,9 +60,9 @@ func seedMixed(t *testing.T, i *Ingest) time.Time {
 	return base
 }
 
-func collectSummary(t *testing.T, i *Ingest, groupBy, bucket string, fromMs, toMs int64, useRollup bool) map[int64]map[string]Totals {
+func collectSummary(t *testing.T, i *Ingest, groupBy, bucket string, loc *time.Location, fromMs, toMs int64, useRollup bool) map[int64]map[string]Totals {
 	t.Helper()
-	s := &summaryBuilder{bucketMs: bucketSizes[bucket].Milliseconds(), groupBy: groupBy, buckets: map[int64]map[string]*agg{}, total: newAgg()}
+	s := &summaryBuilder{bucketMs: bucketSizes[bucket].Milliseconds(), loc: loc, groupBy: groupBy, buckets: map[int64]map[string]*agg{}, total: newAgg()}
 	if err := s.collect(context.Background(), i.db, fromMs, toMs, useRollup); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,8 @@ func sameTotals(a, b Totals) bool {
 		ptr(a.TTFTP50Ms, b.TTFTP50Ms) && ptr(a.TTFTP95Ms, b.TTFTP95Ms) &&
 		a.Requests == b.Requests && a.Failures == b.Failures && a.InputTokens == b.InputTokens && a.OutputTokens == b.OutputTokens &&
 		a.ReasoningTokens == b.ReasoningTokens && a.CacheReadTokens == b.CacheReadTokens && a.CacheWriteTokens == b.CacheWriteTokens &&
-		a.CacheWrite5mTokens == b.CacheWrite5mTokens && a.CacheWrite1hTokens == b.CacheWrite1hTokens
+		a.CacheWrite5mTokens == b.CacheWrite5mTokens && a.CacheWrite1hTokens == b.CacheWrite1hTokens &&
+		slices.Equal(a.UnpricedModels, b.UnpricedModels)
 }
 
 // requireRollupMatchesRaw checks every grouping reads the same totals,
@@ -92,10 +94,27 @@ func sameTotals(a, b Totals) bool {
 func requireRollupMatchesRaw(t *testing.T, i *Ingest, base time.Time, requests int64) {
 	t.Helper()
 	fromMs, toMs := ms(base.Add(-17*time.Minute)), ms(base.Add(80*time.Hour+29*time.Minute))
+	type layout struct {
+		bucket string
+		loc    *time.Location
+	}
+	layouts := []layout{{"1h", nil}, {"1d", nil}}
+	// Half-hour and 45-minute offsets cut days inside a UTC hour.
+	for _, zone := range []string{"America/New_York", "Asia/Kolkata", "Asia/Kathmandu", "Australia/Lord_Howe"} {
+		loc, err := time.LoadLocation(zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layouts = append(layouts, layout{"1d", loc})
+	}
 	for groupBy := range groupByValues {
-		for _, bucket := range []string{"1h", "1d"} {
-			raw := collectSummary(t, i, groupBy, bucket, fromMs, toMs, false)
-			rolled := collectSummary(t, i, groupBy, bucket, fromMs, toMs, true)
+		for _, l := range layouts {
+			bucket := l.bucket
+			if l.loc != nil {
+				bucket += " " + l.loc.String()
+			}
+			raw := collectSummary(t, i, groupBy, l.bucket, l.loc, fromMs, toMs, false)
+			rolled := collectSummary(t, i, groupBy, l.bucket, l.loc, fromMs, toMs, true)
 			if raw[-1]["total"].Requests != requests {
 				t.Fatalf("%s/%s: raw total %+v, want %d requests", groupBy, bucket, raw[-1]["total"], requests)
 			}

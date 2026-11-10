@@ -923,6 +923,9 @@ func TestSetGrantsAppliesImmediately(t *testing.T) {
 		"bad cidr":      {Addresses: []AddressGrant{{CIDR: "10.0.0.0/33"}}},
 		"not an addr":   {Addresses: []AddressGrant{{CIDR: "laptop"}}},
 		"duplicate":     {Addresses: []AddressGrant{{CIDR: "10.0.0.1"}, {CIDR: "10.0.0.1/32"}}},
+		"tailnet range": {Addresses: []AddressGrant{{CIDR: "100.64.0.0/10"}}},
+		"tailnet IPv6":  {Addresses: []AddressGrant{{CIDR: "fd7a:115c:a1e0::5"}}},
+		"wider":         {Addresses: []AddressGrant{{CIDR: "64.0.0.0/2"}}},
 	} {
 		if err := g.SetGrants(bad); err == nil {
 			t.Fatalf("SetGrants(%s) = nil, want error", name)

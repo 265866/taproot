@@ -12,6 +12,7 @@ import {
   localTimeZone,
   parseLocalDate,
   presetWindow,
+  summaryZone,
   todayWindow,
   toIso,
 } from '@/features/taproot-usage/logic/range';
@@ -33,7 +34,11 @@ import {
   sortBreakdown,
   tokenRows,
 } from '@/features/taproot-usage/logic/summary';
-import { affinityStats, sessionDurationMs } from '@/features/taproot-usage/logic/sessions';
+import {
+  affinityStats,
+  sessionDurationMs,
+  sessionRequestsLabel,
+} from '@/features/taproot-usage/logic/sessions';
 import { accountName, indexAccounts } from '@/features/taproot-usage/logic/accounts';
 import {
   draftsChanged,
@@ -277,9 +282,19 @@ function session(partial: Partial<UsageSession> & Pick<UsageSession, 'sessionId'
     models: ['m'],
     totals: totals({}),
     accountSwitches: 0,
+    truncated: false,
     ...partial,
   };
 }
+
+describe('session request counts', () => {
+  test('mark a session the server cut short', () => {
+    expect(sessionRequestsLabel({ requests: 50_000, truncated: true })).toBe(
+      `${(50_000).toLocaleString()}+`
+    );
+    expect(sessionRequestsLabel({ requests: 12, truncated: false })).toBe('12');
+  });
+});
 
 describe('session affinity', () => {
   test('estimates cache writes beyond the stable sessions share', () => {
@@ -513,6 +528,12 @@ describe('daily buckets and time zones', () => {
     expect(localTimeZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
   });
 
+  test('sends the zone with daily buckets only', () => {
+    expect(summaryZone('1d')).toBe(localTimeZone());
+    expect(summaryZone('1h')).toBeUndefined();
+    expect(summaryZone('5m')).toBeUndefined();
+  });
+
   test('buckets at local midnight mean the server honored tz', () => {
     const local = [new Date(2026, 10, 2), new Date(2026, 10, 3)].map((d) => ({
       t: d.toISOString(),
@@ -530,6 +551,20 @@ describe('daily buckets and time zones', () => {
       );
       // Pacific midnight on Nov 3 (PST) is 08:00 UTC.
       expect(dailyBucketZone([{ t: '2026-11-03T08:00:00Z' }])).toBe('local');
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  test('a day that starts at a clock change is still a local day', () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'Atlantic/Azores';
+    try {
+      // 2026-03-29 has no midnight in the Azores: it starts at the 01:00Z switch to +00.
+      const days = ['2026-03-28T01:00:00Z', '2026-03-29T01:00:00Z', '2026-03-30T00:00:00Z'];
+      expect(dailyBucketZone(days.map((t) => ({ t })))).toBe('local');
+      expect(dailyBucketZone([{ t: '2026-03-28T00:00:00Z' }])).toBe('utc');
     } finally {
       if (previous === undefined) delete process.env.TZ;
       else process.env.TZ = previous;

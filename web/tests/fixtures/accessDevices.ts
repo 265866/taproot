@@ -55,6 +55,7 @@ export const danaRequest: AccessRequest = {
 export const data: AccessDevices = {
   enabled: true,
   forgetAfterHours: 24,
+  version: '0123456789abcdef',
   addresses: [{ cidr: '192.0.2.20/32', note: 'Agents on the server host' }],
   requests: [danaRequest],
   devices: [

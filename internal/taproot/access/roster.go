@@ -187,7 +187,10 @@ type requestView struct {
 }
 
 type devicesResponse struct {
-	Enabled   bool           `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// Version identifies the device and address lists this response holds.
+	// PUT /settings refuses a save from an older version.
+	Version   string         `json:"version"`
 	Devices   []deviceView   `json:"devices"`
 	Requests  []requestView  `json:"requests"`
 	Addresses []AddressGrant `json:"addresses"`
@@ -202,7 +205,7 @@ type devicesResponse struct {
 func (g *Guard) handleDevices(c *gin.Context) {
 	grants := g.Grants()
 	resp := devicesResponse{
-		Enabled: g.enabled, Devices: []deviceView{}, Requests: []requestView{}, Addresses: grants.Addresses,
+		Enabled: g.enabled, Version: grants.Version(), Devices: []deviceView{}, Requests: []requestView{}, Addresses: grants.Addresses,
 		ForgetAfterHours: int(ForgetAfter / time.Hour),
 	}
 	byID := make(map[string]DeviceGrant, len(grants.Devices))
