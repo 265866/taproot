@@ -524,7 +524,8 @@ func TestPruneRequests(t *testing.T) {
 }
 
 // A device outside the tailnet cannot claim, so its denial never offers the
-// setup code form.
+// setup code form. It does say the server is unclaimed, so the gate does not
+// offer a request that no admin could allow.
 func TestOutsideDeviceIsNotClaimable(t *testing.T) {
 	peers := defaultPeers()
 	peers[shareeIP] = fakePeer{login: "dana@example.com", displayName: "dana", node: "dana-1", sharee: true}
@@ -532,20 +533,28 @@ func TestOutsideDeviceIsNotClaimable(t *testing.T) {
 	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: []DeviceGrant{}})
 	startClaim(t, g)
 	e, _ := testEngine(g)
-	claimable := func(remote string) any {
+	denial := func(remote string) map[string]any {
 		t.Helper()
 		var body struct{ Error map[string]any }
 		rec := do(e, remote, "/v8/management/config", nil)
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error["code"] != "not_admin" {
 			t.Fatalf("admin GET from %s = %d %s", remote, rec.Code, rec.Body)
 		}
-		return body.Error["claimable"]
+		return body.Error
 	}
-	if got := claimable(outsiderIP + ":1"); got != true {
-		t.Fatalf("own-tailnet device claimable = %v, want true", got)
+	if got := denial(outsiderIP + ":1"); got["claimable"] != true || got["unclaimed"] != true {
+		t.Fatalf("own-tailnet device denial = %v, want claimable and unclaimed", got)
 	}
-	if got := claimable(shareeIP + ":1"); got != nil {
-		t.Fatalf("sharee device claimable = %v, want absent", got)
+	got := denial(shareeIP + ":1")
+	if got["claimable"] != nil || got["unclaimed"] != true {
+		t.Fatalf("sharee device denial = %v, want unclaimed without claimable", got)
+	}
+
+	if err := g.SetGrants(Grants{Devices: []DeviceGrant{{ID: "nOTHER0001CNTRL", Admin: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := denial(shareeIP + ":1"); got["unclaimed"] != nil {
+		t.Fatalf("sharee device denial once claimed = %v, want no unclaimed", got)
 	}
 }
 

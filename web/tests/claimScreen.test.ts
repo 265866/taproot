@@ -18,6 +18,16 @@ describe('setup code input', () => {
     expect(formatClaimInput('code: 7KQ4')).toBe('CODE-7KQ4');
     expect(formatClaimInput('')).toBe('');
   });
+
+  test('a paste of the log line keeps the code in it', () => {
+    expect(formatClaimInput('setup code VXYN-7APN.')).toBe('VXYN-7APN');
+    expect(
+      formatClaimInput(
+        'level=warning msg="taproot access: setup code vxyn-7apn. No device has Admin: open http://server:8317/"'
+      )
+    ).toBe('VXYN-7APN');
+    expect(formatClaimInput('  VXYN-7APN\n')).toBe('VXYN-7APN');
+  });
 });
 
 describe('claiming the server', () => {

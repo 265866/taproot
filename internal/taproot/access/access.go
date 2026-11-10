@@ -597,9 +597,14 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 				// the gate's request form rather than its sent state.
 				denial["requested"] = g.HasOpenRequest(r.Context(), id.NodeID)
 				// While unclaimed, the gate offers the setup code form instead,
-				// to a device that may claim the server.
-				if g.Claimable() && !id.Outside {
-					denial["claimable"] = true
+				// to a device that may claim the server. Any other device is
+				// told the server has no admin yet, since no one could allow a
+				// request from it.
+				if g.Claimable() {
+					denial["unclaimed"] = true
+					if !id.Outside {
+						denial["claimable"] = true
+					}
 				}
 				g.recordRefusal(r, id, AskAdmin)
 			}
