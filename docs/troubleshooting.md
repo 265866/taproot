@@ -25,6 +25,10 @@ Docker created `data/` as root because it did not exist before the first `docker
 
 A browser on the server connects as the server's own node, which never gets Admin. Claim the server and open the dashboard from another device on the tailnet.
 
+## The browser shows "Taproot doesn't answer to this name"
+
+You opened taproot by a name it does not know, such as a local DNS name, an `/etc/hosts` alias, or a custom domain. Taproot answers only to `localhost`, its Tailscale name and addresses, and the names under `access.extra-hosts`, so that another website cannot reach it through DNS rebinding. Open it by its Tailscale name, such as `http://server:8317/`, or add the name under `access.extra-hosts` in `taproot.yaml` and restart taproot. If the page says taproot cannot read its own Tailscale name, tailscaled is not answering; see [Every tailnet device is refused after tailscaled restarts or updates](#every-tailnet-device-is-refused-after-tailscaled-restarts-or-updates).
+
 ## Taproot stops with `taproot.yaml not found`
 
 `config.yaml` exists but `taproot.yaml` does not. Taproot never writes one beside an existing `config.yaml`. Create the file in the directory the error names. An empty file works, or start from [`examples/taproot/taproot.yaml`](../examples/taproot/taproot.yaml). To keep `taproot.yaml` elsewhere, set `TAPROOT_CONFIG` to its path.

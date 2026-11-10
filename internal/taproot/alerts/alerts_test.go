@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/egress"
 	"github.com/265866/taproot/internal/taproot/ingest"
 	"github.com/265866/taproot/internal/taproot/store"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
@@ -315,6 +316,7 @@ func TestRestartKeepsALoginAlertOpenUntilTheCredentialWorks(t *testing.T) {
 			if got := h.titles(t, 2); got[0] != "Claude login broken" || got[1] != "Claude pool is empty" {
 				t.Fatalf("titles = %q", got)
 			}
+			h.step(t, 0) // the delivery wakes an evaluation, which records it
 
 			// After the restart upstream has forgotten RequiresSignIn, and an
 			// old refresh time proves nothing.
@@ -477,6 +479,7 @@ func TestGrantAlertDoesNotRepeatWithinItsWindow(t *testing.T) {
 	if got := h.titles(t, 1); got[0] != "Claude reset grant expires soon" {
 		t.Fatalf("titles = %q", got)
 	}
+	h.step(t, 0)
 
 	mu.Lock()
 	failing = true
@@ -779,4 +782,42 @@ func TestTailscaledOutageMessages(t *testing.T) {
 	}
 	h.svc.Tailscaled(TailscaledOutage{Socket: "s", Down: true, Since: since, At: t0})
 	h.titles(t, 2)
+}
+
+func TestGrantReadUsesTheGlobalProxyAndRefusesAnInvalidOne(t *testing.T) {
+	var mu sync.Mutex
+	var direct, proxied []string
+	recorder := func(into *[]string) *httptest.Server {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			*into = append(*into, r.Header.Get("Authorization"))
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"cedar_ember":{"eligible":true,"grants":[]}}`))
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+	target, proxy := recorder(&direct), recorder(&proxied)
+	global := proxy.URL
+	p := &egress.Proxy{}
+	p.SetGlobal(func() string { return global })
+	reader := grantReader{url: target.URL, proxy: p}
+	a := claudeAuth("a", "main")
+
+	if _, err := reader.read(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+	a.ProxyURL = "socks5://user:pa ss@[::1"
+	if _, err := reader.read(context.Background(), a); err == nil {
+		t.Fatal("read grants with an invalid credential proxy")
+	}
+	a.ProxyURL, global = "", "not a url"
+	if _, err := reader.read(context.Background(), a); err == nil {
+		t.Fatal("read grants with an invalid global proxy")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(direct) != 0 || len(proxied) != 1 || proxied[0] != "Bearer tok-a" {
+		t.Fatalf("direct %q, proxied %q; want one read through the global proxy", direct, proxied)
+	}
 }

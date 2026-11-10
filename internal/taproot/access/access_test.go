@@ -99,7 +99,13 @@ func doMethod(e http.Handler, method, remote, path string, headers map[string]st
 
 func assertForbidden(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
-	body := assertDenied(t, rec, "forbidden")
+	assertPlainDenied(t, rec, "forbidden")
+}
+
+// assertPlainDenied checks a denial that names no device.
+func assertPlainDenied(t *testing.T, rec *httptest.ResponseRecorder, code string) {
+	t.Helper()
+	body := assertDenied(t, rec, code)
 	if body.Error.Node != "" || body.Error.NodeID != "" || body.Error.Login != "" {
 		t.Fatalf("a plain denial names a device: %s", rec.Body)
 	}
@@ -218,7 +224,7 @@ func TestUnlistedDeviceIsToldWhatToTurnOn(t *testing.T) {
 	}
 	// Another site's page in that device's browser learns nothing.
 	assertForbidden(t, do(e, outsiderIP+":40000", "/v1/models", map[string]string{"Origin": "http://evil.example"}))
-	assertForbidden(t, do(e, outsiderIP+":40000", "/v8/management/config", map[string]string{"Host": "evil.example"}))
+	assertPlainDenied(t, do(e, outsiderIP+":40000", "/v8/management/config", map[string]string{"Host": "evil.example"}), "unknown_host")
 }
 
 func TestSpoofedIdentityHeadersChangeNothing(t *testing.T) {
@@ -309,7 +315,7 @@ func TestPermissionMatrix(t *testing.T) {
 		{"proxy only", otherNodeIP, "", "", "not_admin"},
 		{"admin only", "100.64.0.30", "no_proxy", "", ""},
 		{"neither", outsiderIP, "no_proxy", "no_proxy", "not_admin"},
-		{"server", selfIP, "", "", "forbidden"},
+		{"server", selfIP, "", "", "server_node"},
 		{"loopback", "127.0.0.1", "", "", ""},
 	} {
 		for _, r := range []struct{ method, path, want string }{
@@ -370,7 +376,7 @@ func TestSelfNodeReachesProxyOnly(t *testing.T) {
 		}
 		got.authorization = ""
 		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me"} {
-			assertForbidden(t, do(e, remote, path, nil))
+			assertPlainDenied(t, do(e, remote, path, nil), "server_node")
 		}
 		if got.authorization != "" {
 			t.Fatalf("a denied self-node request reached a handler")
@@ -396,7 +402,7 @@ func TestSelfNodeMatchedByStableIDToo(t *testing.T) {
 	if rec := do(e, "100.127.0.9:1", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("proxy status = %d, want 200", rec.Code)
 	}
-	assertForbidden(t, do(e, "100.127.0.9:1", "/v8/management/config", nil))
+	assertPlainDenied(t, do(e, "100.127.0.9:1", "/v8/management/config", nil), "server_node")
 }
 
 // ServerNodeID reads tailscaled when no request has looked the node up yet,
@@ -444,14 +450,14 @@ func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	if rec := do(e, adminIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("proxy status = %d, want 200", rec.Code)
 	}
-	assertForbidden(t, do(e, adminIP+":40000", "/v8/management/config", nil))
+	assertPlainDenied(t, do(e, adminIP+":40000", "/v8/management/config", nil), "server_node_unknown")
 	// Until the server's node is known, it is just a device without a grant.
 	assertDenied(t, do(e, selfIP+":40000", "/v1/models", nil), "no_proxy")
 	if rec := do(e, "127.0.0.1:1", "/v8/management/config", nil); rec.Code != http.StatusOK {
 		t.Fatalf("loopback admin status = %d, want 200", rec.Code)
 	}
 	// Without the server's own names, a tailnet Host cannot be verified.
-	assertForbidden(t, do(e, adminIP+":40000", "/v1/models", map[string]string{"Host": "server:8317"}))
+	assertPlainDenied(t, do(e, adminIP+":40000", "/v1/models", map[string]string{"Host": "server:8317"}), "unknown_host")
 	if n := ts.statusCount(); n != 1 {
 		t.Fatalf("status calls within the retry interval = %d, want 1", n)
 	}
@@ -465,7 +471,7 @@ func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	if rec := do(e, selfIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("known self node proxy status = %d, want 200", rec.Code)
 	}
-	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
+	assertPlainDenied(t, do(e, selfIP+":40000", "/v8/management/config", nil), "server_node")
 	if got := g.ServerNodeID(t.Context()); got != serverID {
 		t.Fatalf("ServerNodeID = %q, want %q", got, serverID)
 	}
@@ -473,7 +479,7 @@ func TestUnknownSelfFailsClosedForAdmin(t *testing.T) {
 	// A later failure keeps the last known node.
 	ts.failStatus(1000)
 	now = now.Add(2 * time.Minute)
-	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
+	assertPlainDenied(t, do(e, selfIP+":40000", "/v8/management/config", nil), "server_node")
 	if rec := do(e, adminIP+":40000", "/v8/management/config", map[string]string{"Host": "server:8317"}); rec.Code != http.StatusOK {
 		t.Fatalf("with a stale self node admin status = %d, want 200", rec.Code)
 	}
@@ -525,8 +531,8 @@ func TestTaggedDevices(t *testing.T) {
 		if rec := do(e, remote, "/v1/models", nil); rec.Code != http.StatusOK {
 			t.Fatalf("%s proxy status = %d, want 200; body %s", remote, rec.Code, rec.Body)
 		}
-		assertForbidden(t, do(e, remote, "/v8/management/config", nil))
-		assertForbidden(t, do(e, remote, "/taproot/api/v1/me", nil))
+		assertPlainDenied(t, do(e, remote, "/v8/management/config", nil), "server_node")
+		assertPlainDenied(t, do(e, remote, "/taproot/api/v1/me", nil), "server_node")
 	}
 	id, reason := g.admit(t.Context(), selfIP+":40000", func() *selfNode { return g.self(t.Context()) })
 	if reason != "" || !id.self || id.Admin {
@@ -576,7 +582,7 @@ func TestReassignedOwnAddressIsNotTheServer(t *testing.T) {
 	if rec := do(e, selfIP+":40000", "/v1/models", nil); rec.Code != http.StatusOK {
 		t.Fatalf("granted device on a reassigned address: proxy status = %d, want 200", rec.Code)
 	}
-	assertForbidden(t, do(e, selfIP+":40000", "/v8/management/config", nil))
+	assertPlainDenied(t, do(e, selfIP+":40000", "/v8/management/config", nil), "server_node_unknown")
 	id, reason := g.admit(t.Context(), selfIP+":40000", func() *selfNode { return g.self(t.Context()) })
 	if reason != "" || id.self || id.NodeID != "nintruderCNTRL" {
 		t.Fatalf("admit(reassigned) = %+v, %q; want node nintruderCNTRL, not the server", id, reason)
@@ -1046,7 +1052,7 @@ func TestDisabledGuardRefusesBrowserRequestsFromOtherSites(t *testing.T) {
 		headers map[string]string
 		code    string
 	}{
-		"dns rebinding":           {"/taproot/api/v1/me", map[string]string{"Host": "rebind.evil.example:8317"}, "forbidden"},
+		"dns rebinding":           {"/taproot/api/v1/me", map[string]string{"Host": "rebind.evil.example:8317"}, "unknown_host"},
 		"foreign origin":          {"/v8/management/config", map[string]string{"Origin": "http://evil.example"}, "forbidden"},
 		"cross-site fetch":        {"/v8/management/config", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}, "forbidden"},
 		"state-changing GET":      {"/v0/management/usage-queue", nil, "request_header_required"},
