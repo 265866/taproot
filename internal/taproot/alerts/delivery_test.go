@@ -1,8 +1,10 @@
 package alerts
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/ingest"
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -281,5 +284,55 @@ func TestDeliveryHealthTracksFailuresUntilASuccess(t *testing.T) {
 	h.posts(t)
 	if got := h.svc.DeliveryHealth(); got.Failures != 0 || got.LastSuccess.IsZero() || got.LastError != "" {
 		t.Fatalf("after a delivered retry: %+v, want the failures cleared", got)
+	}
+}
+
+// An alert whose delivery failed and whose condition then cleared queues
+// nothing more, so the Dashboard's item must clear another way: a successful
+// test send, or a new start of alerts.
+func TestDeliveryHealthClearsOnATestSendOrARestart(t *testing.T) {
+	fail := func(h *harness) {
+		h.svc.recordDelivery(errors.New("discord answered 503"))
+		if got := h.svc.DeliveryHealth(); got.Failures != 1 {
+			t.Fatalf("after a failed delivery: %+v", got)
+		}
+	}
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake)
+	r := gin.New()
+	h.svc.Routes(r.Group("/taproot/api/v1"))
+
+	fail(h)
+	fake.mu.Lock()
+	fake.statuses = append(fake.statuses, status(http.StatusNotFound, `{"message":"Unknown Webhook"}`))
+	fake.mu.Unlock()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if got := h.svc.DeliveryHealth(); w.Code != http.StatusBadGateway || got.Failures != 1 {
+		t.Fatalf("a failed test send = %d, health %+v; want it not counted", w.Code, got)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if got := h.svc.DeliveryHealth(); w.Code != http.StatusOK || got.Failures != 0 || got.LastSuccess.IsZero() {
+		t.Fatalf("a successful test send = %d, health %+v; want the failures cleared", w.Code, got)
+	}
+
+	fail(h)
+	off := false
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.svc.DeliveryHealth(); got.Failures != 0 || !got.Active {
+		t.Fatalf("after turning alerts off and on: %+v, want a fresh count", got)
+	}
+	fail(h)
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.svc.DeliveryHealth(); got.Failures != 1 {
+		t.Fatalf("an unchanged config: %+v, want the failures kept", got)
 	}
 }

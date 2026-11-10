@@ -185,11 +185,17 @@ func (s *Service) SetConfig(cfg Config) error {
 		}
 	}
 	newWebhook := cfg.DiscordWebhook != "" && !unchanged
+	restarted := !unchanged || cfg.Active() != s.cfg.Active()
 	s.cfg = cfg
 	if !unchanged {
 		s.webhookInvalid = false
 	}
 	s.cfgMu.Unlock()
+	if restarted {
+		s.healthMu.Lock()
+		s.health = DeliveryHealth{}
+		s.healthMu.Unlock()
+	}
 	if newWebhook {
 		s.deliveryMu.Lock()
 		s.rearm = true
@@ -308,8 +314,10 @@ type DeliveryHealth struct {
 	LastSuccess time.Time
 }
 
-// DeliveryHealth reports the queue's recent delivery outcomes. The test
-// button's sends are not counted; nor are messages the queue skipped.
+// DeliveryHealth reports the queue's recent delivery outcomes. A successful
+// test send counts as a delivery and a failed one does not; messages the
+// queue skipped do not count. A new webhook, or turning alerts off or on,
+// starts the count again.
 func (s *Service) DeliveryHealth() DeliveryHealth {
 	s.healthMu.Lock()
 	h := s.health
@@ -701,6 +709,7 @@ func (s *Service) handleTest(c *gin.Context) {
 	defer cancel()
 	err := s.sender.SendOnce(ctx, hook, msg)
 	if err == nil {
+		s.recordDelivery(nil)
 		c.JSON(http.StatusOK, gin.H{"sent": true})
 		return
 	}
