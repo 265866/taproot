@@ -256,6 +256,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		routing.Stored.Observe(routingWindows(latest))
 	}
 	usage.AttachDevices(guard)
+	usage.AttachProviderGuess(modelProvider)
 	plugins := &pluginCallers{}
 	usage.AttachPlugins(plugins)
 	accounts := &noAccounts{}
@@ -263,6 +264,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot request logs: %w", err)
 	}
+	usage.AttachRequestLogs(logs)
 	authDir, err := util.ResolveAuthDir(cfg.AuthDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("taproot auth dir: %w", err)
@@ -318,8 +320,9 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	})
 
 	opts := []api.ServerOption{
-		// The guard must run first so the dashboard is access-checked too.
-		api.WithMiddleware(guard.Middleware(), web.Middleware(), apiNotFound(), accounts.middleware()),
+		// The guard must run first so the dashboard is access-checked too, and
+		// refused requests never count as client requests.
+		api.WithMiddleware(guard.Middleware(), web.Middleware(), apiNotFound(), clientRequests(usage), accounts.middleware()),
 		api.WithRouterConfigurator(func(engine *gin.Engine, h *handlers.BaseAPIHandler, _ *config.Config) {
 			if h != nil {
 				providerProxy.SetGlobal(func() string {
