@@ -88,7 +88,8 @@ func seed(ctx context.Context, dir string, port int, start time.Time) (string, e
 	if err != nil {
 		return "", err
 	}
-	if err := writeUsage(ctx, db, requests); err != nil {
+	clients := clientRequests(requests, start)
+	if err := writeUsage(ctx, db, requests, clients); err != nil {
 		return "", err
 	}
 	if err := seedRequest(ctx, db, start); err != nil {
@@ -108,8 +109,8 @@ func seed(ctx context.Context, dir string, port int, start time.Time) (string, e
 			return "", fmt.Errorf("create %s backup: %w", reason, err)
 		}
 	}
-	return fmt.Sprintf("Wrote %d usage events, %d request logs, and 2 backups for %d accounts to %s.\nStart the server with internal/taproot/demo/run.sh, or see CONTRIBUTING.md.",
-		len(requests), logged, len(accounts), dir), nil
+	return fmt.Sprintf("Wrote %d usage events, %d client requests, %d request logs, and 2 backups for %d accounts to %s.\nStart the server with internal/taproot/demo/run.sh, or see CONTRIBUTING.md.",
+		len(requests), len(clients), logged, len(accounts), dir), nil
 }
 
 func requireEmptyDir(dir string) error {
@@ -154,11 +155,11 @@ func (d deviceTable) RequestDevice(traceID string) (access.Device, bool) {
 func (d deviceTable) DeviceName(_, stored string) string { return stored }
 
 // writeUsage hands every record to ingest's usage sink, as the proxy does,
-// and waits until its writer has flushed them all. The writer is left
-// running: cancelling it while a COMMIT is in flight makes it report a failed
-// flush and retry the batch, and with its queue empty it never touches the
-// database again.
-func writeUsage(ctx context.Context, db *store.DB, requests []request) error {
+// queues the client requests, and waits until its writer has flushed them
+// all. The writer is left running: cancelling it while a COMMIT is in flight
+// makes it report a failed flush and retry the batch, and with its queue
+// empty it never touches the database again.
+func writeUsage(ctx context.Context, db *store.DB, requests []request, clients []ingest.ClientRequest) error {
 	sink, err := ingest.New(ingest.Config{PollInterval: "0"}, db)
 	if err != nil {
 		return fmt.Errorf("ingest: %w", err)
@@ -172,17 +173,20 @@ func writeUsage(ctx context.Context, db *store.DB, requests []request) error {
 	for _, r := range requests {
 		sink.HandleUsage(ctx, r.Record)
 	}
+	for _, c := range clients {
+		sink.RecordClientRequest(c)
+	}
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		var n int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&n); err != nil {
+		var events, rows int
+		if err := db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM usage_events), (SELECT COUNT(*) FROM client_requests)`).Scan(&events, &rows); err != nil {
 			return fmt.Errorf("count usage events: %w", err)
 		}
-		if n == len(requests) {
+		if events == len(requests) && rows == len(clients) {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("ingest stored %d of %d usage events", n, len(requests))
+			return fmt.Errorf("ingest stored %d of %d usage events and %d of %d client requests", events, len(requests), rows, len(clients))
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

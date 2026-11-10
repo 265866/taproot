@@ -598,3 +598,36 @@ func (l *Logs) handleStats(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, stats)
 }
+
+// Logged reports which of requestIDs have a stored record.
+func (l *Logs) Logged(ctx context.Context, requestIDs []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(requestIDs))
+	if len(requestIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(requestIDs))
+	for k, id := range requestIDs {
+		args[k] = id
+	}
+	rows, err := l.engine.db.QueryContext(ctx, `SELECT DISTINCT request_id FROM reqlog_records WHERE request_id IN (?`+
+		strings.Repeat(",?", len(args)-1)+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("look up request logs: %w", err)
+	}
+	defer func() {
+		if errClose := rows.Close(); errClose != nil {
+			log.WithError(errClose).Warn("taproot reqlog: close rows")
+		}
+	}()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan request log id: %w", err)
+		}
+		out[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("look up request logs: %w", err)
+	}
+	return out, nil
+}

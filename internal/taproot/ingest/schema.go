@@ -163,6 +163,48 @@ CREATE TABLE IF NOT EXISTS price_seed (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	version INTEGER NOT NULL
 );
+
+-- One row per client request on a proxy route, or per websocket turn. ts is
+-- the request's start. attempts is 0 when no account was tried, and NULL
+-- when unknown: nothing links the request, or it was answered without an
+-- error but none of its usage records arrived. request_id is upstream's
+-- request ID, which request logs and usage_events.trace_id share.
+CREATE TABLE IF NOT EXISTS client_requests (
+	id INTEGER PRIMARY KEY,
+	ts INTEGER NOT NULL,
+	request_id TEXT NOT NULL DEFAULT '',
+	device_id TEXT NOT NULL DEFAULT '',
+	device_name TEXT NOT NULL DEFAULT '',
+	path TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL DEFAULT '',
+	auth_index TEXT NOT NULL DEFAULT '',
+	stream INTEGER NOT NULL DEFAULT 0,
+	status INTEGER NOT NULL DEFAULT 0,
+	failed INTEGER NOT NULL DEFAULT 0,
+	latency_ms INTEGER NOT NULL DEFAULT 0,
+	ttft_ms INTEGER,
+	attempts INTEGER,
+	error_code TEXT NOT NULL DEFAULT '',
+	error_message TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS client_requests_ts ON client_requests(ts);
+CREATE INDEX IF NOT EXISTS client_requests_failed_ts ON client_requests(ts) WHERE failed = 1;
+CREATE INDEX IF NOT EXISTS client_requests_device_ts ON client_requests(device_id, ts);
+
+-- Derived from client_requests in 15-minute slots (ts / 900000), which every
+-- zone's midnight falls on, and rebuilt from it when the counts differ.
+CREATE TABLE IF NOT EXISTS client_request_slots (
+	slot INTEGER NOT NULL,
+	device_id TEXT NOT NULL,
+	model TEXT NOT NULL,
+	requests INTEGER NOT NULL DEFAULT 0,
+	failed INTEGER NOT NULL DEFAULT 0,
+	retries INTEGER NOT NULL DEFAULT 0,
+	latency_hist BLOB,
+	ttft_hist BLOB,
+	PRIMARY KEY (slot, device_id, model)
+) WITHOUT ROWID;
 `
 
 func init() {

@@ -36,27 +36,42 @@ func (n *noAccounts) attach(m *coreauth.Manager) {
 	}
 }
 
-// message explains why no account serves model, or returns false before the
-// manager is attached.
-func (n *noAccounts) message(model string) (string, bool) {
+// Codes of a request no account could serve, which the client request record
+// keeps as its error code.
+const (
+	codeNoAccounts       = "no_accounts"
+	codeAccountsDisabled = "accounts_disabled"
+	codeUnknownProvider  = "unknown_provider"
+)
+
+// noAccountKey holds, in the gin context, the noAccount of a request
+// upstream refused because no account serves its model.
+const noAccountKey = "taproot.noAccount"
+
+// noAccount is why no account served a request, and the model it named.
+type noAccount struct{ code, model string }
+
+// message explains why no account serves model, with its code, or returns
+// false before the manager is attached.
+func (n *noAccounts) message(model string) (code, text string, ok bool) {
 	m := n.auths.Load()
 	if m == nil {
-		return "", false
+		return codeUnknownProvider, "", false
 	}
 	auths := m.List()
 	if len(auths) == 0 {
-		return "no accounts configured: sign in to an account on the taproot dashboard's Accounts page, then retry model " + model, true
+		return codeNoAccounts, "no accounts configured: sign in to an account on the taproot dashboard's Accounts page, then retry model " + model, true
 	}
 	if !slices.ContainsFunc(auths, func(a *coreauth.Auth) bool { return !a.Disabled }) {
-		return "every account is disabled: enable one on the taproot dashboard's Accounts page, then retry model " + model, true
+		return codeAccountsDisabled, "every account is disabled: enable one on the taproot dashboard's Accounts page, then retry model " + model, true
 	}
 	if provider := modelProvider(model); provider != "" {
 		if slices.ContainsFunc(auths, func(a *coreauth.Auth) bool { return !a.Disabled && strings.EqualFold(a.Provider, provider) }) {
-			return "no enabled " + provider + " account serves model " + model + ": check the model name; the pool's " + provider + " accounts do not list it", true
+			return codeUnknownProvider, "no enabled " + provider + " account serves model " + model + ": check the model name; the pool's " + provider + " accounts do not list it", true
 		}
-		return "no enabled " + provider + " account serves model " + model + ": add or enable one on the taproot dashboard's Accounts page", true
+		return codeUnknownProvider, "no enabled " + provider + " account serves model " + model + ": add or enable one on the taproot dashboard's Accounts page", true
 	}
-	return "no enabled account serves model " + model + ": check the model name, or add an account that serves it on the taproot dashboard's Accounts page", true
+	return codeUnknownProvider, "no enabled account serves model " + model + ": check the model name, or add an account that serves it on the taproot dashboard's Accounts page", true
 }
 
 func (n *noAccounts) middleware() gin.HandlerFunc {
@@ -73,9 +88,13 @@ func (n *noAccounts) middleware() gin.HandlerFunc {
 			return
 		}
 		body := w.body.Bytes()
-		if rewritten, ok := rewriteUnknownProvider(body, n.message); ok {
-			body = rewritten
-			w.Header().Del("Content-Length")
+		if model, ok := unknownProviderModel(body); ok {
+			code, text, known := n.message(model)
+			c.Set(noAccountKey, noAccount{code: code, model: model})
+			if rewritten, ok := rewriteMessage(body, text); known && ok {
+				body = rewritten
+				w.Header().Del("Content-Length")
+			}
 		}
 		w.ResponseWriter.WriteHeader(w.status)
 		if _, err := w.ResponseWriter.Write(body); err != nil {
@@ -98,17 +117,18 @@ func modelProvider(model string) string {
 	return ""
 }
 
-// rewriteUnknownProvider replaces upstream's message in a JSON error body with
-// the one message gives for the model.
-func rewriteUnknownProvider(body []byte, message func(model string) (string, bool)) ([]byte, bool) {
+// unknownProviderModel returns the model of upstream's "unknown provider"
+// error in a JSON error body.
+func unknownProviderModel(body []byte) (string, bool) {
 	msg := ojson.GetBytes(body, "error.message")
 	if msg.Type != ojson.String || !strings.HasPrefix(msg.Str, unknownProvider) {
-		return nil, false
+		return "", false
 	}
-	text, ok := message(strings.TrimPrefix(msg.Str, unknownProvider))
-	if !ok {
-		return nil, false
-	}
+	return strings.TrimPrefix(msg.Str, unknownProvider), true
+}
+
+// rewriteMessage replaces error.message in a JSON error body.
+func rewriteMessage(body []byte, text string) ([]byte, bool) {
 	out, err := ojson.SetBytes(body, "error.message", text)
 	if err != nil {
 		return nil, false

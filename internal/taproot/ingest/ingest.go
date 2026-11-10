@@ -34,6 +34,9 @@ const (
 	maintenanceInterval = time.Minute
 )
 
+// endOfTime makes every queued client request ready, for the final flush.
+var endOfTime = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+
 func (c Config) pollInterval() (time.Duration, error) {
 	raw := strings.TrimSpace(c.PollInterval)
 	switch raw {
@@ -78,6 +81,14 @@ type Ingest struct {
 	devices atomic.Pointer[deviceSource]
 	plugins atomic.Pointer[pluginSource]
 
+	// Client requests: pendingRequests and droppedRequests are guarded by mu.
+	pendingRequests []pendingRequest
+	droppedRequests int64
+	linkMu          sync.Mutex
+	links           map[string]*RequestLink
+	guessProvider   atomic.Pointer[func(string) string]
+	logs            atomic.Pointer[logIndex]
+
 	claudeUsageURL string
 	codexUsageURL  string
 	lastPoll       map[string]time.Time
@@ -102,6 +113,9 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 	if err := rebuildDerived(context.Background(), db.DB); err != nil {
 		return nil, fmt.Errorf("ingest: %w", err)
 	}
+	if err := rebuildClientSlots(context.Background(), db.DB); err != nil {
+		return nil, fmt.Errorf("ingest: %w", err)
+	}
 	i := &Ingest{
 		db:             db,
 		pollInterval:   interval,
@@ -123,6 +137,7 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 // The context is the execution's, read here because only it says whether a
 // plugin made the request in-process.
 func (i *Ingest) HandleUsage(ctx context.Context, record usage.Record) {
+	i.observeAttempt(record)
 	p := pendingRecord{Record: record, device: i.recordDevice(ctx, record.TraceID)}
 	i.mu.Lock()
 	if len(i.pending) >= maxPending {
@@ -202,7 +217,9 @@ func (i *Ingest) runWriter(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			if err := i.flush(context.WithoutCancel(ctx)); err != nil {
+			// Every queued client request is written now, without waiting
+			// for late usage records.
+			if err := i.flushReady(context.WithoutCancel(ctx), endOfTime); err != nil {
 				log.WithError(err).Error("taproot ingest: final flush")
 			}
 			return
@@ -233,9 +250,15 @@ func (i *Ingest) runMaintenance(ctx context.Context) {
 	}
 }
 
-// flush writes everything queued so far in one transaction. On failure the
-// batch goes back to the front of the queue for the next attempt.
+// flush writes everything queued so far in one transaction, and the client
+// requests that have waited clientSettle for their usage records. On failure
+// the batch goes back to the front of the queue for the next attempt.
 func (i *Ingest) flush(ctx context.Context) error {
+	return i.flushReady(ctx, i.now())
+}
+
+// flushReady is flush, writing the client requests ready by readyBy.
+func (i *Ingest) flushReady(ctx context.Context, readyBy time.Time) error {
 	i.writeMu.Lock()
 	defer i.writeMu.Unlock()
 
@@ -243,7 +266,8 @@ func (i *Ingest) flush(ctx context.Context) error {
 	records, obs := i.pending, i.pendingObs
 	i.pending, i.pendingObs = nil, nil
 	i.mu.Unlock()
-	if len(records) == 0 && len(obs) == 0 {
+	clients := i.takeRequests(readyBy)
+	if len(records) == 0 && len(obs) == 0 && len(clients) == 0 {
 		return nil
 	}
 
@@ -269,6 +293,9 @@ func (i *Ingest) flush(ctx context.Context) error {
 		if _, err := insertEvents(ctx, c, events); err != nil {
 			return err
 		}
+		if err := insertClientRequests(ctx, c, clients); err != nil {
+			return err
+		}
 		_, err := i.tracker.write(ctx, c, allObs, now)
 		return err
 	})
@@ -282,6 +309,16 @@ func (i *Ingest) flush(ctx context.Context) error {
 			log.WithField("dropped", len(records)).Warn("taproot ingest: usage queue full after failed flush, dropping batch")
 		}
 		i.pendingObs = append(obs, i.pendingObs...)
+		if len(i.pendingRequests)+len(clients) <= maxClientPending {
+			back := make([]pendingRequest, len(clients), len(clients)+len(i.pendingRequests))
+			for n, r := range clients {
+				back[n] = pendingRequest{req: r}
+			}
+			i.pendingRequests = append(back, i.pendingRequests...)
+		} else {
+			i.droppedRequests += int64(len(clients))
+			log.WithField("dropped", len(clients)).Warn("taproot ingest: client request queue full after failed flush, dropping batch")
+		}
 		i.mu.Unlock()
 		return err
 	}
@@ -317,4 +354,6 @@ func (i *Ingest) Routes(r *gin.RouterGroup) {
 	r.GET("/prices", i.handleGetPrices)
 	r.PUT("/prices", i.handlePutPrices)
 	r.POST("/prices/reset", i.handleResetPrices)
+	r.GET("/requests/summary", i.handleRequestsSummary)
+	r.GET("/requests/recent", i.handleRequestsRecent)
 }
