@@ -75,9 +75,9 @@ func (f *restoreFixture) start(t *testing.T) error {
 	}
 	cfg := &config.Config{AuthDir: f.authDir}
 	cfg.Port = 8317
-	_, stop, err := setup(context.Background(), cfg, f.configPath)
-	if stop != nil {
-		stop()
+	_, mods, err := setup(context.Background(), cfg, f.configPath)
+	if mods != nil {
+		mods.stop()
 	}
 	return err
 }
