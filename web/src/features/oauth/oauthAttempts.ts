@@ -1,17 +1,20 @@
 export interface OAuthAttempt {
   readonly signal: AbortSignal;
   isCurrent: () => boolean;
-  /** True from poll() until a terminal result, a request error or invalidation. */
+  /** True from poll() until a terminal result, a request error it gives up on, or invalidation. */
   isPolling: () => boolean;
   invalidate: () => void;
   schedule: (callback: () => void, delay: number) => void;
   poll: <T>(
     request: () => Promise<T>,
     onResult: (result: T) => boolean,
-    onError: (error: unknown) => void,
+    /** Returns true to retry the request after a backoff, false to stop polling. */
+    onError: (error: unknown) => boolean,
     delay: number
   ) => void;
 }
+
+export const MAX_RETRY_DELAY_MS = 30_000;
 
 interface Scheduler {
   setTimeout: (callback: () => void, delay: number) => number;
@@ -48,16 +51,23 @@ export function createOAuthAttempts(scheduler: Scheduler) {
       },
       poll: (request, onResult, onError, delay) => {
         polling = true;
+        let failures = 0;
         const tick = async () => {
           try {
             const result = await request();
             if (!attempt.isCurrent()) return;
+            failures = 0;
             if (onResult(result)) attempt.schedule(() => void tick(), delay);
             else polling = false;
           } catch (error: unknown) {
             if (!attempt.isCurrent()) return;
-            polling = false;
-            onError(error);
+            if (onError(error)) {
+              failures += 1;
+              const backoff = Math.min(delay * 2 ** failures, MAX_RETRY_DELAY_MS);
+              attempt.schedule(() => void tick(), backoff);
+            } else {
+              polling = false;
+            }
           }
         };
         attempt.schedule(() => void tick(), delay);

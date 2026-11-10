@@ -2,28 +2,13 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { formatPercent } from '@/utils/format';
-import { TRAFFIC_BUCKET_MINUTES, type TrafficWindow } from '../types';
+import type { TrafficWindow } from '../types';
 import { axisMax } from '../utils';
+import { bucketRangeLabel, bucketStartLabel } from '../model';
 import styles from './ThroughputChart.module.scss';
 
 /** 纵轴刻度条数（含 0），即 TICK_COUNT - 1 个间隔 */
 const TICK_COUNT = 5;
-
-/**
- * 桶时间标签。后端返回的是服务器本地时间字符串（"15:04-15:14"），
- * 优先使用它，而不是用浏览器时钟反推，避免时区不一致。
- */
-function bucketRangeLabel(time: string | undefined, index: number, count: number): string {
-  if (time) return time;
-  const minutesAgo = (count - index) * TRAFFIC_BUCKET_MINUTES;
-  return `-${minutesAgo}m`;
-}
-
-function bucketStartLabel(time: string | undefined, index: number, count: number): string {
-  if (!time) return bucketRangeLabel(time, index, count);
-  const [start] = time.split('-');
-  return start?.trim() || time;
-}
 
 interface ThroughputChartProps {
   traffic: TrafficWindow;
@@ -50,12 +35,12 @@ export function ThroughputChart({ traffic }: ThroughputChartProps) {
     const positions = [0, Math.floor((buckets.length - 1) / 2), buckets.length - 1];
     return Array.from(new Set(positions)).map((index) => ({
       index,
-      label: bucketStartLabel(buckets[index]?.time, index, buckets.length),
+      label: bucketStartLabel(buckets[index].startMs),
     }));
   }, [buckets]);
 
   const summary = t('dashboard.traffic_chart_summary', {
-    total,
+    count: total,
     success: totalSuccess,
     failed: totalFailure,
     minutes: traffic.windowMinutes,
@@ -113,11 +98,15 @@ export function ThroughputChart({ traffic }: ThroughputChartProps) {
             ))}
           </div>
 
+          {/* Hover follows the mouse only. A tap fires pointerenter before its click, and a
+              compatibility mouseleave after it, which would toggle or close the tooltip at once. */}
           <div
             className={styles.columns}
             role="img"
             aria-label={summary}
-            onMouseLeave={() => setActiveIndex(null)}
+            onPointerLeave={(event) => {
+              if (event.pointerType === 'mouse') setActiveIndex(null);
+            }}
           >
             {buckets.map((bucket, index) => {
               const bucketTotal = bucket.success + bucket.failed;
@@ -130,9 +119,11 @@ export function ThroughputChart({ traffic }: ThroughputChartProps) {
 
               return (
                 <div
-                  key={bucket.time ?? index}
+                  key={bucket.startMs}
                   className={`${styles.column} ${activeIndex === index ? styles.columnActive : ''}`}
-                  onMouseEnter={() => setActiveIndex(index)}
+                  onPointerEnter={(event) => {
+                    if (event.pointerType === 'mouse') setActiveIndex(index);
+                  }}
                   onClick={() => setActiveIndex((current) => (current === index ? null : index))}
                 >
                   {/* 峰值直标放在 scaleY 容器之外，避免入场时被一起挤压 */}
@@ -187,9 +178,7 @@ export function ThroughputChart({ traffic }: ThroughputChartProps) {
               }}
               role="status"
             >
-              <span className={styles.tooltipTime}>
-                {bucketRangeLabel(activeBucket.time, activeIndex!, buckets.length)}
-              </span>
+              <span className={styles.tooltipTime}>{bucketRangeLabel(activeBucket.startMs)}</span>
               <span className={styles.tooltipRow}>
                 <span
                   className={`${styles.legendSwatch} ${styles.swatchSuccess}`}
@@ -240,11 +229,11 @@ export function ThroughputChart({ traffic }: ThroughputChartProps) {
               </tr>
             </thead>
             <tbody>
-              {buckets.map((bucket, index) => {
+              {buckets.map((bucket) => {
                 const bucketTotal = bucket.success + bucket.failed;
                 return (
-                  <tr key={bucket.time ?? index}>
-                    <th scope="row">{bucketRangeLabel(bucket.time, index, buckets.length)}</th>
+                  <tr key={bucket.startMs}>
+                    <th scope="row">{bucketRangeLabel(bucket.startMs)}</th>
                     <td>{bucket.success.toLocaleString()}</td>
                     <td>{bucket.failed.toLocaleString()}</td>
                     <td>

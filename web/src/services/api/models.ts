@@ -6,6 +6,7 @@ import axios from 'axios';
 import { normalizeModelList } from '@/utils/models';
 import { normalizeApiBase } from '@/utils/connection';
 import { apiCallApi, getApiCallErrorMessage } from './apiCall';
+import { parseApiErrorResponse } from './apiError';
 import { isRecord } from '@/utils/helpers';
 
 const DEFAULT_CLAUDE_BASE_URL = 'https://api.anthropic.com';
@@ -97,9 +98,18 @@ export const modelsApi = {
       resolvedHeaders.Authorization = `Bearer ${apiKey}`;
     }
 
-    const response = await axios.get(endpoint, {
-      headers: Object.keys(resolvedHeaders).length ? resolvedHeaders : undefined,
-    });
+    let response;
+    try {
+      response = await axios.get(endpoint, {
+        headers: Object.keys(resolvedHeaders).length ? resolvedHeaders : undefined,
+      });
+    } catch (err: unknown) {
+      // The guard's 403 explains itself in the body, such as a device with Admin but not Proxy.
+      if (axios.isAxiosError(err) && isRecord(err.response?.data)) {
+        err.message = parseApiErrorResponse(err.response.data, err.message).message;
+      }
+      throw err;
+    }
     const payload = response.data?.data ?? response.data?.models ?? response.data;
     return normalizeModelList(payload, { dedupe: true });
   },

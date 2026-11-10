@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { IconExternalLink, IconLoader2 } from '@/components/ui/icons';
 import type { ProviderFlowState } from '../hooks/useOAuthFlows';
 import { resolveFlowView, splitAuthUrl, type FlowView } from '../flowView';
+import { callbackExampleFromAuthUrl } from '../callbackUrl';
 import { BrandGlyph } from './BrandGlyph';
 import { CopyButton } from './CopyButton';
 import styles from './OAuthFlowDialog.module.scss';
@@ -37,6 +38,11 @@ export interface OAuthFlowDialogProps {
   /** 提供商专属文案：`auth_login.<id>_<suffix>` 或插件模板。 */
   text: (suffix: string) => string;
   supportsCallback: boolean;
+  /**
+   * The provider redirects to a localhost listener inside the server, which the browser cannot
+   * reach, so built-in sign-ins finish only when the user pastes that address. A plugin may not.
+   */
+  callbackRequired: boolean;
   onStart: () => void;
   onCallbackChange: (value: string) => void;
   onCallbackSubmit: () => void;
@@ -183,6 +189,7 @@ function OpenStep({ state, text }: OAuthFlowDialogProps) {
 function CallbackStep({
   providerId,
   state,
+  callbackRequired,
   onCallbackChange,
   onCallbackSubmit,
 }: OAuthFlowDialogProps) {
@@ -194,9 +201,9 @@ function CallbackStep({
   const isXai = providerId === 'xai';
   const disabled = !state.url;
   const hintKey = isXai ? 'auth_login.xai_callback_hint' : 'auth_login.oauth_callback_hint';
-  const placeholderKey = isXai
-    ? 'auth_login.xai_callback_placeholder'
-    : 'auth_login.oauth_callback_placeholder';
+  const placeholder = isXai
+    ? t('auth_login.xai_callback_placeholder')
+    : (callbackExampleFromAuthUrl(state.url) ?? t('auth_login.oauth_callback_placeholder'));
 
   const feedback = state.callbackValidation
     ? { tone: 'error' as const, message: state.callbackValidation }
@@ -213,7 +220,11 @@ function CallbackStep({
     <Step
       title={t(isXai ? 'auth_login.xai_callback_label' : 'auth_login.oauth_callback_label')}
       titleFor={inputId}
-      aside={<span className={styles.optional}>{t('auth_login.optional_step')}</span>}
+      aside={
+        <span className={styles.stepTag} data-required={callbackRequired || undefined}>
+          {t(callbackRequired ? 'auth_login.required_step' : 'auth_login.optional_step')}
+        </span>
+      }
     >
       <p className={styles.stepHint} id={hintId}>
         {t(hintKey)}
@@ -230,7 +241,7 @@ function CallbackStep({
           className={`input ${styles.callbackInput}`}
           value={state.callbackUrl || ''}
           onChange={(event) => onCallbackChange(event.target.value)}
-          placeholder={t(placeholderKey)}
+          placeholder={placeholder}
           disabled={disabled}
           autoComplete="off"
           spellCheck={false}
@@ -266,6 +277,7 @@ function FlowStatusBar({ state, text, onStart }: OAuthFlowDialogProps) {
   const { mask } = useEmailMask();
   const failed = state.status === 'error';
   const generating = !failed && !state.url;
+  const reconnecting = !failed && !generating && state.reconnecting;
 
   return (
     <div className={styles.statusBar} data-tone={failed ? 'error' : 'waiting'}>
@@ -280,7 +292,9 @@ function FlowStatusBar({ state, text, onStart }: OAuthFlowDialogProps) {
             ? t('auth_login.generating_link')
             : failed
               ? `${text('oauth_status_error')} ${mask(state.error || '')}`
-              : text('oauth_status_waiting')}
+              : reconnecting
+                ? t('auth_login.reconnecting')
+                : text('oauth_status_waiting')}
         </span>
       </p>
       {failed ? (
