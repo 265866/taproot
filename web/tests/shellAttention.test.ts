@@ -191,4 +191,11 @@ describe('displayVersion', () => {
     expect(displayVersion('')).toBe('dev');
     expect(displayVersion('dev')).toBe('dev');
   });
+
+  test('the sidebar footer names the full version, readable when the label is cut off', () => {
+    const footer = renderShell().match(/<span class="sidebar-version"[^>]*>[^<]*<\/span>/)?.[0];
+    expect(footer).toBe(
+      '<span class="sidebar-version" title="taproot 0.0.0-test">taproot 0.0.0-test</span>'
+    );
+  });
 });

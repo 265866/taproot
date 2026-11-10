@@ -902,7 +902,7 @@ export function MainLayout() {
     attentionCount > 0
       ? t('sidebar.open_navigation_attention', { count: attentionCount })
       : t('sidebar.open_navigation');
-  const appVersion = displayVersion(__APP_VERSION__);
+  const versionLabel = t('sidebar.version', { version: displayVersion(__APP_VERSION__) });
 
   const themeIcon =
     theme === 'auto'
@@ -1002,8 +1002,8 @@ export function MainLayout() {
 
           <div className="sidebar-footer">
             {showSidebarLabels && (
-              <span className="sidebar-version">
-                {t('sidebar.version', { version: appVersion })}
+              <span className="sidebar-version" title={versionLabel}>
+                {versionLabel}
               </span>
             )}
             <div className={`theme-menu ${themeMenuOpen ? 'open' : ''}`} ref={themeMenuRef}>

@@ -94,7 +94,9 @@ Charts use Recharts. Reuse the components in `src/components/ui/` before adding 
 - `SeverityTag`: Blocking (danger), Overdue and At risk (warning), Waiting (neutral), OK. The mapping is `SEVERITY_TONE` in `status.ts`.
 - `DataTable`, `DataTableHead`, `DataTableCell` (`numeric`, `mono`, `truncate`, `muted`), and `StatusPill` for a status code. Compact rows, scoped headers, tabular numbers; wide tables scroll inside their box.
 - `SegmentedControl`: one choice among a few, as an ARIA radio group with one Tab stop; the arrows, Home, and End move and select.
-- `UpdatedAgo`: "updated 8 s ago · refreshes every 30 s", ticking on the shared one-second clock (`SECOND_CLOCK`), or "8 s ago" with `compact`. Sheets and modals join the layer stack in `src/components/ui/layerStack.ts`, so only the top dialog handles Escape and traps Tab; a new dialog primitive must join it too. Keep keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
+- `UpdatedAgo`: "updated 8 s ago · refreshes every 30 s", ticking on the shared one-second clock (`SECOND_CLOCK`), or "8 s ago" with `compact`.
+
+Sheets and modals join the layer stack in `src/components/ui/layerStack.ts`, so only the top dialog handles Escape and traps Tab; a new dialog primitive must join it too. Keep keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
 
 Code style: 2-space indentation, semicolons, single quotes, ES5 trailing commas, and a 100-character line (`.prettierrc`). Use `unknown` with narrowing for untrusted data rather than `any`, and the `@/` alias for imports from `src`. Components are PascalCase, hooks `useName`, and API modules domain names such as `oauth.ts`. SCSS Modules sit beside their component as `Name.module.scss`; Vite injects `src/styles/variables.scss` into every SCSS file.
 
