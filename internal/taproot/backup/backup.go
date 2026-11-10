@@ -330,6 +330,12 @@ func (b *Backups) runSchedule(ctx context.Context) {
 			log.Info("taproot backups: scheduled backup skipped: a restore is waiting for a restart")
 			continue
 		}
+		if ctx.Err() != nil {
+			return
+		}
+		if errRecord := b.RecordScheduledRun(ctx, b.now(), err); errRecord != nil {
+			log.WithError(errRecord).Warn("taproot backups: record scheduled run")
+		}
 		if err != nil {
 			log.WithError(err).Error("taproot backups: scheduled backup failed")
 			continue

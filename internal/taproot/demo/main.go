@@ -27,9 +27,10 @@ func main() {
 	dir := flag.String("dir", "", "empty or missing directory to write the demo config and data into (required)")
 	port := flag.Int("port", 8399, "loopback port the demo server listens on")
 	serve := flag.Bool("serve-tailnet", false, "instead of seeding, serve the fake tailnet on the socket in -dir until interrupted")
+	degraded := flag.Bool("degraded", false, "seed a quarter hour in which a fifth of Claude requests fail, so the Dashboard reports a degraded state")
 	flag.Parse()
 	if *dir == "" {
-		fmt.Fprintln(os.Stderr, "usage: go run ./internal/taproot/demo -dir <empty directory> [-port 8399] [-serve-tailnet]")
+		fmt.Fprintln(os.Stderr, "usage: go run ./internal/taproot/demo -dir <empty directory> [-port 8399] [-degraded] [-serve-tailnet]")
 		os.Exit(2)
 	}
 	log.SetLevel(log.WarnLevel)
@@ -46,7 +47,7 @@ func main() {
 		}
 		return
 	}
-	summary, err := seed(context.Background(), *dir, *port, time.Now())
+	summary, err := seed(context.Background(), *dir, *port, time.Now(), *degraded)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "taproot demo:", err)
 		os.Exit(1)
@@ -55,7 +56,7 @@ func main() {
 }
 
 // seed writes the demo into dir with history ending at start.
-func seed(ctx context.Context, dir string, port int, start time.Time) (string, error) {
+func seed(ctx context.Context, dir string, port int, start time.Time, degraded bool) (string, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
@@ -72,7 +73,7 @@ func seed(ctx context.Context, dir string, port int, start time.Time) (string, e
 	if err := writeAuthFiles(authDir, accounts, start); err != nil {
 		return "", err
 	}
-	requests := generate(start, accounts)
+	requests := generateWith(start, accounts, degraded)
 
 	db, err := store.Open(ctx, store.Config{}, dataDir)
 	if err != nil {
@@ -108,6 +109,11 @@ func seed(ctx context.Context, dir string, port int, start time.Time) (string, e
 		if _, err := backups.Create(ctx, reason); err != nil {
 			return "", fmt.Errorf("create %s backup: %w", reason, err)
 		}
+	}
+	// The last scheduled run failed after those backups, so the Dashboard
+	// lists an overdue backup until one is taken.
+	if err := backups.RecordScheduledRun(ctx, time.Now(), errors.New("write backup: no space left on device")); err != nil {
+		return "", err
 	}
 	return fmt.Sprintf("Wrote %d usage events, %d client requests, %d request logs, and 2 backups for %d accounts to %s.\nStart the server with internal/taproot/demo/run.sh, or see CONTRIBUTING.md.",
 		len(requests), len(clients), logged, len(accounts), dir), nil

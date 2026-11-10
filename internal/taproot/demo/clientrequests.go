@@ -9,8 +9,9 @@ import (
 	"github.com/265866/taproot/sdk/cliproxy/usage"
 )
 
-// recentFailures adds, in the last two hours, the failures a dashboard should
-// be able to show besides the rate limits and overloads of the traffic: an
+// recentFailures adds, in the last two hours but before the last quarter hour
+// (which the Dashboard's verdict reads), the failures a dashboard should be
+// able to show besides the rate limits and overloads of the traffic: an
 // upstream reset, a prompt that is too long, a request the client abandoned,
 // a retry that succeeded on another account, and one that failed on two. It
 // draws from its own random source, so the rest of the history is unchanged.
@@ -42,9 +43,9 @@ func (g *generator) recentFailures() {
 	retry.TTFT = 1800 * time.Millisecond
 	retry.Detail = usage.Detail{InputTokens: 6, OutputTokens: 420, CacheReadTokens: 30_000, TotalTokens: 30_426}
 	// Rate-limited on both Codex accounts.
-	limited := attempt(-5*time.Minute, desktop, luna, g.accounts[4], http.StatusTooManyRequests,
+	limited := attempt(-17*time.Minute, desktop, luna, g.accounts[4], http.StatusTooManyRequests,
 		`{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}`, 400*time.Millisecond)
-	again := attempt(-5*time.Minute+600*time.Millisecond, desktop, luna, codex, http.StatusTooManyRequests,
+	again := attempt(-17*time.Minute+600*time.Millisecond, desktop, luna, codex, http.StatusTooManyRequests,
 		`{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}`, 350*time.Millisecond)
 	again.TraceID, again.SessionID = limited.TraceID, limited.SessionID
 	g.out = append(g.out, first, retry, limited, again)
@@ -108,9 +109,42 @@ func clientRequests(requests []request, start time.Time) []ingest.ClientRequest 
 	}
 	zero := 0
 	return append(out, ingest.ClientRequest{
-		Start: start.Add(-12 * time.Minute), RequestID: "0a1b2c3d", Device: devices[3].Device, Path: "/v1/chat/completions",
+		Start: start.Add(-19 * time.Minute), RequestID: "0a1b2c3d", Device: devices[3].Device, Path: "/v1/chat/completions",
 		Model: "gemini-3-pro", Status: http.StatusBadRequest, Failed: true, Latency: 4 * time.Millisecond, Attempts: &zero,
 		ErrorCode:    "unknown_provider",
 		ErrorMessage: "no enabled account serves model gemini-3-pro: check the model name, or add an account that serves it on the taproot dashboard's Accounts page",
 	})
+}
+
+// degradedTraffic is a quarter hour in which Claude is overloaded: over the
+// last 12 minutes, 40 requests from the laptop, every fifth of which fails
+// with 529 on both accounts it is tried on. It gives the Dashboard a
+// degraded verdict (-degraded), and draws from its own random source.
+func degradedTraffic(start time.Time, accounts []*demoAccount) []request {
+	x := &generator{rng: rand.New(rand.NewPCG(demoSeed, 3))}
+	overloaded := `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
+	var out []request
+	for n := range 40 {
+		at := start.Add(-12*time.Minute + time.Duration(n)*18*time.Second)
+		trace, session := x.hex(8), "claude:"+x.uuid()
+		tries := []*demoAccount{accounts[n%2]}
+		if n%5 == 0 {
+			tries = append(tries, accounts[1-n%2])
+		}
+		for k, a := range tries {
+			r := request{device: devices[0]}
+			r.Record = usage.Record{
+				RequestID: x.uuid(), TraceID: trace, Provider: "claude", Model: opus.name, SessionID: session,
+				AuthIndex: a.authIndex, AuthID: a.fileName, Stream: true, RequestedAt: at.Add(time.Duration(k) * 1500 * time.Millisecond),
+				Latency: 2 * time.Second, TTFT: 900 * time.Millisecond,
+				Detail: usage.Detail{InputTokens: 12, OutputTokens: 300, CacheReadTokens: 20_000, TotalTokens: 20_312},
+			}
+			if n%5 == 0 {
+				r.Failed, r.Fail = true, usage.Failure{StatusCode: 529, Body: overloaded}
+				r.Detail, r.TTFT, r.Latency = usage.Detail{}, 0, 1200*time.Millisecond
+			}
+			out = append(out, r)
+		}
+	}
+	return out
 }

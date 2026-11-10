@@ -75,6 +75,9 @@ type demoAccount struct {
 	shortBudget           float64
 	// nextWeekly is when the weekly window next resets, from the start time.
 	nextWeekly time.Duration
+	// signedOut is how long before the start the account lost its login;
+	// zero means it never did. From then on it serves nothing.
+	signedOut time.Duration
 
 	authIndex, fileName string
 
@@ -88,6 +91,7 @@ func demoAccounts() []*demoAccount {
 		{provider: "claude", email: "research@example.com", plan: "pro", weeklyBudget: 30, shortBudget: 5, nextWeekly: 20 * time.Hour},
 		{provider: "codex", email: "alice@example.com", plan: "pro", weeklyBudget: 26, shortBudget: 6, nextWeekly: 74 * time.Hour},
 		{provider: "codex", email: "team@example.org", plan: "plus", weeklyBudget: 9, shortBudget: 2.5, nextWeekly: 138 * time.Hour},
+		{provider: "codex", email: "dana@example.com", plan: "plus", weeklyBudget: 9, shortBudget: 2.5, nextWeekly: 100 * time.Hour, signedOut: 3 * time.Hour},
 	}
 }
 
@@ -221,6 +225,17 @@ type generator struct {
 // generate returns 30 days of traffic ending at start, sorted by time. It
 // is a pure function of start and the accounts' auth indexes.
 func generate(start time.Time, accounts []*demoAccount) []request {
+	return generateWith(start, accounts, false)
+}
+
+// squeezeAt is how long before the start -degraded uses up most of the
+// serving Claude accounts' weekly quota, as a heavy job would.
+const squeezeAt = 15 * time.Minute
+
+// generateWith is generate; with degraded, the two Claude max accounts are
+// 92% through their weekly window from squeezeAt before the start on, so the
+// Claude pool runs low, and degradedTraffic's overloaded quarter hour is added.
+func generateWith(start time.Time, accounts []*demoAccount, degraded bool) []request {
 	g := &generator{rng: rand.New(rand.NewPCG(demoSeed, demoSeed>>1)), start: start, accounts: accounts}
 	from := start.Add(-historyDays * 24 * time.Hour)
 	for _, a := range accounts {
@@ -233,8 +248,16 @@ func generate(start time.Time, accounts []*demoAccount) []request {
 	}
 	g.scheduleSessions(from)
 	cutoff := start.Add(-3 * time.Minute)
+	squeezed := !degraded
 	for g.queue.Len() > 0 && g.queue[0].next.Before(cutoff) {
 		s := heap.Pop(&g.queue).(*session)
+		if !squeezed && !s.next.Before(start.Add(-squeezeAt)) {
+			squeezed = true
+			for _, a := range accounts[:2] {
+				a.advance(s.next)
+				a.weekly.used = math.Max(a.weekly.used, 0.92*a.weekly.budget)
+			}
+		}
 		g.turn(s, s.next, false)
 		if s.turnsLeft > 0 {
 			heap.Push(&g.queue, s)
@@ -242,6 +265,9 @@ func generate(start time.Time, accounts []*demoAccount) []request {
 	}
 	g.burst()
 	g.recentFailures()
+	if degraded {
+		g.out = append(g.out, degradedTraffic(start, accounts)...)
+	}
 	sort.SliceStable(g.out, func(i, j int) bool { return g.out[i].RequestedAt.Before(g.out[j].RequestedAt) })
 	return g.out
 }
@@ -294,7 +320,7 @@ func (g *generator) newSession(at time.Time, dev device) *session {
 
 // turn runs one request of s at t and schedules its next one.
 func (g *generator) turn(s *session, t time.Time, burst bool) *request {
-	if s.account == nil {
+	if s.account == nil || g.signedOut(s.account, t) {
 		s.account = g.route(s.provider, t, nil)
 	}
 	s.account.advance(t)
@@ -328,12 +354,17 @@ func (g *generator) turn(s *session, t time.Time, burst bool) *request {
 	return &g.out[len(g.out)-1]
 }
 
+// signedOut reports whether a has lost its login by t.
+func (g *generator) signedOut(a *demoAccount, t time.Time) bool {
+	return a.signedOut > 0 && !t.Before(g.start.Add(-a.signedOut))
+}
+
 // route is soonest-reset-first: the eligible account whose weekly window
 // resets first, with some sessions spread over the others.
 func (g *generator) route(provider string, t time.Time, exclude *demoAccount) *demoAccount {
 	var eligible, all []*demoAccount
 	for _, a := range g.accounts {
-		if a.provider != provider || a == exclude {
+		if a.provider != provider || a == exclude || g.signedOut(a, t) {
 			continue
 		}
 		a.advance(t)
@@ -505,15 +536,22 @@ func (g *generator) burst() {
 		}
 	}
 	sort.SliceStable(picked, func(i, j int) bool { return picked[i].uid < picked[j].uid })
+	overloaded := false
 	for i, s := range picked {
 		r := g.turn(s, g.start, true)
-		if i == 1 && s.provider == "claude" {
+		if i >= 1 && s.provider == "claude" && !overloaded {
+			overloaded = true
 			// One overloaded response, so the log shows a failure too.
 			r.Failed, r.Fail.StatusCode = true, 529
 			r.Detail, r.ResponseHeaders = usage.Detail{}, nil
 			r.TTFT, r.Latency = 0, 1400*time.Millisecond
 		}
 		r.RequestedAt = g.start.Add(-r.Latency)
+		if r.Failed {
+			// Before the quarter hour the Dashboard's verdict reads, so the
+			// demo serves normally unless -degraded.
+			r.RequestedAt = g.start.Add(-16 * time.Minute)
+		}
 		r.prompt, r.reply = topics[s.topic].prompt, topics[s.topic].reply
 	}
 }

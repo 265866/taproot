@@ -116,7 +116,7 @@ func TestGenerateShape(t *testing.T) {
 // request logs, and backups.
 func TestSeed(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := seed(context.Background(), dir, 8399, testStart); err != nil {
+	if _, err := seed(context.Background(), dir, 8399, testStart, false); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	ctx := context.Background()
@@ -206,6 +206,63 @@ func TestSeed(t *testing.T) {
 	if err != nil || len(backups) != 2 {
 		t.Fatalf("backups: %v, %d entries", err, len(backups))
 	}
+	// The Dashboard's Needs-you list: a failed scheduled backup, and a
+	// signed-out Codex account that served until three hours ago.
+	if count(`SELECT COUNT(*) FROM backup_scheduled_run WHERE error <> ''`) != 1 {
+		t.Error("want a failed scheduled backup run")
+	}
+	dana := signedOutAccount(t)
+	if count(`SELECT COUNT(*) FROM usage_events WHERE auth_id LIKE ? AND ts >= ?`, "%"+dana.email+"%", testStart.Add(-dana.signedOut).UnixMilli()) != 0 {
+		t.Error("the signed-out account served after it lost its login")
+	}
+	if count(`SELECT COUNT(*) FROM usage_events WHERE auth_id LIKE ?`, "%"+dana.email+"%") == 0 {
+		t.Error("the signed-out account has no history")
+	}
+	// Without -degraded the Dashboard's verdict is normal: under 5% of the
+	// last quarter hour's requests failed.
+	quarter := testStart.Add(-15 * time.Minute).UnixMilli()
+	if failed, all := count(`SELECT COUNT(*) FROM client_requests WHERE failed = 1 AND ts >= ?`, quarter), count(`SELECT COUNT(*) FROM client_requests WHERE ts >= ?`, quarter); failed*20 >= all && all >= 20 {
+		t.Errorf("last 15 min: %d of %d failed; the default demo would read degraded", failed, all)
+	}
+	journal, err := os.ReadDir(filepath.Join(dir, "auths", ".codex-refresh"))
+	if err != nil || len(journal) != 1 {
+		t.Fatalf("refresh journal: %v, %d claims; want one for the signed-out account", err, len(journal))
+	}
+}
+
+func signedOutAccount(t *testing.T) *demoAccount {
+	t.Helper()
+	for _, a := range demoAccounts() {
+		if a.signedOut > 0 {
+			return a
+		}
+	}
+	t.Fatal("no signed-out demo account")
+	return nil
+}
+
+// -degraded adds a quarter hour in which at least 5% of client requests
+// failed, still with every usage event an attempt of one client request.
+func TestSeedDegraded(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := seed(context.Background(), dir, 8399, testStart, true); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	db, err := store.Open(context.Background(), store.Config{}, filepath.Join(dir, "taproot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var requests, failed, attempts, events int64
+	if err := db.QueryRow(`SELECT COUNT(*), SUM(failed) FROM client_requests WHERE ts >= ?`, testStart.Add(-15*time.Minute).UnixMilli()).Scan(&requests, &failed); err != nil {
+		t.Fatal(err)
+	}
+	if requests < 20 || failed*20 < requests || failed*2 >= requests {
+		t.Errorf("last 15 min: %d of %d failed, want at least 5%% of at least 20 and under half", failed, requests)
+	}
+	if err := db.QueryRow(`SELECT (SELECT SUM(attempts) FROM client_requests), (SELECT COUNT(*) FROM usage_events)`).Scan(&attempts, &events); err != nil || attempts != events {
+		t.Errorf("attempts %d, usage events %d (%v)", attempts, events, err)
+	}
 }
 
 type seededAccount struct {
@@ -223,6 +280,9 @@ func demoAccountsFrom(t *testing.T, dir string) []seededAccount {
 	}
 	var out []seededAccount
 	for _, e := range entries {
+		if e.IsDir() {
+			continue // the Codex refresh journal
+		}
 		provider, _, _ := strings.Cut(e.Name(), "-")
 		windows := []string{"five_hour", "seven_day"}
 		if provider == "codex" {
@@ -277,7 +337,7 @@ func TestSeedRefusesNonEmptyDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := seed(context.Background(), dir, 8399, testStart); err == nil {
+	if _, err := seed(context.Background(), dir, 8399, testStart, false); err == nil {
 		t.Fatal("seed wrote into a non-empty directory")
 	}
 }

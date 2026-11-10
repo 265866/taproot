@@ -64,6 +64,42 @@ func TestClientRequestsAtScale(t *testing.T) {
 	median("recent failed, limit 5", "/api/requests/recent"+q("failed", "true"))
 	median("recent, limit 100", "/api/requests/recent"+q("limit", "100"))
 
+	// What one status evaluation reads: 30 days of quota observations for
+	// 8 accounts with 4 windows each, a row every 5 minutes, and the counts
+	// of the last 15 minutes and hour.
+	if err := store.WithImmediateTx(context.Background(), i.db.DB, func(c *sql.Conn) error {
+		for a := range 8 {
+			for _, w := range []string{"five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"} {
+				for at := from; at.Before(end); at = at.Add(5 * time.Minute) {
+					if _, err := c.ExecContext(context.Background(), `INSERT INTO quota_observations (auth_index, provider, window_name, utilization, resets_at, period_seconds, observed_at) VALUES (?, 'claude', ?, ?, ?, 604800, ?)`,
+						string(rune('a'+a)), w, rng.Float64(), ms(at.Add(time.Hour)), ms(at)); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	timed := func(name string, fn func() error) {
+		var runs []time.Duration
+		for range 5 {
+			s := time.Now()
+			if err := fn(); err != nil {
+				t.Fatal(err)
+			}
+			runs = append(runs, time.Since(s))
+		}
+		slices.Sort(runs)
+		t.Logf("%-34s median %8s  range %s to %s", name, runs[2].Round(10*time.Microsecond), runs[0].Round(10*time.Microsecond), runs[4].Round(10*time.Microsecond))
+	}
+	ctx := context.Background()
+	timed("status: counts, last 15 min", func() error { _, err := i.ClientRequestCounts(ctx, end.Add(-15*time.Minute), end); return err })
+	timed("status: counts, last hour", func() error { _, err := i.ClientRequestCounts(ctx, end.Add(-time.Hour), end); return err })
+	timed("status: latest quota", func() error { _, err := i.LatestQuota(ctx); return err })
+	timed("status: quota history, 9 h", func() error { _, err := i.QuotaHistory(ctx, end.Add(-9*time.Hour), end); return err })
+
 	// The same 30 days from raw rows, without the slot rollup.
 	var runs []time.Duration
 	for range 5 {

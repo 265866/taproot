@@ -177,28 +177,46 @@ type quotaSeriesJSON struct {
 	AccountWide   bool             `json:"accountWide"`
 }
 
-// handleQuotaSeries returns every stored observation in range per account
-// window, and the distinct reset times that fall inside the range.
-func (i *Ingest) handleQuotaSeries(c *gin.Context) {
-	from, to, ok := i.parseRange(c, defaultRange)
-	if !ok {
-		return
-	}
+// QuotaPoint is one stored observation of a window.
+type QuotaPoint struct {
+	T           time.Time
+	Utilization float64
+}
+
+// QuotaSeries is one account window's stored observations in a range,
+// oldest first, and the distinct reset times inside the range, ascending.
+type QuotaSeries struct {
+	AuthIndex     string
+	Provider      string
+	Window        string
+	PeriodSeconds int64
+	AccountWide   bool
+	Points        []QuotaPoint
+	Resets        []time.Time
+}
+
+// QuotaHistory returns every stored observation in [from, to) per account
+// window, for every account not removed, and the distinct reset times that
+// fall inside the range.
+func (i *Ingest) QuotaHistory(ctx context.Context, from, to time.Time) ([]QuotaSeries, error) {
+	return i.quotaHistory(ctx, from, to, "")
+}
+
+func (i *Ingest) quotaHistory(ctx context.Context, from, to time.Time, provider string) ([]QuotaSeries, error) {
 	where := "observed_at >= ? AND observed_at < ? AND auth_index NOT IN (SELECT auth_index FROM accounts WHERE removed_at IS NOT NULL)"
 	args := []any{ms(from), ms(to)}
-	if p := strings.ToLower(strings.TrimSpace(c.Query("provider"))); p != "" {
+	if provider != "" {
 		where += " AND provider = ?"
-		args = append(args, p)
+		args = append(args, provider)
 	}
-	rows, err := i.db.QueryContext(c.Request.Context(), `SELECT auth_index, provider, window_name, period_seconds, observed_at, utilization, resets_at
+	rows, err := i.db.QueryContext(ctx, `SELECT auth_index, provider, window_name, period_seconds, observed_at, utilization, resets_at
 		FROM quota_observations WHERE `+where+` ORDER BY auth_index, window_name, observed_at`, args...)
 	if err != nil {
-		internalError(c, err)
-		return
+		return nil, fmt.Errorf("quota history: %w", err)
 	}
 	defer closeRows(rows)
-	out := []quotaSeriesJSON{}
-	var cur *quotaSeriesJSON
+	var out []QuotaSeries
+	var cur *QuotaSeries
 	resetSeen := map[int64]bool{}
 	fromMs, toMs := ms(from), ms(to)
 	for rows.Next() {
@@ -209,29 +227,56 @@ func (i *Ingest) handleQuotaSeries(c *gin.Context) {
 			resetsAt                    *int64
 		)
 		if err := rows.Scan(&authIndex, &provider, &window, &period, &observed, &util, &resetsAt); err != nil {
-			internalError(c, err)
-			return
+			return nil, fmt.Errorf("quota history: %w", err)
 		}
 		if cur == nil || cur.AuthIndex != authIndex || cur.Window != window {
-			out = append(out, quotaSeriesJSON{AuthIndex: authIndex, Provider: provider, Window: window, Points: []quotaPointJSON{}, Resets: []string{}, AccountWide: accountWideWindow(window)})
+			out = append(out, QuotaSeries{AuthIndex: authIndex, Provider: provider, Window: window, AccountWide: accountWideWindow(window)})
 			cur = &out[len(out)-1]
 			resetSeen = map[int64]bool{}
 		}
 		if period > cur.PeriodSeconds {
 			cur.PeriodSeconds = period
 		}
-		cur.Points = append(cur.Points, quotaPointJSON{T: formatMs(observed), Utilization: util})
+		cur.Points = append(cur.Points, QuotaPoint{T: time.UnixMilli(observed).UTC(), Utilization: util})
 		if resetsAt != nil && *resetsAt >= fromMs && *resetsAt < toMs && !resetSeen[*resetsAt/60000] {
 			resetSeen[*resetsAt/60000] = true
-			cur.Resets = append(cur.Resets, formatMs(*resetsAt))
+			cur.Resets = append(cur.Resets, time.UnixMilli(*resetsAt).UTC())
 		}
 	}
 	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("quota history: %w", err)
+	}
+	for k := range out {
+		sort.Slice(out[k].Resets, func(x, y int) bool { return out[k].Resets[x].Before(out[k].Resets[y]) })
+	}
+	return out, nil
+}
+
+// handleQuotaSeries returns every stored observation in range per account
+// window, and the distinct reset times that fall inside the range.
+func (i *Ingest) handleQuotaSeries(c *gin.Context) {
+	from, to, ok := i.parseRange(c, defaultRange)
+	if !ok {
+		return
+	}
+	series, err := i.quotaHistory(c.Request.Context(), from, to, strings.ToLower(strings.TrimSpace(c.Query("provider"))))
+	if err != nil {
 		internalError(c, err)
 		return
 	}
-	for k := range out {
-		sort.Strings(out[k].Resets)
+	out := make([]quotaSeriesJSON, 0, len(series))
+	for _, s := range series {
+		j := quotaSeriesJSON{
+			AuthIndex: s.AuthIndex, Provider: s.Provider, Window: s.Window, PeriodSeconds: s.PeriodSeconds,
+			Points: make([]quotaPointJSON, len(s.Points)), Resets: make([]string, len(s.Resets)), AccountWide: s.AccountWide,
+		}
+		for k, p := range s.Points {
+			j.Points[k] = quotaPointJSON{T: formatTime(p.T), Utilization: p.Utilization}
+		}
+		for k, r := range s.Resets {
+			j.Resets[k] = formatTime(r)
+		}
+		out = append(out, j)
 	}
 	c.JSON(http.StatusOK, gin.H{"series": out})
 }

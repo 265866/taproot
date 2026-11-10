@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -106,5 +107,57 @@ func TestScheduleRunsOnceWhenTheClockStepsBack(t *testing.T) {
 	}
 	if clock.longest > maxScheduleWait {
 		t.Fatalf("the loop waited %s at once; a suspended host would run the backup that late", clock.longest)
+	}
+}
+
+// runSchedule runs the schedule loop from 23:00 past the 00:00 run and
+// returns the run it recorded.
+func runSchedule(t *testing.T, f *fixture) (Run, bool) {
+	t.Helper()
+	clock := newFakeClock(time.Date(2026, 11, 2, 23, 0, 0, 0, time.UTC))
+	clock.until = time.Date(2026, 11, 3, 0, 30, 0, 0, time.UTC)
+	clock.attach(f.b)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.b.Start(ctx)
+	scheduledAfter(t, f, clock)
+	run, ok, err := f.b.LastScheduledRun(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run, ok
+}
+
+func TestScheduleRecordsASuccessfulRun(t *testing.T) {
+	f := newFixture(t, Config{DailyAt: "00:00", Keep: 10})
+	if _, ok, err := f.b.LastScheduledRun(context.Background()); ok || err != nil {
+		t.Fatalf("before any run: ok %t, err %v; want no run", ok, err)
+	}
+	run, ok := runSchedule(t, f)
+	if !ok || run.Error != "" || run.At.Before(time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("recorded run = %+v (ok %t), want a success at or after 00:00", run, ok)
+	}
+}
+
+// A scheduled run that fails is recorded with its error, so the Dashboard
+// can say so after a restart.
+func TestScheduleRecordsAFailedRun(t *testing.T) {
+	f := newFixture(t, Config{DailyAt: "00:00", Keep: 10})
+	// config.yaml as a directory makes the backup fail to read it.
+	if err := os.Remove(f.paths.ConfigFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(f.paths.ConfigFile, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	run, ok := runSchedule(t, f)
+	if !ok || run.Error == "" {
+		t.Fatalf("recorded run = %+v (ok %t), want a failure with its error", run, ok)
+	}
+	if err := f.b.RecordScheduledRun(context.Background(), run.At.Add(time.Hour), nil); err != nil {
+		t.Fatal(err)
+	}
+	if next, _, _ := f.b.LastScheduledRun(context.Background()); next.Error != "" || !next.At.Equal(run.At.Add(time.Hour)) {
+		t.Fatalf("after a later success the record is %+v, want it replaced", next)
 	}
 }

@@ -1,8 +1,10 @@
 package alerts
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/ingest"
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -257,5 +260,91 @@ func TestAlertDroppedFromAFullQueueWaitsForItsRetry(t *testing.T) {
 	h.step(t, retryFirst)
 	if got := h.posts(t); got[len(got)-1] != limitTitle+" @s3cr" {
 		t.Fatalf("last post = %q, want the alert after its retry delay", got[len(got)-1])
+	}
+}
+
+// DeliveryHealth counts failed deliveries until one succeeds, for the
+// Dashboard's "alerts are not reaching Discord" item.
+func TestDeliveryHealthTracksFailuresUntilASuccess(t *testing.T) {
+	fake := &fakeDiscord{statuses: unavailable(maxAttempts)}
+	a, b := claudeAuth("a", "main"), claudeAuth("b", "spare")
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	if got := h.svc.DeliveryHealth(); got.Failures != 0 || !got.Active {
+		t.Fatalf("before any delivery: %+v, want active with no failures", got)
+	}
+	h.feed.hook(weeklyLimit(a.EnsureIndex(), t0.Add(48*time.Hour)))
+	h.step(t, 0)
+	h.posts(t)
+	got := h.svc.DeliveryHealth()
+	if got.Failures != 1 || got.FailingSince.IsZero() || !strings.Contains(got.LastError, "503") || strings.Contains(got.LastError, "s3cr") {
+		t.Fatalf("after a failed delivery: %+v, want one failure with Discord's status and no webhook token", got)
+	}
+	h.step(t, evalInterval)
+	h.step(t, retryFirst)
+	h.posts(t)
+	if got := h.svc.DeliveryHealth(); got.Failures != 0 || got.LastSuccess.IsZero() || got.LastError != "" {
+		t.Fatalf("after a delivered retry: %+v, want the failures cleared", got)
+	}
+}
+
+// An alert whose delivery failed and whose condition then cleared queues
+// nothing more, so the Dashboard's item must clear another way: a successful
+// test send, or a new webhook. Turning alerts off and on tests nothing, so
+// the failures stay, and an undone settings save puts them back.
+func TestDeliveryHealthClearsOnATestSendOrANewWebhook(t *testing.T) {
+	fail := func(h *harness) {
+		h.svc.recordDelivery(errors.New("discord answered 503"))
+		if got := h.svc.DeliveryHealth(); got.Failures != 1 {
+			t.Fatalf("after a failed delivery: %+v", got)
+		}
+	}
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake)
+	r := gin.New()
+	h.svc.Routes(r.Group("/taproot/api/v1"))
+
+	fail(h)
+	fake.mu.Lock()
+	fake.statuses = append(fake.statuses, status(http.StatusNotFound, `{"message":"Unknown Webhook"}`))
+	fake.mu.Unlock()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if got := h.svc.DeliveryHealth(); w.Code != http.StatusBadGateway || got.Failures != 1 {
+		t.Fatalf("a failed test send = %d, health %+v; want it not counted", w.Code, got)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/taproot/api/v1/alerts/test", nil))
+	if got := h.svc.DeliveryHealth(); w.Code != http.StatusOK || got.Failures != 0 || got.LastSuccess.IsZero() {
+		t.Fatalf("a successful test send = %d, health %+v; want the failures cleared", w.Code, got)
+	}
+
+	fail(h)
+	off := false
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.svc.DeliveryHealth(); got.Failures != 1 || !got.Active {
+		t.Fatalf("after turning alerts off and on: %+v, want the failure kept", got)
+	}
+
+	restore := h.svc.SnapshotConfig()
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook + "2"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.svc.DeliveryHealth(); got.Failures != 0 {
+		t.Fatalf("after a new webhook: %+v, want a fresh count", got)
+	}
+	restore()
+	if got := h.svc.DeliveryHealth(); got.Failures != 1 || h.svc.webhook() != testWebhook {
+		t.Fatalf("after undoing the save: %+v, want the old webhook and its failure back", got)
+	}
+	h.svc.deliveryMu.Lock()
+	rearm := h.svc.rearm
+	h.svc.deliveryMu.Unlock()
+	if rearm {
+		t.Fatal("after undoing the save: the open alerts would be re-sent to the old webhook")
 	}
 }

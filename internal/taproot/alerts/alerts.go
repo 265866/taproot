@@ -97,6 +97,9 @@ type Service struct {
 	deliveries []delivery
 	rearm      bool
 
+	healthMu sync.Mutex
+	health   DeliveryHealth
+
 	// startedAt and restoredLogins belong to the evaluation goroutine;
 	// loadState sets them before that goroutine starts.
 	startedAt time.Time
@@ -187,6 +190,11 @@ func (s *Service) SetConfig(cfg Config) error {
 		s.webhookInvalid = false
 	}
 	s.cfgMu.Unlock()
+	if !unchanged {
+		s.healthMu.Lock()
+		s.health = DeliveryHealth{}
+		s.healthMu.Unlock()
+	}
 	if newWebhook {
 		s.deliveryMu.Lock()
 		s.rearm = true
@@ -201,16 +209,31 @@ func (s *Service) SetConfig(cfg Config) error {
 }
 
 // SnapshotConfig returns a function that puts back the current webhook,
-// switch, and invalid mark exactly, without validating them, to undo a
-// SetConfig.
+// switch, invalid mark, delivery health, and pending re-arm exactly, without
+// validating them, to undo a SetConfig.
 func (s *Service) SnapshotConfig() (restore func()) {
 	s.cfgMu.RLock()
 	cfg, invalid := s.cfg, s.webhookInvalid
 	s.cfgMu.RUnlock()
+	s.healthMu.Lock()
+	health := s.health
+	s.healthMu.Unlock()
+	s.deliveryMu.Lock()
+	rearm := s.rearm
+	s.deliveryMu.Unlock()
 	return func() {
 		s.cfgMu.Lock()
 		s.cfg, s.webhookInvalid = cfg, invalid
 		s.cfgMu.Unlock()
+		s.healthMu.Lock()
+		s.health = health
+		s.healthMu.Unlock()
+		// An undone webhook change must not re-send the open alerts to the
+		// webhook that already has them, if the evaluation has not yet
+		// taken the change.
+		s.deliveryMu.Lock()
+		s.rearm = rearm
+		s.deliveryMu.Unlock()
 		s.signal()
 	}
 }
@@ -292,8 +315,54 @@ func (s *Service) observe(obs []ingest.QuotaObservation) {
 	s.signal()
 }
 
+// DeliveryHealth is how the latest deliveries to Discord went.
+type DeliveryHealth struct {
+	// Active is false while alerts are off, when nothing is delivered.
+	Active bool
+	// Failures counts the failed deliveries since the last success.
+	Failures int
+	// FailingSince is the first of those failures.
+	FailingSince time.Time
+	// LastError is the last failure, without the webhook URL.
+	LastError   string
+	LastSuccess time.Time
+}
+
+// DeliveryHealth reports the queue's recent delivery outcomes. A successful
+// test send counts as a delivery and a failed one does not; messages the
+// queue skipped do not count. A new webhook starts the count again; turning
+// alerts off and on keeps it, because nothing has tested the webhook since.
+func (s *Service) DeliveryHealth() DeliveryHealth {
+	s.healthMu.Lock()
+	h := s.health
+	s.healthMu.Unlock()
+	h.Active = s.Active()
+	return h
+}
+
+func (s *Service) recordDelivery(err error) {
+	if errors.Is(err, errNotSent) {
+		return
+	}
+	// This runs on the sender goroutine, so it reads the wall clock: s.now
+	// belongs to the evaluation.
+	now := time.Now()
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	if err == nil {
+		s.health = DeliveryHealth{LastSuccess: now}
+		return
+	}
+	if s.health.Failures == 0 {
+		s.health.FailingSince = now
+	}
+	s.health.Failures++
+	s.health.LastError = err.Error()
+}
+
 // delivered is the sender's result hook; it runs on the sender goroutine.
 func (s *Service) delivered(m Message, err error) {
+	s.recordDelivery(err)
 	if !m.tracked {
 		return
 	}
@@ -654,6 +723,7 @@ func (s *Service) handleTest(c *gin.Context) {
 	defer cancel()
 	err := s.sender.SendOnce(ctx, hook, msg)
 	if err == nil {
+		s.recordDelivery(nil)
 		c.JSON(http.StatusOK, gin.H{"sent": true})
 		return
 	}

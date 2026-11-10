@@ -26,6 +26,7 @@ import (
 	"github.com/265866/taproot/internal/taproot/reqlog"
 	"github.com/265866/taproot/internal/taproot/routing"
 	"github.com/265866/taproot/internal/taproot/settings"
+	"github.com/265866/taproot/internal/taproot/status"
 	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/265866/taproot/internal/taproot/web"
 	"github.com/265866/taproot/internal/util"
@@ -304,6 +305,10 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 		log.Warnf("taproot access: setup code %s. No device has Admin: open %s from the device that should become the first admin, and enter this code. It works once. While no device has Admin, taproot makes a new one each time it starts, and after the last device with Admin is removed.",
 			access.FormatClaimCode(code), dashboardURL(cfg, guard.ServerDNSName(ctx)))
 	}
+	state, err := status.New(status.Deps{Usage: usage, Requests: guard, Backups: backups, Alerts: notify})
+	if err != nil {
+		return nil, nil, fmt.Errorf("taproot status: %w", err)
+	}
 	if err := guard.StartClaim(ctx, announce); err != nil {
 		return nil, nil, fmt.Errorf("taproot access: %w", err)
 	}
@@ -315,8 +320,10 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 	backups.Start(ctx)
 	notify.Start(ctx)
 	editable.Start(ctx)
+	state.Start(ctx)
 	guard.MonitorTailscaled(ctx, func(n access.TailscaledNotice) {
 		notify.Tailscaled(alerts.TailscaledOutage{Socket: n.Socket, Down: n.Down, Since: n.Since, At: n.At, Err: n.Err, StaleSocket: n.StaleSocket})
+		state.Tailscaled(n)
 	})
 
 	opts := []api.ServerOption{
@@ -333,6 +340,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 				})
 				usage.AttachAuthManager(h.AuthManager)
 				notify.AttachAuthManager(h.AuthManager)
+				state.AttachAuthManager(h.AuthManager)
 				plugins.attach(h)
 				accounts.attach(h.AuthManager)
 			}
@@ -343,6 +351,7 @@ func setup(ctx context.Context, cfg *config.Config, upstreamConfigPath string) (
 			backups.Routes(group)
 			editable.Routes(group)
 			notify.Routes(group)
+			state.Routes(group)
 		}),
 	}
 	if factory := logs.LoggerFactory(); factory != nil {
