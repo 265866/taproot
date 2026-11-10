@@ -210,3 +210,47 @@ func TestAlertsConnectedMessageDoesNotHoldTheRequest(t *testing.T) {
 		t.Fatal("no connected message reached the fake Discord")
 	}
 }
+
+const badHook = "https://discord.com/api/webhoks/1/" + hookToken
+
+// A failed update puts back the alerts state exactly, even when taproot.yaml
+// held a webhook that would not pass validation again.
+func TestFailedUpdateRestoresAnInvalidWebhook(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML + "alerts:\n  discord-webhook: " + badHook + "\n"})
+	svc := withAlertsConfig(t, f, alerts.Config{DiscordWebhook: badHook})
+	before := f.file(t)
+
+	code, _, body := f.do(t, http.MethodPut, `{"alerts": {"discordWebhook": "`+hookURL+`"}, "ingest": {"pollInterval": "soon"}}`)
+	if code != http.StatusBadRequest || errorCode(t, body) != "invalid_poll_interval" {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	if svc.Config().DiscordWebhook != badHook || svc.Active() || !svc.WebhookInvalid() {
+		t.Fatalf("after the failed update: webhook changed = %v, active = %v, invalid = %v", svc.Config().DiscordWebhook != badHook, svc.Active(), svc.WebhookInvalid())
+	}
+	if f.file(t) != before {
+		t.Fatalf("taproot.yaml changed:\n%s", f.file(t))
+	}
+}
+
+// The switch saves while taproot.yaml holds an invalid webhook, and the
+// webhook stays marked invalid.
+func TestAlertsSwitchSavesWithAnInvalidWebhook(t *testing.T) {
+	f := newFixture(t, options{yaml: commentedYAML + "alerts:\n  discord-webhook: " + badHook + "\n"})
+	svc := withAlertsConfig(t, f, alerts.Config{DiscordWebhook: badHook})
+
+	code, v, body := f.do(t, http.MethodPut, `{"alerts": {"enabled": false}}`)
+	if code != http.StatusOK || v.Alerts.Enabled || !v.Alerts.WebhookInvalid || v.Alerts.Active {
+		t.Fatalf("PUT = %d %s", code, body)
+	}
+	if !strings.Contains(f.file(t), "enabled: false") || !strings.Contains(f.file(t), "webhoks") {
+		t.Fatalf("taproot.yaml = %s", f.file(t))
+	}
+	if svc.Active() || !svc.WebhookInvalid() {
+		t.Fatal("the invalid webhook became usable")
+	}
+	// Sending the invalid webhook itself is still refused.
+	code, _, body = f.do(t, http.MethodPut, `{"alerts": {"discordWebhook": "`+badHook+`", "enabled": true}}`)
+	if code != http.StatusBadRequest || errorCode(t, body) != "invalid_alerts" {
+		t.Fatalf("PUT with the invalid webhook = %d %s", code, body)
+	}
+}

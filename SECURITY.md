@@ -15,7 +15,7 @@ The server has two surfaces:
 | --- | --- | --- |
 | Loopback inside the container | yes | yes |
 | A device with `proxy: true` in `access.devices` | yes | no |
-| A device with `admin: true` in `access.devices` | no | yes |
+| A device with `admin: true` in `access.devices` | only `GET /v1/models`, the model list the dashboard shows | yes |
 | The server's own Tailscale node | yes | no |
 | An address in `access.addresses` | yes | no |
 | Any other device, including a new one, and anyone else, including whois failures | no | no |

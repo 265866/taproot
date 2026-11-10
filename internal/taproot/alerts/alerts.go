@@ -168,17 +168,24 @@ func (s *Service) Config() Config {
 	return s.cfg
 }
 
-// SetConfig replaces the webhook and switch after validating the webhook.
+// SetConfig replaces the webhook and switch after validating the webhook. An
+// unchanged webhook keeps its state, so the switch can change while
+// taproot.yaml holds an invalid webhook.
 func (s *Service) SetConfig(cfg Config) error {
 	cfg.DiscordWebhook = strings.TrimSpace(cfg.DiscordWebhook)
-	if cfg.DiscordWebhook != "" {
+	s.cfgMu.Lock()
+	unchanged := cfg.DiscordWebhook == s.cfg.DiscordWebhook
+	if cfg.DiscordWebhook != "" && !unchanged {
 		if err := ValidateWebhook(cfg.DiscordWebhook); err != nil {
+			s.cfgMu.Unlock()
 			return err
 		}
 	}
-	s.cfgMu.Lock()
-	newWebhook := cfg.DiscordWebhook != "" && cfg.DiscordWebhook != s.cfg.DiscordWebhook
-	s.cfg, s.webhookInvalid = cfg, false
+	newWebhook := cfg.DiscordWebhook != "" && !unchanged
+	s.cfg = cfg
+	if !unchanged {
+		s.webhookInvalid = false
+	}
 	s.cfgMu.Unlock()
 	if newWebhook {
 		s.deliveryMu.Lock()
@@ -191,6 +198,21 @@ func (s *Service) SetConfig(cfg Config) error {
 		s.signal()
 	}
 	return nil
+}
+
+// SnapshotConfig returns a function that puts back the current webhook,
+// switch, and invalid mark exactly, without validating them, to undo a
+// SetConfig.
+func (s *Service) SnapshotConfig() (restore func()) {
+	s.cfgMu.RLock()
+	cfg, invalid := s.cfg, s.webhookInvalid
+	s.cfgMu.RUnlock()
+	return func() {
+		s.cfgMu.Lock()
+		s.cfg, s.webhookInvalid = cfg, invalid
+		s.cfgMu.Unlock()
+		s.signal()
+	}
 }
 
 // Active reports whether alerts are sent: a valid webhook is set and the

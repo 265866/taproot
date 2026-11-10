@@ -116,7 +116,7 @@ jobs:
           rustup toolchain install "$rust_version" --profile minimal && rustup default "$rust_version"
       - run: bun install --frozen-lockfile
         working-directory: web
-      - run: bun test scripts/taproot/
+      - run: bun test scripts/taproot/ internal/taproot/demo/
       - run: bun scripts/taproot/third-party-notices.ts
       - run: git diff --exit-code THIRD_PARTY_NOTICES.md
 

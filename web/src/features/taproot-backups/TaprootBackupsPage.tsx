@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { IconDownload, IconPlus } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { formatBytes } from '@/features/taproot-logs/model/format';
 import { ROUTES } from '@/router/routes';
 import {
@@ -53,14 +53,17 @@ export function TaprootBackupsPage() {
 
   const load = useCallback(async () => {
     const settingsLoaded = loadSettings();
+    let outcome = REFRESH_OK;
     try {
       const res = await taprootApi.backups();
       setBackups(res.backups);
       setError('');
     } catch (err: unknown) {
       setError(getErrorMessage(err));
+      outcome = refreshFailed(err);
     }
     await settingsLoaded;
+    return outcome;
   }, [loadSettings]);
 
   useEffect(() => {

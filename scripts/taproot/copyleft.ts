@@ -14,10 +14,35 @@ const RANK: Copyleft[] = ['none', 'lgpl', 'other'];
 const COPYLEFT =
   /GPL|^(MPL|EPL|CDDL|EUPL|OSL|CC-BY-SA|SSPL|CPL|CPAL|MS-RL|CECILL|APSL|RPL|RPSL|QPL|ODbL|LiLiQ-R|Sleepycat)(-|$)/i;
 
+// SPDX license ids that ask for no more than passing on the notice. An id on
+// neither list, such as license-checker's UNKNOWN or a guessed "MIT*", npm's
+// UNLICENSED, or a source-available license, may not allow redistribution.
+const PERMISSIVE = new Set(
+  [
+    '0BSD',
+    'Apache-2.0',
+    'BlueOak-1.0.0',
+    'BSD-2-Clause',
+    'BSD-3-Clause',
+    'BSL-1.0',
+    'CC-BY-3.0',
+    'CC-BY-4.0',
+    'CC0-1.0',
+    'ISC',
+    'MIT',
+    'MIT-0',
+    'Python-2.0',
+    'Unicode-3.0',
+    'Unicode-DFS-2016',
+    'Unlicense',
+    'Zlib',
+  ].map((id) => id.toUpperCase())
+);
+
 // copyleft evaluates an SPDX license expression, taking the cheapest
 // alternative of each OR and the strictest part of each AND. It throws on an
-// expression it cannot parse, so that a new kind of license gets a person's
-// look instead of a guess.
+// expression it cannot parse or a license id it does not know, so that a new
+// kind of license gets a person's look instead of a guess.
 export function copyleft(expression: string): Copyleft {
   const tokens = expression.match(/\(|\)|[^\s()]+/g) ?? [];
   let pos = 0;
@@ -44,6 +69,11 @@ export function copyleft(expression: string): Copyleft {
     }
     return worst;
   };
+  const license = (id: string): Copyleft => {
+    if (COPYLEFT.test(id)) return 'other';
+    if (PERMISSIVE.has(id.toUpperCase())) return 'none';
+    throw new Error(`unknown license ${id} in ${expression}`);
+  };
   const factor = (): Copyleft => {
     const token = tokens[pos++];
     if (token === undefined || token === ')' || /^(AND|OR|WITH)$/i.test(token)) return fail();
@@ -56,10 +86,10 @@ export function copyleft(expression: string): Copyleft {
       // An exception adds permissions but is not one the notices know.
       if (tokens[pos + 1] === undefined) fail();
       pos += 2;
-      return COPYLEFT.test(token) ? 'other' : 'none';
+      return license(token);
     }
     if (/^LGPL-3\.0(-only|-or-later|\+)?$/i.test(token)) return 'lgpl';
-    return COPYLEFT.test(token) ? 'other' : 'none';
+    return license(token);
   };
   const result = expr();
   if (pos !== tokens.length) fail();

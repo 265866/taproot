@@ -15,7 +15,7 @@ import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconCopy, IconPencil, IconPlus, IconSearch } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_CANCELLED, REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import {
   TaprootApiError,
@@ -83,7 +83,7 @@ export function TaprootAccessPage() {
     const seq = ++loadSeq.current;
     try {
       const [devices, who] = await Promise.all([taprootApi.accessDevices(), taprootApi.me()]);
-      if (seq !== loadSeq.current) return;
+      if (seq !== loadSeq.current) return REFRESH_CANCELLED;
       const before = dataRef.current;
       dataRef.current = devices;
       setData(devices);
@@ -94,8 +94,11 @@ export function TaprootAccessPage() {
       );
       setLoadError('');
       if (!keepDraft) setSaveError('');
+      return REFRESH_OK;
     } catch (err: unknown) {
-      if (seq === loadSeq.current) setLoadError(getErrorMessage(err));
+      if (seq !== loadSeq.current) return REFRESH_CANCELLED;
+      setLoadError(getErrorMessage(err));
+      return refreshFailed(err);
     }
   }, []);
   useEffect(() => {
@@ -153,7 +156,7 @@ export function TaprootAccessPage() {
     const outcome = await runAllow({
       save: () => taprootApi.putSettings({ access: result.update }).then(() => undefined),
       close: () => taprootApi.allowRequest(request.nodeId).then(() => undefined),
-      reload: () => load(true),
+      reload: () => load(true).then(() => undefined),
     });
     switch (outcome.kind) {
       case 'save_failed':

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { NextBackup } from '@/features/taproot-backups/NextBackup';
 import { serverZoneLabel, type ServerZone } from '@/features/taproot-backups/model/schedule';
 import {
@@ -64,8 +64,10 @@ export function TaprootSettingsPage() {
       setDiskBytes(stats?.bytesOnDisk ?? null);
       setConfigRead(read);
       setError('');
+      return REFRESH_OK;
     } catch (err: unknown) {
       setError(getErrorMessage(err));
+      return refreshFailed(err);
     }
   }, [fetchConfig]);
   useEffect(() => {

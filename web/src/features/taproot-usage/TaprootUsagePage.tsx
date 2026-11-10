@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useTranslation } from 'react-i18next';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_STARTED, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useShowEmails } from '@/stores';
 import { taprootApi, type UsageGroupBy } from '@/services/api/taproot';
 import { useTaprootQuery } from './hooks/useTaprootQuery';
@@ -70,9 +70,10 @@ export function TaprootUsagePage() {
   const spanMs = window.toMs - window.fromMs;
   const rangeQuery = `${toIso(window.fromMs)}|${toIso(window.toMs)}|${bucket}|${refreshKey}`;
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     setAnchorMs(Date.now());
     setRefreshKey((k) => k + 1);
+    return REFRESH_STARTED;
   }, []);
   useHeaderRefresh(refresh);
 

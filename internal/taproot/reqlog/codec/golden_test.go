@@ -4,6 +4,7 @@ package codec
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,7 +30,7 @@ func TestGoldenStoredBytesStillDecode(t *testing.T) {
 			}
 			golden := filepath.Join("testdata", tc.name+".stored")
 			if os.Getenv("TAPROOT_CODEC_GOLDEN") == "update" {
-				kind, stored := Pack(original)
+				kind, stored := packed(original)
 				if kind != tc.kind {
 					t.Fatalf("Pack chose kind %d, want %d", kind, tc.kind)
 				}
@@ -41,7 +42,7 @@ func TestGoldenStoredBytesStillDecode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := Unpack(tc.kind, stored, len(original))
+			got, err := Unpack(context.Background(), tc.kind, stored, len(original))
 			if err != nil {
 				t.Fatalf("stored bytes no longer decode: %v", err)
 			}

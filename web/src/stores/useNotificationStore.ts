@@ -33,7 +33,7 @@ interface NotificationState {
   setConfirmationLoading: (loading: boolean) => void;
 }
 
-export const useNotificationStore = create<NotificationState>((set) => ({
+export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   confirmation: {
     isOpen: false,
@@ -65,6 +65,9 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   },
 
   showConfirmation: (options) => {
+    // A dialog replaced before it was answered was declined; its caller may be waiting on it.
+    const replaced = get().confirmation;
+    if (replaced.isOpen && replaced.options !== options) replaced.options?.onCancel?.();
     set({
       confirmation: {
         isOpen: true,

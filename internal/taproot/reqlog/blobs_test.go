@@ -3,6 +3,7 @@ package reqlog
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -698,5 +699,61 @@ func TestPackOfSmallLiveBlobsIsNotRewritten(t *testing.T) {
 	}
 	if before != after {
 		t.Fatalf("fully live pack %d was rewritten as %d", before, after)
+	}
+}
+
+// TestUnfinishedEncodeIsStoredRaw simulates a process that died while a
+// native codec encoded a blob: the mark encode leaves before calling the codec
+// is still there. The next pack rewrite must store that blob unencoded instead
+// of running the codec on it again. Once it commits, no mark is left: not the
+// crashed blob's, not those of blobs it encoded, and not one for a blob that
+// no longer exists.
+func TestUnfinishedEncodeIsStoredRaw(t *testing.T) {
+	h := newHarness(t, Config{})
+	crashed, fine := make([]byte, 8192), make([]byte, 8192)
+	crashed[0], fine[0] = 1, 2
+	logSimple(t, h.logs.logger, "enc", "/v1/messages", "s", 200, h.clock.now(), imageTurn([][]byte{crashed, fine}))
+	h.flush()
+	crashedHash := sha256.Sum256(crashed)
+	goneHash := sha256.Sum256([]byte("deleted blob"))
+	for _, mark := range [][]byte{crashedHash[:], goneHash[:]} {
+		if _, err := h.db.Exec(`INSERT INTO reqlog_pack_attempts (hash) VALUES (?)`, mark); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.logs.engine.do(context.Background(), func() {
+		h.logs.engine.blobs.ingestOpened = time.Time{}
+		h.logs.engine.rollBlobs()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.logs.engine.blobs.packFull(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[byte]codec.Kind{}
+	for _, b := range [][]byte{crashed, fine} {
+		hash := sha256.Sum256(b)
+		var kind int
+		if err := h.db.QueryRow(`SELECT codec FROM reqlog_blobs WHERE hash = ?`, hash[:]).Scan(&kind); err != nil {
+			t.Fatal(err)
+		}
+		kinds[b[0]] = codec.Kind(kind)
+	}
+	if kinds[1] != codec.Raw || kinds[2] != codec.Zstd {
+		t.Fatalf("marked blob packed as kind %d and unmarked as %d, want raw and zstd", kinds[1], kinds[2])
+	}
+	var marks int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM reqlog_pack_attempts`).Scan(&marks); err != nil {
+		t.Fatal(err)
+	}
+	if marks != 0 {
+		t.Fatalf("%d encode marks left after the pack committed", marks)
+	}
+	d, err := h.logs.Get(context.Background(), "enc", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Request.Body != string(imageTurn([][]byte{crashed, fine})) {
+		t.Fatal("record did not rebuild exactly after packing")
 	}
 }

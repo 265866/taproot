@@ -6,7 +6,7 @@ import {
   PageTransitionLayerContext,
   type LayerStatus,
 } from './PageTransitionLayer';
-import { resolvePageScrollContainer } from './pageScrollContainer';
+import { enterScrollOffset, resolvePageScrollContainer } from './pageScrollContainer';
 import './PageTransition.scss';
 
 interface PageTransitionProps {
@@ -126,7 +126,7 @@ export function PageTransition({
     exitScrollOffsetRef.current = exitScrollOffset;
     scrollPositionsRef.current.set(currentLayerKey, exitScrollOffset);
 
-    enterScrollOffsetRef.current = scrollPositionsRef.current.get(location.key) ?? 0;
+    enterScrollOffsetRef.current = enterScrollOffset(scrollPositionsRef.current, location.key);
     const resolveOrderIndex = (pathname?: string) => {
       if (!getRouteOrder || !pathname) return null;
       const index = getRouteOrder(pathname);

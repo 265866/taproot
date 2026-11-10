@@ -33,9 +33,11 @@ Removed for good: Quick Start, AI Providers and API-key provider editing, sponso
 
 - Treat the backend as the source of truth. Read the Go code before changing endpoint names, payloads, provider keys, OAuth callback parameters, auth-file semantics, or plugin and config contracts.
 - Use `apiClient` from `src/services/api/client.ts` for Management API requests, through domain modules. It centralizes the API prefix, error normalization, and response headers. Use `taprootApi` for taproot endpoints. Components make no ad hoc requests.
-- Keep the client's events: `unauthorized` marks the connection as access denied, `server-version-update` carries version and build metadata, and `server-plugin-support-update` carries plugin capability. Plugin routes and nav items stay gated by backend support.
+- Keep the clients' events: `unauthorized` (a 401 from either client) marks the connection as access denied, `taproot-admin-revoked` (a 403 `not_admin`) reconnects so the gate can ask for access, `server-version-update` carries version and build metadata, and `server-plugin-support-update` carries plugin capability. Plugin routes and nav items stay gated by backend support.
 - Normalize backend fields on read and serialize them on write in the API layer (`transformers.ts` and the domain modules), not in UI components.
-- `useConfigStore.fetchConfig(forceRefresh?)` caches the full config with a TTL and deduplicates requests in flight. Reuse it, and update or invalidate the cache after a mutation with the store's actions.
+- `useConfigStore.fetchConfig(forceRefresh?)` caches the full config with a TTL and deduplicates requests in flight. Reuse it, and update or invalidate the cache after a mutation with the store's actions. `invalidate()` forces the next read but keeps the last good config on screen; `clearCache()` with no section also drops it, for a new connection.
+- A page joins the header's Refresh All with `useHeaderRefresh(handler)`. The handler resolves to an outcome (`REFRESH_OK`, `refreshFailed(error)`, `REFRESH_CANCELLED` when the user keeps a draft, or `REFRESH_STARTED` when the page shows its own results) rather than swallowing a failure, so the header reports what happened. Only the current page layer's handler runs.
+- `useUnsavedChangesGuard` asks before in-app navigation, an edited hash, a reload, or a tab close loses a draft. The edited-hash half listens ahead of the router (`installEditedHashGuard` in `App.tsx`).
 - Keep stale-request guards (`apiClient.getConnectionRevision()`) around read-modify-write sequences.
 
 ## Layout

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { pluginsApi } from '@/services/api';
 import { useAuthStore } from '@/stores';
 import { getErrorMessage, isRecord } from '@/utils/helpers';
@@ -48,8 +48,9 @@ export function PluginResourcePage() {
   const loadResource = useCallback(async () => {
     if (!connected) {
       setLoading(false);
-      setError(t('notification.connection_required'));
-      return;
+      const message = t('notification.connection_required');
+      setError(message);
+      return refreshFailed(message);
     }
 
     setLoading(true);
@@ -57,12 +58,13 @@ export function PluginResourcePage() {
     try {
       const plugins = await pluginsApi.list();
       setData(plugins);
+      return REFRESH_OK;
     } catch (err: unknown) {
-      setError(
-        hasStatus(err, 404)
-          ? t('plugin_management.unsupported_backend')
-          : getErrorMessage(err, t('plugin_resource.load_failed'))
-      );
+      const message = hasStatus(err, 404)
+        ? t('plugin_management.unsupported_backend')
+        : getErrorMessage(err, t('plugin_resource.load_failed'));
+      setError(message);
+      return refreshFailed(message);
     } finally {
       setLoading(false);
     }

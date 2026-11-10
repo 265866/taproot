@@ -86,11 +86,12 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
     retryDelayRef.current = 8000;
   };
 
-  async function loadLogs(incremental = false) {
+  /** Resolves to the error it showed, or '' (also when another read owns the stream). */
+  async function loadLogs(incremental = false): Promise<string> {
     // Queued reloads must read live context, not the render that started the old request.
     if (useAuthStore.getState().connectionStatus !== 'connected') {
       setLoading(false);
-      return;
+      return '';
     }
 
     if (!useConfigStore.getState().config?.loggingToFile) {
@@ -100,11 +101,11 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
         setError('');
         setLoading(false);
       }
-      return;
+      return '';
     }
 
     const request = requests.logs.startRead(incremental);
-    if (request === null) return;
+    if (request === null) return '';
 
     if (logBufferRef.current.buffer.length === 0) setLoading(true);
 
@@ -113,7 +114,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
       for (let page = 0; page < 3; page++) {
         const cursor = logBufferRef.current.cursor;
         const data = await logsApi.fetchLogs(buildLogsQuery(cursor));
-        if (!requests.logs.isCurrent(request)) return;
+        if (!requests.logs.isCurrent(request)) return '';
         const stickToBottom = isFollowing();
         const next = applyLogPage(logBufferRef.current, data, cursor);
         const added = next.nextId - logBufferRef.current.nextId;
@@ -135,17 +136,20 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
         nextReadAtRef.current = Date.now() + (more ? 1000 : 8000);
         if (!more || (incremental && !autoRefreshRef.current)) break;
       }
+      return '';
     } catch (err: unknown) {
-      if (!requests.logs.isCurrent(request)) return;
+      if (!requests.logs.isCurrent(request)) return '';
       setCatchingUp(false);
       if (isLoggingToFileDisabledError(err)) {
         setFileLoggingRequired(true);
         setError('');
-        return;
+        return '';
       }
-      setError(getErrorMessage(err) || t('taproot_logs.app.load_error'));
+      const message = getErrorMessage(err) || t('taproot_logs.app.load_error');
+      setError(message);
       nextReadAtRef.current = Date.now() + retryDelayRef.current;
       retryDelayRef.current = Math.min(retryDelayRef.current * 2, 60000);
+      return message;
     } finally {
       if (requests.logs.isCurrent(request)) {
         setLoading(false);

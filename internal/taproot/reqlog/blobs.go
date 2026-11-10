@@ -890,6 +890,9 @@ func (b *blobStore) gc(ctx context.Context) (int, error) {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM reqlog_blobs WHERE hash = ?`, h[:]); err != nil {
 			return 0, fmt.Errorf("delete blob: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM reqlog_pack_attempts WHERE hash = ?`, h[:]); err != nil {
+			return 0, fmt.Errorf("delete encode mark: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit blob gc: %w", err)
@@ -924,7 +927,7 @@ func (b *blobStore) get(ctx context.Context, h blobHash) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read blob %x: %w", h[:8], err)
 		}
-		raw, err := codec.Unpack(codec.Kind(kind), stored, r.raw)
+		raw, err := codec.Unpack(ctx, codec.Kind(kind), stored, r.raw)
 		if err != nil {
 			return nil, fmt.Errorf("decode blob %x: %w", h[:8], err)
 		}
@@ -1105,6 +1108,11 @@ func (b *blobStore) rewrite(ctx context.Context, src []int64, encode bool) error
 			return fmt.Errorf("move blob: %w", err)
 		}
 	}
+	// The blobs stored unencoded because their mark survived a crash are
+	// never encoded again, so their marks go with this commit.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM reqlog_pack_attempts WHERE hash IN (SELECT hash FROM reqlog_blobs WHERE pack_id = ?)`, outID); err != nil {
+		return fmt.Errorf("clear encode marks: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE reqlog_packs SET state = ?, bytes = ? WHERE id = ?`, packPacked, size, outID); err != nil {
 		return fmt.Errorf("mark pack packed: %w", err)
 	}
@@ -1121,8 +1129,10 @@ func (b *blobStore) rewrite(ctx context.Context, src []int64, encode bool) error
 
 // writeEntries reads, optionally encodes, and appends entries in order.
 // Encoding runs on several goroutines; at most 2*workers results wait to be
-// written.
+// written. Jobs still waiting for the codec budget stop when it returns.
 func (b *blobStore) writeEntries(ctx context.Context, out *os.File, live []blobRow, encode bool) ([]blobRow, int64, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	type job struct {
 		row  blobRow
 		data []byte
@@ -1130,8 +1140,13 @@ func (b *blobStore) writeEntries(ctx context.Context, out *os.File, live []blobR
 		done chan struct{}
 	}
 	workers := 1
+	var crashed map[blobHash]bool
 	if encode {
 		workers = max(1, runtime.NumCPU()/2)
+		var err error
+		if crashed, err = b.unfinishedEncodes(ctx); err != nil {
+			return nil, 0, err
+		}
 	}
 	jobs := make([]*job, len(live))
 	for i := range live {
@@ -1149,7 +1164,11 @@ func (b *blobStore) writeEntries(ctx context.Context, out *os.File, live []blobR
 			return
 		}
 		if encode && j.row.codec == codec.Raw {
-			j.row.codec, data = codec.Pack(data)
+			if crashed[j.row.hash] {
+				log.Warnf("reqlog: blob %x was being encoded when the process died; storing it unencoded", j.row.hash[:8])
+			} else if j.row.codec, data, j.err = b.encode(ctx, j.row.hash, data); j.err != nil {
+				return
+			}
 		}
 		j.row.stored = len(data)
 		j.data = data
@@ -1196,6 +1215,52 @@ func (b *blobStore) writeEntries(ctx context.Context, out *os.File, live []blobR
 		return nil, 0, fmt.Errorf("write pack: %w", err)
 	}
 	return moved, pos, nil
+}
+
+// unfinishedEncodes returns the blobs that encode marked and never cleared:
+// their encoding was running when the process died. It first drops the marks
+// of blobs that no longer exist.
+func (b *blobStore) unfinishedEncodes(ctx context.Context) (map[blobHash]bool, error) {
+	if _, err := b.db.ExecContext(ctx, `DELETE FROM reqlog_pack_attempts WHERE hash NOT IN (SELECT hash FROM reqlog_blobs)`); err != nil {
+		return nil, fmt.Errorf("prune encode marks: %w", err)
+	}
+	rows, err := b.db.QueryContext(ctx, `SELECT hash FROM reqlog_pack_attempts`)
+	if err != nil {
+		return nil, fmt.Errorf("list unfinished encodes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[blobHash]bool{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan unfinished encode: %w", err)
+		}
+		if h, err := hashOf(raw); err == nil {
+			out[h] = true
+		}
+	}
+	return out, rows.Err()
+}
+
+// encode runs codec.Pack with a durable mark around the encoding, so a blob
+// that kills the process (a native codec can abort or exhaust memory) is
+// stored unencoded after the restart rather than retried at every start. The
+// mark goes in once Pack holds its memory budget, so blobs still waiting for
+// it when the process dies are not marked.
+func (b *blobStore) encode(ctx context.Context, h blobHash, data []byte) (codec.Kind, []byte, error) {
+	kind, stored, err := codec.Pack(ctx, data, func() error {
+		if _, err := b.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR IGNORE INTO reqlog_pack_attempts (hash) VALUES (?)`, h[:]); err != nil {
+			return fmt.Errorf("mark encode: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return codec.Raw, nil, err
+	}
+	if _, err := b.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM reqlog_pack_attempts WHERE hash = ?`, h[:]); err != nil {
+		return codec.Raw, nil, fmt.Errorf("clear encode mark: %w", err)
+	}
+	return kind, stored, nil
 }
 
 // blobCache keeps recently decoded blobs. Consecutive turns of a

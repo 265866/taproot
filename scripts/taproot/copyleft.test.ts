@@ -6,6 +6,7 @@ describe('copyleft', () => {
     expect(copyleft('MIT')).toBe('none');
     expect(copyleft('(MIT OR Apache-2.0) AND Unicode-3.0')).toBe('none');
     expect(copyleft('Zlib OR Apache-2.0 OR MIT')).toBe('none');
+    expect(copyleft('0BSD OR mit')).toBe('none');
   });
 
   test('the LGPL v3 is handled in every spelling', () => {
@@ -55,6 +56,23 @@ describe('copyleft', () => {
     expect(copyleft('CC-BY-4.0')).toBe('none');
     expect(copyleft('BSD-3-Clause')).toBe('none');
     expect(copyleft('MPL')).toBe('other');
+  });
+
+  test('a license it does not know throws', () => {
+    for (const id of [
+      'UNKNOWN',
+      'UNLICENSED',
+      'MIT*',
+      'BUSL-1.1',
+      'Elastic-2.0',
+      'CC-BY-NC-4.0',
+      'Commons-Clause',
+    ]) {
+      expect(() => copyleft(id)).toThrow(`unknown license ${id}`);
+    }
+    expect(() => copyleft('MIT OR UNLICENSED')).toThrow('unknown license UNLICENSED');
+    expect(() => copyleft('Apache-2.0 AND UNKNOWN')).toThrow('unknown license UNKNOWN');
+    expect(() => copyleft('UNKNOWN WITH LLVM-exception')).toThrow('unknown license UNKNOWN');
   });
 
   test('an expression it cannot parse throws', () => {

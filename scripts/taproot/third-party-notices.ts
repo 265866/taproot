@@ -5,15 +5,16 @@
 // metadata), and the dashboard's production npm dependencies (reported by
 // license-checker), with each package's license text and, where it ships one,
 // its NOTICE file. LGPL-3.0 crates also get the section that license requires,
-// and any other copyleft license stops the generator. Run it from anywhere in
-// the repository after go.mod, web/package.json, web/bun.lock, the codec's
-// Cargo.lock, or licenses/ changes; CI fails when the file is stale:
+// and any other copyleft license, or one copyleft.ts does not know, stops the
+// generator. Run it from anywhere in the repository after go.mod,
+// web/package.json, web/bun.lock, the codec's Cargo.lock, or licenses/
+// changes; CI fails when the file is stale:
 //
 //   bun scripts/taproot/third-party-notices.ts
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { copyleft } from './copyleft';
+import { copyleft, type Copyleft } from './copyleft';
 
 const GO_LICENSES = 'github.com/google/go-licenses/v2@v2.0.1';
 const LICENSE_CHECKER = 'license-checker@25.0.1';
@@ -373,7 +374,14 @@ try {
     ['npm package', web],
   ] as const) {
     for (const e of entries) {
-      const obligation = copyleft(String(e.license));
+      let obligation: Copyleft;
+      try {
+        obligation = copyleft(String(e.license));
+      } catch (err) {
+        throw new Error(
+          `${kind} ${e.name} ${e.version}: ${(err as Error).message}. Check its license, then add the id to scripts/taproot/copyleft.ts if it only asks for the notice.`
+        );
+      }
       if (obligation === 'lgpl' && kind === 'Rust crate') lgpl.push(e);
       else if (obligation !== 'none') {
         throw new Error(

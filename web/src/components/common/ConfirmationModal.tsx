@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -11,9 +12,14 @@ export function ConfirmationModal() {
   const hideConfirmation = useNotificationStore((state) => state.hideConfirmation);
   const setConfirmationLoading = useNotificationStore((state) => state.setConfirmationLoading);
 
-  const { isOpen, isLoading, options } = confirmation;
+  const { isOpen, isLoading, options: currentOptions } = confirmation;
+  // The store drops the options on close; keep showing the last ones while the dialog animates
+  // out, so the Modal stays mounted and returns focus to what opened it.
+  const [lastOptions, setLastOptions] = useState(currentOptions);
+  if (currentOptions && currentOptions !== lastOptions) setLastOptions(currentOptions);
+  const options = currentOptions ?? lastOptions;
 
-  if (!isOpen || !options) {
+  if (!options) {
     return null;
   }
 
@@ -27,7 +33,9 @@ export function ConfirmationModal() {
     variant = 'primary',
   } = options;
 
+  // Clicks on the closing dialog must not act on choices already made.
   const handleConfirm = async () => {
+    if (!isOpen) return;
     try {
       setConfirmationLoading(true);
       await onConfirm();
@@ -42,7 +50,7 @@ export function ConfirmationModal() {
   };
 
   const handleCancel = () => {
-    if (isLoading) {
+    if (!isOpen || isLoading) {
       return;
     }
     if (onCancel) {
