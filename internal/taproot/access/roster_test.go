@@ -57,12 +57,12 @@ func TestDevicesEndpointJoinsTailnetAndGrants(t *testing.T) {
 		t.Fatalf("devices = %+v, want 7 with the server first", resp.Devices)
 	}
 	for id, want := range map[string]deviceView{
-		serverID:              {Name: "server", DNSName: "server." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "linux", Server: true, OnTailnet: true, Online: true, Proxy: true},
-		laptopID:              {Name: "laptop", DNSName: "laptop." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "macOS", OnTailnet: true, Online: true, Proxy: true, Admin: true},
-		workerID:              {Name: "worker", DNSName: "worker." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "linux", OnTailnet: true, Online: true, Proxy: true},
-		bobID:                 {Name: "bob-pc", DNSName: "bob-pc." + tailnetSuffix, Login: "bob@example.org", OwnerName: "Bob", OS: "windows", OnTailnet: true, Online: true},
-		stableID("ci-runner"): {Name: "ci-runner", DNSName: "ci-runner." + tailnetSuffix, OS: "linux", OnTailnet: true, Online: true, Proxy: true},
-		"ngoneCNTRL":          {Name: "old-laptop", Proxy: true},
+		serverID:              {Addresses: []string{selfIP, selfIPv6}, Name: "server", DNSName: "server." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "linux", Server: true, OnTailnet: true, Online: true, Proxy: true},
+		laptopID:              {Addresses: []string{adminIP}, Name: "laptop", DNSName: "laptop." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "macOS", OnTailnet: true, Online: true, Proxy: true, Admin: true},
+		workerID:              {Addresses: []string{otherNodeIP}, Name: "worker", DNSName: "worker." + tailnetSuffix, Login: testLogin, OwnerName: "Alice", OS: "linux", OnTailnet: true, Online: true, Proxy: true},
+		bobID:                 {Addresses: []string{outsiderIP}, Name: "bob-pc", DNSName: "bob-pc." + tailnetSuffix, Login: "bob@example.org", OwnerName: "Bob", OS: "windows", OnTailnet: true, Online: true},
+		stableID("ci-runner"): {Addresses: []string{"100.64.0.20"}, Name: "ci-runner", DNSName: "ci-runner." + tailnetSuffix, OS: "linux", OnTailnet: true, Online: true, Proxy: true},
+		"ngoneCNTRL":          {Addresses: []string{}, Name: "old-laptop", Proxy: true},
 	} {
 		got, ok := findDevice(resp, id)
 		if !ok {
@@ -80,6 +80,10 @@ func TestDevicesEndpointJoinsTailnetAndGrants(t *testing.T) {
 	work, _ := findDevice(resp, stableID("work-laptop"))
 	if work.Created == nil || !work.Created.Equal(joined) || work.Proxy || work.Admin {
 		t.Errorf("new device = %+v, want created %s with no permissions", work, joined)
+	}
+	// tailscaled lists work-laptop's addresses in any order here; IPv4 comes first.
+	if want := []string{"100.64.0.21", "fd7a:115c:a1e0::21"}; !slices.Equal(work.Addresses, want) {
+		t.Errorf("work-laptop addresses = %v, want %v", work.Addresses, want)
 	}
 	// The read started old-laptop's 24 hours.
 	gone, _ := findDevice(resp, "ngoneCNTRL")

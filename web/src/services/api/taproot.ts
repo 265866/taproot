@@ -80,6 +80,11 @@ export interface AccessDevice extends DeviceGrant {
   online: boolean;
   /** When the device was last connected, or null when unknown or online. */
   lastSeen: string | null;
+  /**
+   * The device's Tailscale IPs, IPv4 first; empty for a device no longer on the tailnet. Tailscale
+   * shows a sharee's device's IPs to its owner too, so they identify a device whose name it hides.
+   */
+  addresses: string[];
   /** The taproot server's own node: always Proxy, never Admin. */
   server: boolean;
   /** False for a granted device the last tailnet read did not list. */
@@ -535,6 +540,8 @@ const record = (value: unknown): Record<string, unknown> =>
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
 const flag = (value: unknown) => value === true;
 const timeOrNull = (value: unknown) => (typeof value === 'string' && value ? value : null);
+const strings = (value: unknown) =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v !== '') : [];
 
 function normalizeAccessDevice(raw: unknown): AccessDevice {
   const d = record(raw);
@@ -551,6 +558,7 @@ function normalizeAccessDevice(raw: unknown): AccessDevice {
     outside: flag(d.outside),
     online: flag(d.online),
     lastSeen: timeOrNull(d.lastSeen),
+    addresses: strings(d.addresses),
     server: flag(d.server),
     onTailnet: flag(d.onTailnet),
     missingSince: timeOrNull(d.missingSince),

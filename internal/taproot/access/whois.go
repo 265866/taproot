@@ -1,6 +1,7 @@
 package access
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -197,6 +198,10 @@ type TailnetDevice struct {
 	Online  bool
 	// LastSeen is when the device was last connected, or zero when unknown.
 	LastSeen time.Time
+	// Addresses are the device's Tailscale IPs, IPv4 first. A sharee's
+	// device keeps them: its owner sees the same IPs in their own admin
+	// console, so they identify a device whose name Tailscale hides.
+	Addresses []netip.Addr
 }
 
 // Tailnet is the server's own node and every peer tailscaled lists.
@@ -215,9 +220,10 @@ type peerStatus struct {
 	Created  string
 	// ShareeNode is true for a device of a person the server's node is
 	// shared with. Tailscale hides its name and OS.
-	ShareeNode bool
-	Online     bool
-	LastSeen   string
+	ShareeNode   bool
+	Online       bool
+	LastSeen     string
+	TailscaleIPs []string
 }
 
 type tailnetStatus struct {
@@ -284,6 +290,7 @@ func decodeTailnet(body []byte) (Tailnet, error) {
 		if seen, err := time.Parse(time.RFC3339Nano, p.LastSeen); err == nil && seen.Year() > 1 {
 			d.LastSeen = seen
 		}
+		d.Addresses = tailscaleAddrs(p.TailscaleIPs)
 		return d
 	}
 	tn := Tailnet{Self: device(parsed.Self)}
@@ -294,6 +301,26 @@ func decodeTailnet(body []byte) (Tailnet, error) {
 	}
 	slices.SortFunc(tn.Peers, func(a, b TailnetDevice) int { return strings.Compare(a.ID, b.ID) })
 	return tn, nil
+}
+
+// tailscaleAddrs parses a device's Tailscale IPs, IPv4 first and otherwise
+// in tailscaled's order. It skips an address it cannot parse, since the
+// addresses only help people tell devices apart.
+func tailscaleAddrs(raw []string) []netip.Addr {
+	var addrs []netip.Addr
+	for _, r := range raw {
+		if addr, err := netip.ParseAddr(r); err == nil {
+			addrs = append(addrs, addr.Unmap())
+		}
+	}
+	family := func(a netip.Addr) int {
+		if a.Is4() {
+			return 0
+		}
+		return 1
+	}
+	slices.SortStableFunc(addrs, func(a, b netip.Addr) int { return cmp.Compare(family(a), family(b)) })
+	return addrs
 }
 
 // status returns the server's own node from GET /localapi/v0/status.

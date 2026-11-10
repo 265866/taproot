@@ -43,4 +43,4 @@ The device has no Proxy permission yet, and its request may wait on the Access p
 
 ## A device is named `device-of-shared-to-user` or "\<owner\>'s device"
 
-The device belongs to a person you shared the taproot server with in Tailscale. Tailscale hides the names of their devices. Such a device gets no access unless you allow it. See [Allow a device from another tailnet](access.md#allow-a-device-from-another-tailnet).
+The device belongs to a person you shared the taproot server with in Tailscale. Tailscale hides the names of their devices, so the Access page names each one after its owner and its Tailscale IP, such as `dana's device · 100.64.0.31`. The owner sees the same IP in their own Tailscale admin console and apps, so ask them which device it is. Such a device gets no access unless you allow it. See [Allow a device from another tailnet](access.md#allow-a-device-from-another-tailnet).

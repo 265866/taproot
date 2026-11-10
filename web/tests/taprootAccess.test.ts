@@ -57,11 +57,29 @@ describe('layout', () => {
       'nTABCNTRL',
       'nBOBPCNTRL',
       'nCAROLCNTRL',
+      // Ordered as shown: dana's device ·0003, then · 100.64.0.31, then · fd7a:….
+      'nDANA0003CNTRL',
       'nDANA0001CNTRL',
       'nDANA0002CNTRL',
-      'nDANA0003CNTRL',
     ]);
     expect(layout.removed && ids(layout.removed.devices)).toEqual(['nOLDCNTRL']);
+  });
+
+  test('IP labels sort by number, not as text', () => {
+    const at = (id: string, ip: string) => ({
+      ...data.devices.find((d) => d.id === id)!,
+      addresses: [ip],
+    });
+    const folded = layoutDevices(
+      {
+        ...data,
+        devices: [at('nDANA0001CNTRL', '100.64.0.31'), at('nDANA0002CNTRL', '100.64.0.4')],
+      },
+      onDesktop,
+      '',
+      NOW
+    ).folded;
+    expect(ids(folded)).toEqual(['nDANA0002CNTRL', 'nDANA0001CNTRL']);
   });
 
   test('from loopback, your logins are those of in-tailnet admins', () => {
@@ -73,7 +91,7 @@ describe('layout', () => {
     expect(sections.some((s) => s.kind === 'yours')).toBe(false);
   });
 
-  test('search matches names, labels, logins, owners, IDs, and tags, not OS or MagicDNS', () => {
+  test('search matches names, labels, logins, owners, IDs, tags, and IPs, not OS or MagicDNS', () => {
     const found = (q: string) => {
       const layout = layoutDevices(data, onDesktop, q, NOW);
       return [
@@ -84,10 +102,13 @@ describe('layout', () => {
     };
     expect(found('work laptop')).toEqual(['nWORKCNTRL', 'nALIMBPCNTRL']);
     expect(found('Work laptop alice@example')).toEqual(['nALIMBPCNTRL']);
-    expect(found('dana')).toEqual(['nDANA0001CNTRL', 'nDANA0002CNTRL', 'nDANA0003CNTRL']);
+    expect(found('dana')).toEqual(['nDANA0003CNTRL', 'nDANA0001CNTRL', 'nDANA0002CNTRL']);
     expect(found('tag:ci')).toEqual(['nCICNTRL']);
     expect(found('nBOBP')).toEqual(['nBOBPCNTRL']);
     expect(found('bob@github')).toEqual(['nBOBCNTRL', 'nBOBPCNTRL']);
+    expect(found('100.64.0.31')).toEqual(['nDANA0001CNTRL']);
+    expect(found('fd7a:115c:a1e0::32')).toEqual(['nDANA0002CNTRL']);
+    expect(found('100.64.0.2')).toEqual(['nDESKCNTRL']);
     expect(found('macos')).toEqual([]);
     expect(found('tailnet-0000')).toEqual([]);
   });
@@ -98,15 +119,29 @@ describe('names, badges, and locks', () => {
     const byId = (id: string) => data.devices.find((d) => d.id === id)!;
     expect(deviceName(byId('nALIMBPCNTRL'))).toEqual({ kind: 'named', name: 'Work laptop' });
     expect(deviceName(byId('nBOBCNTRL'))).toEqual({ kind: 'named', name: 'bob-laptop' });
-    expect(deviceName(byId('nDANA0002CNTRL'))).toEqual({
+    expect(deviceName(byId('nDANA0001CNTRL'))).toEqual({
       kind: 'unnamed',
       owner: 'dana',
-      suffix: '0002',
+      address: '100.64.0.31',
+      suffix: '0001',
+    });
+    // The IPv4 wins wherever tailscaled lists it; without one, the IPv6.
+    expect(
+      deviceName({ ...byId('nDANA0001CNTRL'), addresses: ['fd7a:115c:a1e0::31', '100.64.0.31'] })
+    ).toMatchObject({ address: '100.64.0.31' });
+    expect(deviceName(byId('nDANA0002CNTRL'))).toMatchObject({ address: 'fd7a:115c:a1e0::32' });
+    // Without an IP, 4 characters of the stable ID before CNTRL.
+    expect(deviceName(byId('nDANA0003CNTRL'))).toEqual({
+      kind: 'unnamed',
+      owner: 'dana',
+      address: '',
+      suffix: '0003',
     });
     expect(deviceName({ ...byId('nDANA0002CNTRL'), ownerName: '' })).toMatchObject({
       owner: 'dana@example.com',
     });
-    expect(en.taproot_access.unnamed).toBe("{{owner}}'s device ·{{suffix}}");
+    expect(en.taproot_access.unnamed).toBe("{{owner}}'s device · {{address}}");
+    expect(en.taproot_access.unnamed_id).toBe("{{owner}}'s device ·{{suffix}}");
   });
 
   test('New marks a recent device without access; idle means offline for 30 days', () => {
@@ -452,6 +487,7 @@ test('an older server without the new fields still reads as one shape', () => {
     outside: false,
     online: false,
     lastSeen: null,
+    addresses: [],
     tags: [],
   });
   expect(read.tailnetError).toBeUndefined();
@@ -459,6 +495,10 @@ test('an older server without the new fields still reads as one shape', () => {
     requests: [{ nodeId: 'n1CNTRL', asked: 'admin' }, { nodeId: 'n2CNTRL' }, { asked: 'root' }],
   });
   expect(asked.requests.map((r) => r.asked)).toEqual(['admin', 'proxy', 'proxy']);
+  const withAddresses = normalizeAccessDevices({
+    devices: [{ id: 'n1CNTRL', addresses: ['100.64.0.31', 7, '', 'fd7a:115c:a1e0::31'] }],
+  });
+  expect(withAddresses.devices[0].addresses).toEqual(['100.64.0.31', 'fd7a:115c:a1e0::31']);
 });
 
 test('every access error has copy, and the removed explanations are gone', () => {
@@ -483,6 +523,8 @@ test('every access error has copy, and the removed explanations are gone', () =>
     'had',
     'addresses_hint',
     'unsaved_none',
+    'online',
+    'last_seen',
   ]) {
     expect(copy[key]).toBeUndefined();
   }
