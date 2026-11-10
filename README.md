@@ -5,6 +5,7 @@ Taproot pools your Claude and Codex subscription accounts behind one endpoint on
 - **Per-device access control.** Each tailnet device gets its own permissions: Proxy to send model requests, Admin to open the dashboard. New devices start with neither. A device you haven't allowed shows up as a request you can approve, including devices from your other tailnets. See [Access](docs/access.md).
 - **Soonest-reset-first routing.** New sessions go to the account whose weekly window resets soonest, so quota that is about to reset is spent first. A running session stays on its account.
 - **Quota ledger.** Taproot records every account's 5-hour and weekly use and projects when each pool runs empty.
+- **A dashboard that says what needs you.** The home page says whether the server is serving normally, degraded, or down, and lists each problem with one button that fixes it, such as a signed-out account or a failed backup. It shows each provider's pool right now and, over a window you choose, the client requests, failures, latency, and cost. See [Dashboard](docs/dashboard.md).
 - **Usage and cost.** Requests, tokens, latency, and failures by account, model, session, and device, priced at API rates from an editable table.
 - **Request logs.** Every request and response, compressed, searchable, and deleted by age or total size.
 - **Backups.** A daily archive of the configuration, credentials, and database, which you can download or restore from the dashboard.
@@ -15,7 +16,7 @@ CLIProxyAPI's other providers still work through the proxy, without quota tracki
 > [!WARNING]
 > Read [Terms of service](docs/terms-of-service.md) and [SECURITY.md](SECURITY.md) before you add an account. Using subscription credentials through a proxy can break the provider's terms, and a misconfigured taproot gives your OAuth tokens to anyone who can reach its port.
 
-![The Accounts page: the pool chart and quota ledger for five demo accounts, with emails hidden](docs/screenshots/accounts.png)
+![The Dashboard: the verdict "Serving normally", the 24-hour traffic, recent failures, and top lists, and a rail with what needs you and each provider's pool, all for demo accounts with emails hidden](docs/screenshots/dashboard.png)
 
 ## Quick start
 
@@ -31,7 +32,7 @@ You need a Linux server on your tailnet with `tailscaled` and rootless Podman 5 
      -v "$HOME/taproot/data:/taproot/config" \
      -v /var/run/tailscale:/var/run/tailscale:ro \
      -p "$(tailscale ip -4):8317:8317" \
-     ghcr.io/265866/taproot:0.3
+     ghcr.io/265866/taproot:0.4
    ```
 
    So taproot keeps recognizing devices after tailscaled restarts or updates, apply the one-time host setting in [Keep tailscaled's folder for a container](docs/install.md#keep-tailscaleds-folder-for-a-container).

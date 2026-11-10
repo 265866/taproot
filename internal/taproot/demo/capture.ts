@@ -3,10 +3,13 @@
  * with playwright-core driving the installed Chrome. Each page is captured at a
  * desktop size as <name>.png and at a phone size as <name>-mobile.png. Every
  * capture is checked for personal data before its screenshot is kept.
+ * --scenario names the run.sh scenario the server was seeded with; shots.ts
+ * lists the shots of each.
  *
  *   bun internal/taproot/demo/capture.ts --url http://127.0.0.1:8399 \
  *     --out docs/screenshots --playwright <dir of an installed playwright-core> \
- *     [--chrome <path to chrome>] [--deny <comma-separated strings>]
+ *     [--scenario normal|degraded|first-run] [--chrome <path to chrome>] \
+ *     [--deny <comma-separated strings>]
  *
  * playwright-core is not a project dependency; run.sh installs it into a
  * temporary directory and passes its path.
@@ -15,6 +18,7 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { privacyProblems } from './privacy';
+import { expectedAccounts, isScenario, type Scenario, type Shot, shotsFor } from './shots';
 
 interface Args {
   url: string;
@@ -22,6 +26,7 @@ interface Args {
   playwright: string;
   chrome?: string;
   deny: string[];
+  scenario: Scenario;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -32,15 +37,18 @@ function parseArgs(argv: string[]): Args {
   const url = get('url');
   const out = get('out');
   const playwright = get('playwright');
-  if (!url || !out || !playwright) {
-    console.error('usage: capture.ts --url <server> --out <dir> --playwright <playwright-core dir>');
+  const scenario = get('scenario') ?? 'normal';
+  if (!url || !out || !playwright || !isScenario(scenario)) {
+    console.error(
+      'usage: capture.ts --url <server> --out <dir> --playwright <playwright-core dir> [--scenario normal|degraded|first-run]'
+    );
     process.exit(2);
   }
   const deny = (get('deny') ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  return { url: url.replace(/\/$/, ''), out: resolve(out), playwright: resolve(playwright), chrome: get('chrome'), deny };
+  return { url: url.replace(/\/$/, ''), out: resolve(out), playwright: resolve(playwright), chrome: get('chrome'), deny, scenario };
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -55,6 +63,7 @@ const api = async <T>(path: string): Promise<T> => {
 // The server fills in account emails on its first account refresh, about a
 // minute after it starts. Until then the pages show bare auth indexes.
 async function waitForAccounts(expected: number) {
+  if (expected === 0) return;
   const deadline = Date.now() + 3 * 60_000;
   for (;;) {
     const { accounts } = await api<{ accounts: { email: string }[] }>('/accounts');
@@ -64,7 +73,7 @@ async function waitForAccounts(expected: number) {
   }
 }
 
-await waitForAccounts(5);
+await waitForAccounts(expectedAccounts(args.scenario));
 
 // run.sh sets TZ=Etc/UTC, but Go on Windows reads the zone from the system, not TZ, so the
 // server could label host-zone times as UTC. Refuse rather than capture the host's zone.
@@ -72,51 +81,18 @@ const { info } = await api<{ info: { utcOffsetSeconds: number } }>('/settings');
 if (info.utcOffsetSeconds !== 0) {
   throw new Error(`the server's clock is ${info.utcOffsetSeconds}s from UTC; set the host zone to UTC to capture`);
 }
-const { logs } = await api<{ logs: { requestId: string; status: number; model: string }[] }>(
-  '/request-logs?limit=20'
-);
-const detail = logs.find((l) => l.status === 200 && l.model.startsWith('claude'));
-if (!detail) throw new Error('no successful Claude request log to show');
+let detailRequestId: string | undefined;
+if (args.scenario === 'normal') {
+  const { logs } = await api<{ logs: { requestId: string; status: number; model: string }[] }>(
+    '/request-logs?limit=20'
+  );
+  const detail = logs.find((l) => l.status === 200 && l.model.startsWith('claude'));
+  if (!detail) throw new Error('no successful Claude request log to show');
+  detailRequestId = detail.requestId;
+}
+const shots = shotsFor(args.scenario, detailRequestId);
 
 type Page = import('playwright-core').Page;
-
-interface Shot {
-  /** Written as <name>.png and <name>-mobile.png. */
-  name: string;
-  route: string;
-  theme?: 'dark' | 'light';
-  /** Desktop viewport height; the default is 900. */
-  height?: number;
-  /** Runs after the page is ready, before the screenshot. */
-  act?: (page: Page) => Promise<void>;
-}
-
-const shots: Shot[] = [
-  { name: 'accounts', route: '/accounts' },
-  {
-    name: 'accounts-manage',
-    route: '/accounts',
-    act: async (page) => {
-      await page.getByRole('button', { name: 'Manage' }).first().click();
-      await page.getByRole('dialog').waitFor();
-    },
-  },
-  { name: 'usage-overview', route: '/usage?tab=overview&range=30d' },
-  {
-    name: 'usage-devices',
-    route: '/usage?tab=devices&range=30d',
-    // A taller desktop viewport fits the cache TTL check and the devices table below it.
-    height: 1400,
-  },
-  { name: 'usage-sessions', route: '/usage?tab=sessions&range=7d' },
-  { name: 'request-logs', route: '/request-logs' },
-  { name: 'request-log-detail', route: `/request-logs?requestId=${encodeURIComponent(detail.requestId)}` },
-  { name: 'routing', route: '/routing' },
-  { name: 'backups', route: '/backups' },
-  { name: 'access', route: '/access', height: 1480 },
-  { name: 'settings', route: '/settings' },
-  { name: 'accounts-light', route: '/accounts', theme: 'light' },
-];
 
 async function waitUntilSettled(page: Page) {
   await page.waitForLoadState('networkidle');
@@ -145,24 +121,49 @@ async function pageProblems(page: Page): Promise<string[]> {
   return privacyProblems(text, args.deny);
 }
 
+// The browser opens the demo by the server node's MagicDNS name (tailnet.go),
+// as a tailnet device does, so a page that shows the server's address, such
+// as the first-run snippets, shows that name rather than loopback.
+const pageUrl = new URL(args.url);
+const loopback = pageUrl.hostname;
+pageUrl.hostname = 'server.tailnet-0000.ts.net';
+const pageOrigin = pageUrl.origin;
+
 mkdirSync(args.out, { recursive: true });
-const browser = await chromium.launch(
-  args.chrome ? { executablePath: args.chrome } : { channel: 'chrome' }
-);
+const browser = await chromium.launch({
+  ...(args.chrome ? { executablePath: args.chrome } : { channel: 'chrome' }),
+  args: [`--host-resolver-rules=MAP ${pageUrl.hostname} ${loopback}`],
+});
 const failures: string[] = [];
 
 interface Size {
   suffix: string;
   options: (shot: Shot) => import('playwright-core').BrowserContextOptions;
+  /** Whether a fullHeight shot grows the viewport to the page. */
+  grows: boolean;
 }
 
 const sizes: Size[] = [
-  { suffix: '', options: (shot) => ({ viewport: { width: 1440, height: shot.height ?? 900 } }) },
+  {
+    suffix: '',
+    options: (shot) => ({ viewport: { width: 1440, height: shot.height ?? 900 } }),
+    grows: true,
+  },
   {
     suffix: '-mobile',
     options: () => ({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }),
+    grows: false,
   },
 ];
+
+/** Grows the viewport to the height of the desktop shell's scroll container, so nothing is below the fold. */
+async function growToPage(page: Page) {
+  const viewport = page.viewportSize();
+  const height = await page.evaluate(() => document.querySelector('.content')?.scrollHeight ?? 0);
+  if (!viewport || height <= viewport.height) return;
+  await page.setViewportSize({ width: viewport.width, height });
+  await waitUntilSettled(page);
+}
 
 try {
   for (const shot of shots) {
@@ -179,12 +180,13 @@ try {
         localStorage.setItem('cli-proxy-theme', JSON.stringify({ state: { theme: t }, version: 0 }));
       }, theme);
       const page = await context.newPage();
-      await page.goto(`${args.url}/#${shot.route}`);
+      await page.goto(`${pageOrigin}/#${shot.route}`);
       await waitUntilSettled(page);
       if (shot.act) {
         await shot.act(page);
         await waitUntilSettled(page);
       }
+      if (shot.fullHeight && size.grows) await growToPage(page);
       const problems = await pageProblems(page);
       if (problems.length > 0) {
         failures.push(`${file}: ${[...new Set(problems)].join(', ')}`);
