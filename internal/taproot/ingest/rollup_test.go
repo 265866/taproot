@@ -59,9 +59,9 @@ func seedMixed(t *testing.T, i *Ingest) time.Time {
 	return base
 }
 
-func collectSummary(t *testing.T, i *Ingest, groupBy, bucket string, fromMs, toMs int64, useRollup bool) map[int64]map[string]Totals {
+func collectSummary(t *testing.T, i *Ingest, groupBy, bucket string, loc *time.Location, fromMs, toMs int64, useRollup bool) map[int64]map[string]Totals {
 	t.Helper()
-	s := &summaryBuilder{bucketMs: bucketSizes[bucket].Milliseconds(), groupBy: groupBy, buckets: map[int64]map[string]*agg{}, total: newAgg()}
+	s := &summaryBuilder{bucketMs: bucketSizes[bucket].Milliseconds(), loc: loc, groupBy: groupBy, buckets: map[int64]map[string]*agg{}, total: newAgg()}
 	if err := s.collect(context.Background(), i.db, fromMs, toMs, useRollup); err != nil {
 		t.Fatal(err)
 	}
@@ -92,10 +92,27 @@ func sameTotals(a, b Totals) bool {
 func requireRollupMatchesRaw(t *testing.T, i *Ingest, base time.Time, requests int64) {
 	t.Helper()
 	fromMs, toMs := ms(base.Add(-17*time.Minute)), ms(base.Add(80*time.Hour+29*time.Minute))
+	type layout struct {
+		bucket string
+		loc    *time.Location
+	}
+	layouts := []layout{{"1h", nil}, {"1d", nil}}
+	// Half-hour and 45-minute offsets cut days inside a UTC hour.
+	for _, zone := range []string{"America/New_York", "Asia/Kolkata", "Asia/Kathmandu", "Australia/Lord_Howe"} {
+		loc, err := time.LoadLocation(zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layouts = append(layouts, layout{"1d", loc})
+	}
 	for groupBy := range groupByValues {
-		for _, bucket := range []string{"1h", "1d"} {
-			raw := collectSummary(t, i, groupBy, bucket, fromMs, toMs, false)
-			rolled := collectSummary(t, i, groupBy, bucket, fromMs, toMs, true)
+		for _, l := range layouts {
+			bucket := l.bucket
+			if l.loc != nil {
+				bucket += " " + l.loc.String()
+			}
+			raw := collectSummary(t, i, groupBy, l.bucket, l.loc, fromMs, toMs, false)
+			rolled := collectSummary(t, i, groupBy, l.bucket, l.loc, fromMs, toMs, true)
 			if raw[-1]["total"].Requests != requests {
 				t.Fatalf("%s/%s: raw total %+v, want %d requests", groupBy, bucket, raw[-1]["total"], requests)
 			}
