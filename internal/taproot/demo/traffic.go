@@ -241,6 +241,7 @@ func generate(start time.Time, accounts []*demoAccount) []request {
 		}
 	}
 	g.burst()
+	g.recentFailures()
 	sort.SliceStable(g.out, func(i, j int) bool { return g.out[i].RequestedAt.Before(g.out[j].RequestedAt) })
 	return g.out
 }
@@ -297,10 +298,13 @@ func (g *generator) turn(s *session, t time.Time, burst bool) *request {
 		s.account = g.route(s.provider, t, nil)
 	}
 	s.account.advance(t)
+	retryOf := ""
 	if s.account.limited() {
-		// The request that finds the limit fails; the session moves on, or
-		// stops when the whole pool is limited.
+		// The request that finds the limit fails; the proxy retries it on
+		// another account, as the same client request, or the session stops
+		// when the whole pool is limited.
 		g.out = append(g.out, g.rejected(s, t))
+		retryOf = g.out[len(g.out)-1].TraceID
 		s.account = g.route(s.provider, t, s.account)
 		s.account.advance(t)
 		if s.account.limited() {
@@ -311,6 +315,9 @@ func (g *generator) turn(s *session, t time.Time, burst bool) *request {
 		t = t.Add(time.Second + g.jitter(2*time.Second))
 	}
 	r := g.request(s, t)
+	if retryOf != "" {
+		r.TraceID = retryOf
+	}
 	r.burst = burst
 	g.out = append(g.out, r)
 	if !s.subagent && s.provider == "claude" && s.model != sonnet && g.rng.Float64() < 0.06 {

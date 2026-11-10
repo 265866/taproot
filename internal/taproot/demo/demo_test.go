@@ -177,6 +177,31 @@ func TestSeed(t *testing.T) {
 	if got := count(`SELECT COUNT(*) FROM reqlog_records r JOIN usage_events e ON e.request_id = r.request_id AND e.session_id = r.session_id`); got != burstSize {
 		t.Fatalf("%d request logs match a usage event by request and session, want %d", got, burstSize)
 	}
+	// Every usage event is an attempt of one client request.
+	if got := count(`SELECT SUM(attempts) FROM client_requests`); got != events {
+		t.Fatalf("client requests count %d attempts, usage has %d events", got, events)
+	}
+	if got, want := count(`SELECT SUM(requests) FROM client_request_slots`), count(`SELECT COUNT(*) FROM client_requests`); got != want {
+		t.Fatalf("slots count %d client requests, table has %d", got, want)
+	}
+	if count(`SELECT COUNT(*) FROM client_requests WHERE attempts > 1 AND failed = 0`) == 0 {
+		t.Fatal("want retried requests that succeeded")
+	}
+	if got := count(`SELECT COUNT(*) FROM client_requests WHERE request_id IN (SELECT request_id FROM reqlog_records)`); got != burstSize {
+		t.Fatalf("%d client requests open a request log, want %d", got, burstSize)
+	}
+	recent := testStart.Add(-2 * time.Hour).UnixMilli()
+	for _, c := range []struct {
+		code   string
+		failed int
+	}{{"bad_gateway", 1}, {"bad_request", 1}, {"client_closed", 0}, {"overloaded", 1}, {"rate_limited", 1}, {"unknown_provider", 1}} {
+		if count(`SELECT COUNT(*) FROM client_requests WHERE error_code = ? AND failed = ? AND ts >= ? AND (error_message <> '' OR failed = 0)`, c.code, c.failed, recent) == 0 {
+			t.Errorf("no %s request in the last two hours", c.code)
+		}
+	}
+	if count(`SELECT COUNT(*) FROM client_requests WHERE error_code = 'unknown_provider' AND attempts = 0`) != 1 {
+		t.Error("want one request no account was tried for")
+	}
 	backups, err := os.ReadDir(filepath.Join(dir, "taproot", "backups"))
 	if err != nil || len(backups) != 2 {
 		t.Fatalf("backups: %v, %d entries", err, len(backups))
