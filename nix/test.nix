@@ -131,6 +131,9 @@ in
         localModel = true;
         timeZone = "Etc/UTC";
         inherit taprootSettings;
+        # A real deployment keeps this file out of the store; the test only
+        # needs a file that the unit reads as a credential.
+        discordWebhookFile = pkgs.writeText "discord-webhook" "https://discord.com/api/webhooks/0/example-token\n";
       };
     };
 
@@ -180,6 +183,14 @@ in
         assert devices["nSERVER"]["server"] is True, devices
         assert devices["nOTHER"]["proxy"] is True and devices["nOTHER"]["admin"] is False, devices
         assert devices["nBOB"]["onTailnet"] is True and devices["nBOB"]["proxy"] is False, devices
+
+    with subtest("the webhook file seeds taproot.yaml"):
+        server.succeed("grep -F 'discord-webhook: https://discord.com/api/webhooks/0/example-token' /var/lib/taproot/taproot.yaml")
+        status, body = get(client, "100.64.0.2", "/taproot/api/v1/settings")
+        assert status == 200, (status, body)
+        alerts = json.loads(body)["alerts"]
+        assert alerts["webhookSet"] is True and alerts["webhookInvalid"] is False, alerts
+        assert alerts["webhookHint"] == "…-token", alerts
 
     with subtest("a device with Proxy but not Admin reaches the proxy only"):
         status, body = get(client, "100.64.0.3", "/v1/models")

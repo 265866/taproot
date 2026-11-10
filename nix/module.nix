@@ -20,23 +20,24 @@ let
   taprootFile = yaml.generate "taproot.yaml" cfg.taprootSettings;
 
   # Outside a container every local process can connect from loopback, and
-  # taproot treats loopback callers as admins.
+  # taproot treats loopback callers as admins. The resolver (netdns=cgo) also
+  # reads forms such as "0" or "0x7f.1" as a wildcard or loopback address, so
+  # only a literal Tailscale address passes. Upstream listens on "host:port",
+  # so an IPv6 address needs its brackets.
   host = lib.toLower cfg.settings.server.host;
-  hostIsLocalOrWildcard =
-    lib.elem host [
-      ""
-      "*"
-      "0.0.0.0"
-      "::"
-      "[::]"
-      "::0"
-      "localhost"
-      "::1"
-      "[::1]"
-    ]
-    || lib.hasPrefix "127." host
-    || lib.hasPrefix "::ffff:127." host
-    || lib.hasSuffix ".localhost" host;
+  ipv4 = builtins.match "(0|[1-9][0-9]{0,2})[.](0|[1-9][0-9]{0,2})[.](0|[1-9][0-9]{0,2})[.](0|[1-9][0-9]{0,2})" host;
+  hostIsTailscaleIPv4 =
+    ipv4 != null
+    && (
+      let
+        octets = map lib.toInt ipv4;
+        second = builtins.elemAt octets 1;
+      in
+      builtins.head octets == 100 && second >= 64 && second <= 127 && lib.all (o: o <= 255) octets
+    );
+  hostIsTailscaleIPv6 = builtins.match "\\[fd7a:115c:a1e0(:[0-9a-f]{0,4}){1,5}]" host != null;
+  tailscaleHost =
+    address: if lib.hasInfix ":" address && !lib.hasPrefix "[" address then "[${address}]" else address;
 
   args = [
     "--config"
@@ -81,8 +82,9 @@ in
       default = null;
       example = "100.64.0.1";
       description = ''
-        This host's Tailscale address (`tailscale ip -4`). Taproot listens on
-        it, and it is the default for `settings.server.host`.
+        This host's Tailscale address (`tailscale ip -4`, or an address from
+        `tailscale ip -6`). Taproot listens on it, and it is the default for
+        `settings.server.host`.
       '';
     };
 
@@ -90,7 +92,9 @@ in
       description = ''
         Upstream CLIProxyAPI settings, written to `config.yaml` on every
         start. config.example.yaml in the repository documents every key.
-        The defaults match examples/taproot/config.yaml.
+        The defaults match examples/taproot/config.yaml. The values pass
+        through the Nix store, which every local user can read, so put no
+        secrets here; use `environmentFile` for those.
       '';
       default = { };
       type = lib.types.submodule {
@@ -102,11 +106,13 @@ in
             freeformType = yaml.type;
             options.host = lib.mkOption {
               type = lib.types.str;
-              default = if cfg.tailscale.address == null then "" else cfg.tailscale.address;
-              defaultText = lib.literalExpression ''if config.services.taproot.tailscale.address == null then "" else config.services.taproot.tailscale.address'';
+              default = if cfg.tailscale.address == null then "" else tailscaleHost cfg.tailscale.address;
+              defaultText = lib.literalMD "`tailscale.address`, in brackets when it is an IPv6 address";
               description = ''
-                Address to listen on. It must not be a loopback or wildcard
-                address: every local process can connect from loopback, and
+                Address to listen on: this host's Tailscale address, as a
+                literal IPv4 address in 100.64.0.0/10 or a bracketed IPv6
+                address in fd7a:115c:a1e0::/48. A loopback or wildcard address
+                is refused: every local process can connect from loopback, and
                 taproot treats loopback callers as admins.
               '';
             };
@@ -138,7 +144,22 @@ in
         file, and the unit denies loopback, so this option must grant at
         least one device `admin: true` in `access.devices`; that device
         manages access from the dashboard. Keep it set after the first start.
-        examples/taproot/taproot.yaml in the repository shows the keys.
+        examples/taproot/taproot.yaml in the repository shows the keys. The
+        values pass through the Nix store, which every local user can read,
+        so set the Discord webhook with `discordWebhookFile` or in the
+        dashboard instead of `alerts.discord-webhook`.
+      '';
+    };
+
+    discordWebhookFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      example = "/run/secrets/taproot-discord-webhook";
+      description = ''
+        File holding the Discord webhook URL for alerts, read through
+        systemd's LoadCredential so it stays out of the Nix store. Like
+        `taprootSettings`, it is written into taproot.yaml only when that file
+        is created; afterwards change the webhook in the dashboard.
       '';
     };
 
@@ -178,11 +199,12 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = !hostIsLocalOrWildcard;
+        assertion = hostIsTailscaleIPv4 || hostIsTailscaleIPv6;
         message = ''
           services.taproot.settings.server.host is "${cfg.settings.server.host}". Outside a container every
           local process can connect from loopback, and taproot treats loopback callers as admins, so
-          taproot must listen on this host's Tailscale address. Set services.taproot.tailscale.address.
+          taproot must listen on this host's Tailscale address: a literal IPv4 address in 100.64.0.0/10, or
+          an IPv6 address in fd7a:115c:a1e0::/48 in brackets. Set services.taproot.tailscale.address.
         '';
       }
       {
@@ -201,6 +223,11 @@ in
         '';
       }
     ];
+
+    warnings = lib.optional ((cfg.taprootSettings.alerts.discord-webhook or null) != null) ''
+      services.taproot.taprootSettings.alerts.discord-webhook puts the webhook URL, a secret, in the Nix
+      store, which every local user can read. Use services.taproot.discordWebhookFile instead.
+    '';
 
     services.taproot.settings = {
       config-version = lib.mkDefault 8;
@@ -271,7 +298,13 @@ in
       preStart = ''
         install -m 0600 ${configFile} ${cfg.dataDir}/config.yaml
         if [ ! -e ${cfg.dataDir}/taproot.yaml ]; then
-          install -m 0600 ${taprootFile} ${cfg.dataDir}/taproot.yaml
+          install -m 0600 ${taprootFile} ${cfg.dataDir}/taproot.yaml.new
+        ${lib.optionalString (cfg.discordWebhookFile != null) ''
+          # Not yq -i: it chowns its temporary file, which SystemCallFilter kills.
+          webhook=$(cat "$CREDENTIALS_DIRECTORY/discord-webhook")
+          WEBHOOK=$webhook ${lib.getExe pkgs.yq-go} '.alerts["discord-webhook"] = strenv(WEBHOOK)' ${taprootFile} >${cfg.dataDir}/taproot.yaml.new
+        ''}
+          mv ${cfg.dataDir}/taproot.yaml.new ${cfg.dataDir}/taproot.yaml
         fi
         mkdir -p ${cfg.dataDir}/home ${cfg.dataDir}/cache
       '';
@@ -282,6 +315,9 @@ in
         Group = cfg.group;
         WorkingDirectory = cfg.dataDir;
         EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
+        LoadCredential = lib.optional (
+          cfg.discordWebhookFile != null
+        ) "discord-webhook:${toString cfg.discordWebhookFile}";
         # Restarts also cover a start before tailscaled has assigned the address.
         Restart = "always";
         RestartSec = 5;
