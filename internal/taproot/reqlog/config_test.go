@@ -1,6 +1,9 @@
 package reqlog
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseByteSize(t *testing.T) {
 	for raw, want := range map[string]ByteSize{
@@ -23,5 +26,19 @@ func TestParseByteSize(t *testing.T) {
 		if got, err := ParseByteSize(raw); err == nil {
 			t.Errorf("ParseByteSize(%q) = %d, want an error", raw, got)
 		}
+	}
+}
+
+// A max-days past what a time.Duration holds overflowed the age cutoff into
+// the future, so the next retention pass dropped every record.
+func TestMaxDaysPastDurationRangeIsRefused(t *testing.T) {
+	if err := (Config{MaxDays: maxRetentionDays + 1}).validate(); err == nil {
+		t.Fatalf("max-days %d accepted", maxRetentionDays+1)
+	}
+	if err := (Config{MaxDays: maxRetentionDays}).validate(); err != nil {
+		t.Fatalf("max-days %d refused: %v", maxRetentionDays, err)
+	}
+	if cutoff := -time.Duration(maxRetentionDays) * 24 * time.Hour; cutoff >= 0 {
+		t.Fatalf("cutoff for the largest allowed max-days is %v, want negative", cutoff)
 	}
 }
