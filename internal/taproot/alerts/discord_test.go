@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -438,18 +439,27 @@ func TestSendCapsTotalWaitUnder429(t *testing.T) {
 
 // TestEnqueueCoalescesByKeyAndKeepsRecoveries fills the queue while the
 // sender is busy: nothing is dropped, and a recovery replaces its own pending
-// alert in place.
+// alert in place, which is reported as not sent.
 func TestEnqueueCoalescesByKeyAndKeepsRecoveries(t *testing.T) {
 	fake := &fakeDiscord{}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	s, _ := newTestSender(srv)
 	s.webhook = func() string { return testWebhook }
-	s.Enqueue(Message{Key: "login:k", Title: "login broken", At: t0})
+	var replaced []string
+	s.onResult = func(m Message, err error) {
+		if err != nil {
+			replaced = append(replaced, m.Title+": "+err.Error())
+		}
+	}
+	s.Enqueue(Message{Key: "tailscaled", Severity: SeverityCritical, Title: "outage", At: t0})
 	for i := range 100 {
 		s.Enqueue(Message{Key: "limit:" + itoa(int64(i)), Title: "limit", At: t0})
 	}
-	s.Enqueue(Message{Key: "login:k", Severity: SeverityRecovered, Title: "login works again", At: t0})
+	s.Enqueue(Message{Key: "tailscaled", Severity: SeverityRecovered, Title: "reaches tailscaled again", At: t0})
+	if !slices.Equal(replaced, []string{"outage: not sent"}) {
+		t.Fatalf("replaced = %q", replaced)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -461,8 +471,8 @@ func TestEnqueueCoalescesByKeyAndKeepsRecoveries(t *testing.T) {
 		t.Fatalf("posts = %d, want 101", len(fake.bodies))
 	}
 	first := decodeCard(t, fake.bodies[0])
-	if first.title != "login works again" || first.accent != severityColors[SeverityRecovered] {
-		t.Fatalf("first post = %+v, want the recovery in the alert's place", first)
+	if first.title != "reaches tailscaled again" || first.accent != severityColors[SeverityRecovered] {
+		t.Fatalf("first post = %+v, want the recovery in the outage's place", first)
 	}
 	for i, p := range fake.paths {
 		if !strings.HasSuffix(p, "?wait=true&with_components=true application/json") {

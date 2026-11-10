@@ -34,7 +34,11 @@ const (
 	// reports a relative reset, so the same instant observed on two credentials can
 	// differ by a second; such credentials share load by round-robin.
 	resetTieGranularity = time.Minute
-	maxRotationKeys     = 4096
+	// probeRetry is how long a probe that left its credential unobserved waits
+	// before the credential is probed again, for example after a 5xx or a
+	// count_tokens request, which records no quota headers.
+	probeRetry      = 10 * time.Minute
+	maxRotationKeys = 4096
 )
 
 // IsStrategy reports whether a routing.strategy value names this strategy.
@@ -54,27 +58,31 @@ func IsStrategy(raw string) bool {
 // as the session-affinity fallback). It adds, in order:
 //
 //  1. Codex websocket preference, as upstream's built-in selectors apply it.
-//  2. A Claude or Codex credential with no quota headers observed yet is picked once,
-//     before any ordering, so its weekly reset becomes known. Upstream keeps quota
-//     signals in memory only, so after a restart every credential starts unobserved;
-//     without this probe the first credential to answer would take every new session
-//     while the others, unknown, sort last and never get observed.
+//  2. A Claude or Codex OAuth credential with no quota headers observed yet, and no
+//     weekly reading in taproot's quota store (Readings), is picked before any
+//     ordering, so its weekly reset becomes known. Upstream keeps quota signals in
+//     memory only, so after a restart every credential starts unobserved; without this
+//     probe the first credential to answer would take every new session while the
+//     others, unknown, sort last and never get observed. A probe that leaves the
+//     credential unobserved is repeated after probeRetry.
 //  3. Credentials whose weekly window is observed exhausted are skipped, unless every
 //     candidate is.
-//  4. The soonest known weekly reset wins. Credentials with no observed reset come last.
+//  4. The soonest known weekly reset wins, from the quota headers, else from
+//     Readings. Credentials with no known reset come last.
 //  5. Ties, and the all-unknown case, rotate round-robin.
 type SoonestResetSelector struct {
 	mu         sync.Mutex
 	lastPicked map[string]string
-	probed     map[string]struct{}
+	probed     map[string]time.Time
+	readings   *Readings
 	now        func() time.Time
 }
 
 var _ coreauth.Selector = (*SoonestResetSelector)(nil)
 
-// NewSoonestResetSelector returns a selector using the wall clock.
+// NewSoonestResetSelector returns a selector using the wall clock and Stored.
 func NewSoonestResetSelector() *SoonestResetSelector {
-	return &SoonestResetSelector{}
+	return &SoonestResetSelector{readings: Stored}
 }
 
 // Pick implements coreauth.Selector.
@@ -90,22 +98,25 @@ func (s *SoonestResetSelector) Pick(ctx context.Context, provider, model string,
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if probe := s.nextProbe(candidates); probe != nil {
+	if probe := s.nextProbe(candidates, now); probe != nil {
 		return probe, nil
 	}
-	return s.rotate(provider+":"+model, soonestGroup(candidates, now)), nil
+	return s.rotate(provider+":"+model, s.soonestGroup(candidates, now)), nil
 }
 
-// nextProbe returns the first unobserved Claude or Codex candidate not probed yet, by
-// credential ID. Each credential is probed at most once, so one whose responses never
-// carry quota headers falls back to sorting as unknown.
-func (s *SoonestResetSelector) nextProbe(auths []*coreauth.Auth) *coreauth.Auth {
+// nextProbe returns the first candidate by credential ID that needs a probe: a Claude
+// or Codex OAuth credential with no quota headers and no stored weekly reading, not
+// probed within probeRetry.
+func (s *SoonestResetSelector) nextProbe(auths []*coreauth.Auth, now time.Time) *coreauth.Auth {
 	var probe *coreauth.Auth
 	for _, auth := range auths {
-		if len(auth.Quota.Signals) > 0 || !reportsWeeklyWindow(auth.Provider) {
+		if len(auth.Quota.Signals) > 0 || !reportsWeeklyWindow(auth) {
 			continue
 		}
-		if _, done := s.probed[auth.ID]; done {
+		if _, stored := s.readings.weekly(auth.Index, now); stored {
+			continue
+		}
+		if at, done := s.probed[auth.ID]; done && now.Sub(at) < probeRetry {
 			continue
 		}
 		if probe == nil || auth.ID < probe.ID {
@@ -116,23 +127,33 @@ func (s *SoonestResetSelector) nextProbe(auths []*coreauth.Auth) *coreauth.Auth 
 		return nil
 	}
 	if s.probed == nil || len(s.probed) >= maxRotationKeys {
-		s.probed = make(map[string]struct{})
+		s.probed = make(map[string]time.Time)
 	}
-	s.probed[probe.ID] = struct{}{}
+	s.probed[probe.ID] = now
 	return probe
 }
 
-func reportsWeeklyWindow(provider string) bool {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+// reportsWeeklyWindow reports whether responses for auth carry a weekly window. API
+// keys get neither Claude's unified limits nor Codex's plan windows.
+func reportsWeeklyWindow(auth *coreauth.Auth) bool {
+	switch strings.ToLower(strings.TrimSpace(auth.Provider)) {
 	case "claude", "codex":
-		return true
+		return strings.TrimSpace(auth.Attributes["api_key"]) == ""
 	}
 	return false
 }
 
-// soonestGroup returns the candidates sharing the soonest weekly reset, or every
-// remaining candidate when no reset is known.
-func soonestGroup(auths []*coreauth.Auth, now time.Time) []*coreauth.Auth {
+func (s *SoonestResetSelector) weeklyWindow(auth *coreauth.Auth, now time.Time) (WeeklyWindow, bool) {
+	if w, ok := WeeklyWindowOf(auth, now); ok {
+		return w, true
+	}
+	return s.readings.weekly(auth.Index, now)
+}
+
+// soonestGroup returns the candidates whose weekly reset is within
+// resetTieGranularity of the soonest one, or every remaining candidate when no reset
+// is known.
+func (s *SoonestResetSelector) soonestGroup(auths []*coreauth.Auth, now time.Time) []*coreauth.Auth {
 	type ranked struct {
 		auth  *coreauth.Auth
 		reset time.Time
@@ -140,10 +161,10 @@ func soonestGroup(auths []*coreauth.Auth, now time.Time) []*coreauth.Auth {
 	all := make([]ranked, 0, len(auths))
 	open := make([]ranked, 0, len(auths))
 	for _, auth := range auths {
-		w, known := WeeklyWindowOf(auth, now)
+		w, known := s.weeklyWindow(auth, now)
 		r := ranked{auth: auth}
 		if known {
-			r.reset = w.ResetsAt.Truncate(resetTieGranularity)
+			r.reset = w.ResetsAt
 		}
 		all = append(all, r)
 		if !known || !w.Exhausted {
@@ -161,7 +182,7 @@ func soonestGroup(auths []*coreauth.Auth, now time.Time) []*coreauth.Auth {
 	}
 	group := make([]*coreauth.Auth, 0, len(open))
 	for _, r := range open {
-		if r.reset.Equal(soonest) {
+		if r.reset.IsZero() == soonest.IsZero() && r.reset.Sub(soonest) < resetTieGranularity {
 			group = append(group, r.auth)
 		}
 	}

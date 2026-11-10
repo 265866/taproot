@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -177,6 +178,16 @@ func cond(key string, recover bool, delay time.Duration) map[string]Condition {
 	return map[string]Condition{key: c}
 }
 
+// stepDelivered runs one step and reports every message it returns as
+// delivered, as the service does once Discord accepts them.
+func stepDelivered(d *Detector, now time.Time, active map[string]Condition) []Message {
+	msgs, _ := d.Step(now, active)
+	for _, m := range msgs {
+		d.Delivered(now, m, nil)
+	}
+	return msgs
+}
+
 func TestDetectorStep(t *testing.T) {
 	const cd, st = 30 * time.Minute, 2 * time.Minute
 	limit := func() map[string]Condition { return cond("limit:a:five_hour", true, 0) }
@@ -241,7 +252,7 @@ func TestDetectorStep(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d := NewDetector(cd, st)
 			for _, s := range tc.steps {
-				msgs, _ := d.Step(t0.Add(s.at), s.active)
+				msgs := stepDelivered(d, t0.Add(s.at), s.active)
 				var got []string
 				for _, m := range msgs {
 					kind := "alert:"
@@ -263,9 +274,9 @@ func TestDetectorStep(t *testing.T) {
 
 func TestDetectorForgetsQuietKeys(t *testing.T) {
 	d := NewDetector(30*time.Minute, 2*time.Minute)
-	d.Step(t0, cond("k", true, 0))
-	d.Step(t0.Add(time.Minute), nil)
-	d.Step(t0.Add(3*time.Minute), nil)
+	stepDelivered(d, t0, cond("k", true, 0))
+	stepDelivered(d, t0.Add(time.Minute), nil)
+	stepDelivered(d, t0.Add(3*time.Minute), nil)
 	if _, changed := d.Step(t0.Add(31*time.Minute), nil); !changed || len(d.tracks) != 0 {
 		t.Fatalf("tracks = %v, want none after the cooldown", d.tracks)
 	}
@@ -277,7 +288,7 @@ func TestDetectorForgetsQuietKeys(t *testing.T) {
 func TestDetectorHoldsAnAlertUntilItsEnd(t *testing.T) {
 	d := NewDetector(30*time.Minute, 2*time.Minute)
 	grant := map[string]Condition{"grant:a:g": {Alert: Message{Key: "grant:a:g", Title: "alert"}, Until: t0.Add(20 * time.Hour)}}
-	if msgs, _ := d.Step(t0, grant); len(msgs) != 1 {
+	if msgs := stepDelivered(d, t0, grant); len(msgs) != 1 {
 		t.Fatalf("first step = %v", msgs)
 	}
 	d.Step(t0.Add(time.Hour), nil)
@@ -289,5 +300,97 @@ func TestDetectorHoldsAnAlertUntilItsEnd(t *testing.T) {
 	d.Step(t0.Add(22*time.Hour), nil)
 	if len(d.tracks) != 0 {
 		t.Fatalf("tracks = %v, want none after the end", d.tracks)
+	}
+}
+
+// A recovery that fails is sent again after the retry delay.
+func TestDetectorSendsAFailedRecoveryAgain(t *testing.T) {
+	d := NewDetector(30*time.Minute, 2*time.Minute)
+	stepDelivered(d, t0, cond("k", true, 0))
+	stepDelivered(d, t0.Add(40*time.Minute), nil)
+	at := t0.Add(42 * time.Minute)
+	msgs, _ := d.Step(at, nil)
+	if len(msgs) != 1 || msgs[0].Severity != SeverityRecovered {
+		t.Fatalf("recovery step = %v", msgs)
+	}
+	if !d.Delivered(at, msgs[0], &DeliveryError{Status: http.StatusServiceUnavailable}) {
+		t.Fatal("a failed recovery should change the state")
+	}
+	if msgs, _ := d.Step(at.Add(30*time.Second), nil); len(msgs) != 0 {
+		t.Fatalf("resent before the retry delay: %v", msgs)
+	}
+	msgs, _ = d.Step(at.Add(retryFirst), nil)
+	if len(msgs) != 1 || msgs[0].Severity != SeverityRecovered || !msgs[0].At.Equal(at.Add(retryFirst)) {
+		t.Fatalf("retry = %v, want the recovery again", msgs)
+	}
+	d.Delivered(at.Add(retryFirst), msgs[0], nil)
+	if msgs, _ := d.Step(at.Add(time.Hour), nil); len(msgs) != 0 || len(d.tracks) != 0 {
+		t.Fatalf("after the delivered recovery: %v, tracks %v", msgs, d.tracks)
+	}
+}
+
+// Failed alerts wait longer after each failure in a row, up to retryMax.
+func TestDetectorBacksOffRepeatedFailures(t *testing.T) {
+	d := NewDetector(30*time.Minute, 2*time.Minute)
+	now := t0
+	var waits []time.Duration
+	for range 7 {
+		msgs, _ := d.Step(now, cond("k", true, 0))
+		if len(msgs) != 1 {
+			t.Fatalf("at %v: %v, want the alert", now.Sub(t0), msgs)
+		}
+		d.Delivered(now, msgs[0], &DeliveryError{Status: http.StatusNotFound})
+		waits = append(waits, d.tracks["k"].RetryAt.Sub(now))
+		now = d.tracks["k"].RetryAt
+	}
+	want := []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 30 * time.Minute, 30 * time.Minute}
+	if !slices.Equal(waits, want) {
+		t.Fatalf("waits = %v, want %v", waits, want)
+	}
+}
+
+func TestCodexWindowsAreNamedByLength(t *testing.T) {
+	const day = 24 * 3600
+	for _, tc := range []struct {
+		window string
+		period int64
+		want   string
+	}{
+		{"codex_primary", 7 * day, "weekly"},
+		{"codex_primary", 5 * 3600, "5-hour"},
+		{"codex_secondary", 30 * day, "monthly"},
+		{"codex_primary", 0, "5-hour"},
+		{"codex_secondary", 0, "weekly"},
+		{"codex_code_review_secondary", 7 * day, "weekly code review"},
+		{"codex_bengalfox", 5 * 3600, "5-hour bengalfox"},
+		{"codex_bengalfox_primary", 0, "bengalfox primary"},
+		{"seven_day_opus", 7 * day, "weekly Opus"},
+	} {
+		if got := windowLabel(ingest.QuotaObservation{Window: tc.window, PeriodSeconds: tc.period}); got != tc.want {
+			t.Errorf("%s (%d s) = %q, want %q", tc.window, tc.period, got, tc.want)
+		}
+	}
+	o := obs("c1", "codex", "codex_primary", 1, 6*24*time.Hour, "rejected")
+	o.PeriodSeconds = 7 * day
+	c := Conditions(Snapshot{Now: t0, Accounts: []Account{{AuthIndex: "c1", Provider: "codex", Label: "free"}}, Quota: []ingest.QuotaObservation{o}})["limit:c1:codex_primary"]
+	if c.Alert.Title != "Codex account hit its weekly limit" {
+		t.Fatalf("title = %q", c.Alert.Title)
+	}
+}
+
+// A limit with no known reset ends one window length after the reading at
+// the latest, so it cannot hold an alert open forever.
+func TestLimitWithUnknownResetEndsAfterItsPeriod(t *testing.T) {
+	o := obs("a", "claude", "five_hour", 1, 0, "rejected")
+	o.PeriodSeconds = 5 * 3600
+	unknownLength := obs("b", "claude", "five_hour", 1, 0, "rejected")
+	snap := func(at time.Duration) []string {
+		return keys(Conditions(Snapshot{Now: t0.Add(at), Accounts: []Account{claude("a"), claude("b")}, Quota: []ingest.QuotaObservation{o, unknownLength}}))
+	}
+	if got := snap(4 * time.Hour); !slices.Equal(got, []string{"limit:a:five_hour", "limit:b:five_hour", "pool:claude"}) {
+		t.Fatalf("within the period: %v", got)
+	}
+	if got := snap(5 * time.Hour); !slices.Equal(got, []string{"limit:b:five_hour"}) {
+		t.Fatalf("after the period: %v", got)
 	}
 }
