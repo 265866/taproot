@@ -47,7 +47,6 @@ export const buildRepositoryURL = (repository: string) => {
 // mistaken for the official org.
 export const OFFICIAL_PLUGIN_REPO_PREFIX = 'https://github.com/router-for-me/';
 export const DEFAULT_PLUGIN_STORE_SOURCE_ID = 'official';
-const DEFAULT_PLUGIN_STORE_SOURCE_NAME = 'official';
 
 // Normalize an "owner/repo" slug or repository URL to a bare "owner/repo".
 export const getPluginRepositorySlug = (repository: string): string => {
@@ -73,11 +72,10 @@ export const isOfficialPlugin = (entry: PluginStoreEntry): boolean =>
   entry.sourceId.trim().toLowerCase() === DEFAULT_PLUGIN_STORE_SOURCE_ID &&
   isOfficialRepository(entry.repository);
 
-export const isDefaultPluginStoreSource = (
-  entry: Pick<PluginStoreEntry, 'sourceId' | 'sourceName'>
-): boolean =>
-  entry.sourceId.trim().toLowerCase() === DEFAULT_PLUGIN_STORE_SOURCE_ID ||
-  entry.sourceName.trim().toLowerCase() === DEFAULT_PLUGIN_STORE_SOURCE_NAME;
+// Only the backend assigns the reserved source ID. A source's name is its URL's host, which
+// anyone can choose (a tailnet machine named "official"), so it never marks the default source.
+export const isDefaultPluginStoreSource = (entry: Pick<PluginStoreEntry, 'sourceId'>): boolean =>
+  entry.sourceId.trim().toLowerCase() === DEFAULT_PLUGIN_STORE_SOURCE_ID;
 
 // The string a user must retype to confirm a risky install: the repo slug when
 // available (most faithful to the source), otherwise the plugin id.

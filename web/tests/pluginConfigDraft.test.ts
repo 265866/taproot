@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildPluginConfigDraft,
   buildPluginConfigPatch,
+  isSecretPluginField,
 } from '../src/features/plugins/pluginConfigDraft';
 import type { PluginConfigField } from '../src/types';
 
@@ -89,5 +90,24 @@ describe('plugin config draft', () => {
       patch: {},
       errors: { mixed: 'plugin_management.expected_array' },
     });
+  });
+});
+
+describe('plugin secret fields', () => {
+  const field = (name: string, type = 'string'): PluginConfigField => ({
+    name,
+    type,
+    enumValues: [],
+    description: '',
+  });
+
+  test('masks string fields whose names hold secrets', () => {
+    for (const name of ['api_key', 'apiKey', 'token', 'client-secret', 'password', 'private_key']) {
+      expect(isSecretPluginField(field(name))).toBe(true);
+    }
+    for (const name of ['label', 'base_url', 'model']) {
+      expect(isSecretPluginField(field(name))).toBe(false);
+    }
+    expect(isSecretPluginField(field('token_limit', 'integer'))).toBe(false);
   });
 });

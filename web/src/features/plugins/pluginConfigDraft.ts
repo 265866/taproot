@@ -23,6 +23,12 @@ type Translate = {
 export const normalizePluginConfigFieldType = (field: PluginConfigField): string =>
   field.type.trim().toLowerCase();
 
+// The plugin API has no secret field type, so mask by name, as a password manager would.
+const SECRET_FIELD_NAME = /secret|token|password|passwd|credential|api[-_]?key|private[-_]?key/i;
+
+export const isSecretPluginField = (field: PluginConfigField): boolean =>
+  normalizePluginConfigFieldType(field) === 'string' && SECRET_FIELD_NAME.test(field.name);
+
 const stringifyJSONValue = (value: unknown): string => {
   if (value === undefined || value === null) return '';
   try {
