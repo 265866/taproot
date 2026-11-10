@@ -1,11 +1,13 @@
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/265866/taproot/internal/taproot/access"
@@ -158,7 +160,11 @@ func (d deviceRollup) apply(ctx context.Context, c *sql.Conn) error {
 		return err
 	}
 	defer w.close()
-	for k, r := range d {
+	for _, k := range keysInOrder(d, func(a, b deviceRollupKey) int {
+		return cmp.Or(cmp.Compare(a.Hour, b.Hour), strings.Compare(a.DeviceID, b.DeviceID),
+			strings.Compare(a.Model, b.Model), cmp.Compare(boolInt(a.Main), boolInt(b.Main)))
+	}) {
+		r := d[k]
 		if err := w.upsert(ctx, []any{k.Hour, k.DeviceID, k.Model, boolInt(k.Main)}, &r.rollupDelta, r.splitRequests); err != nil {
 			return err
 		}
