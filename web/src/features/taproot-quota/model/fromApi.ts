@@ -9,6 +9,7 @@ import type {
   QuotaWindowState,
   TaprootAccount,
 } from '@/services/api/taproot';
+import { normalizeOAuthProviderKey } from '@/utils/providerKeys';
 import type { AccountInput, WindowObservation, WindowSeries } from './projection';
 
 /** Providers shown first, in this order; any other provider follows alphabetically. */
@@ -97,7 +98,7 @@ export function buildProviderGroups(
     if (!account) {
       account = {
         authIndex,
-        provider: provider.toLowerCase(),
+        provider: normalizeOAuthProviderKey(provider),
         label: '',
         email: '',
         plan: '',

@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildResetDisplay,
+  formatElapsed,
   formatInstantShort,
   formatQuotaResetTime,
   formatRelativeInstant,
@@ -71,10 +72,23 @@ describe('formatRelativeInstant', () => {
   });
 });
 
+describe('formatElapsed', () => {
+  test('is null under a minute, also slightly ahead of the minute clock', () => {
+    expect(formatElapsed(NOW - 30_000, NOW, 'en')).toBeNull();
+    expect(formatElapsed(NOW + 30_000, NOW, 'en')).toBeNull();
+    expect(formatElapsed(NOW - 5 * MINUTE_MS, NOW, 'en')).toBe('5 minutes ago');
+  });
+});
+
 describe('formatInstantShort', () => {
   test('matches the shape the baked reset labels already use', () => {
     const iso = new Date(2026, 7, 13, 14, 30).toISOString();
     expect(formatInstantShort(new Date(iso).getTime())).toBe(formatQuotaResetTime(iso));
+  });
+
+  test('reads like the ledger: numeric date and the locale clock', () => {
+    const at = new Date(2026, 10, 10, 2, 38).getTime();
+    expect(formatInstantShort(at, 'en').replace(/\s/g, ' ')).toBe('11/10, 2:38 AM');
   });
 
   test('degrades to a dash rather than "Invalid Date"', () => {
@@ -83,6 +97,11 @@ describe('formatInstantShort', () => {
 });
 
 describe('buildResetDisplay', () => {
+  test('marks an instant that is already behind now', () => {
+    expect(buildResetDisplay(null, NOW - 5 * MINUTE_MS, NOW, 'en')?.passed).toBe(true);
+    expect(buildResetDisplay(null, NOW + 5 * MINUTE_MS, NOW, 'en')?.passed).toBe(false);
+  });
+
   test('pairs a baked absolute label with a computed relative one', () => {
     const display = buildResetDisplay('08-13 14:30', NOW + 11 * DAY_MS, NOW, 'en');
     expect(display).not.toBeNull();
@@ -95,6 +114,7 @@ describe('buildResetDisplay', () => {
     expect(buildResetDisplay('08-13 14:30', null, NOW, 'en')).toEqual({
       absolute: '08-13 14:30',
       relative: null,
+      passed: false,
     });
     expect(buildResetDisplay('08-13 14:30', undefined, NOW, 'en')?.relative).toBeNull();
   });
@@ -122,6 +142,8 @@ describe('buildResetDisplay', () => {
 
   test('rejects a non-finite instant', () => {
     expect(buildResetDisplay(undefined, Number.NaN, NOW, 'en')).toBeNull();
-    expect(buildResetDisplay('08-13 14:30', Number.POSITIVE_INFINITY, NOW, 'en')?.relative).toBeNull();
+    expect(
+      buildResetDisplay('08-13 14:30', Number.POSITIVE_INFINITY, NOW, 'en')?.relative
+    ).toBeNull();
   });
 });

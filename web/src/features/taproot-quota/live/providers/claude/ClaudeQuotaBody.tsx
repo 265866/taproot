@@ -5,7 +5,12 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ClaudeQuotaState } from '@/types';
-import { buildResetDisplay, formatQuotaResetTime, resolveResetMs } from '@/utils/quota';
+import {
+  buildResetDisplay,
+  formatInstantShort,
+  formatQuotaResetTime,
+  resolveResetMs,
+} from '@/utils/quota';
 import { useNow } from '@/hooks/useNow';
 import { planValueClassForTier, resolveClaudeCardTier } from '../../cardTier';
 import { QuotaMeter } from '../../components/QuotaMeter';
@@ -56,7 +61,9 @@ export function ClaudeQuotaBody({
       {quota.stale && (
         <div role="status" className={classes.codexResetCreditsError}>
           {t('claude_quota.stale_snapshot', {
-            time: quota.observedAt ? new Date(quota.observedAt).toLocaleString(language) : '--',
+            time: quota.observedAt
+              ? formatInstantShort(Date.parse(quota.observedAt), language)
+              : '--',
           })}
         </div>
       )}

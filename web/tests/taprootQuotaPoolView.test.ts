@@ -174,4 +174,78 @@ describe('poolNow', () => {
     expect(now.remainingNow).toBeCloseTo(0.8 + 0.5, 12);
     expect(now.unobserved).toBe(0);
   });
+
+  test('an account whose only account-wide window went stale counts as unobserved', () => {
+    const group: ProviderGroup = {
+      provider: 'claude',
+      accounts: [
+        account('s', {
+          windows: [
+            {
+              window: 'five_hour',
+              utilization: 0.7,
+              resetsAt: NOW - 20 * H,
+              observedAt: NOW - 30 * H,
+              periodMs: FIVE,
+            },
+            {
+              window: 'seven_day_opus',
+              accountWide: false,
+              utilization: 0.1,
+              resetsAt: NOW + 24 * H,
+              observedAt: NOW,
+              periodMs: WEEK,
+            },
+          ],
+        }),
+      ],
+      hasQuotaData: true,
+    };
+    const now = poolNow(group, NOW);
+    expect(now.remainingNow).toBe(1);
+    expect(now.unobserved).toBe(1);
+  });
+
+  test('the Accounts card and the Dashboard name the same next reset', () => {
+    // The 5-hour window is unused now, so its reset 2h out gives nothing back unless usage
+    // continues; the weekly reset in 24h does.
+    const busy = account('a', {
+      windows: [
+        {
+          window: 'five_hour',
+          utilization: 0,
+          resetsAt: NOW + 2 * H,
+          observedAt: NOW,
+          periodMs: FIVE,
+        },
+        {
+          window: 'seven_day',
+          utilization: 0.4,
+          resetsAt: NOW + 24 * H,
+          observedAt: NOW,
+          periodMs: WEEK,
+        },
+      ],
+      series: [
+        {
+          window: 'five_hour',
+          periodMs: FIVE,
+          points: [0, 1, 2, 3].map((i) => ({ t: NOW - (3 - i) * H, u: 0 })),
+          resets: [],
+        },
+        {
+          window: 'seven_day',
+          periodMs: WEEK,
+          points: [0, 1, 2, 3].map((i) => ({ t: NOW - (3 - i) * H, u: 0.1 * (i + 1) })),
+          resets: [],
+        },
+      ],
+    });
+    const group: ProviderGroup = { provider: 'claude', accounts: [busy], hasQuotaData: true };
+    for (const future of ['same', 'heavy', 'none'] as const) {
+      const view = buildPoolView(group, { now: NOW, range, burnWindowMs: 3 * H, future });
+      expect(view.nextReset).toEqual(poolNow(group, NOW).nextReset);
+    }
+    expect(poolNow(group, NOW).nextReset?.t).toBe(NOW + 24 * H);
+  });
 });

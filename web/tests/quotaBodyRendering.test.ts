@@ -180,6 +180,17 @@ describe('CodexQuotaBody', () => {
     expect(markup).not.toContain('Soon');
   });
 
+  test('says a reset passed since the read instead of counting it as ago', () => {
+    const passed: CodexQuotaState = {
+      ...quota,
+      windows: [{ ...quota.windows[0], usedPercent: 100, resetAtMs: now - 5 * 60_000 }],
+    };
+    const markup = renderToStaticMarkup(createElement(CodexQuotaBody, { quota: passed, classes }));
+
+    expect(markup).toContain('reset since read');
+    expect(markup).not.toContain('minutes ago');
+  });
+
   test('keeps the baked label alone when the store entry predates resetAtMs', () => {
     const stale: CodexQuotaState = {
       ...quota,

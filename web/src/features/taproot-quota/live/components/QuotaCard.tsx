@@ -10,6 +10,8 @@ import type { ClaudeQuotaState, ResolvedTheme } from '@/types';
 import { resolveQuotaErrorMessage } from '@/utils/quota';
 import { getQuotaDisplayName } from '@/utils/quota/identity';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { useNow } from '@/hooks/useNow';
+import { formatElapsed } from '@/utils/quota/relativeTime';
 import {
   getAuthFileIcon,
   getThemeSurfaceIconBackground,
@@ -51,7 +53,8 @@ export function QuotaCard(props: QuotaCardProps) {
     onRefresh,
     onReset,
   } = props;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const now = useNow();
   const adapter = QUOTA_ADAPTERS[entry.type];
   const file = entry.file;
   const retainedClaudeUsage =
@@ -67,6 +70,8 @@ export function QuotaCard(props: QuotaCardProps) {
       : ({ '--card-delay': `${mountEntranceDelayMs}ms` } as CSSProperties);
 
   const status = quota?.status ?? 'idle';
+  const readAge =
+    quota?.readAt === undefined ? null : formatElapsed(quota.readAt, now, i18n.resolvedLanguage);
   const loading = status === 'loading';
   const claudeReset = useClaudeResetGrants(
     file,
@@ -190,6 +195,13 @@ export function QuotaCard(props: QuotaCardProps) {
 
       {status !== 'idle' && (
         <footer className={styles.actionRow}>
+          {status === 'success' && quota?.readAt !== undefined && (
+            <span className={styles.readAt}>
+              {readAge === null
+                ? t('taproot_quota.live.read_just_now')
+                : t('taproot_quota.live.read_at', { relative: readAge })}
+            </span>
+          )}
           {entry.type === 'claude' && (
             <button
               type="button"

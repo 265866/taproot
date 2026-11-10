@@ -3,6 +3,7 @@ import {
   isQuotaRefreshDisabled,
   resolveQuotaProviderType,
 } from '@/features/taproot-quota/live/logic';
+import { buildProviderGroups } from '@/features/taproot-quota/model/fromApi';
 import { liveEntriesByAuthIndex, liveEntriesByProvider } from '@/features/taproot-quota/model/live';
 import type { AuthFileItem } from '@/types';
 
@@ -58,12 +59,38 @@ describe('isQuotaRefreshDisabled', () => {
 });
 
 describe('live entries for the quota page', () => {
-  test('groups by each credential file provider, as /accounts does', () => {
+  test('groups by each credential file provider under the provider group key', () => {
     const byProvider = liveEntriesByProvider([
       ...FILES,
       file('kiro-a.json', 'kiro', { supportsQuota: true, quotaProvider: 'Kiro', authIndex: '9' }),
+      file('muse-a.json', 'muse'),
+      file('kimi-intl.json', 'kimi_ai'),
     ]);
-    expect([...byProvider.keys()]).toEqual(['claude', 'codex', 'grok', 'kimi', 'kiro']);
+    expect([...byProvider.keys()].sort()).toEqual([
+      'claude',
+      'codex',
+      'kimi',
+      'kimi-ai',
+      'kiro',
+      'meta',
+      'xai',
+    ]);
+    const groups = buildProviderGroups(
+      ['grok', 'muse', 'kimi_ai', 'Claude'].map((provider, i) => ({
+        authIndex: String(i),
+        provider,
+        label: '',
+        email: '',
+        plan: '',
+        disabled: false,
+        firstSeen: null,
+        lastSeen: null,
+        removed: false,
+      })),
+      [],
+      []
+    );
+    for (const group of groups) expect(byProvider.has(group.provider)).toBe(true);
     expect(byProvider.get('codex')?.map((e) => e.file.name)).toEqual([
       'codex-a.json',
       'codex-b.json',

@@ -268,10 +268,12 @@
 }
 
 .cooldown {
-  color: var(--warning-color);
+  color: var(--failure-badge-text);
 }
 
 .lastSeen {
+  display: flex;
+  flex-direction: column;
   font-size: 13px;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
@@ -295,11 +297,18 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  opacity: 0.45;
   font-variant-numeric: tabular-nums;
+}
 
-  &[data-limiting] {
-    opacity: 1;
+/* A window that is not holding the account back: the bar fades, the text stays readable. */
+.cell:not([data-limiting]) {
+  .cellLabel,
+  .cellValue {
+    color: var(--text-tertiary);
+  }
+
+  .bar {
+    opacity: 0.45;
   }
 }
 
@@ -339,7 +348,7 @@
   }
 
   &[data-level='medium'] {
-    background: var(--warning-color);
+    background: var(--quota-medium-color);
   }
 
   &[data-level='low'] {
