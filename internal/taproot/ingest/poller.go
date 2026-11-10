@@ -33,12 +33,16 @@ const (
 // refreshAccounts copies labels, emails, plans, and disabled flags from the
 // auth manager. Accounts the manager no longer knows keep their last values,
 // so historical rows stay labelled, and are marked removed so quota views
-// stop counting them. An empty list is treated as not loaded yet.
+// stop counting them. The server attaches the manager after it loaded the
+// stored credentials, so an attached manager's empty list means none are left.
 func (i *Ingest) refreshAccounts(ctx context.Context) error {
-	auths := i.authList()
-	if len(auths) == 0 {
+	i.authMu.RLock()
+	src := i.auths
+	i.authMu.RUnlock()
+	if src == nil {
 		return nil
 	}
+	auths := src.List()
 	now := i.now().UnixMilli()
 	return store.WithImmediateTx(ctx, i.db.DB, func(c *sql.Conn) error {
 		present := map[string]bool{}
@@ -60,9 +64,6 @@ func (i *Ingest) refreshAccounts(ctx context.Context) error {
 				idx, strings.ToLower(a.Provider), label, email, authPlan(a), boolInt(a.Disabled)); err != nil {
 				return fmt.Errorf("upsert account %s: %w", idx, err)
 			}
-		}
-		if len(present) == 0 {
-			return nil
 		}
 		rows, err := c.QueryContext(ctx, `SELECT auth_index FROM accounts WHERE removed_at IS NULL`)
 		if err != nil {

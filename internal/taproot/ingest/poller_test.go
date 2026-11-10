@@ -215,3 +215,26 @@ func TestPollStampsEachAccountAtItsResponse(t *testing.T) {
 		t.Fatalf("stamps after start %v, want 700, 1400, and 2100 ms", got)
 	}
 }
+
+func TestRefreshAccountsMarksLastCredentialRemoved(t *testing.T) {
+	i, _ := newTestIngest(t, Config{})
+	m := coreauth.NewManager(nil, nil, nil)
+	idx := registerAuth(t, m, &coreauth.Auth{ID: "only.json", FileName: "only.json", Provider: "claude"})
+	i.AttachAuthManager(m)
+	if err := i.refreshAccounts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	i.enqueueObservations([]observation{{AuthIndex: idx, Provider: "claude", Window: "five_hour", Utilization: 0.4, ObservedAt: time.Date(2026, 11, 2, 11, 0, 0, 0, time.UTC)}})
+	mustFlush(t, i)
+
+	m.Remove(context.Background(), "only.json")
+	if err := i.refreshAccounts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := queryInt(t, i, `SELECT COUNT(*) FROM accounts WHERE auth_index=? AND removed_at IS NOT NULL`, idx); n != 1 {
+		t.Fatal("the only credential was not marked removed")
+	}
+	if latest, err := i.LatestQuota(context.Background()); err != nil || len(latest) != 0 {
+		t.Fatalf("latest = %+v, err = %v", latest, err)
+	}
+}
