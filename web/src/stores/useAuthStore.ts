@@ -31,8 +31,14 @@ interface AuthStoreState {
 
 export const classifyConnectionError = (error: unknown): ConnectionFailure => {
   const { status, apiCode } = (error as { status?: unknown; apiCode?: unknown } | null) ?? {};
-  // The access guard's 403 for a tailnet device without Admin.
-  if (status === 403 && apiCode === 'not_admin') return 'not_admin';
+  // The access guard's 403s for a tailnet device without Admin, a browser on the server itself,
+  // and an admin device while the server's own node is unknown.
+  if (
+    status === 403 &&
+    (apiCode === 'not_admin' || apiCode === 'server_node' || apiCode === 'server_node_unknown')
+  ) {
+    return apiCode;
+  }
   return status === 401 || status === 403 ? 'forbidden' : 'unreachable';
 };
 
