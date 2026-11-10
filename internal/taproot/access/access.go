@@ -33,7 +33,7 @@
 // which are static, so a device without Admin can ask for access there.
 // A tailnet device that is refused is told its own name, login, and ID, and
 // unless it has Admin, its refusal is recorded as an access request (see
-// requests.go); nobody else gets more than "forbidden". A device without
+// requests.go); nobody else gets more than a plain denial. A device without
 // Admin may also POST to RequestPath, which records a request and grants
 // nothing.
 //
@@ -532,7 +532,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			// the admin surface keeps the browser checks.
 			if surf == surfaceAdmin {
 				reason := "the guard is disabled, so only loopback reaches the admin surface"
-				denial := gin.H{"code": "forbidden", "message": "the access guard is disabled, so only loopback reaches this route"}
+				denial := gin.H{"code": "guard_disabled", "message": "the access guard is disabled, so only loopback reaches this route"}
 				if isLoopback(r.RemoteAddr) {
 					reason, denial = g.browserGuard(r, func() *selfNode { return nil })
 				}

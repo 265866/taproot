@@ -3,12 +3,15 @@ import { readFileSync } from 'node:fs';
 import {
   RESTART_MAX_PROBES,
   confirmationMatches,
+  isRestartWatchFinished,
+  lockedOutKey,
   restartProbeFailure,
   restoreRefusal,
   startRestartWatch,
   stepRestartWatch,
   summarizeBackups,
   type RestartProbe,
+  type RestartRefusal,
   type RestartWatch,
 } from '@/features/taproot-backups/model/backups';
 import { en } from '@/i18n/resources';
@@ -71,19 +74,60 @@ describe('restart watch after a restore', () => {
     const back = run(['down', 'ok']);
     expect(stepRestartWatch(back, 'down')).toBe(back);
   });
+  const refused: RestartRefusal = { code: 'not_admin', message: 'no Admin' };
+  const guardOff: RestartRefusal = { code: 'guard_disabled', message: 'guard off' };
+  const unknownHost: RestartRefusal = { code: 'unknown_host', message: 'unknown host' };
+  const times = (n: number, probe: RestartProbe) => Array.from({ length: n }, () => probe);
+
   test('a server that keeps refusing this browser is locked out, not down', () => {
-    expect(phase(['down', 'refused', 'refused', 'refused'])).toBe('locked_out');
+    expect(phase(['down', refused, refused, refused])).toBe('locked_out');
     // One refusal while the server starts up is not a lockout.
-    expect(phase(['down', 'refused', 'ok'])).toBe('back');
-    expect(phase(['down', 'refused', 'down', 'refused', 'refused'])).toBe('down');
-    const locked = run(['refused', 'refused', 'refused']);
-    expect(stepRestartWatch(locked, 'ok')).toBe(locked);
+    expect(phase(['down', refused, 'ok'])).toBe('back');
+    expect(phase(['down', refused, 'down', refused, refused])).toBe('down');
+    expect(run(['down', guardOff, guardOff, guardOff])).toMatchObject({
+      phase: 'locked_out',
+      refusal: guardOff,
+    });
   });
-  test('a 403 is a refusal, except while the guard cannot tell the server yet', () => {
-    expect(restartProbeFailure(new TaprootApiError(403, 'not_admin', 'no'))).toBe('refused');
-    expect(restartProbeFailure(new TaprootApiError(403, 'http_error', '403 Forbidden'))).toBe(
-      'refused'
-    );
+  test('a lockout keeps probing, so a refusal that clears still ends as back', () => {
+    const locked = run(['down', refused, refused, refused]);
+    expect(isRestartWatchFinished(locked)).toBe(false);
+    expect(stepRestartWatch(locked, 'ok')).toMatchObject({ phase: 'back', refusal: null });
+    const forGood = run(times(RESTART_MAX_PROBES, refused));
+    expect(forGood).toMatchObject({ phase: 'locked_out', probes: RESTART_MAX_PROBES });
+    expect(isRestartWatchFinished(forGood)).toBe(true);
+    expect(stepRestartWatch(forGood, 'ok')).toBe(forGood);
+  });
+  test('an unknown host counts as a lockout only after it lasts', () => {
+    // A starting server refuses its own MagicDNS name until it has read tailscaled.
+    expect(phase(['down', ...times(9, unknownHost)])).toBe('down');
+    expect(phase(['down', ...times(9, unknownHost), 'ok'])).toBe('back');
+    expect(run(['down', ...times(10, unknownHost)])).toMatchObject({
+      phase: 'locked_out',
+      refusal: unknownHost,
+    });
+  });
+  test('the lockout banner is worded by the refusal', () => {
+    expect(lockedOutKey(guardOff)).toBe('restart_locked_out_guard_disabled');
+    expect(lockedOutKey(unknownHost)).toBe('restart_locked_out_unknown_host');
+    expect(lockedOutKey(refused)).toBe('restart_locked_out');
+    expect(lockedOutKey(null)).toBe('restart_locked_out');
+    const copy = en.taproot_backups as Record<string, string>;
+    expect(copy.restart_locked_out).toContain('{{message}}');
+    expect(copy.restart_locked_out).not.toContain('Admin');
+    expect(copy.restart_locked_out_guard_disabled).toContain('access.enabled');
+    expect(copy.restart_locked_out_unknown_host).toContain('{{host}}');
+    expect(copy.restart_locked_out_unknown_host).toContain('access.extra-hosts');
+  });
+  test('a 403 is a refusal with its code, except while the guard cannot tell the server yet', () => {
+    expect(restartProbeFailure(new TaprootApiError(403, 'not_admin', 'no'))).toEqual({
+      code: 'not_admin',
+      message: 'no',
+    });
+    expect(restartProbeFailure(new TaprootApiError(403, 'http_error', '403 Forbidden'))).toEqual({
+      code: 'http_error',
+      message: '403 Forbidden',
+    });
     expect(restartProbeFailure(new TaprootApiError(403, 'server_node_unknown', 'later'))).toBe(
       'down'
     );
@@ -123,6 +167,8 @@ describe('refused restores', () => {
       'restore_incompatible',
       'restore_restart_pending',
       'restart_locked_out',
+      'restart_locked_out_guard_disabled',
+      'restart_locked_out_unknown_host',
     ]) {
       expect((en.taproot_backups as Record<string, string>)[key]?.length).toBeGreaterThan(0);
     }

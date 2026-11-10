@@ -105,6 +105,22 @@ for (const [mode, tokens] of Object.entries(THEMES)) {
       expect(Math.abs(luminance(ring) - luminance(page))).toBeGreaterThan(0.02);
     });
 
+    test('a locked on switch stays distinct from an off one', () => {
+      const opacity = (name: string) => Number(tokens[name]);
+      for (const surface of OPAQUE_SURFACES) {
+        const under = c(surface);
+        const track = over({ ...c('accent'), a: opacity('toggle-locked-on-opacity') }, under);
+        const off = c('toggle-off-bg');
+        expect({ surface, ok: contrast(track, off) >= 2 }).toEqual({ surface, ok: true });
+        // Its thumb still shows which side it is on.
+        const thumb = over(
+          { ...c('primary-contrast'), a: opacity('toggle-locked-on-thumb-opacity') },
+          track
+        );
+        expect({ surface, ok: contrast(thumb, track) >= 3 }).toEqual({ surface, ok: true });
+      }
+    });
+
     test('the interface accent is neutral, so provider and status colors carry all the hue', () => {
       for (const name of [
         'accent',

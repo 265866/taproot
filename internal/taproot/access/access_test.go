@@ -1028,7 +1028,7 @@ func TestDisabledGuardKeepsAdminSurfaceLoopbackOnly(t *testing.T) {
 	for _, remote := range []string{"203.0.113.9:5000", adminIP + ":40000", selfIP + ":40000", "192.168.10.44:1"} {
 		for _, path := range []string{"/v8/management/config", "/v0/management/config", "/v0/resource/plugins/demo/page", "/taproot/api/v1/me", "/taproot/api/v1/access/devices"} {
 			got.authorization = "unset"
-			assertForbidden(t, do(e, remote, path, map[string]string{"Authorization": "Bearer mine"}))
+			assertPlainDenied(t, do(e, remote, path, map[string]string{"Authorization": "Bearer mine"}), "guard_disabled")
 			if got.authorization != "unset" {
 				t.Fatalf("denied %s from %s reached the handler", path, remote)
 			}

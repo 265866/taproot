@@ -67,6 +67,9 @@
   --input-bg: var(--bg-secondary);
   // 3:1 against every light surface and the white thumb, as WCAG 1.4.11 asks of a control.
   --toggle-off-bg: #85807a;
+  // A dimmed ink track would match the off track, so a locked on switch dims its thumb instead.
+  --toggle-locked-on-opacity: 1;
+  --toggle-locked-on-thumb-opacity: 0.5;
   --overlay-bg: rgba(0, 0, 0, 0.35);
   --tooltip-bg: #24211c;
   --tooltip-text: #f6f4f1;
@@ -210,6 +213,8 @@
   --floating-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
   --input-bg: #000000;
   --toggle-off-bg: #262626;
+  --toggle-locked-on-opacity: 0.5;
+  --toggle-locked-on-thumb-opacity: 1;
   --overlay-bg: rgba(0, 0, 0, 0.72);
   --tooltip-bg: #0d0d0d;
   --tooltip-text: #ededed;

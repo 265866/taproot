@@ -27,6 +27,7 @@ import {
   RESTART_PROBE_MS,
   confirmationMatches,
   isRestartWatchFinished,
+  lockedOutKey,
   restartProbeFailure,
   restoreRefusal,
   startRestartWatch,
@@ -289,6 +290,7 @@ function RestoreDialog({
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<RestoreRefusal | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const refusalRef = useRef<HTMLDivElement>(null);
   const ready = confirmationMatches(typed, backup.id);
 
   // Modal focuses its first control on a zero-delay timer; land on the id field after it.
@@ -296,6 +298,11 @@ function RestoreDialog({
     const timer = window.setTimeout(() => inputRef.current?.focus(), 50);
     return () => window.clearTimeout(timer);
   }, []);
+
+  // The restore button was disabled while busy, which drops focus to the page body.
+  useEffect(() => {
+    if (refusal) refusalRef.current?.focus();
+  }, [refusal]);
 
   const lockoutAsked = refusal?.kind === 'would_lock_out';
   const restore = async () => {
@@ -375,7 +382,12 @@ function RestoreDialog({
           aria-invalid={typed !== '' && !ready}
         />
         {refusalText && (
-          <div className={`error-box ${styles.dialogError}`} role="alert">
+          <div
+            ref={refusalRef}
+            tabIndex={-1}
+            className={`error-box ${styles.dialogError}`}
+            role="alert"
+          >
             {mask(refusalText)}
           </div>
         )}
@@ -399,7 +411,12 @@ function RestoreBanner({
   const restartText =
     result.restart === 'manual'
       ? t('taproot_backups.restart_manual')
-      : t(`taproot_backups.restart_${phase}`);
+      : phase === 'locked_out'
+        ? t(`taproot_backups.${lockedOutKey(watch?.refusal ?? null)}`, {
+            host: window.location.host,
+            message: watch?.refusal?.message ?? '',
+          })
+        : t(`taproot_backups.restart_${phase}`);
   return (
     <div className={styles.banner} role="status">
       <div>
@@ -413,7 +430,7 @@ function RestoreBanner({
             result.restart === 'manual' || phase === 'locked_out' ? styles.bannerAction : ''
           }
         >
-          {restartText}
+          {mask(restartText)}
         </p>
       </div>
       <Button size="sm" variant="ghost" onClick={onDismiss}>
