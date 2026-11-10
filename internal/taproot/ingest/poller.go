@@ -14,7 +14,6 @@ import (
 	"github.com/265866/taproot/internal/auth/codex"
 	"github.com/265866/taproot/internal/taproot/store"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
-	"github.com/265866/taproot/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -202,7 +201,10 @@ func (i *Ingest) pollAccount(ctx context.Context, a *coreauth.Auth, provider str
 			req.Header.Set("Chatgpt-Account-Id", strings.TrimSpace(id))
 		}
 	}
-	client := &http.Client{Transport: pollTransport(a)}
+	client, err := i.proxy.Client(a)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request usage: %w", err)
@@ -224,14 +226,4 @@ func (i *Ingest) pollAccount(ctx context.Context, a *coreauth.Auth, provider str
 		return parseClaudeUsagePayload(body, observedAt), nil
 	}
 	return parseCodexUsagePayload(body, observedAt), nil
-}
-
-func pollTransport(a *coreauth.Auth) http.RoundTripper {
-	if proxy := strings.TrimSpace(a.ProxyURL); proxy != "" {
-		if t, _, err := proxyutil.BuildHTTPTransport(proxy); err == nil && t != nil {
-			return t
-		}
-		log.WithField("auth_index", a.Index).Warn("taproot ingest: invalid auth proxy URL, polling directly")
-	}
-	return http.DefaultTransport
 }

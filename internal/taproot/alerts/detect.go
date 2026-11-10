@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -33,6 +34,9 @@ type Message struct {
 	Description string    `json:"description"`
 	Fields      []Field   `json:"fields,omitempty"`
 	At          time.Time `json:"at"`
+	// tracked marks a message from Detector.Step, whose delivery outcome goes
+	// back to the detector.
+	tracked bool
 }
 
 // Account is a credential as alerts see it: present in the auth manager and
@@ -96,8 +100,9 @@ func Conditions(s Snapshot) map[string]Condition {
 		accounts[a.AuthIndex] = a
 	}
 
-	// limitedUntil is, per account, the earliest reset of an account-wide
-	// window that is at its limit; the zero time means limited with no known reset.
+	// limitedUntil is, per account, when it is usable again: the latest reset
+	// of its account-wide windows at their limit. The zero time means one of
+	// those windows has no known reset.
 	limitedUntil := map[string]time.Time{}
 	limited := map[string]bool{}
 	for _, o := range s.Quota {
@@ -153,16 +158,21 @@ func Conditions(s Snapshot) map[string]Condition {
 }
 
 // atLimit reports whether a window blocks traffic now. A window whose reset
-// has passed is usable again even before a new observation arrives.
+// has passed is usable again even before a new observation arrives. With no
+// reset known, a window of known length has reset one period after the
+// reading at the latest.
 func atLimit(o ingest.QuotaObservation, now time.Time) bool {
 	if o.Status != "rejected" && o.Utilization < 1 {
 		return false
 	}
-	return o.ResetsAt.IsZero() || o.ResetsAt.After(now)
+	if !o.ResetsAt.IsZero() {
+		return o.ResetsAt.After(now)
+	}
+	return o.PeriodSeconds <= 0 || o.ObservedAt.Add(time.Duration(o.PeriodSeconds)*time.Second).After(now)
 }
 
 func limitCondition(key string, a Account, o ingest.QuotaObservation) Condition {
-	window := windowLabel(o.Window)
+	window := windowLabel(o)
 	scope := ""
 	if !o.AccountWide {
 		scope = " Other models on this account still work."
@@ -309,19 +319,49 @@ func grantCondition(key string, a Account, g Grant) Condition {
 
 // track is the detector's memory of one key.
 type track struct {
-	Active    bool      `json:"active"`
-	Notified  bool      `json:"notified"`
-	ChangedAt time.Time `json:"changedAt"`
-	LastAlert time.Time `json:"lastAlert"`
-	Recovery  *Message  `json:"recovery,omitempty"`
+	Active bool `json:"active"`
+	// Notified is set from the alert until its recovery is delivered. While
+	// Queued, the alert waits for its delivery outcome; while Recovering, the
+	// recovery does.
+	Notified   bool      `json:"notified"`
+	Queued     bool      `json:"queued,omitempty"`
+	Recovering bool      `json:"recovering,omitempty"`
+	ChangedAt  time.Time `json:"changedAt"`
+	LastAlert  time.Time `json:"lastAlert"`
+	Recovery   *Message  `json:"recovery,omitempty"`
 	// Until is the posted condition's Until.
 	Until time.Time `json:"until,omitzero"`
+	// RetryAt holds back a message whose delivery failed; Failures counts
+	// the failures in a row.
+	RetryAt  time.Time `json:"retryAt,omitzero"`
+	Failures int       `json:"failures,omitempty"`
+}
+
+// undeliver forgets the key's alert as if it was never sent.
+func (t *track) undeliver() {
+	t.Notified, t.Queued, t.LastAlert, t.Recovery, t.Until = false, false, time.Time{}, nil, time.Time{}
+}
+
+const (
+	retryFirst = time.Minute
+	retryMax   = 30 * time.Minute
+)
+
+// failed holds the key back for a delay that doubles with each failure in a row.
+func (t *track) failed(now time.Time) {
+	delay := retryMax
+	if t.Failures < 5 {
+		delay = retryFirst << t.Failures
+	}
+	t.RetryAt, t.Failures = now.Add(delay), t.Failures+1
 }
 
 // Detector turns conditions into messages. A key alerts once per episode; a
 // recovery waits until the condition has stayed clear for settle, so a flap
 // inside that time continues the same episode; and a new alert for the same
-// key waits for cooldown after the previous one.
+// key waits for cooldown after the previous one. An alert counts as posted
+// only once Delivered reports it delivered: a failed one is sent again while
+// its condition holds, and its recovery is never posted.
 type Detector struct {
 	cooldown time.Duration
 	settle   time.Duration
@@ -346,16 +386,16 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 		if !t.Active {
 			t.Active, t.ChangedAt, changed = true, now, true
 		}
-		if t.Notified || now.Sub(t.ChangedAt) < c.Delay {
+		if t.Notified || now.Sub(t.ChangedAt) < c.Delay || now.Before(t.RetryAt) {
 			continue
 		}
 		if !t.LastAlert.IsZero() && now.Sub(t.LastAlert) < d.cooldown {
 			continue
 		}
 		msg := c.Alert
-		msg.At = now
+		msg.At, msg.tracked = now, true
 		out = append(out, msg)
-		t.Notified, t.LastAlert, t.Recovery, t.Until, changed = true, now, c.Recovery, c.Until, true
+		t.Notified, t.Queued, t.LastAlert, t.Recovery, t.Until, changed = true, true, now, c.Recovery, c.Until, true
 	}
 	for key, t := range d.tracks {
 		if _, ok := active[key]; ok {
@@ -364,16 +404,19 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 		if t.Active {
 			t.Active, t.ChangedAt, changed = false, now, true
 		}
-		if t.Notified && now.Before(t.Until) {
+		if t.Notified && (t.Queued || t.Recovering || now.Before(t.Until) || now.Before(t.RetryAt)) {
 			continue
 		}
 		if t.Notified && now.Sub(t.ChangedAt) >= d.settle {
 			if t.Recovery != nil {
 				msg := *t.Recovery
-				msg.At = now
+				msg.At, msg.tracked = now, true
 				out = append(out, msg)
+				t.Recovering = true
+			} else {
+				t.Notified = false
 			}
-			t.Notified, t.Recovery, changed = false, nil, true
+			changed = true
 		}
 		if !t.Notified && (t.LastAlert.IsZero() || now.Sub(t.LastAlert) >= d.cooldown) {
 			delete(d.tracks, key)
@@ -382,6 +425,57 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out, changed
+}
+
+// Delivered records the delivery outcome of m, a message from Step. A failed
+// alert is forgotten, so it is sent again while its condition holds, and no
+// recovery follows it. A failed recovery is sent again, and the key alerts
+// again only once its recovery is delivered. A failed delivery waits a
+// growing delay first; a message the queue never sent (errNotSent) does not.
+func (d *Detector) Delivered(now time.Time, m Message, err error) (changed bool) {
+	t := d.tracks[m.Key]
+	if m.Severity != SeverityRecovered {
+		if t == nil || !t.Queued || !t.LastAlert.Equal(m.At) {
+			return false
+		}
+		t.Queued = false
+		if err == nil {
+			t.Failures = 0
+			return true
+		}
+		t.undeliver()
+		if !errors.Is(err, errNotSent) {
+			t.failed(now)
+		}
+		return true
+	}
+	if t == nil || !t.Recovering {
+		return false
+	}
+	t.Recovering = false
+	if err == nil {
+		t.Notified, t.Recovery, t.Failures = false, nil, 0
+		return true
+	}
+	if !errors.Is(err, errNotSent) {
+		t.failed(now)
+	}
+	return true
+}
+
+// Rearm forgets which alerts reached the channel, for a new webhook: open
+// conditions alert again there, and recoveries of alerts it never saw are
+// dropped. Alerts and recoveries still waiting in the queue go to the new
+// webhook as they are.
+func (d *Detector) Rearm() (changed bool) {
+	for _, t := range d.tracks {
+		if t.Notified && !t.Queued && !t.Recovering {
+			t.undeliver()
+			t.RetryAt, t.Failures = time.Time{}, 0
+			changed = true
+		}
+	}
+	return changed
 }
 
 // Forget drops, without a recovery, the tracks of accounts and providers no
@@ -430,11 +524,39 @@ var windowLabels = map[string]string{
 	"codex_secondary":            "weekly",
 }
 
-func windowLabel(w string) string {
-	if l, ok := windowLabels[w]; ok {
+// windowLabel names o's window. Codex names windows by header slot, and
+// either slot can hold the 5-hour, weekly, or monthly window, so a Codex
+// window of known length is named by its length.
+func windowLabel(o ingest.QuotaObservation) string {
+	if rest, ok := strings.CutPrefix(o.Window, "codex_"); ok {
+		if period := periodLabel(o.PeriodSeconds); period != "" {
+			limit := rest
+			for _, slot := range []string{"primary", "secondary"} {
+				if cut, found := strings.CutSuffix(limit, slot); found && (cut == "" || strings.HasSuffix(cut, "_")) {
+					limit = strings.TrimSuffix(cut, "_")
+					break
+				}
+			}
+			return strings.TrimSpace(period + " " + strings.ReplaceAll(limit, "_", " "))
+		}
+	}
+	if l, ok := windowLabels[o.Window]; ok {
 		return l
 	}
-	return strings.ReplaceAll(strings.TrimPrefix(w, "codex_"), "_", " ")
+	return strings.ReplaceAll(strings.TrimPrefix(o.Window, "codex_"), "_", " ")
+}
+
+func periodLabel(seconds int64) string {
+	const day = 24 * 3600
+	switch {
+	case seconds == 5*3600:
+		return "5-hour"
+	case seconds == 7*day:
+		return "weekly"
+	case seconds >= 28*day && seconds <= 31*day:
+		return "monthly"
+	}
+	return ""
 }
 
 // discordTime renders in each reader's own time zone, with a relative hint.
