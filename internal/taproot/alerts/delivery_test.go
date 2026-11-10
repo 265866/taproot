@@ -1,9 +1,12 @@
 package alerts
 
 import (
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -131,6 +134,7 @@ func TestNewWebhookGetsTheOpenAlerts(t *testing.T) {
 	}
 	h.svc.AnnounceWebhook()
 	h.step(t, 0)
+	h.posts(t)
 	h.step(t, time.Hour)
 	h.step(t, 48*time.Hour)
 	h.step(t, settle)
@@ -185,5 +189,73 @@ func TestQueuedAlertIsSentAfterRestart(t *testing.T) {
 	h2.step(t, 0)
 	if got := h2.titles(t, 1); got[0] != limitTitle {
 		t.Fatalf("titles = %q", got)
+	}
+}
+
+// A recovery still in the queue at shutdown was never delivered, so it is
+// sent after the restart.
+func TestQueuedRecoveryIsSentAfterRestart(t *testing.T) {
+	db := openDB(t, t.TempDir())
+	release := make(chan struct{})
+	defer close(release)
+	stuck := &fakeDiscord{statuses: []func(http.ResponseWriter){
+		status(http.StatusOK, `{"id":"1"}`),
+		func(w http.ResponseWriter) { <-release },
+	}}
+	a, b := claudeAuth("a", "main"), claudeAuth("b", "spare")
+	h := newHarness(t, db, stuck, a, b)
+	h.feed.hook(weeklyLimit(a.EnsureIndex(), t0.Add(time.Hour)))
+	h.step(t, 0)
+	h.posts(t)
+	h.step(t, 2*time.Hour)
+	h.step(t, settle)
+	waitFor(t, func() bool { return stuck.count() == 2 })
+
+	fake := &fakeDiscord{}
+	h2 := newHarnessAt(t, db, fake, h.now.Add(time.Minute), a, b)
+	h2.step(t, 0)
+	if got := h2.titles(t, 1); got[0] != recoveryTitle {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// An alert dropped because the queue is full counts as a failed delivery,
+// so it waits out the retry delay instead of being queued again at once.
+func TestAlertDroppedFromAFullQueueWaitsForItsRetry(t *testing.T) {
+	release := make(chan struct{})
+	fake := &fakeDiscord{statuses: []func(http.ResponseWriter){
+		func(w http.ResponseWriter) { <-release; status(http.StatusOK, `{"id":"1"}`)(w) },
+	}}
+	a, b := claudeAuth("a", "main"), claudeAuth("b", "spare")
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	var once sync.Once
+	free := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(free)
+	var drops atomic.Int32
+	report := h.svc.sender.onResult
+	h.svc.sender.onResult = func(m Message, err error) {
+		if m.tracked && err != nil {
+			drops.Add(1)
+		}
+		report(m, err)
+	}
+	for i := range maxPending + 1 {
+		h.svc.sender.Enqueue(Message{Key: fmt.Sprintf("filler:%d", i), Title: "filler", At: t0})
+		if i == 0 {
+			waitFor(t, func() bool { return fake.count() == 1 })
+		}
+	}
+	h.feed.hook(weeklyLimit(a.EnsureIndex(), t0.Add(48*time.Hour)))
+	for range 5 {
+		h.step(t, time.Second)
+	}
+	if got := drops.Load(); got != 1 {
+		t.Fatalf("the alert was dropped %d times before its retry delay, want 1", got)
+	}
+	free()
+	h.posts(t)
+	h.step(t, retryFirst)
+	if got := h.posts(t); got[len(got)-1] != limitTitle+" @s3cr" {
+		t.Fatalf("last post = %q, want the alert after its retry delay", got[len(got)-1])
 	}
 }

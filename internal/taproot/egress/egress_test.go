@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
@@ -15,8 +16,9 @@ import (
 // records the absolute URLs it was asked for.
 type recordingProxy struct {
 	*httptest.Server
-	mu   sync.Mutex
-	seen []string
+	mu     sync.Mutex
+	seen   []string
+	closes int
 }
 
 func newRecordingProxy(t *testing.T) *recordingProxy {
@@ -25,6 +27,9 @@ func newRecordingProxy(t *testing.T) *recordingProxy {
 	p.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p.mu.Lock()
 		p.seen = append(p.seen, r.URL.String())
+		if r.Close {
+			p.closes++
+		}
 		p.mu.Unlock()
 		_, _ = io.WriteString(w, "via proxy")
 	}))
@@ -38,8 +43,18 @@ func (p *recordingProxy) requests() []string {
 	return append([]string(nil), p.seen...)
 }
 
+func (p *recordingProxy) closed() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.closes
+}
+
 func TestClientRoute(t *testing.T) {
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var directCloses atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Close {
+			directCloses.Add(1)
+		}
 		_, _ = io.WriteString(w, "direct")
 	}))
 	t.Cleanup(target.Close)
@@ -70,6 +85,7 @@ func TestClientRoute(t *testing.T) {
 				}
 				return v
 			}
+			directCloses.Store(0)
 			p := &Proxy{}
 			p.SetGlobal(func() string { return resolve(tc.global) })
 			auth := &coreauth.Auth{ID: "a", Index: "idx-a", ProxyURL: resolve(tc.credential)}
@@ -95,14 +111,23 @@ func TestClientRoute(t *testing.T) {
 			_ = resp.Body.Close()
 
 			got := map[string]int{"credential": len(credProxy.requests()), "global": len(globalProxy.requests())}
+			// A transport built for one request must not keep its connection
+			// idle afterwards; the shared default transport may.
+			ownTransport := tc.credential != "" || tc.global != ""
 			switch tc.want {
 			case "direct":
 				if string(body) != "direct" || got["credential"]+got["global"] != 0 {
 					t.Fatalf("body %q, proxied %v; want a direct request", body, got)
 				}
+				if ownTransport && directCloses.Load() != 1 {
+					t.Fatal("a one-off direct transport kept its connection alive")
+				}
 			default:
 				if string(body) != "via proxy" || got[tc.want] != 1 || got["credential"]+got["global"] != 1 {
 					t.Fatalf("body %q, proxied %v; want one request through the %s proxy", body, got, tc.want)
+				}
+				if credProxy.closed()+globalProxy.closed() != 1 {
+					t.Fatal("a one-off proxy transport kept its connection alive")
 				}
 			}
 		})

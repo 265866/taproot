@@ -1,7 +1,8 @@
 // Package egress picks the route for taproot's own requests to providers,
 // such as the quota poller and the reset-grant read. They are not proxied
-// traffic, but they carry a credential's token, so they leave the way that
-// credential's proxied requests do.
+// traffic, but they carry a credential's token, so they take the route that
+// credential's proxied requests take. Unlike upstream, which sends a request
+// directly when the proxy-url is invalid, they are refused then.
 package egress
 
 import (
@@ -60,5 +61,8 @@ func (p *Proxy) Client(a *coreauth.Auth) (*http.Client, error) {
 		log.WithFields(log.Fields{"setting": setting, "auth_index": a.Index}).WithError(err).Warn("taproot: invalid proxy-url; not sending the provider request")
 		return nil, fmt.Errorf("invalid %s proxy-url: %w", setting, err)
 	}
+	// The transport serves one request, so a kept-alive connection would
+	// only sit idle until the transport is collected.
+	t.DisableKeepAlives = true
 	return &http.Client{Transport: t}, nil
 }

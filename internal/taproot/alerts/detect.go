@@ -320,13 +320,15 @@ func grantCondition(key string, a Account, g Grant) Condition {
 // track is the detector's memory of one key.
 type track struct {
 	Active bool `json:"active"`
-	// Notified is set from the alert until its recovery is posted. While
-	// Queued, the alert waits for its delivery outcome.
-	Notified  bool      `json:"notified"`
-	Queued    bool      `json:"queued,omitempty"`
-	ChangedAt time.Time `json:"changedAt"`
-	LastAlert time.Time `json:"lastAlert"`
-	Recovery  *Message  `json:"recovery,omitempty"`
+	// Notified is set from the alert until its recovery is delivered. While
+	// Queued, the alert waits for its delivery outcome; while Recovering, the
+	// recovery does.
+	Notified   bool      `json:"notified"`
+	Queued     bool      `json:"queued,omitempty"`
+	Recovering bool      `json:"recovering,omitempty"`
+	ChangedAt  time.Time `json:"changedAt"`
+	LastAlert  time.Time `json:"lastAlert"`
+	Recovery   *Message  `json:"recovery,omitempty"`
 	// Until is the posted condition's Until.
 	Until time.Time `json:"until,omitzero"`
 	// RetryAt holds back a message whose delivery failed; Failures counts
@@ -402,7 +404,7 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 		if t.Active {
 			t.Active, t.ChangedAt, changed = false, now, true
 		}
-		if t.Notified && (t.Queued || now.Before(t.Until) || now.Before(t.RetryAt)) {
+		if t.Notified && (t.Queued || t.Recovering || now.Before(t.Until) || now.Before(t.RetryAt)) {
 			continue
 		}
 		if t.Notified && now.Sub(t.ChangedAt) >= d.settle {
@@ -410,8 +412,11 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 				msg := *t.Recovery
 				msg.At, msg.tracked = now, true
 				out = append(out, msg)
+				t.Recovering = true
+			} else {
+				t.Notified = false
 			}
-			t.Notified, t.Recovery, changed = false, nil, true
+			changed = true
 		}
 		if !t.Notified && (t.LastAlert.IsZero() || now.Sub(t.LastAlert) >= d.cooldown) {
 			delete(d.tracks, key)
@@ -424,9 +429,9 @@ func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Messa
 
 // Delivered records the delivery outcome of m, a message from Step. A failed
 // alert is forgotten, so it is sent again while its condition holds, and no
-// recovery follows it. A failed recovery is sent again unless a new alert for
-// the key is already out. A failed delivery waits a growing delay first; a
-// message the queue never sent (errNotSent) does not.
+// recovery follows it. A failed recovery is sent again, and the key alerts
+// again only once its recovery is delivered. A failed delivery waits a
+// growing delay first; a message the queue never sent (errNotSent) does not.
 func (d *Detector) Delivered(now time.Time, m Message, err error) (changed bool) {
 	t := d.tracks[m.Key]
 	if m.Severity != SeverityRecovered {
@@ -444,19 +449,14 @@ func (d *Detector) Delivered(now time.Time, m Message, err error) (changed bool)
 		}
 		return true
 	}
+	if t == nil || !t.Recovering {
+		return false
+	}
+	t.Recovering = false
 	if err == nil {
-		return false
+		t.Notified, t.Recovery, t.Failures = false, nil, 0
+		return true
 	}
-	if t == nil {
-		// Step dropped the settled track; ChangedAt stays zero, so the retry
-		// needs no new settle.
-		t = &track{}
-		d.tracks[m.Key] = t
-	} else if t.Notified {
-		return false
-	}
-	recovery := m
-	t.Notified, t.Recovery = true, &recovery
 	if !errors.Is(err, errNotSent) {
 		t.failed(now)
 	}
@@ -465,10 +465,11 @@ func (d *Detector) Delivered(now time.Time, m Message, err error) (changed bool)
 
 // Rearm forgets which alerts reached the channel, for a new webhook: open
 // conditions alert again there, and recoveries of alerts it never saw are
-// dropped. Alerts still waiting in the queue go to the new webhook as they are.
+// dropped. Alerts and recoveries still waiting in the queue go to the new
+// webhook as they are.
 func (d *Detector) Rearm() (changed bool) {
 	for _, t := range d.tracks {
-		if t.Notified && !t.Queued {
+		if t.Notified && !t.Queued && !t.Recovering {
 			t.undeliver()
 			t.RetryAt, t.Failures = time.Time{}, 0
 			changed = true

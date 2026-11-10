@@ -161,9 +161,13 @@ func (e *DeliveryError) Error() string {
 	return "discord unreachable: " + e.Reason
 }
 
-// errNotSent reports a message the queue dropped, or skipped because alerts
-// were off.
+// errNotSent reports a message the queue skipped because alerts were off, or
+// replaced with a newer one for the same key.
 var errNotSent = errors.New("not sent")
+
+// errQueueFull reports a message dropped because the queue was full. It
+// counts as a failed delivery, so the detector waits before queuing it again.
+var errQueueFull = errors.New("alert queue full")
 
 // Sender posts messages to the webhook from an in-memory queue that holds at
 // most one message per key. A newer message for a pending key replaces it in
@@ -217,7 +221,7 @@ func (s *Sender) Enqueue(m Message) {
 	s.mu.Unlock()
 	if full {
 		log.WithField("key", m.Key).Warn("taproot alerts: too many pending alerts, dropping alert")
-		s.report(m, errNotSent)
+		s.report(m, errQueueFull)
 		return
 	}
 	if pending {

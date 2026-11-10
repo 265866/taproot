@@ -303,16 +303,15 @@ func TestDetectorHoldsAnAlertUntilItsEnd(t *testing.T) {
 	}
 }
 
-// A recovery that fails is sent again after the retry delay, even once the
-// settled track was dropped.
+// A recovery that fails is sent again after the retry delay.
 func TestDetectorSendsAFailedRecoveryAgain(t *testing.T) {
 	d := NewDetector(30*time.Minute, 2*time.Minute)
 	stepDelivered(d, t0, cond("k", true, 0))
 	stepDelivered(d, t0.Add(40*time.Minute), nil)
 	at := t0.Add(42 * time.Minute)
 	msgs, _ := d.Step(at, nil)
-	if len(msgs) != 1 || msgs[0].Severity != SeverityRecovered || len(d.tracks) != 0 {
-		t.Fatalf("recovery step = %v, tracks %v", msgs, d.tracks)
+	if len(msgs) != 1 || msgs[0].Severity != SeverityRecovered {
+		t.Fatalf("recovery step = %v", msgs)
 	}
 	if !d.Delivered(at, msgs[0], &DeliveryError{Status: http.StatusServiceUnavailable}) {
 		t.Fatal("a failed recovery should change the state")

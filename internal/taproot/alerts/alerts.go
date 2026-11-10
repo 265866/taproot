@@ -551,10 +551,11 @@ func (s *Service) loadState(ctx context.Context) error {
 			continue
 		}
 		// The queue lived in memory, so an alert that was waiting in it was
-		// never delivered.
+		// never delivered, and a recovery that was is sent again.
 		if t.Queued {
 			t.undeliver()
 		}
+		t.Recovering = false
 		s.detector.tracks[key] = &t
 		if idx, ok := strings.CutPrefix(key, "login:"); ok && t.Active && t.Notified {
 			s.restoredLogins[idx] = restoredLogin{}
