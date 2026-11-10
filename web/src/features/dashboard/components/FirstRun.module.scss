@@ -1,0 +1,257 @@
+.firstRun {
+  display: flex;
+  flex-direction: column;
+  gap: var(--console-gap);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  color: var(--text-tertiary);
+
+  svg {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+.title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-verdict);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.lede {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+
+.steps {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: 16px 18px;
+
+  & + & {
+    border-top: 1px solid var(--border-color);
+  }
+}
+
+.number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1.5px var(--border-hover);
+
+  .step[data-state='current'] & {
+    color: var(--text-primary);
+    box-shadow: inset 0 0 0 1.5px var(--text-primary);
+  }
+
+  .step[data-state='done'] & {
+    background: var(--status-ok);
+    color: var(--bg-primary);
+    box-shadow: none;
+  }
+}
+
+.stepBody {
+  min-width: 0;
+}
+
+.stepTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 2px 0 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pill {
+  display: inline-grid;
+  place-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--count-badge-bg);
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+  font-weight: 600;
+
+  &[data-done='true'] {
+    background: var(--status-ok-bg);
+    color: var(--status-ok-text);
+  }
+}
+
+.text {
+  max-width: 620px;
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-table);
+  line-height: var(--lh-body);
+
+  code {
+    font-family: $font-mono;
+    font-size: var(--fs-meta);
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+
+  :global(.btn) {
+    min-height: 28px;
+    padding: 0 10px;
+    font-size: var(--fs-table);
+    font-weight: 500;
+    text-decoration: none;
+
+    // Phones and touch screens of any width get 44 px targets.
+    @media (max-width: $breakpoint-mobile), (pointer: coarse) {
+      min-height: 44px;
+      padding: 0 14px;
+    }
+  }
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.arrowLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  border-radius: 2px;
+  text-decoration: none;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
+    margin-block: -10px;
+  }
+}
+
+.snippets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+
+  @media (max-width: $breakpoint-tablet) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.snippet {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+
+.snippetHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 6px 6px 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.snippetHead .copy {
+  min-height: 24px;
+  margin-left: auto;
+  padding: 0 8px;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+
+  @media (max-width: $breakpoint-mobile) {
+    min-height: 36px;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
+  }
+}
+
+.copied {
+  color: var(--status-ok-text);
+  font-size: var(--fs-small);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.code {
+  margin: 0;
+  padding: 9px 10px;
+  color: var(--text-primary);
+  font-family: $font-mono;
+  font-size: var(--fs-caption);
+  line-height: 1.55;
+  // Wrapped rather than scrolled: a phone cut the lines off with no sign there was more. Copy
+  // takes the text, not the layout.
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  max-width: 620px;
+  margin: 6px 0 0;
+  color: var(--status-warning-text);
+  font-size: var(--fs-meta);
+}

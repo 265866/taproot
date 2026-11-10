@@ -1,0 +1,433 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: 30px;
+}
+
+.rangeCaption {
+  min-height: 1lh;
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: $breakpoint-mobile) {
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .segments {
+    width: 100%;
+
+    > * {
+      flex: 1;
+    }
+  }
+}
+
+.arrowLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  border-radius: 2px;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  // A 44 px target on a touch screen, without moving anything around it.
+  @media (pointer: coarse) {
+    min-height: 44px;
+    margin-block: -10px;
+  }
+}
+
+.emptyRow {
+  margin: 0;
+  padding: var(--space-3) 14px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+}
+
+.mono {
+  font-family: $font-mono;
+  font-size: var(--fs-meta);
+}
+
+// Recent failures: a table on wide screens, stacked rows on phones. One shows at a time, so the
+// accessibility tree has one.
+.wideOnly {
+  display: none;
+}
+
+.narrowOnly {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li + li {
+    border-top: 1px solid var(--border-color);
+  }
+}
+
+@media (min-width: $breakpoint-mobile) {
+  .wideOnly {
+    display: block;
+  }
+
+  .narrowOnly {
+    display: none;
+  }
+}
+
+// Fixed layout: the Error column takes what the others leave and cuts its text, so the table
+// never grows wider than its card.
+.failureTable {
+  table-layout: fixed;
+}
+
+.colTime {
+  width: 84px;
+}
+
+.colDevice {
+  width: 15%;
+}
+
+.colModel {
+  width: 18%;
+}
+
+.colStatus {
+  width: 64px;
+}
+
+.colAttempts {
+  width: 76px;
+}
+
+.failureTable td {
+  max-width: none;
+}
+
+.errorCell {
+  overflow: hidden;
+}
+
+// A cell's text on one line, cut with an ellipsis, or in full, wrapped, while its row is open. The
+// table keeps every cell on one line, so an open row's cells set wrapping back.
+.cellLine {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+tr:has(.errorToggle[aria-expanded='true']) .cellLine,
+.failureRow[aria-expanded='true'] .cellLine {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+// A row without a log has nowhere else to read its cells, so a cut one opens in place.
+.errorToggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  > span {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  // The cell clips its overflow, so the row grows to fit the target.
+  @media (pointer: coarse) {
+    min-height: 44px;
+  }
+}
+
+.errorChevron {
+  flex: none;
+  color: var(--text-tertiary);
+  transition: transform var(--dur-hover) var(--ease-out-strong);
+
+  [aria-expanded='true'] > & {
+    transform: rotate(180deg);
+  }
+}
+
+.clickableRow {
+  cursor: pointer;
+
+  &:hover td {
+    background: var(--bg-hover);
+  }
+}
+
+.rowLink {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-hover);
+  text-underline-offset: 3px;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (pointer: coarse) {
+    display: inline-block;
+    padding: 15px 0;
+    margin-block: -15px;
+  }
+}
+
+.failureRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 10px 14px;
+  width: 100%;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  text-decoration: none;
+
+  > :nth-child(2),
+  > :nth-child(4) {
+    justify-self: end;
+  }
+
+  // The status keeps its own height when the device and model wrap beside it.
+  > :nth-child(2) {
+    align-self: start;
+  }
+}
+
+button.failureRow {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+a.failureRow:hover,
+button.failureRow:hover {
+  background: var(--bg-hover);
+}
+
+a.failureRow:focus-visible,
+button.failureRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+// Wraps rather than cutting the model name, which a phone row has nowhere else to show.
+.failureWho {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.failureMeta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.failureTime {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+
+// Top devices and models: a fixed layout, so the name column takes what the numbers leave and
+// cuts its text rather than pushing the cost out of the card.
+.topTable {
+  table-layout: fixed;
+
+  td {
+    max-width: none;
+  }
+}
+
+.colTopCount {
+  width: 120px;
+
+  @media (max-width: $breakpoint-mobile) {
+    width: 76px;
+  }
+}
+
+.colTopCost {
+  width: 84px;
+
+  @media (max-width: $breakpoint-mobile) {
+    width: 80px;
+  }
+}
+
+.topName {
+  overflow: hidden;
+}
+
+.topLabel {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  // A phone or touch screen has no other way to read a cut name, so names wrap there.
+  @media (max-width: $breakpoint-mobile), (pointer: coarse) {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
+.two {
+  display: grid;
+  // Side by side only while each table has room for its three columns; the main column narrows
+  // when the rail sits beside it, whatever the window's width.
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: var(--console-gap) var(--space-4);
+}
+
+.shareCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.shareValue {
+  min-width: 4ch;
+  text-align: right;
+}
+
+.share {
+  position: relative;
+  display: inline-block;
+  width: 56px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+
+  i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 2px;
+    background: var(--text-tertiary);
+  }
+
+  @media (max-width: $breakpoint-mobile) {
+    display: none;
+  }
+}
+
+.modelName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+// A wrapped name keeps its dot on the first line.
+@media (max-width: $breakpoint-mobile), (pointer: coarse) {
+  .modelName {
+    align-items: flex-start;
+  }
+
+  .dot {
+    margin-top: calc((1lh - 8px) / 2);
+  }
+}
+
+// The tiles keep their last numbers through a failed read at full contrast; the Stale tag says
+// they are old.
+.tiles {
+  min-width: 0;
+}
+
+.stale {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+  font-size: var(--fs-tag);
+  font-weight: 600;
+}
+
+// The unpriced models, readable by tap or keyboard rather than a hover title. The tile's sub-line
+// clips its overflow, so the focus ring sits inside the summary, and a summary too long for a
+// narrow tile ends in an ellipsis rather than a hard cut; opening it lists the models.
+.unpriced {
+  summary {
+    overflow: hidden;
+    padding: 0 3px;
+    border-radius: 2px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+
+    @media (pointer: coarse) {
+      line-height: 44px;
+    }
+  }
+
+  span {
+    display: block;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}

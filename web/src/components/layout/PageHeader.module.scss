@@ -59,7 +59,7 @@
   }
 
   .stampCompact {
-    display: inline-flex;
+    display: inline-grid;
     margin-right: 2px;
   }
 }
@@ -91,6 +91,11 @@
 
   svg {
     display: block;
+  }
+
+  @media (pointer: coarse) {
+    width: 44px;
+    height: 44px;
   }
 
   @media (max-width: $breakpoint-mobile) {

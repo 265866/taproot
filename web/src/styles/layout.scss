@@ -963,6 +963,47 @@
   }
 }
 
+// 44 px targets on a touch screen of any width; a mouse keeps the compact sidebar.
+@media (pointer: coarse) {
+  .sidebar {
+    .nav-item {
+      height: 44px;
+    }
+
+    .sidebar-icon-button {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  // The handle keeps its slim look; its hit area is 44 px wide.
+  .sidebar-toggle-floating {
+    left: calc(var(--sidebar-active-width) - 22px);
+    width: 44px;
+    border: 0;
+    background: transparent;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0 12px;
+      z-index: -1;
+      border: 1px solid var(--border-primary);
+      border-radius: 10px;
+      background: var(--bg-secondary);
+    }
+
+    &:hover {
+      background: transparent;
+
+      &::before {
+        border-color: var(--border-hover);
+        background: var(--bg-hover);
+      }
+    }
+  }
+}
+
 .page-loading {
   display: flex;
   justify-content: center;

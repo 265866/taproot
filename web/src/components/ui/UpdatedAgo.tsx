@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconClock } from '@/components/ui/icons';
-import { agoParts, intervalParts } from '@/utils/time/ago';
+import { agoParts, intervalParts, type AgoParts } from '@/utils/time/ago';
 import { SECOND_CLOCK } from '@/utils/time/sharedClock';
 import styles from './UpdatedAgo.module.scss';
 
@@ -18,6 +18,8 @@ interface UpdatedAgoProps {
 }
 
 const noopSubscribe = () => () => {};
+/** Two digits of minutes: the widest text under an hour, with tabular figures. */
+const WIDEST: AgoParts = { unit: 'minutes', count: 88 };
 
 /** "updated 8 s ago · refreshes every 30 s", ticking once a second. */
 export function UpdatedAgo({ updatedAt, intervalMs, compact, now, className }: UpdatedAgoProps) {
@@ -30,13 +32,15 @@ export function UpdatedAgo({ updatedAt, intervalMs, compact, now, className }: U
   );
   if (updatedAt == null) return null;
 
-  const ago = agoParts(updatedAt, now ?? clockNow);
   const prefix = compact ? 'ago' : 'updated';
-  const parts = [t(`console.${prefix}_${ago.unit}`, { count: ago.count })];
-  if (!compact && intervalMs) {
-    const every = intervalParts(intervalMs);
-    parts.push(t(`console.refreshes_every_${every.unit}`, { count: every.count }));
-  }
+  const text = (ago: AgoParts) => {
+    const parts = [t(`console.${prefix}_${ago.unit}`, { count: ago.count })];
+    if (!compact && intervalMs) {
+      const every = intervalParts(intervalMs);
+      parts.push(t(`console.refreshes_every_${every.unit}`, { count: every.count }));
+    }
+    return parts.join(' · ');
+  };
   const at = new Date(updatedAt);
 
   return (
@@ -44,8 +48,15 @@ export function UpdatedAgo({ updatedAt, intervalMs, compact, now, className }: U
       className={[styles.stamp, className].filter(Boolean).join(' ')}
       title={t('console.updated_at', { time: at.toLocaleString() })}
     >
-      <IconClock size={12} className={styles.icon} />
-      <time dateTime={at.toISOString()}>{parts.join(' · ')}</time>
+      {/* The text changes every second; the widest it usually gets reserves the width, so the
+          stamp does not shift what sits beside it. */}
+      <span className={styles.sizer} aria-hidden="true">
+        {text(WIDEST)}
+      </span>
+      <span className={styles.shown}>
+        <IconClock size={12} className={styles.icon} />
+        <time dateTime={at.toISOString()}>{text(agoParts(updatedAt, now ?? clockNow))}</time>
+      </span>
     </span>
   );
 }

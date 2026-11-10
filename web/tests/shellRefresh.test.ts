@@ -54,8 +54,8 @@ describe('Refresh All reports what happened', () => {
       ['src/features/routing/RoutingPage.tsx', 'onCancel: () => resolve(REFRESH_CANCELLED)'],
       ['src/features/accounts/AccountsPage.tsx', 'outcomeFromError(filesError || quotaError)'],
       [
-        'src/features/dashboard/hooks/useDashboardOverview.ts',
-        'outcomeFromError(dataError ?? modelsFailure)',
+        'src/features/dashboard/hooks/useDashboardData.ts',
+        'outcomeFromError(pageError ?? attentionError)',
       ],
     ]) {
       expect({ path, wired: read(path).includes(marker) }).toEqual({ path, wired: true });

@@ -1,0 +1,122 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--console-gap);
+  min-width: 0;
+  padding-top: var(--space-3);
+}
+
+// The rail draws no padding; its rows draw full-width hairlines and pad themselves by
+// `--rail-pad`. Inline (narrow windows and phones) it lines up with the page's gutter.
+.rail {
+  --rail-pad: var(--console-gutter);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--console-gap);
+  min-width: 0;
+  padding: var(--space-4) 0 0;
+
+  @media (max-width: $breakpoint-mobile) {
+    --rail-pad: #{$spacing-md};
+  }
+}
+
+.windowBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+// Below the rail breakpoint the rail is inline, its hairlines running through the page's gutters to
+// the content area's edges: at the top of the page, or on first run after the checklist with a
+// hairline above it. The page transition clips only vertically, so the gutters show them.
+.railInline,
+.railAfter {
+  margin-inline: calc(-1 * var(--console-gutter));
+
+  @media (max-width: $breakpoint-mobile) {
+    margin-inline: -$spacing-md;
+  }
+}
+
+// The rail starts where the shell's inline rail did: right under the header, 16 px above the
+// verdict. The page's own padding above it is the main column's.
+.railInline {
+  margin-top: calc(-1 * var(--space-3));
+
+  > .rail {
+    padding-top: 10px;
+  }
+
+  @media (max-width: $breakpoint-mobile) {
+    > .rail {
+      padding-top: 0;
+    }
+  }
+}
+
+.railAfter {
+  border-top: 1px solid var(--border-color);
+}
+
+// Every read failed alike: the page says so once, above everything.
+.pageError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--status-danger-border);
+  border-radius: var(--radius-lg);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  font-size: var(--fs-table);
+
+  > span {
+    flex: 1;
+    min-width: 12em;
+    overflow-wrap: anywhere;
+  }
+}
+
+.pageErrorIcon {
+  flex: none;
+  color: var(--status-danger);
+}
+
+// One verdict shows at a time (see DashboardPage): the rail's copy below the rail breakpoint, where
+// the rail comes first, and the page's from it up. Swap only inside a min-width query: a zoomed
+// window can be a fractional width that a `max-width: … - 1px` query misses. `display: none`
+// keeps the hidden copy out of the accessibility tree.
+.rail .verdictInRail {
+  padding: 0 var(--rail-pad);
+}
+
+// The ancestor outranks the Verdict module's own `display: flex`, whichever sheet loads last.
+.page .verdictInPage {
+  display: none;
+}
+
+@media (min-width: $breakpoint-page-aside) {
+  .rail {
+    --rail-pad: 16px;
+
+    padding: 18px 0 var(--space-6);
+  }
+
+  .rail .verdictInRail {
+    display: none;
+  }
+
+  .page .verdictInPage {
+    display: flex;
+  }
+
+  // The verdict sits above the window here; below this width the rail's last hairline already
+  // separates them, so a second rule would double it.
+  .windowBlock {
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border-color);
+  }
+}

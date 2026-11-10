@@ -60,6 +60,13 @@
   min-width: 0;
 }
 
+.unavailable {
+  margin: 0;
+  padding: var(--space-3) 14px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+}
+
 .skeleton {
   display: flex;
   flex-direction: column;

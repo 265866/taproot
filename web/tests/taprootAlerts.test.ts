@@ -15,12 +15,12 @@ import { createTaprootClient } from '@/services/api/taproot';
 
 const i18n = createInstance();
 await i18n.init({ lng: 'en', resources: { en: { translation: en } } });
-const render = (settings: AlertsSettings) =>
+const render = (settings: AlertsSettings, focused = false) =>
   renderToStaticMarkup(
     createElement(
       I18nextProvider,
       { i18n },
-      createElement(AlertsSection, { settings, save: async () => {} })
+      createElement(AlertsSection, { settings, save: async () => {}, focused })
     )
   );
 
@@ -132,5 +132,13 @@ describe('alerts client', () => {
     expect(calls[0].url).toBe('/taproot/api/v1/alerts/test');
     expect(calls[0].init.method).toBe('POST');
     expect((calls[0].init.headers as Record<string, string>)['X-Taproot-Request']).toBe('1');
+  });
+});
+
+describe('a link to the alerts section', () => {
+  test('makes its heading the focus target, and only then', () => {
+    const heading = (html: string) => /<h2 id="settings-alerts-title"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(heading(render(none, true))).toContain('tabindex="-1"');
+    expect(heading(render(none))).not.toContain('tabindex');
   });
 });

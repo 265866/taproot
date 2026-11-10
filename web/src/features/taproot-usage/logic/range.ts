@@ -147,13 +147,6 @@ export function rangeQuery(
   };
 }
 
-/** Local midnight today through the next whole minute. */
-export function todayWindow(nowMs: number): TimeWindow {
-  const d = new Date(nowMs);
-  const fromMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  return { fromMs, toMs: Math.ceil(nowMs / MINUTE_MS) * MINUTE_MS };
-}
-
 export function toIso(ms: number): string {
   return new Date(ms).toISOString().replace('.000Z', 'Z');
 }

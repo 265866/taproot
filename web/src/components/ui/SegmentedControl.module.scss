@@ -42,6 +42,11 @@
   @media (max-width: $breakpoint-mobile), (pointer: coarse) {
     height: 38px;
   }
+
+  @media (pointer: coarse) {
+    min-width: 44px;
+    height: 44px;
+  }
 }
 
 .checked {

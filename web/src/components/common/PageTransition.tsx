@@ -90,6 +90,8 @@ export function PageTransition({
   const nextLayerIdRef = useRef(1);
 
   const [isAnimating, setIsAnimating] = useState(false);
+  /** The running transition slides sideways, so the page clips sideways too. */
+  const [sliding, setSliding] = useState(false);
   const [layers, setLayers] = useState<Layer[]>(() => [
     {
       id: 0,
@@ -231,6 +233,7 @@ export function PageTransition({
       nextLayersRef.current = [nextCurrent];
       return [exitingLayer, nextCurrent];
     });
+    setSliding(nextVariant === 'ios' && !prefersReducedMotion());
     setIsAnimating(true);
   }, [
     isAnimating,
@@ -430,7 +433,15 @@ export function PageTransition({
   }, [isAnimating, resolveScrollContainer]);
 
   return (
-    <div className={`page-transition${isAnimating ? ' page-transition--animating' : ''}`}>
+    <div
+      className={[
+        'page-transition',
+        isAnimating ? 'page-transition--animating' : '',
+        isAnimating && sliding ? 'page-transition--sliding' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       {(() => {
         const currentIndex = layers.findIndex((layer) => layer.status === 'current');
         const resolvedCurrentIndex = currentIndex === -1 ? layers.length - 1 : currentIndex;

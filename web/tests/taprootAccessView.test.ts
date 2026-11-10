@@ -315,3 +315,15 @@ describe('request calls', () => {
     ]);
   });
 });
+
+describe('a link to one request', () => {
+  test("marks that device's request as the focus target, and no other", () => {
+    const tagOf = (html: string) =>
+      [...html.matchAll(/<[^>]*data-focused="true"[^>]*>/g)].map((m) => m[0]);
+    const focused = tagOf(render({ focusNodeId: 'nDANA0001CNTRL' }));
+    expect(focused).toHaveLength(1);
+    expect(focused[0]).toContain('tabindex="-1"');
+    expect(tagOf(render())).toEqual([]);
+    expect(tagOf(render({ focusNodeId: 'nNOSUCHNODE' }))).toEqual([]);
+  });
+});

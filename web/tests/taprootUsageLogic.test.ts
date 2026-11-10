@@ -16,7 +16,6 @@ import {
   requestsSelection,
   resolveWindow,
   summaryZone,
-  todayWindow,
   toIso,
 } from '@/features/taproot-usage/logic/range';
 import {
@@ -124,14 +123,6 @@ describe('range', () => {
     expect(customWindow('2026-10-05', '2026-10-04', now)).toEqual({ error: 'order' });
     expect(customWindow('2026-11-03', '2026-11-04', now)).toEqual({ error: 'future' });
     expect(parseLocalDate('2026-1-05')).toBeNull();
-  });
-
-  test('today starts at local midnight', () => {
-    const now = new Date(2026, 10, 2, 0, 0, 10).getTime();
-    expect(todayWindow(now)).toEqual({
-      fromMs: new Date(2026, 10, 2).getTime(),
-      toMs: new Date(2026, 10, 2, 0, 1).getTime(),
-    });
   });
 });
 

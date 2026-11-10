@@ -1,7 +1,8 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { useFocusOnArrival } from '@/hooks/useFocusOnArrival';
 import { taprootApi, type TaprootSettingsUpdate } from '@/services/api/taproot';
 import { useNotificationStore } from '@/stores';
 import { getErrorMessage } from '@/utils/helpers';
@@ -18,11 +19,16 @@ type Busy = 'save' | 'clear' | 'test' | null;
 export function AlertsSection({
   settings,
   save,
+  focused = false,
 }: {
   settings: AlertsSettings;
   save: (update: TaprootSettingsUpdate) => Promise<void>;
+  /** The page was opened for alerts (`?section=alerts`): scroll here and focus the heading. */
+  focused?: boolean;
 }) {
   const { t } = useTranslation();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useFocusOnArrival(headingRef, focused);
   const showNotification = useNotificationStore((state) => state.showNotification);
   const inputId = useId();
   const hintId = useId();
@@ -86,7 +92,12 @@ export function AlertsSection({
       autoComplete="off"
     >
       <div className={pageStyles.cardHead}>
-        <h2 id="settings-alerts-title" className={pageStyles.cardTitle}>
+        <h2
+          id="settings-alerts-title"
+          ref={headingRef}
+          tabIndex={focused ? -1 : undefined}
+          className={pageStyles.cardTitle}
+        >
           {title}
         </h2>
         <p className={pageStyles.cardDescription}>{t('taproot_settings.alerts.description')}</p>

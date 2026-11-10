@@ -28,9 +28,12 @@ func main() {
 	port := flag.Int("port", 8399, "loopback port the demo server listens on")
 	serve := flag.Bool("serve-tailnet", false, "instead of seeding, serve the fake tailnet on the socket in -dir until interrupted")
 	degraded := flag.Bool("degraded", false, "seed a quarter hour in which a fifth of Claude requests fail, so the Dashboard reports a degraded state")
+	allClear := flag.Bool("all-clear", false, "seed nothing that needs the user: every account signed in, no access request, no alerts, and backups on time")
+	firstRun := flag.Bool("first-run", false, "write only the config, as a new server has it: no accounts, requests, or backups")
 	flag.Parse()
-	if *dir == "" {
-		fmt.Fprintln(os.Stderr, "usage: go run ./internal/taproot/demo -dir <empty directory> [-port 8399] [-degraded] [-serve-tailnet]")
+	sc, errScenario := pickScenario(*degraded, *allClear, *firstRun)
+	if *dir == "" || errScenario != nil {
+		fmt.Fprintln(os.Stderr, "usage: go run ./internal/taproot/demo -dir <empty directory> [-port 8399] [-degraded | -all-clear | -first-run] [-serve-tailnet]")
 		os.Exit(2)
 	}
 	log.SetLevel(log.WarnLevel)
@@ -47,7 +50,7 @@ func main() {
 		}
 		return
 	}
-	summary, err := seed(context.Background(), *dir, *port, time.Now(), *degraded)
+	summary, err := seed(context.Background(), *dir, *port, time.Now(), sc)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "taproot demo:", err)
 		os.Exit(1)
@@ -55,8 +58,39 @@ func main() {
 	fmt.Println(summary)
 }
 
+// scenario is the state the demo seeds, for the Dashboard's screenshots.
+type scenario int
+
+const (
+	// scenarioNormal has one item of each kind in Needs you.
+	scenarioNormal scenario = iota
+	// scenarioDegraded adds a quarter hour of failing Claude requests.
+	scenarioDegraded
+	// scenarioAllClear has nothing that needs the user.
+	scenarioAllClear
+	// scenarioFirstRun is a new server: the config and nothing else.
+	scenarioFirstRun
+)
+
+func pickScenario(degraded, allClear, firstRun bool) (scenario, error) {
+	picked := scenarioNormal
+	n := 0
+	for _, o := range []struct {
+		on bool
+		sc scenario
+	}{{degraded, scenarioDegraded}, {allClear, scenarioAllClear}, {firstRun, scenarioFirstRun}} {
+		if o.on {
+			picked, n = o.sc, n+1
+		}
+	}
+	if n > 1 {
+		return scenarioNormal, errors.New("pick at most one of -degraded, -all-clear, and -first-run")
+	}
+	return picked, nil
+}
+
 // seed writes the demo into dir with history ending at start.
-func seed(ctx context.Context, dir string, port int, start time.Time, degraded bool) (string, error) {
+func seed(ctx context.Context, dir string, port int, start time.Time, sc scenario) (string, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
@@ -66,14 +100,26 @@ func seed(ctx context.Context, dir string, port int, start time.Time, degraded b
 	}
 	authDir := filepath.Join(dir, "auths")
 	dataDir := filepath.Join(dir, "taproot")
-	accounts := demoAccounts()
-	if err := writeConfig(dir, authDir, port); err != nil {
+	// Alerts fail to deliver in every scenario but all clear, where nothing needs the user.
+	if err := writeConfig(dir, authDir, port, sc != scenarioAllClear); err != nil {
 		return "", err
+	}
+	if sc == scenarioFirstRun {
+		if err := os.MkdirAll(authDir, 0o700); err != nil {
+			return "", fmt.Errorf("create auth dir: %w", err)
+		}
+		return fmt.Sprintf("Wrote a config without accounts, requests, or backups to %s.", dir), nil
+	}
+	accounts := demoAccounts()
+	if sc == scenarioAllClear {
+		for _, a := range accounts {
+			a.signedOut = 0
+		}
 	}
 	if err := writeAuthFiles(authDir, accounts, start); err != nil {
 		return "", err
 	}
-	requests := generateWith(start, accounts, degraded)
+	requests := generateWith(start, accounts, sc == scenarioDegraded)
 
 	db, err := store.Open(ctx, store.Config{}, dataDir)
 	if err != nil {
@@ -93,8 +139,10 @@ func seed(ctx context.Context, dir string, port int, start time.Time, degraded b
 	if err := writeUsage(ctx, db, requests, clients); err != nil {
 		return "", err
 	}
-	if err := seedRequest(ctx, db, start); err != nil {
-		return "", err
+	if sc != scenarioAllClear {
+		if err := seedRequest(ctx, db, start); err != nil {
+			return "", err
+		}
 	}
 	backups, err := backup.New(backup.Config{DailyAt: "off"}, db, backup.Paths{
 		ConfigFile:  filepath.Join(dir, "config.yaml"),
@@ -112,8 +160,10 @@ func seed(ctx context.Context, dir string, port int, start time.Time, degraded b
 	}
 	// The last scheduled run failed after those backups, so the Dashboard
 	// lists an overdue backup until one is taken.
-	if err := backups.RecordScheduledRun(ctx, time.Now(), errors.New("write backup: no space left on device")); err != nil {
-		return "", err
+	if sc != scenarioAllClear {
+		if err := backups.RecordScheduledRun(ctx, time.Now(), errors.New("write backup: no space left on device")); err != nil {
+			return "", err
+		}
 	}
 	return fmt.Sprintf("Wrote %d usage events, %d client requests, %d request logs, and 2 backups for %d accounts to %s.\nStart the server with internal/taproot/demo/run.sh, or see CONTRIBUTING.md.",
 		len(requests), len(clients), logged, len(accounts), dir), nil

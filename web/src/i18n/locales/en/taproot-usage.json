@@ -241,26 +241,6 @@
       "unsaved_cancel": "Keep editing",
       "empty": "No prices yet. Add one to start pricing usage."
     },
-    "dashboard": {
-      "eyebrow": "Taproot",
-      "title": "Today",
-      "desc": "Since local midnight, from taproot's usage records.",
-      "cost": "API-equivalent cost",
-      "requests": "Upstream requests",
-      "failures": "{{count}} failed",
-      "cache_hit": "Cache hit ratio",
-      "pool": "{{provider}} pool",
-      "pool_value": "of {{capacity}}",
-      "pool_accounts_one": "{{count}} account",
-      "pool_accounts_other": "{{count}} accounts",
-      "pool_without_data": "{{count}} not reporting yet, counted as full",
-      "pool_no_observations": "no quota observed yet",
-      "pool_next_reset": "Next reset {{time}}",
-      "pool_empty": "No quota observations yet.",
-      "open_usage": "Open usage",
-      "open_accounts": "Open accounts",
-      "load_failed": "Taproot usage is unavailable: {{message}}"
-    },
     "devices": {
       "title": "Devices",
       "desc": "Usage by the device that sent each request, as the access guard identified it. A plugin's own requests, such as Claude Keep Rolling's pings, show under the plugin's name. No caller recorded holds requests the server has no caller for, such as plugin pings from before plugins were attributed, and requests through routes without a request ID.",

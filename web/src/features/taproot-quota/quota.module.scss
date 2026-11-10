@@ -255,9 +255,11 @@
   color: var(--text-secondary);
 }
 
+// The four stats sit in one row while it fits and wrap inside the card where it does not, as on
+// a tablet beside the sidebar; phones get two even columns.
 .stats {
-  display: grid;
-  grid-template-columns: repeat(4, auto);
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px 48px;
   margin: 0;
 
@@ -279,6 +281,12 @@
 .statAccount {
   color: var(--text-secondary);
   font-weight: 400;
+
+  // A shown email is longer than its stats column on a phone.
+  @media (max-width: $breakpoint-mobile) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .masked {
@@ -561,6 +569,7 @@
   }
 
   .stats {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px 16px;
     width: 100%;
@@ -588,6 +597,14 @@
 
   .accountRow {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+// 44 px targets on a touch screen; a mouse keeps the compact segments.
+@media (pointer: coarse) {
+  .segment {
+    min-width: 44px;
+    height: 44px;
   }
 }
 

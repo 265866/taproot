@@ -46,6 +46,17 @@ function maskDomain(domain: string): string {
   return `${domain.slice(0, 1)}${DOTS}${dot > 0 ? domain.slice(dot) : ''}`;
 }
 
+/**
+ * Masks an account's short name, such as `dana` from `dana@example.com`, as the local part of its
+ * address would be masked (`d•••a`), so a name and its address hide the same way. A name that holds
+ * an address masks that address.
+ */
+export function maskAccountName(name: string): string {
+  if (!name) return name;
+  const masked = maskEmails(name);
+  return masked !== name ? masked : maskLocal(name);
+}
+
 /** Masks one address already split at its at sign. The TLD stays readable; subdomains do not. */
 export function maskAddress(local: string, domain: string, at = '@'): string {
   return `${maskLocal(local)}${at}${maskDomain(domain)}`;

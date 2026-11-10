@@ -2,7 +2,7 @@ import type { RequestLogFilter } from '@/services/api/taproot';
 import { decodeUrlValue, encodeUrlValue } from '@/utils/urlValue';
 
 /** Request log filters as they live in the hash URL, so links can preselect them. */
-export const RANGE_PRESETS = ['1h', '24h', '7d', '30d', 'all'] as const;
+export const RANGE_PRESETS = ['15m', '1h', '24h', '7d', '30d', 'all'] as const;
 export type RangePreset = (typeof RANGE_PRESETS)[number];
 
 /** Values the server's status filter accepts: a code, `Nxx`, or `error`. */
@@ -30,6 +30,7 @@ export const DEFAULT_QUERY: RequestLogQuery = {
 };
 
 const RANGE_MS: Record<Exclude<RangePreset, 'all'>, number> = {
+  '15m': 900_000,
   '1h': 3_600_000,
   '24h': 86_400_000,
   '7d': 7 * 86_400_000,

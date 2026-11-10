@@ -90,9 +90,19 @@
   "shell": {
     "skip_to_content": "Skip to content",
     "main_navigation": "Main",
+    "navigation_drawer": "Navigation",
     "page_title": "{{page}} · Taproot",
     "page_error_title": "This page failed to load",
     "page_error_body": "Something went wrong while showing it. Reload to try again.",
-    "page_error_reload": "Reload"
+    "page_error_reload": "Reload",
+    "attention": {
+      "accounts_one": "{{count}} account item needs you",
+      "accounts_other": "{{count}} account items need you",
+      "access_requests_one": "{{count}} access request",
+      "access_requests_other": "{{count}} access requests",
+      "access_one": "{{count}} access item needs you",
+      "access_other": "{{count}} access items need you",
+      "backups": "Backups need you"
+    }
   }
 }

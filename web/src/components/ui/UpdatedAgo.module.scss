@@ -1,12 +1,29 @@
 .stamp {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: inline-grid;
+  justify-items: end;
   min-width: 0;
   color: var(--text-tertiary);
   font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.sizer,
+.shown {
+  grid-area: 1 / 1;
+}
+
+.sizer {
+  // The icon's 12 px and the 6 px gap.
+  padding-left: 18px;
+  visibility: hidden;
+}
+
+.shown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .icon {

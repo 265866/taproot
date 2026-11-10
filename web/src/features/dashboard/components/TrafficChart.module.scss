@@ -1,0 +1,349 @@
+.section {
+  min-width: 0;
+}
+
+.skeleton {
+  height: 210px;
+}
+
+.body {
+  container-type: inline-size;
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+// The chart turns compact by the plot's own width (COMPACT_WIDTH in TrafficChart.tsx), never by
+// the viewport's, so the reserved height always matches the drawn one.
+.plot {
+  position: relative;
+  min-height: 210px;
+  border-radius: var(--radius-md);
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @container (width < 560px) {
+    min-height: 170px;
+  }
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+
+.tick {
+  fill: var(--text-tertiary);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rateTick {
+  fill: var(--status-danger-text);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  stroke: var(--border-color);
+  stroke-dasharray: 2 3;
+}
+
+.baseline {
+  stroke: var(--border-primary);
+}
+
+.hatch {
+  stroke: var(--text-quaternary);
+  stroke-width: 1.2;
+  opacity: 0.6;
+}
+
+.dayLine {
+  stroke: var(--border-hover);
+}
+
+.dayLabel {
+  fill: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.activeBand {
+  fill: var(--bg-hover);
+}
+
+// Every bar keeps 3:1 against the card, the running one too: the hatched backdrop, not a faded
+// fill, says it is still running.
+.barOk {
+  fill: var(--viz-success-mark);
+
+  .partial & {
+    opacity: 0.85;
+  }
+}
+
+.barFailed {
+  fill: var(--viz-failure);
+
+  .partial & {
+    opacity: 0.9;
+  }
+}
+
+.lineHalo {
+  fill: none;
+  stroke: var(--bg-primary);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+
+.line {
+  fill: none;
+  stroke: var(--viz-failure);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.dot {
+  fill: var(--viz-failure);
+  stroke: var(--viz-failure);
+  stroke-width: 1.4;
+}
+
+.dotOpen {
+  fill: var(--bg-primary);
+  stroke: var(--viz-failure);
+  stroke-width: 1.4;
+}
+
+.now {
+  stroke: var(--text-secondary);
+  stroke-dasharray: 3 2;
+}
+
+.nowLabel {
+  fill: var(--text-secondary);
+  font-size: 10.5px;
+}
+
+.tooltip {
+  position: absolute;
+  top: 4px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-md);
+  background: var(--floating-surface);
+  box-shadow: var(--floating-shadow);
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+
+  b {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+  pointer-events: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-3);
+  margin: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-caption);
+  list-style: none;
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  b {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.swatchOk,
+.swatchFailed,
+.swatchHatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.swatchOk {
+  background: var(--viz-success-mark);
+}
+
+.swatchFailed {
+  background: var(--viz-failure);
+}
+
+.swatchLine {
+  display: inline-block;
+  width: 14px;
+  border-top: 1.75px solid var(--viz-failure);
+}
+
+.swatchHatch {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--text-quaternary) 0 1.5px,
+    transparent 1.5px 3.5px
+  );
+  box-shadow: inset 0 0 0 1px var(--border-hover);
+}
+
+// The legend sits in the section's header on wide screens and under the chart on narrow ones;
+// one copy shows at a time, so the accessibility tree has one.
+.legendWide {
+  display: none;
+}
+
+.legendNarrow {
+  padding: var(--space-2) 2px 0;
+}
+
+@media (min-width: $breakpoint-mobile) {
+  .legendWide {
+    display: block;
+  }
+
+  .legendNarrow {
+    display: none;
+  }
+}
+
+.tableToggle {
+  margin: var(--space-2) calc(-1 * var(--space-3)) 0;
+
+  // An inset ring: the card clips anything past its edge, and the closed toggle ends the card.
+  > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    margin: 0 calc(var(--space-3) - 6px);
+    padding: 0 6px;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--fs-meta);
+    list-style: none;
+    cursor: pointer;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &:hover {
+      color: var(--text-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+
+    svg {
+      transition: transform var(--dur-hover) var(--ease-out-strong);
+    }
+
+    @media (pointer: coarse) {
+      min-height: 44px;
+    }
+  }
+
+  &[open] > summary svg {
+    transform: rotate(180deg);
+  }
+}
+
+// The table grows with its rows rather than scrolling inside the page.
+.tableScroll {
+  overflow-x: auto;
+  border-top: 1px solid var(--border-color);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-table);
+  font-variant-numeric: tabular-nums;
+
+  th,
+  td {
+    padding: 6px 14px;
+    border-top: 1px solid var(--border-color);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  thead th {
+    border-top: 0;
+    color: var(--text-tertiary);
+    font-size: var(--fs-small);
+    font-weight: 500;
+  }
+
+  th:first-child {
+    text-align: left;
+  }
+
+  tbody th {
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+}
+
+// A phone-wide chart: every column stays in view, so the time and the headers wrap instead.
+@container (width < 480px) {
+  .table {
+    th,
+    td {
+      padding: 6px 8px;
+    }
+
+    thead th,
+    tbody th {
+      white-space: normal;
+    }
+  }
+}
+
+// Phones read the axis a step larger, like the rest of the page.
+@media (max-width: $breakpoint-mobile) {
+  .tick,
+  .rateTick,
+  .nowLabel,
+  .dayLabel {
+    font-size: 11px;
+  }
+}

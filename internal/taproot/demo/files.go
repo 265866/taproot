@@ -46,8 +46,8 @@ oauth:
 `
 
 // taprootYAML turns off the idle-account poller, which reads from providers.
-// Alerts are on with a fake webhook, so the Dashboard shows failing
-// deliveries: run.sh points their origin, like every other outbound
+// Alerts are on with a fake webhook (alertsYAML), so the Dashboard shows
+// failing deliveries: run.sh points their origin, like every other outbound
 // request, at the dead loopback proxy. The tailscaled socket is the demo's
 // fake tailnet (serveTailnet), never a real one; the server listens on loopback
 // only, so every caller is loopback and the tailnet only fills the Access
@@ -61,7 +61,9 @@ backups:
 request-logs:
   max-days: 14
   max-bytes: 20GiB
-alerts:
+%s`
+
+const alertsYAML = `alerts:
   discord-webhook: https://discord.com/api/webhooks/000000000000000000/demo-webhook-token-not-real
 `
 
@@ -70,13 +72,18 @@ func tailnetSocket(dir string) string {
 	return filepath.Join(dir, "tailscaled.sock")
 }
 
-// writeConfig writes config.yaml and taproot.yaml into dir.
-func writeConfig(dir, authDir string, port int) error {
+// writeConfig writes config.yaml and taproot.yaml into dir; alerts adds the
+// fake webhook.
+func writeConfig(dir, authDir string, port int, alerts bool) error {
 	cfg := fmt.Sprintf(configYAML, port, deadProxy, filepath.ToSlash(authDir))
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(cfg), 0o600); err != nil {
 		return fmt.Errorf("write config.yaml: %w", err)
 	}
-	tp := fmt.Sprintf(taprootYAML, accessYAML(filepath.ToSlash(tailnetSocket(dir))))
+	alertsSection := ""
+	if alerts {
+		alertsSection = alertsYAML
+	}
+	tp := fmt.Sprintf(taprootYAML, accessYAML(filepath.ToSlash(tailnetSocket(dir))), alertsSection)
 	if err := os.WriteFile(filepath.Join(dir, "taproot.yaml"), []byte(tp), 0o600); err != nil {
 		return fmt.Errorf("write taproot.yaml: %w", err)
 	}

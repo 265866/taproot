@@ -3,6 +3,8 @@
  * Components read these custom properties instead of hard-coding colors.
  */
 
+@use './variables.scss' as *;
+
 :root {
   // Provider accents for charts, tabs, and badges.
   --provider-claude: #c4643f;
@@ -52,6 +54,19 @@
   --space-7: 28px;
   --console-gutter: var(--space-7); // the content column's side padding on desktop
   --console-gap: 18px; // between sections
+}
+
+// Phones read the console a step larger than the dense desktop scale: body, table, and detail text
+// at 13 px or more, tags and small labels at 11 px or more. A phone held sideways is wider than the
+// phone breakpoint but no taller than 500 px, and reads at the same distance.
+@media (max-width: $breakpoint-mobile), (pointer: coarse) and (max-height: 500px) {
+  :root {
+    --fs-tag: 11px;
+    --fs-small: 11px;
+    --fs-caption: 13px;
+    --fs-meta: 13px;
+    --fs-table: 13px;
+  }
 }
 
 // 浅色主题
@@ -173,6 +188,9 @@
   // 规则：翡翠绿只表达「活的流量」。
   --viz-success: #10b981;
   --viz-failure: #c65746;
+  // A filled mark on a light card, such as a chart bar: #10b981 is 2:1 there, under the 3:1 a
+  // graphic needs.
+  --viz-success-mark: #047857;
 
   // 动效词汇表：内置 ease 太弱，交互反馈统一用强减速曲线。
   // 按压 160ms / 悬停 200ms，UI 动效不超过 300ms。
@@ -359,6 +377,7 @@
   // 深色卡面上 #10b981 亮度超出 OKLCH 0.48–0.67 区间，且与失败色的色盲分离度不足，
   // 因此深色单独降一档。三套主题均已通过对比度/色盲/亮度校验。
   --viz-success: #0fae78;
+  --viz-success-mark: var(--viz-success);
   --viz-failure: #cf4b3a;
 }
 

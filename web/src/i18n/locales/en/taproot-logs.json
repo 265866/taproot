@@ -11,6 +11,7 @@
       "search": "Search",
       "search_placeholder": "Search request id, trace, URL, model, or session",
       "range": "Time range",
+      "range_15m": "Last 15 minutes",
       "range_1h": "Last hour",
       "range_24h": "Last 24 hours",
       "range_7d": "Last 7 days",

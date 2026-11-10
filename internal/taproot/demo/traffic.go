@@ -152,6 +152,8 @@ type request struct {
 	usage.Record
 	device device
 	burst  bool
+	// logged also writes a request log for a request outside the burst.
+	logged bool
 	prompt string
 	reply  string
 }

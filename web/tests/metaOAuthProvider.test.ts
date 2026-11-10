@@ -17,7 +17,7 @@ import {
   supportsAuthFileManualRefresh,
   supportsAuthFileWebsockets,
 } from '@/features/authFiles/constants';
-import { providerLabel } from '@/features/dashboard/utils';
+import { providerLabel } from '@/features/dashboard/model/providers';
 import iconMeta from '@/assets/icons/meta.svg';
 import { apiClient } from '@/services/api/client';
 import { oauthApi, type BuiltInOAuthProvider } from '@/services/api/oauth';

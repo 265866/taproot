@@ -59,9 +59,9 @@ var statusMessages = map[int]string{
 }
 
 // clientRequests groups the usage records by their client request (trace
-// ID): the attempts of one request are its retries on other accounts. Burst
-// requests take the ID their request log is stored under, so the dashboard
-// opens it. It adds one request no account could serve.
+// ID): the attempts of one request are its retries on other accounts. A
+// request with a request log takes the ID the log is stored under, so the
+// dashboard opens it. It adds one request no account could serve.
 func clientRequests(requests []request, start time.Time) []ingest.ClientRequest {
 	var order []string
 	groups := map[string][]request{}
@@ -81,7 +81,7 @@ func clientRequests(requests []request, start time.Time) []ingest.ClientRequest 
 			if e := r.RequestedAt.Add(r.Latency); e.After(end) {
 				end = e
 			}
-			if r.burst {
+			if r.burst || r.logged {
 				id = r.RequestID
 			}
 		}
@@ -119,7 +119,9 @@ func clientRequests(requests []request, start time.Time) []ingest.ClientRequest 
 // degradedTraffic is a quarter hour in which Claude is overloaded: over the
 // last 12 minutes, 40 requests from the laptop, every fifth of which fails
 // with 529 on both accounts it is tried on. It gives the Dashboard a
-// degraded verdict (-degraded), and draws from its own random source.
+// degraded verdict (-degraded), and draws from its own random source. Each
+// failed request's last attempt has a request log, so the verdict's "See
+// failures" link lands on rows.
 func degradedTraffic(start time.Time, accounts []*demoAccount) []request {
 	x := &generator{rng: rand.New(rand.NewPCG(demoSeed, 3))}
 	overloaded := `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
@@ -142,6 +144,7 @@ func degradedTraffic(start time.Time, accounts []*demoAccount) []request {
 			if n%5 == 0 {
 				r.Failed, r.Fail = true, usage.Failure{StatusCode: 529, Body: overloaded}
 				r.Detail, r.TTFT, r.Latency = usage.Detail{}, 0, 1200*time.Millisecond
+				r.logged = k == len(tries)-1
 			}
 			out = append(out, r)
 		}

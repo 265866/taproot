@@ -699,10 +699,10 @@ textarea {
   }
 }
 
-// Touch targets of about 40px on a touch screen; a mouse keeps the compact sizes.
+// 44 px touch targets on a touch screen; a mouse keeps the compact sizes.
 @media (pointer: coarse) {
   .btn.btn-sm {
-    min-height: 40px;
+    min-height: 44px;
   }
 }
 

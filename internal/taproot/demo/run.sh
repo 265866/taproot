@@ -12,6 +12,7 @@
 # Options: --port N (default 8399), --dir DIR (an empty or missing directory
 # for the demo data; default a new temporary directory, deleted on exit),
 # --degraded (a quarter hour in which a fifth of Claude requests fail),
+# --all-clear (nothing needs the user), --first-run (no accounts or requests yet),
 # --deny a,b (extra strings the capture must not find on any page),
 # --chrome PATH (the browser the capture drives; default the installed Chrome).
 #
@@ -27,7 +28,7 @@ dir=""
 deny=""
 capture=false
 chrome=""
-degraded=""
+scenario=""
 while (($#)); do
 	case "$1" in
 	--port) port="$2"; shift 2 ;;
@@ -35,8 +36,10 @@ while (($#)); do
 	--deny) deny="$2"; shift 2 ;;
 	--chrome) chrome="$2"; shift 2 ;;
 	--capture) capture=true; shift ;;
-	--degraded) degraded="-degraded"; shift ;;
-	*) sed -n '2,19p' "$0" >&2; exit 2 ;;
+	--degraded) scenario="-degraded"; shift ;;
+	--all-clear) scenario="-all-clear"; shift ;;
+	--first-run) scenario="-first-run"; shift ;;
+	*) sed -n '2,20p' "$0" >&2; exit 2 ;;
 	esac
 done
 
@@ -64,7 +67,7 @@ trap cleanup EXIT
 bin="$work/taproot$(go env GOEXE)"
 demo="$work/demo$(go env GOEXE)"
 (cd "$root" && go build -o "$bin" ./cmd/server && go build -o "$demo" ./internal/taproot/demo)
-"$demo" -dir "$dir" -port "$port" $degraded
+"$demo" -dir "$dir" -port "$port" $scenario
 
 # The fake tailnet fills the Access page; the server reads it as tailscaled,
 # and refuses to start until its socket exists.

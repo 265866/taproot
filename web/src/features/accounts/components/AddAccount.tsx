@@ -11,6 +11,7 @@ import {
 } from '@/features/oauth/hooks/useOAuthFlows';
 import {
   OAUTH_PROVIDERS,
+  startCard,
   resolveThemedIcon,
   supportsManualCallback,
   type OAuthProviderCard,
@@ -30,6 +31,12 @@ interface AddAccountProps {
   onAdded?: () => void;
   disableControls: boolean;
   onUpload: () => void;
+  /**
+   * A credential provider key (`claude`, `codex`) whose sign-in opens at once, as a click on its
+   * tile would; links such as the Dashboard's "Sign in again" set it. Called back once handled.
+   */
+  startProvider?: string | null;
+  onStartHandled?: () => void;
 }
 
 /**
@@ -44,6 +51,8 @@ export function AddAccount({
   onAdded,
   disableControls,
   onUpload,
+  startProvider,
+  onStartHandled,
 }: AddAccountProps) {
   const { t } = useTranslation();
   const apiBase = useAuthStore((state) => state.apiBase);
@@ -120,6 +129,17 @@ export function AddAccount({
     // A running, failed, or just-finished attempt reopens as it is; otherwise sign-in starts now.
     if (!flows.states[card.id]?.status) void flows.startAuth(card.id);
   };
+
+  useEffect(() => {
+    if (!startProvider) return;
+    const card = startCard(startProvider, providerCards);
+    // A provider without a sign-in card here opens the panel, so the user can pick another way.
+    if (card) openProvider(card);
+    else setOpen(true);
+    onStartHandled?.();
+    // openProvider and the cards change identity each render; the start runs once per request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startProvider]);
 
   const closeDialog = () => {
     if (dialogId) flows.dismissSuccess(dialogId);

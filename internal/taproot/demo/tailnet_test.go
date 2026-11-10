@@ -23,7 +23,7 @@ func TestDemoTailnet(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	if err := writeConfig(dir, filepath.Join(dir, "auths"), 8399); err != nil {
+	if err := writeConfig(dir, filepath.Join(dir, "auths"), 8399, true); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := taproot.LoadConfig(filepath.Join(dir, "taproot.yaml"))

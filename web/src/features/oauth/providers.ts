@@ -1,3 +1,4 @@
+import { normalizeOAuthProviderKey } from '@/utils/providerKeys';
 import type { BuiltInOAuthProvider } from '@/services/api';
 import { getPluginTitle, resolvePluginAssetURL } from '@/features/plugins/pluginResources';
 import type { PluginListEntry } from '@/types';
@@ -91,6 +92,19 @@ export const OAUTH_PROVIDERS: BuiltInOAuthProviderCard[] = [
 ];
 
 const BUILTIN_PROVIDER_IDS = new Set<string>(OAUTH_PROVIDERS.map((provider) => provider.id));
+
+/** Credential provider keys whose sign-in card has another id. */
+const CARD_ID_BY_PROVIDER: Record<string, string> = { claude: 'anthropic', kimi: 'kimi-ai' };
+
+/** The sign-in card for a credential's provider key, such as `claude` for the `anthropic` card. */
+export const oauthCardIdForProvider = (provider: string): string => {
+  const key = normalizeOAuthProviderKey(provider);
+  return CARD_ID_BY_PROVIDER[key] ?? key;
+};
+
+/** The card a sign-in link (`?signIn=claude`) starts, or null when none here signs that provider in. */
+export const startCard = <T extends { id: string }>(provider: string, cards: T[]): T | null =>
+  cards.find((card) => card.id === oauthCardIdForProvider(provider)) ?? null;
 
 /** 后端接受手动回调提交的内置提供商；插件提供商一律允许。 */
 export const CALLBACK_SUPPORTED = new Set<string>(['codex', 'anthropic', 'antigravity', 'xai']);
