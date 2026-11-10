@@ -186,12 +186,14 @@ func writeSynced(path string, content []byte) error {
 	return errors.Join(errWrite, errSync, errClose)
 }
 
-// prune removes dictionaries no segment uses. The newest stays for the next
-// seal while it is younger than maxAge (0 means no limit) and a sealed
-// segment exists; a dictionary holds record text, so it must not outlive the
-// records it came from. prune runs on the compactor goroutine, which also
-// seals, so no seal can pick a dictionary prune is removing.
-func (d *dictStore) prune(ctx context.Context, now time.Time, maxAge time.Duration) error {
+// prune removes dictionaries that no segment and no id in keep uses. The
+// newest stays for the next seal while it is younger than maxAge (0 means no
+// limit) and a sealed segment exists. A dictionary holds record text, so
+// maxAge also bounds how long that text is kept: about three times maxAge
+// from the oldest record it came from, not exactly as long as its records.
+// prune runs on the compactor goroutine, which also seals, so no seal can
+// pick a dictionary prune is removing.
+func (d *dictStore) prune(ctx context.Context, now time.Time, maxAge time.Duration, keep []int64) error {
 	ids, err := d.ids()
 	if err != nil || len(ids) == 0 {
 		return err
@@ -207,7 +209,7 @@ func (d *dictStore) prune(ctx context.Context, now time.Time, maxAge time.Durati
 	newest := ids[len(ids)-1]
 	keepNewest := sealed && !d.expired(newest, now, maxAge)
 	for _, id := range ids {
-		if slices.Contains(used, id) || id == newest && keepNewest {
+		if slices.Contains(used, id) || slices.Contains(keep, id) || id == newest && keepNewest {
 			continue
 		}
 		if err := os.Remove(d.path(id)); err != nil && !errors.Is(err, os.ErrNotExist) {

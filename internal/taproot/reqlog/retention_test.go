@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // imageBody is a request carrying size bytes of incompressible base64, which
@@ -284,6 +286,171 @@ func TestRestoreKeepsSealedCopyWhenDecodeFails(t *testing.T) {
 	}
 }
 
+// TestRetentionKeepsDictionaryOfHeldCopy covers a sealed copy kept after a
+// restore because writing its raw file failed. With no sealed segment left,
+// retention would prune the newest dictionary, the only one that decodes the
+// copy, and the next start would lose the record.
+func TestRetentionKeepsDictionaryOfHeldCopy(t *testing.T) {
+	h := newHarness(t, Config{})
+	if _, err := h.logs.engine.dicts.add(bytes.Repeat([]byte(`{"model":"m","messages":[]}`), 400)); err != nil {
+		t.Fatal(err)
+	}
+	logSimple(t, h.logs.logger, "open-at-snapshot", "/v1/messages", "s", 200, h.clock.now(), []byte(`{"n":1}`))
+	h.flush()
+	snapshot := filepath.Join(t.TempDir(), "snap.db")
+	if err := h.db.Snapshot(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	h.sealAll()
+	zsts, _ := filepath.Glob(filepath.Join(h.dataDir, "request-logs", "*", "*.zst"))
+	if len(zsts) != 1 {
+		t.Fatalf("sealed files %v", zsts)
+	}
+	blocker := strings.TrimSuffix(zsts[0], ".zst") + ".raw.tmp"
+	if err := os.MkdirAll(filepath.Join(blocker, "x"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	h.restoreSnapshot(snapshot)
+	h.logs.engine.applyRetention(context.Background())
+
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	h.stop()
+	h.open(Config{})
+	h.logs.engine.compactQueued(context.Background())
+	d, err := h.logs.Get(context.Background(), "open-at-snapshot", true)
+	if err != nil {
+		t.Fatalf("record lost: %v", err)
+	}
+	if d.Request.Body != `{"n":1}` {
+		t.Fatalf("body %q", d.Request.Body)
+	}
+}
+
+// restoreWithSealedCopy logs an old record in session "s" and newer ones in
+// sealed segments, snapshots the database while "s" is open, seals "s", lets
+// damage act on its sealed file, and restores the snapshot.
+func restoreWithSealedCopy(t *testing.T, h *harness, damage func(zstPath string)) {
+	t.Helper()
+	t0 := h.clock.now().Add(-time.Hour)
+	logSimple(t, h.logs.logger, "open-at-snapshot", "/v1/messages", "s", 200, t0, []byte(`{"n":1}`))
+	for i := 1; i <= 3; i++ {
+		logSimple(t, h.logs.logger, fmt.Sprintf("B%d", i), "/v1/messages", fmt.Sprintf("B%d", i), 200, t0.Add(time.Duration(i)*time.Minute), imageBody(uint64(i), 8<<10))
+	}
+	h.flush()
+	e := h.logs.engine
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var keep int64
+	if err := h.db.QueryRow(`SELECT segment_id FROM reqlog_records WHERE request_id = ?`, "open-at-snapshot").Scan(&keep); err != nil {
+		t.Fatal(err)
+	}
+	var zstPath string
+	if err := e.do(ctx, func() {
+		for _, seg := range e.open {
+			if seg.id == keep {
+				zstPath = e.segmentPath(seg.day, seg.id, ".zst")
+			} else {
+				e.seal(seg)
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.compactQueued(ctx)
+	snapshot := filepath.Join(t.TempDir(), "snap.db")
+	if err := h.db.Snapshot(ctx, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	h.sealAll()
+	damage(zstPath)
+	h.restoreSnapshot(snapshot)
+	h.logs.engine.compactQueued(ctx)
+}
+
+// TestRestoreDropsUndecodableSealedCopy covers a sealed copy that can never
+// decode. Kept, its open segment would hold the oldest record forever, and
+// max-bytes, which waits for that record's segment to seal, would never
+// delete anything again.
+func TestRestoreDropsUndecodableSealedCopy(t *testing.T) {
+	h := newHarness(t, Config{})
+	var zstPath string
+	restoreWithSealedCopy(t, h, func(path string) {
+		zstPath = path
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := zstdHeaderEnd(t, content); i < len(content); i++ {
+			content[i] ^= 0xff
+		}
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	for start := 1; start <= 2; start++ {
+		if start > 1 {
+			h.stop()
+			h.open(Config{})
+			h.logs.engine.compactQueued(context.Background())
+		}
+		setMaxBytes(t, h.logs, 1)
+		h.logs.engine.applyRetention(context.Background())
+		if ids := recordIDs(t, h); len(ids) != 0 {
+			t.Fatalf("start %d: records left past max-bytes: %v", start, ids)
+		}
+	}
+	if _, err := os.Stat(zstPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("undecodable copy kept: %v", err)
+	}
+}
+
+// TestRetentionDeletesHeldCopy covers a sealed copy whose dictionary is gone
+// for good. The copy stays in case the dictionary comes back, but retention
+// must still delete it, oldest first, rather than wait for it to seal.
+func TestRetentionDeletesHeldCopy(t *testing.T) {
+	h := newHarness(t, Config{})
+	dictID, err := h.logs.engine.dicts.add(bytes.Repeat([]byte(`{"model":"m","messages":[]}`), 400))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var zstPath string
+	restoreWithSealedCopy(t, h, func(path string) {
+		zstPath = path
+		if err := os.Remove(h.logs.engine.dicts.path(dictID)); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, err := os.Stat(zstPath); err != nil {
+		t.Fatalf("held copy removed at start: %v", err)
+	}
+	ctx := context.Background()
+	total, err := h.logs.engine.storedBytes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setMaxBytes(t, h.logs, total-1)
+	h.logs.engine.applyRetention(ctx)
+	if got, want := recordIDs(t, h), []string{"B1", "B2", "B3"}; !slices.Equal(got, want) {
+		t.Fatalf("records after a 1-byte overage: %v, want %v", got, want)
+	}
+	if _, err := os.Stat(zstPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("deleted segment's copy kept: %v", err)
+	}
+}
+
+// zstdHeaderEnd is the length of a zstd frame header at the start of b.
+func zstdHeaderEnd(t *testing.T, b []byte) int {
+	t.Helper()
+	var hdr zstd.Header
+	if err := hdr.Decode(b); err != nil {
+		t.Fatal(err)
+	}
+	return hdr.HeaderSize
+}
+
 // TestFailedCompactionRetriedWhenNeverMarkedSealing covers a seal whose
 // state update failed, so the row still says open, followed by a failed
 // compaction: the retry must still run.
@@ -347,7 +514,7 @@ func TestDictionaryExpiresWithRetention(t *testing.T) {
 	if used != 0 {
 		t.Fatalf("new segment sealed with dictionary %d older than max-days", used)
 	}
-	if err := e.dicts.prune(ctx, now, 2*24*time.Hour); err != nil {
+	if err := e.dicts.prune(ctx, now, 2*24*time.Hour, nil); err != nil {
 		t.Fatal(err)
 	}
 	if ids, _ := e.dicts.ids(); len(ids) != 0 {
@@ -360,7 +527,7 @@ func TestDictionaryExpiresWithRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	ageDict(fresh, time.Hour)
-	if err := e.dicts.prune(ctx, now, 2*24*time.Hour); err != nil {
+	if err := e.dicts.prune(ctx, now, 2*24*time.Hour, nil); err != nil {
 		t.Fatal(err)
 	}
 	if ids, _ := e.dicts.ids(); len(ids) != 1 {
@@ -369,7 +536,7 @@ func TestDictionaryExpiresWithRetention(t *testing.T) {
 	if err := e.deleteSegments(ctx, mustIDs(t, h, `SELECT id FROM reqlog_segments`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.dicts.prune(ctx, now, 0); err != nil {
+	if err := e.dicts.prune(ctx, now, 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if ids, _ := e.dicts.ids(); len(ids) != 0 {
