@@ -424,7 +424,7 @@ func newGrantSet(in Grants) (*grantSet, error) {
 		// admin device would lose Admin.
 		for _, tailnet := range tailnetPrefixes {
 			if prefix.Overlaps(tailnet) {
-				return nil, fmt.Errorf("access.addresses: %s covers Tailscale addresses (%s); give tailnet devices Proxy under access.devices instead", prefix, tailnet)
+				return nil, fmt.Errorf("access.addresses: %s covers Tailscale addresses (%s); give tailnet devices Proxy under access.devices instead, or, to open the proxy to every caller, remove the entry and set access.enabled: false", prefix, tailnet)
 			}
 		}
 		if slices.Contains(set.prefixes, prefix) {
@@ -599,7 +599,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			return
 		}
 		c.Set(identityKey, id)
-		defer g.trackSocket(c, id, surf)()
+		g.trackSocket(c, id, surf)
 		if requestID := logging.GetGinRequestID(c); requestID != "" {
 			g.requests.start(requestID, g.deviceFor(id))
 			defer func() { g.requests.finish(requestID, g.now()) }()

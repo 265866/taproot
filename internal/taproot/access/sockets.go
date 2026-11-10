@@ -99,42 +99,60 @@ func closeSocket(s *openSocket) {
 	}
 }
 
-// trackSocket makes a hijack of this request's connection tracked until the
-// request ends, for a caller whose grant can be taken away. It returns the
-// function that stops tracking.
-func (g *Guard) trackSocket(c *gin.Context, id Identity, surf surface) func() {
+// trackSocket tracks a hijack of this request's connection until the
+// connection is closed, for a caller whose grant can be taken away. A handler
+// such as upstream's /v1/ws relay returns right after the upgrade and serves
+// the connection from another goroutine, so the request's end does not end
+// the connection.
+func (g *Guard) trackSocket(c *gin.Context, id Identity, surf surface) {
 	if !isUpgrade(c.Request) || (!id.device && id.Via != ViaCIDR) {
-		return func() {}
+		return
 	}
 	s := &openSocket{id: id, admin: surf == surfaceAdmin}
 	if id.Via == ViaCIDR {
 		addr, err := netip.ParseAddr(id.Node)
 		if err != nil {
-			return func() {}
+			return
 		}
 		s.addr = addr
 	}
-	c.Writer = &hijackWriter{ResponseWriter: c.Writer, hijacked: func(conn net.Conn) {
+	c.Writer = &hijackWriter{ResponseWriter: c.Writer, hijacked: func(conn net.Conn) net.Conn {
 		s.conn = conn
 		g.sockets.add(s, g.grants.Load)
+		return &trackedConn{Conn: conn, untrack: func() { g.sockets.remove(s) }}
 	}}
-	return func() { g.sockets.remove(s) }
+}
+
+// trackedConn is the connection the handler gets. Revocation closes the
+// underlying connection directly, because it holds the lock that untrack
+// takes.
+type trackedConn struct {
+	net.Conn
+	once    sync.Once
+	untrack func()
+}
+
+func (c *trackedConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.untrack)
+	return err
 }
 
 func isUpgrade(r *http.Request) bool {
 	return r.Header.Get("Upgrade") != "" && strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
-// hijackWriter reports the connection a handler takes over.
+// hijackWriter hands the connection a handler takes over to hijacked, and the
+// handler gets the connection hijacked returns.
 type hijackWriter struct {
 	gin.ResponseWriter
-	hijacked func(net.Conn)
+	hijacked func(net.Conn) net.Conn
 }
 
 func (w *hijackWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := w.ResponseWriter.Hijack()
 	if err == nil {
-		w.hijacked(conn)
+		conn = w.hijacked(conn)
 	}
 	return conn, rw, err
 }

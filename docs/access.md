@@ -13,7 +13,7 @@ Every tailnet device has two permissions:
 
 New devices start with neither. The server's own node always has Proxy and never Admin. Permissions belong to the device's Tailscale stable ID, so a device that takes another device's name gets nothing.
 
-Addresses outside Tailscale, listed under **Addresses without Tailscale** (`access.addresses` in `taproot.yaml`), get Proxy only. Add single addresses (`/32`) only, because every host in a wider range reaches the proxy. Taproot refuses an address in Tailscale's ranges (`100.64.0.0/10` and `fd7a:115c:a1e0::/48`), and any range that includes one: give a tailnet device Proxy with its switch instead.
+Addresses outside Tailscale, listed under **Addresses without Tailscale** (`access.addresses` in `taproot.yaml`), get Proxy only. Add single addresses (`/32`) only, because every host in a wider range reaches the proxy. Taproot refuses an address in Tailscale's ranges (`100.64.0.0/10` and `fd7a:115c:a1e0::/48`), and any range that includes one: give a tailnet device Proxy with its switch instead. To open the proxy to every caller, set `access.enabled: false` rather than adding `0.0.0.0/0`, which taproot refuses even while access is disabled.
 
 A change applies to the device's next request. Turning off a permission also closes the device's open websocket sessions, such as a running Codex session, which then reconnect and are refused.
 
