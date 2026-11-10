@@ -71,5 +71,8 @@ export function cacheWriteUnsplit(t: AdditiveTotals): number {
 export function unpricedHint(t: TFunction, totals: Pick<UsageTotals, 'unpricedModels'>): string {
   const models = totals.unpricedModels ?? [];
   if (models.length === 0) return t('taproot_usage.kpi.unpriced_hint');
-  return t('taproot_usage.kpi.unpriced_models', { count: models.length, models: models.join(', ') });
+  return t('taproot_usage.kpi.unpriced_models', {
+    count: models.length,
+    models: models.join(', '),
+  });
 }
