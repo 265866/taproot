@@ -84,9 +84,9 @@ describe('the rail geometry', () => {
       logger: { warn: () => undefined },
     }
   ).css;
-  const COLUMNS_QUERY = '@media (min-width: 1184px) {';
+  const COLUMNS_QUERY = '@media (min-width: 1192px) {';
   const insideColumnsQuery = (at: number) =>
-    [...css.matchAll(/@media \(min-width: 1184px\) \{/g)].some((match) => {
+    [...css.matchAll(/@media \(min-width: 1192px\) \{/g)].some((match) => {
       let depth = 0;
       for (let i = match.index; i < css.length; i += 1) {
         if (css[i] === '{') depth += 1;

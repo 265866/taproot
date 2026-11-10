@@ -726,9 +726,8 @@
 }
 
 // A page's rail (PageAside). It takes a second column, spanning the full height beside the header
-// and the page, only when the window leaves the page at least 640 px beside the open sidebar.
-// Narrower windows, phones included, show it inline after the header and before the page.
-$page-aside-columns-min: 200px + 344px + 640px;
+// and the page, from $breakpoint-page-aside up. Narrower windows, phones included, show it inline
+// after the header and before the page.
 
 .content.content-has-aside {
   display: grid;
@@ -743,7 +742,7 @@ $page-aside-columns-min: 200px + 344px + 640px;
     min-width: 0;
   }
 
-  @media (min-width: $page-aside-columns-min) {
+  @media (min-width: $breakpoint-page-aside) {
     grid-template-columns: minmax(0, 1fr) var(--page-aside-width);
     grid-template-rows: auto 1fr;
 
