@@ -93,6 +93,11 @@
     display: block;
   }
 
+  @media (pointer: coarse) {
+    width: 44px;
+    height: 44px;
+  }
+
   @media (max-width: $breakpoint-mobile) {
     width: 44px;
     height: 44px;

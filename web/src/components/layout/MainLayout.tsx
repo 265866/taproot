@@ -17,6 +17,7 @@ import { PageTransition } from '@/components/common/PageTransition';
 import { NavBadgeMark } from '@/components/layout/NavBadgeMark';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { setPageAsideTarget, usePageAsideState } from '@/components/layout/pageAsideStore';
+import { sidebarSemantics } from '@/components/layout/sidebarSemantics';
 import { MainRoutes } from '@/router/MainRoutes';
 import { pluginsApi } from '@/services/api';
 import {
@@ -337,9 +338,16 @@ export function MainLayout() {
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const sidebarRef = useRef<HTMLElement | null>(null);
+  const setSidebarNode = useCallback((node: HTMLElement | null) => {
+    sidebarRef.current = node;
+  }, []);
   const mainRef = useRef<HTMLElement | null>(null);
   const isMobile = useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`);
   const drawerOpen = isMobile && sidebarOpen;
+  const { tag: Sidebar, props: sidebarRoles } = sidebarSemantics(
+    isMobile,
+    t('shell.navigation_drawer')
+  );
 
   const brandName = t('title.main');
   // The app log tail sizes itself to the viewport, so its tab gets the fixed-height layout.
@@ -965,11 +973,12 @@ export function MainLayout() {
           aria-hidden="true"
         />
 
-        <aside
+        <Sidebar
           id={SIDEBAR_ID}
-          ref={sidebarRef}
+          ref={setSidebarNode}
           className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}
           inert={isMobile && !sidebarOpen}
+          {...sidebarRoles}
         >
           <div className="sidebar-header">
             <div className="sidebar-brand" title={brandName}>
@@ -1077,7 +1086,7 @@ export function MainLayout() {
               )}
             </div>
           </div>
-        </aside>
+        </Sidebar>
 
         {railTooltip && (
           <div

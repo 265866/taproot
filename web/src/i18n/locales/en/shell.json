@@ -90,6 +90,7 @@
   "shell": {
     "skip_to_content": "Skip to content",
     "main_navigation": "Main",
+    "navigation_drawer": "Navigation",
     "page_title": "{{page}} · Taproot",
     "page_error_title": "This page failed to load",
     "page_error_body": "Something went wrong while showing it. Reload to try again.",

@@ -3,6 +3,8 @@
  * Components read these custom properties instead of hard-coding colors.
  */
 
+@use './variables.scss' as *;
+
 :root {
   // Provider accents for charts, tabs, and badges.
   --provider-claude: #c4643f;
@@ -52,6 +54,18 @@
   --space-7: 28px;
   --console-gutter: var(--space-7); // the content column's side padding on desktop
   --console-gap: 18px; // between sections
+}
+
+// Phones read the console a step larger than the dense desktop scale: body, table, and detail text
+// at 13 px or more, tags and small labels at 11 px or more.
+@media (max-width: $breakpoint-mobile) {
+  :root {
+    --fs-tag: 11px;
+    --fs-small: 11px;
+    --fs-caption: 13px;
+    --fs-meta: 13px;
+    --fs-table: 13px;
+  }
 }
 
 // 浅色主题
