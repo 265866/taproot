@@ -36,8 +36,9 @@ type Account struct {
 	// (zero when unknown), and then it is signed out.
 	RefreshFailing bool
 	ServesUntil    time.Time
-	// Reason is upstream's sanitized sign-in failure, for a signed-out or
-	// refresh-failing account.
+	// Reason says in plain English why a signed-out or refresh-failing
+	// account can't renew its login (loginReason): a sentence for a failure
+	// upstream names by code, else upstream's sanitized message.
 	Reason string
 	// Since is when the sign-in problem was first seen.
 	Since time.Time
