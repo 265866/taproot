@@ -205,8 +205,9 @@ func labelFor(a *coreauth.Auth, email string) string {
 	return a.EnsureIndex()
 }
 
-// loginReason is upstream's sanitized failure text, which already has tokens,
-// codes, and URLs redacted.
+// loginReason says why an account's login failed. A failure upstream names
+// by a known code reads as plain English; any other text is upstream's
+// sanitized message, which already has tokens, codes, and URLs redacted.
 func loginReason(a *coreauth.Auth, now time.Time) string {
 	msg := ""
 	switch {
@@ -218,7 +219,34 @@ func loginReason(a *coreauth.Auth, now time.Time) string {
 		msg = a.LastError.Message
 	}
 	if msg = strings.TrimSpace(coreauth.SanitizeRenewalMessage(msg)); msg == "" {
-		msg = a.RenewalStateAt(now)
+		return renewalStates[a.RenewalStateAt(now)]
+	}
+	lower := strings.ToLower(msg)
+	for _, r := range renewalCodes {
+		if strings.Contains(lower, r.code) {
+			return r.text
+		}
 	}
 	return msg
+}
+
+// renewalCodes are the refresh failures upstream names by code
+// (internal/auth/codex/refresh_journal.go, isTerminalRefreshGrantMessage in
+// sdk/cliproxy/auth), in the order they are checked.
+var renewalCodes = []struct{ code, text string }{
+	{"refresh_outcome_unknown", "A login refresh was interrupted, so taproot can't tell whether the provider still accepts this login"},
+	{"refresh_token_reused", "The provider ended this login because its refresh token was used elsewhere, such as by another copy of the credential"},
+	{"refresh_token_expired", "The login expired"},
+	{"refresh_token_invalidated", "The provider ended this login, for example after a sign-out or password change"},
+	{"token_revoked", "The login was revoked"},
+	{"invalid_grant", "The provider no longer accepts this login"},
+	{"invalid_client", "The provider refused taproot's sign-in client"},
+}
+
+// renewalStates says upstream's renewal state in words, for an account with
+// no failure text. States that are no reason to sign in say nothing.
+var renewalStates = map[string]string{
+	coreauth.RenewalStateSignInRequired:        "The provider asks for a new sign-in",
+	coreauth.RenewalStateExpiredSignInRequired: "The login expired",
+	coreauth.RenewalStateRetryScheduled:        "Taproot will try the login refresh again",
 }

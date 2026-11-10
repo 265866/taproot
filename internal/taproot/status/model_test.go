@@ -557,3 +557,38 @@ func TestModelCooldownIsNotCooling(t *testing.T) {
 		t.Errorf("a credential cooldown: %s until %s, want cooling for an hour", accounts[1].State, accounts[1].Until)
 	}
 }
+
+func TestLoginReasonInPlainEnglish(t *testing.T) {
+	withMessage := func(msg string) *coreauth.Auth {
+		return auth("codex", "alice@example.com", signedOut, func(a *coreauth.Auth) { a.RefreshError.Message = msg })
+	}
+	cases := []struct {
+		name string
+		a    *coreauth.Auth
+		want string
+	}{
+		{"interrupted refresh", withMessage("refresh_outcome_unknown: pending; reconcile the refresh result or sign in again"), "A login refresh was interrupted, so taproot can't tell whether the provider still accepts this login"},
+		{"reused token", withMessage(`token refresh failed: {"error":{"code":"refresh_token_reused"}}`), "The provider ended this login because its refresh token was used elsewhere, such as by another copy of the credential"},
+		{"expired", withMessage("refresh_token_expired"), "The login expired"},
+		{"invalidated", withMessage("Refresh_Token_Invalidated by the provider"), "The provider ended this login, for example after a sign-out or password change"},
+		{"revoked", withMessage("token_revoked"), "The login was revoked"},
+		{"invalid grant", withMessage("oauth2: invalid_grant"), "The provider no longer accepts this login"},
+		{"invalid client", withMessage("invalid_client"), "The provider refused taproot's sign-in client"},
+		{"unknown text stays", withMessage("refresh token rejected"), "refresh token rejected"},
+		{"no text, sign-in state", auth("claude", "alice@example.com", func(a *coreauth.Auth) {
+			a.RequiresSignIn = true
+			a.Metadata["expired"] = t0.Add(-time.Hour).Format(time.RFC3339)
+		}), "The login expired"},
+	}
+	for _, c := range cases {
+		if got := loginReason(c.a, t0); got != c.want {
+			t.Errorf("%s: loginReason = %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	// Unknown text keeps upstream's redaction.
+	got := loginReason(withMessage("upstream said Bearer sk-ant-abcdefghijklmnopqrstuvwxyz0123456789 no"), t0)
+	if strings.Contains(got, "abcdefghijklmnopqrstuvwxyz") || !strings.Contains(got, "[redacted]") {
+		t.Errorf("unknown text not redacted: %q", got)
+	}
+}
