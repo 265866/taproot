@@ -9,10 +9,8 @@
 
 .topBar {
   position: sticky;
-  // Under the shell's page header, which has the same z-index and comes earlier in the document,
-  // and under the drawer.
   top: var(--header-height);
-  z-index: $z-dropdown - 2;
+  z-index: $z-page-sticky;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;

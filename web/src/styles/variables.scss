@@ -41,6 +41,11 @@ $breakpoint-tablet: 1024px;
 
 // Z-index
 $z-dropdown: 1000;
+// The shell's layers below dropdowns: the phone drawer and its backdrop at $z-dropdown - 1, then
+// the page header, then sticky bars inside pages. A page's sticky bar comes later in the document
+// than the header, so an equal z-index would paint it over the header's buttons.
+$z-page-header: $z-dropdown - 2;
+$z-page-sticky: $z-dropdown - 3;
 $z-modal: 2000;
 $z-notification: 3000;
 

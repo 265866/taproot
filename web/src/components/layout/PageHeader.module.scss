@@ -1,9 +1,8 @@
-// Sticky over the page's own content but under the drawer and its backdrop; the page's sticky bars
-// sit below it at var(--header-height), which the shell measures from this bar.
+// The page's own sticky bars sit below this bar at var(--header-height), which the shell measures.
 .bar {
   position: sticky;
   top: 0;
-  z-index: $z-dropdown - 2;
+  z-index: $z-page-header;
   display: flex;
   flex: none;
   align-items: center;
