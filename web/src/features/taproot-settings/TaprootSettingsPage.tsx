@@ -2,7 +2,12 @@ import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
-import { REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import {
+  REFRESH_CANCELLED,
+  REFRESH_OK,
+  refreshFailed,
+  useHeaderRefresh,
+} from '@/hooks/useHeaderRefresh';
 import { NextBackup } from '@/features/taproot-backups/NextBackup';
 import { serverZoneLabel, type ServerZone } from '@/features/taproot-backups/model/schedule';
 import {
@@ -13,6 +18,7 @@ import {
 } from '@/services/api/taproot';
 import { useConfigStore, useNotificationStore } from '@/stores';
 import { getErrorMessage } from '@/utils/helpers';
+import { createLoadSequence } from '@/utils/loadSequence';
 import { formatBytes } from '@/features/taproot-logs/model/format';
 import {
   backupsForm,
@@ -45,8 +51,10 @@ export function TaprootSettingsPage() {
   const config = useConfigStore((state) => state.config);
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const recording: Recording = configRead && config ? (config.requestLog ?? false) : null;
+  const [loads] = useState(createLoadSequence);
 
   const load = useCallback(async () => {
+    const isCurrent = loads.start();
     try {
       // config.yaml and the stats only add to the request-logs card, so their failures are
       // shown there rather than failing the page.
@@ -59,6 +67,7 @@ export function TaprootSettingsPage() {
           () => false
         ),
       ]);
+      if (!isCurrent()) return REFRESH_CANCELLED;
       setSettings(next);
       setMe(who);
       setDiskBytes(stats?.bytesOnDisk ?? null);
@@ -66,18 +75,29 @@ export function TaprootSettingsPage() {
       setError('');
       return REFRESH_OK;
     } catch (err: unknown) {
+      if (!isCurrent()) return REFRESH_CANCELLED;
       setError(getErrorMessage(err));
       return refreshFailed(err);
     }
-  }, [fetchConfig]);
+  }, [fetchConfig, loads]);
   useEffect(() => {
     void load();
   }, [load]);
   useHeaderRefresh(load);
 
-  const save: Save = useCallback(async (update) => {
-    setSettings(await taprootApi.putSettings(update));
-  }, []);
+  const putSettings = useCallback(
+    (update: TaprootSettingsUpdate) => {
+      loads.invalidate();
+      return taprootApi.putSettings(update);
+    },
+    [loads]
+  );
+  const save: Save = useCallback(
+    async (update) => {
+      setSettings(await putSettings(update));
+    },
+    [putSettings]
+  );
 
   return (
     <div className={styles.page}>
@@ -101,7 +121,7 @@ export function TaprootSettingsPage() {
             settings={settings.requestLogs}
             recording={recording}
             diskBytes={diskBytes}
-            putSettings={taprootApi.putSettings}
+            putSettings={putSettings}
             applySettings={setSettings}
             saveRecording={saveRecording}
           />
@@ -408,7 +428,7 @@ export function BackupsSection({
           <input
             id={ids.time}
             type="time"
-            className={`input ${styles.short}`}
+            className={`input ${styles.short} ${styles.time}`}
             value={form.dailyAt}
             onChange={(event) => set('dailyAt', event.target.value)}
             disabled={!form.scheduled}

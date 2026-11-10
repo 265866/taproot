@@ -49,11 +49,16 @@
     "restore_type": "To confirm, type the backup id",
     "restore_confirm": "Restore",
     "restore_failed": "Restore failed: {{message}}",
+    "restore_lockout": "Taproot did not restore this backup. Its access list does not give this device Admin, or it turns the access guard off, so after the restart this device can no longer open the dashboard. Only a device the backup gives Admin, or a browser on the server itself, could then change access. Restore anyway only if that is what you want.",
+    "restore_anyway": "Restore anyway",
+    "restore_incompatible": "This backup can't be restored on this server, so nothing changed: {{message}}",
+    "restore_restart_pending": "A restore is already waiting for taproot to restart, so nothing changed. Restart taproot, then try again.",
     "restored": "Backup restored",
     "pre_restore_saved": "The previous state is saved as",
     "restart_waiting": "Waiting for taproot to restart…",
     "restart_back": "Taproot is back up and running the restored database.",
     "restart_gave_up": "Taproot has not come back after 90 seconds. Check the server.",
+    "restart_locked_out": "Taproot is back, but it refuses this device: the restored access list does not give it Admin. Open the dashboard from a device that has Admin, or reload this page to request access.",
     "restart_manual": "Restart taproot now to finish: the database is restored on the next start."
   }
 }

@@ -80,7 +80,11 @@ export function retentionForm(
 
 /** `/path` or `METHOD /path`, with path.Match wildcards; the server checks the pattern itself. */
 const EXCLUDE = /^(?:[A-Za-z]+\s+)?\/\S*$/;
-const MAX_DAYS = 3650;
+/**
+ * The server takes any number of days, but its pruning turns days into a Go time.Duration, which
+ * holds at most 106,751 days.
+ */
+const MAX_DAYS = 106_751;
 const MIN_BYTES = 1024 ** 2;
 
 /** The request-logs card saves to two places: taproot.yaml and upstream's config.yaml. */
@@ -171,7 +175,7 @@ export function backupsUpdate(
   form: BackupsForm
 ): Validation<NonNullable<TaprootSettingsUpdate['backups']>> {
   const keep = Number(form.keep.trim());
-  if (!Number.isInteger(keep) || keep < 1 || keep > 1000) return fail('keep_range');
+  if (!Number.isSafeInteger(keep) || keep < 1) return fail('keep_range');
   if (!form.scheduled) return { ok: true, update: { dailyAt: 'off', keep } };
   const time = form.dailyAt.trim();
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return fail('time_format');

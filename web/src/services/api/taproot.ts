@@ -710,8 +710,11 @@ export function createTaprootClient(base = TAPROOT_API_BASE, fetchImpl: typeof f
     createBackup: () => request<Backup>('POST', '/backups'),
     backupDownloadUrl: (backupId: string) =>
       buildTaprootUrl(base, `/backups/${id(backupId)}/download`),
-    restoreBackup: (backupId: string) =>
-      request<RestoreResult>('POST', `/backups/${id(backupId)}/restore`),
+    /** With `allowLockout`, restores a backup that would take this device's Admin. */
+    restoreBackup: (backupId: string, options: { allowLockout?: boolean } = {}) =>
+      request<RestoreResult>('POST', `/backups/${id(backupId)}/restore`, {
+        body: options.allowLockout ? { allowLockout: true } : undefined,
+      }),
 
     accessDevices: async () =>
       normalizeAccessDevices(await request<unknown>('GET', '/access/devices')),
