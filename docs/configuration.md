@@ -47,12 +47,12 @@ Every key is optional. Sizes accept a number of bytes or a value such as `512MiB
 | `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. |
 | `ingest.poll-interval` | `15m` | How often taproot polls the quota of idle accounts. `0` turns polling off. |
 | `request-logs.max-days` | `14` | Delete request logs older than this many days. A negative value keeps them forever. |
-| `request-logs.max-bytes` | `20GiB` | Delete the oldest request logs when the directory passes this size. A negative value removes the limit. |
+| `request-logs.max-bytes` | `20GiB` | Delete the oldest request logs when they pass this size. It counts compressed segments, open segments at the ratio sealed ones compress to, stored images and other payloads, and dictionaries. Payload pack files can hold up to a third more than that until taproot rewrites them. A negative value removes the limit. |
 | `request-logs.exclude-paths` | empty | Paths never stored, such as `/v1/models` or `HEAD /api/*`. |
 | `request-logs.keep-unrouted-404` | `false` | Store 404 responses for paths the proxy does not serve. |
 | `request-logs.queue-bytes` | `256MiB` | Memory for records that wait to be written. Past it, taproot drops the bodies, and the record says so. |
 | `request-logs.segment-max-bytes` | `128MiB` | Stored size at which a segment file closes. |
-| `request-logs.open-max-bytes` | `4GiB` | Total raw size of open segments. Past it, the largest one closes early. |
+| `request-logs.open-max-bytes` | `4GiB` | Total raw size of open segments. Past it, the largest one closes early. At most 256 segments are open at once; past that, the least recently written one closes. |
 | `request-logs.seal-idle` | `15m` | Close a session's segment after this long without requests. |
 | `request-logs.seal-age` | `6h` | Close a segment this long after it opened. |
 | `backups.daily-at` | `00:00` | Time of the daily backup, as `HH:MM` in the `TZ` zone, or `off`. |
