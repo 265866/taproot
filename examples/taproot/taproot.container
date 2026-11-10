@@ -40,8 +40,11 @@ Environment=WRITABLE_PATH=/taproot/config
 # backups. Mount the directory, not single files: restoring a backup replaces
 # files by rename. Add :Z on an SELinux host.
 Volume=%h/taproot/data:/taproot/config
-# The access guard identifies callers through the host's tailscaled.
-Volume=/var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+# The access guard identifies callers through the host's tailscaled. Mount
+# the folder, not the socket file, so taproot sees the new socket after
+# tailscaled restarts, and keep the folder across restarts with
+# RuntimeDirectoryPreserve=yes on tailscaled (see docs/install.md).
+Volume=/var/run/tailscale:/var/run/tailscale:ro
 # pasta keeps each caller's source address, which the access guard depends on.
 Network=pasta
 # Publish on the host's Tailscale address only. Never 0.0.0.0, a LAN address,

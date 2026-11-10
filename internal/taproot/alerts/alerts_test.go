@@ -745,3 +745,38 @@ func TestAccessRequestMessage(t *testing.T) {
 	h.svc.AccessRequested(AccessRequest{NodeID: "ncarolCNTRL", Login: "carol@example.org", At: t0})
 	h.titles(t, 2)
 }
+
+// A tailscaled outage posts one Critical card and its recovery one
+// Recovered card; nothing goes out while alerts are off.
+func TestTailscaledOutageMessages(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake)
+	since := t0.Add(-2 * time.Minute)
+	h.svc.Tailscaled(TailscaledOutage{Socket: "/var/run/tailscale/tailscaled.sock", Down: true, Since: since, At: t0,
+		Err: "dial unix /var/run/tailscale/tailscaled.sock: connect: connection refused", StaleSocket: true})
+	h.titles(t, 1)
+	h.svc.Tailscaled(TailscaledOutage{Socket: "/var/run/tailscale/tailscaled.sock", Since: since, At: t0.Add(10 * time.Minute)})
+	titles := h.titles(t, 2)
+	if titles[0] != "Taproot can't reach tailscaled" || titles[1] != "Taproot reaches tailscaled again" {
+		t.Fatalf("titles = %q", titles)
+	}
+	down, up := decodeCard(t, h.fake.bodies[0]), decodeCard(t, h.fake.bodies[1])
+	if down.accent != severityColors[SeverityCritical] || !strings.Contains(down.description, "have failed for 2m0s") ||
+		!strings.Contains(down.description, "restart taproot") || !strings.Contains(down.details, "connection refused") {
+		t.Fatalf("outage card = %+v", down)
+	}
+	if up.accent != severityColors[SeverityRecovered] || !strings.Contains(up.description, "again after 12m0s") {
+		t.Fatalf("recovery card = %+v", up)
+	}
+	other := tailscaledMessage(TailscaledOutage{Socket: "s", Down: true, Since: since, At: t0, Err: "status 503"})
+	if strings.Contains(other.Description, "restart taproot") || !strings.Contains(other.Description, "tailscale status") {
+		t.Fatalf("non-stale outage = %q", other.Description)
+	}
+
+	off := false
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	h.svc.Tailscaled(TailscaledOutage{Socket: "s", Down: true, Since: since, At: t0})
+	h.titles(t, 2)
+}

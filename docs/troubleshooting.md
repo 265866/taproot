@@ -11,6 +11,12 @@ Something between the caller and taproot replaces the caller's address.
 
 Then run [Check the deployment](access.md#check-the-deployment) again.
 
+## Every tailnet device is refused after tailscaled restarts or updates
+
+Taproot runs in a container and still holds the `tailscaled` socket from before the restart, so it cannot identify any device, admins included. Taproot logs `tailscaled LocalAPI ... has failed` and, when alerts are on, posts "Taproot can't reach tailscaled" after 2 minutes.
+
+Restart taproot now, for example with `systemctl --user restart taproot`. To keep it from happening again, mount the folder `/var/run/tailscale` rather than the socket file, as the [examples](../examples/taproot) do, and keep that folder across `tailscaled` restarts with the host setting in [Keep tailscaled's folder for a container](install.md#keep-tailscaleds-folder-for-a-container).
+
 ## Taproot cannot write to `data/` under Docker Compose
 
 Docker created `data/` as root because it did not exist before the first `docker compose up`. Stop taproot, then give the directory to your user with `sudo chown -R "$(id -u):$(id -g)" data`, and start taproot again.

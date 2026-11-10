@@ -34,7 +34,10 @@ services:
       # replaces files by rename. Add :Z on an SELinux host.
       - ./data:/taproot/config
       # The access guard identifies callers through the host's tailscaled.
-      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+      # Mount the folder, not the socket file, so taproot sees the new socket
+      # after tailscaled restarts, and keep the folder across restarts with
+      # RuntimeDirectoryPreserve=yes on tailscaled (see docs/install.md).
+      - /var/run/tailscale:/var/run/tailscale:ro
     # Publish on the host's Tailscale address only. Never 0.0.0.0, a LAN
     # address, or 127.0.0.1: loopback callers are admins.
     ports:
