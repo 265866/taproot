@@ -70,10 +70,16 @@
     "reset": "Reset",
     "save": "Save",
     "saved": "Access saved",
+    "unsaved_title": "Discard unsaved access changes?",
+    "unsaved_message": "Leaving this page loses the unsaved switch, name, and address changes.",
+    "unsaved_confirm": "Leave",
+    "unsaved_cancel": "Stay",
     "errors": {
       "lockout": "Keep Admin on this device, or you lose access to the dashboard.",
       "address_format": "Not an IP address or CIDR: {{detail}}",
       "address_duplicate": "{{detail}} is already listed.",
+      "address_tailnet": "{{detail}} includes Tailscale addresses. Give tailnet devices Proxy with their switch above instead.",
+      "access_changed": "Access changed on the server since this page loaded. The page now shows the saved lists with your edits on top; edits to anything that changed were dropped. Check them and save again.",
       "allow_nothing": "Turn on Proxy or Admin.",
       "label_too_long": "Names are at most {{detail}} characters.",
       "label_invalid": "Names can't contain control or invisible formatting characters."

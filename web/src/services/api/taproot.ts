@@ -113,6 +113,11 @@ export interface AccessRequest {
 export interface AccessDevices {
   /** False when access.enabled is false; the lists then have no effect. */
   enabled: boolean;
+  /**
+   * Identifies the saved device and address lists. A save of whole lists sends it back, and the
+   * server refuses it (409 `access_changed`) when the lists changed since.
+   */
+  version: string;
   devices: AccessDevice[];
   /** Open requests, newest first. */
   requests: AccessRequest[];
@@ -399,7 +404,7 @@ export interface RestoreResult {
 
 export interface TaprootSettings {
   /** Devices listed have at least one permission; every other device has none. */
-  access: { enabled: boolean; devices: DeviceGrant[]; addresses: AddressGrant[] };
+  access: { enabled: boolean; version: string; devices: DeviceGrant[]; addresses: AddressGrant[] };
   requestLogs: {
     /** Negative disables the age limit. */
     maxDays: number;
@@ -445,8 +450,16 @@ export interface TaprootServerInfo {
 
 /** A `PUT /settings` body: absent sections and fields stay as they are. */
 export interface TaprootSettingsUpdate {
-  /** Each list replaces the whole list. */
-  access?: { devices?: DeviceGrant[]; addresses?: AddressGrant[] };
+  /**
+   * Each list replaces the whole list. `device` instead sets one device's entry and leaves the
+   * others as saved. With `version`, the server refuses the save when the lists changed since.
+   */
+  access?: {
+    version?: string;
+    devices?: DeviceGrant[];
+    device?: DeviceGrant;
+    addresses?: AddressGrant[];
+  };
   requestLogs?: Partial<TaprootSettings['requestLogs']>;
   backups?: Partial<TaprootSettings['backups']>;
   ingest?: { pollInterval?: string };
@@ -589,6 +602,7 @@ export function normalizeAccessDevices(raw: unknown): AccessDevices {
   const list = (value: unknown) => (Array.isArray(value) ? value : []);
   const result: AccessDevices = {
     enabled: flag(body.enabled),
+    version: text(body.version),
     devices: list(body.devices).map(normalizeAccessDevice),
     requests: list(body.requests).map(normalizeAccessRequest),
     addresses: list(body.addresses).map((a) => ({

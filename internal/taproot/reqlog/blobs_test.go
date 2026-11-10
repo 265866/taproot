@@ -474,7 +474,7 @@ func TestDictionaryTrainedAndUsed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := h.logs.engine.dicts.prune(context.Background()); err != nil {
+	if err := h.logs.engine.dicts.prune(context.Background(), h.clock.now(), 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	ids, err := h.logs.engine.dicts.ids()
