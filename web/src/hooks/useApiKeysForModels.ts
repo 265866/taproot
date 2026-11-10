@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { apiKeysApi } from '@/services/api/apiKeys';
-import { useAuthStore, useConfigStore } from '@/stores';
+import { useCallback } from 'react';
+import { useConfigStore } from '@/stores';
 
 const normalizeApiKeyList = (input: unknown): string[] => {
   if (!Array.isArray(input)) return [];
@@ -28,47 +27,14 @@ const normalizeApiKeyList = (input: unknown): string[] => {
 };
 
 /**
- * 解析用于 /models 探测的 API 密钥列表:
- * 优先取已缓存配置中的 api-keys,否则回退到 /api-keys 接口,结果按连接缓存。
- * A loaded config is authoritative: taproot runs with no proxy keys, and the fallback endpoint
- * answers 404 for an absent list.
+ * The API keys to send with a /models read, from the config. Before the config has loaded, it
+ * waits for the config read rather than asking `/api-keys`, which answers 404 on taproot: taproot
+ * runs with no proxy keys.
  */
 export function useApiKeysForModels() {
-  const apiBase = useAuthStore((state) => state.apiBase);
-  const configLoaded = useConfigStore((state) => state.config !== null);
-  const configApiKeys = useConfigStore((state) => state.config?.apiKeys);
-  const cacheRef = useRef<string[]>([]);
-
-  useEffect(() => {
-    cacheRef.current = [];
-  }, [apiBase, configApiKeys]);
-
-  return useCallback(
-    async ({ force = false }: { force?: boolean } = {}) => {
-      if (force) {
-        cacheRef.current = [];
-      }
-      if (cacheRef.current.length) {
-        return cacheRef.current;
-      }
-
-      const configKeys = normalizeApiKeyList(configApiKeys);
-      if (configKeys.length || configLoaded) {
-        cacheRef.current = configKeys;
-        return configKeys;
-      }
-
-      try {
-        const list = await apiKeysApi.list();
-        const normalized = normalizeApiKeyList(list);
-        if (normalized.length) {
-          cacheRef.current = normalized;
-        }
-        return normalized;
-      } catch {
-        return [];
-      }
-    },
-    [configApiKeys, configLoaded]
-  );
+  const fetchConfig = useConfigStore((state) => state.fetchConfig);
+  return useCallback(async () => {
+    const config = useConfigStore.getState().config ?? (await fetchConfig().catch(() => null));
+    return normalizeApiKeyList(config?.apiKeys);
+  }, [fetchConfig]);
 }
