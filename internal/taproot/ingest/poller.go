@@ -33,12 +33,16 @@ const (
 // refreshAccounts copies labels, emails, plans, and disabled flags from the
 // auth manager. Accounts the manager no longer knows keep their last values,
 // so historical rows stay labelled, and are marked removed so quota views
-// stop counting them. An empty list is treated as not loaded yet.
+// stop counting them. The server attaches the manager after it loaded the
+// stored credentials, so an attached manager's empty list means none are left.
 func (i *Ingest) refreshAccounts(ctx context.Context) error {
-	auths := i.authList()
-	if len(auths) == 0 {
+	i.authMu.RLock()
+	src := i.auths
+	i.authMu.RUnlock()
+	if src == nil {
 		return nil
 	}
+	auths := src.List()
 	now := i.now().UnixMilli()
 	return store.WithImmediateTx(ctx, i.db.DB, func(c *sql.Conn) error {
 		present := map[string]bool{}
@@ -60,9 +64,6 @@ func (i *Ingest) refreshAccounts(ctx context.Context) error {
 				idx, strings.ToLower(a.Provider), label, email, authPlan(a), boolInt(a.Disabled)); err != nil {
 				return fmt.Errorf("upsert account %s: %w", idx, err)
 			}
-		}
-		if len(present) == 0 {
-			return nil
 		}
 		rows, err := c.QueryContext(ctx, `SELECT auth_index FROM accounts WHERE removed_at IS NULL`)
 		if err != nil {
@@ -126,11 +127,11 @@ func accessToken(a *coreauth.Auth) string {
 // It only reads the current access token; refreshing stays with the auth
 // manager.
 func (i *Ingest) pollIdle(ctx context.Context) {
-	now := i.now()
 	for _, a := range i.authList() {
 		if ctx.Err() != nil {
 			return
 		}
+		now := i.now()
 		if a == nil || a.Disabled {
 			continue
 		}
@@ -151,7 +152,7 @@ func (i *Ingest) pollIdle(ctx context.Context) {
 			continue
 		}
 		i.lastPoll[idx] = now
-		obs, err := i.pollAccount(ctx, a, provider, now)
+		obs, err := i.pollAccount(ctx, a, provider)
 		if err != nil {
 			log.WithError(err).WithField("auth_index", idx).Debug("taproot ingest: quota poll failed")
 			continue
@@ -164,18 +165,18 @@ func (i *Ingest) pollIdle(ctx context.Context) {
 }
 
 func (i *Ingest) lastObservation(ctx context.Context, authIndex string) (time.Time, error) {
-	var last sql.NullInt64
-	err := i.db.QueryRowContext(ctx, `SELECT MAX(observed_at) FROM quota_observations WHERE auth_index=?`, authIndex).Scan(&last)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return time.Time{}, err
+	latest, err := i.latestObservations(ctx, authIndex)
+	var last time.Time
+	for _, o := range latest {
+		if o.ObservedAt.After(last) {
+			last = o.ObservedAt
+		}
 	}
-	if !last.Valid {
-		return time.Time{}, nil
-	}
-	return time.UnixMilli(last.Int64).UTC(), nil
+	return last, err
 }
 
-func (i *Ingest) pollAccount(ctx context.Context, a *coreauth.Auth, provider string, now time.Time) ([]observation, error) {
+// pollAccount stamps the readings when the response arrives.
+func (i *Ingest) pollAccount(ctx context.Context, a *coreauth.Auth, provider string) ([]observation, error) {
 	token := accessToken(a)
 	if token == "" {
 		return nil, errors.New("no access token")
@@ -218,7 +219,7 @@ func (i *Ingest) pollAccount(ctx context.Context, a *coreauth.Auth, provider str
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("usage endpoint status %d", resp.StatusCode)
 	}
-	observedAt := now.UTC()
+	observedAt := i.now().UTC()
 	if provider == "claude" {
 		return parseClaudeUsagePayload(body, observedAt), nil
 	}

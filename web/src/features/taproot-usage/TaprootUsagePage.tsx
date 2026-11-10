@@ -12,8 +12,8 @@ import {
   chooseBucket,
   customWindow,
   dailyBucketZone,
-  localTimeZone,
   presetWindow,
+  summaryZone,
   toIso,
   toLocalDateInput,
   type CustomRangeError,
@@ -85,18 +85,19 @@ export function TaprootUsagePage() {
     [accountIndex, showEmails]
   );
 
-  const range = { from: toIso(window.fromMs), to: toIso(window.toMs), tz: localTimeZone() };
+  const range = { from: toIso(window.fromMs), to: toIso(window.toMs) };
   // The grouping and axis travel with the data they describe, so a click re-renders only the
   // toolbar until the new data arrives, instead of redrawing old data on a new axis.
   const overview = useTaprootQuery(
     params.tab === 'overview' ? `overview|${params.group}|${rangeQuery}` : null,
     async () => {
       const groupBy = params.group;
+      const tz = summaryZone(bucket);
       const [summary, byProvider] = await Promise.all([
-        taprootApi.usageSummary({ ...range, bucket, groupBy }),
+        taprootApi.usageSummary({ ...range, bucket, groupBy, tz }),
         groupBy === 'provider'
           ? null
-          : taprootApi.usageSummary({ ...range, bucket, groupBy: 'provider' }),
+          : taprootApi.usageSummary({ ...range, bucket, groupBy: 'provider', tz }),
       ]);
       const dayZone = bucket === '1d' ? dailyBucketZone(summary.buckets) : 'local';
       const axis: TimeAxis = { bucket, spanMs, dayZone };
@@ -104,6 +105,7 @@ export function TaprootUsagePage() {
     }
   );
   const needsModels = params.tab === 'requests' || params.tab === 'pricing';
+  // Only the model names are read, so UTC days serve.
   const modelSummary = useTaprootQuery(needsModels ? `models|${rangeQuery}` : null, () =>
     taprootApi.usageSummary({ ...range, bucket: '1d', groupBy: 'model' })
   );
