@@ -2,6 +2,7 @@ package reqlog
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"path"
 	"strconv"
@@ -126,7 +127,18 @@ func ParseByteSize(raw string) (ByteSize, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid byte size %q", raw)
 	}
-	return ByteSize(value * float64(multiplier)), nil
+	// float64(math.MaxInt64) rounds up to 2^63, which int64 cannot hold, and
+	// a conversion out of range gives an arbitrary value, so NaN, Inf, and
+	// 1e30 would otherwise become a negative size, meaning no limit.
+	n := math.Trunc(value * float64(multiplier))
+	if math.IsNaN(n) || math.Abs(n) >= math.MaxInt64 {
+		return 0, fmt.Errorf("byte size %q out of range", raw)
+	}
+	// 0 means the default, so a fraction of a byte must not round down to it.
+	if n == 0 && value != 0 {
+		return 0, fmt.Errorf("byte size %q is less than one byte", raw)
+	}
+	return ByteSize(n), nil
 }
 
 type excludeRule struct {

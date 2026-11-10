@@ -192,6 +192,8 @@ export interface UsageTotals {
   latencyP95Ms: number | null;
   ttftP50Ms: number | null;
   ttftP95Ms: number | null;
+  /** Models that used tokens but match no price; costUSD leaves them out. Absent when none. */
+  unpricedModels?: string[];
 }
 
 export interface UsageSummary {
@@ -290,6 +292,8 @@ export interface UsageSession {
   models: string[];
   totals: UsageTotals;
   accountSwitches: number;
+  /** The session has more requests in range than the server reads; the fields cover the first. */
+  truncated: boolean;
 }
 
 /** USD per million tokens. */

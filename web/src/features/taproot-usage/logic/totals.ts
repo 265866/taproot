@@ -1,9 +1,13 @@
+import type { TFunction } from 'i18next';
 import type { UsageTotals } from '@/services/api/taproot';
 
-/** Fields that add across buckets and groups. Percentiles do not, so merged totals drop them. */
+/**
+ * Fields that add across buckets and groups. Percentiles and the unpriced model list do not, so
+ * merged totals drop them.
+ */
 export type AdditiveTotals = Omit<
   UsageTotals,
-  'latencyP50Ms' | 'latencyP95Ms' | 'ttftP50Ms' | 'ttftP95Ms'
+  'latencyP50Ms' | 'latencyP95Ms' | 'ttftP50Ms' | 'ttftP95Ms' | 'unpricedModels'
 >;
 
 export const EMPTY_TOTALS: AdditiveTotals = {
@@ -61,4 +65,11 @@ export function failureRate(t: Pick<AdditiveTotals, 'requests' | 'failures'>): n
  */
 export function cacheWriteUnsplit(t: AdditiveTotals): number {
   return Math.max(0, t.cacheWriteTokens - t.cacheWrite5mTokens - t.cacheWrite1hTokens);
+}
+
+/** Names the models the cost leaves out, or says that unpriced models would count as $0. */
+export function unpricedHint(t: TFunction, totals: Pick<UsageTotals, 'unpricedModels'>): string {
+  const models = totals.unpricedModels ?? [];
+  if (models.length === 0) return t('taproot_usage.kpi.unpriced_hint');
+  return t('taproot_usage.kpi.unpriced_models', { count: models.length, models: models.join(', ') });
 }

@@ -1,10 +1,12 @@
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
 	"sort"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -33,8 +35,10 @@ func (s sessionRollup) apply(ctx context.Context, c *sql.Conn) error {
 		return err
 	}
 	defer w.close()
-	for k, d := range s {
-		if err := w.upsert(ctx, []any{k.Hour, k.SessionID, k.Model}, d); err != nil {
+	for _, k := range keysInOrder(s, func(a, b sessionRollupKey) int {
+		return cmp.Or(cmp.Compare(a.Hour, b.Hour), strings.Compare(a.SessionID, b.SessionID), strings.Compare(a.Model, b.Model))
+	}) {
+		if err := w.upsert(ctx, []any{k.Hour, k.SessionID, k.Model}, s[k]); err != nil {
 			return err
 		}
 	}
@@ -69,7 +73,8 @@ func (s sessionSpans) apply(ctx context.Context, c *sql.Conn) error {
 			log.WithError(errClose).Warn("taproot ingest: close statement")
 		}
 	}()
-	for id, span := range s {
+	for _, id := range keysInOrder(s, strings.Compare) {
+		span := s[id]
 		if _, err := stmt.ExecContext(ctx, id, span.first, span.last); err != nil {
 			return fmt.Errorf("upsert session: %w", err)
 		}

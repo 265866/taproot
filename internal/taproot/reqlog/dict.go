@@ -89,14 +89,38 @@ func (d *dictStore) ids() ([]int64, error) {
 	return ids, nil
 }
 
-func (d *dictStore) latest() (int64, []byte, error) {
+// current returns the newest dictionary for sealing, or none when it is older
+// than maxAge (0 means no limit).
+func (d *dictStore) current(now time.Time, maxAge time.Duration) (int64, []byte, error) {
 	ids, err := d.ids()
 	if err != nil || len(ids) == 0 {
 		return 0, nil, err
 	}
 	id := ids[len(ids)-1]
+	if d.expired(id, now, maxAge) {
+		return 0, nil, nil
+	}
 	content, err := d.get(id)
 	return id, content, err
+}
+
+// age is how long ago a dictionary was written.
+func (d *dictStore) age(id int64, now time.Time) (time.Duration, bool) {
+	info, err := os.Stat(d.path(id))
+	if err != nil {
+		return 0, false
+	}
+	return now.Sub(info.ModTime()), true
+}
+
+// expired reports whether a dictionary is at least maxAge old; 0 means no
+// limit.
+func (d *dictStore) expired(id int64, now time.Time, maxAge time.Duration) bool {
+	if maxAge <= 0 {
+		return false
+	}
+	age, ok := d.age(id, now)
+	return !ok || age >= maxAge
 }
 
 // newestAge is how long ago the newest dictionary was written.
@@ -105,11 +129,24 @@ func (d *dictStore) newestAge(now time.Time) (time.Duration, bool) {
 	if err != nil || len(ids) == 0 {
 		return 0, false
 	}
-	info, err := os.Stat(d.path(ids[len(ids)-1]))
+	return d.age(ids[len(ids)-1], now)
+}
+
+// bytes is the size of every stored dictionary.
+func (d *dictStore) bytes() (int64, error) {
+	ids, err := d.ids()
 	if err != nil {
-		return 0, false
+		return 0, err
 	}
-	return now.Sub(info.ModTime()), true
+	var total int64
+	for _, id := range ids {
+		info, err := os.Stat(d.path(id))
+		if err != nil {
+			return 0, fmt.Errorf("stat dictionary %d: %w", id, err)
+		}
+		total += info.Size()
+	}
+	return total, nil
 }
 
 // add writes a new dictionary under the next id. Only the compactor calls
@@ -149,20 +186,33 @@ func writeSynced(path string, content []byte) error {
 	return errors.Join(errWrite, errSync, errClose)
 }
 
-// prune removes dictionaries no segment uses, except the newest. It runs on
-// the compactor goroutine, which also seals, so no seal can pick a
-// dictionary prune is removing.
-func (d *dictStore) prune(ctx context.Context) error {
+// prune removes dictionaries that no segment and no id in keep uses. The
+// newest stays for the next seal while it is younger than maxAge (0 means no
+// limit) and a sealed segment exists. A dictionary holds record text, so
+// maxAge also bounds how long that text is kept: about three times maxAge
+// from the oldest record it came from, not exactly as long as its records.
+// prune runs on the compactor goroutine, which also seals, so no seal can
+// pick a dictionary prune is removing.
+func (d *dictStore) prune(ctx context.Context, now time.Time, maxAge time.Duration, keep []int64) error {
+	if slices.Contains(keep, dictUnknown) {
+		return nil
+	}
 	ids, err := d.ids()
-	if err != nil || len(ids) < 2 {
+	if err != nil || len(ids) == 0 {
 		return err
 	}
 	used, err := queryIDs(ctx, d.db, `SELECT DISTINCT dict_id FROM reqlog_segments`)
 	if err != nil {
 		return err
 	}
-	for _, id := range ids[:len(ids)-1] {
-		if slices.Contains(used, id) {
+	var sealed bool
+	if err := d.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM reqlog_segments WHERE state = ?)`, segmentSealed).Scan(&sealed); err != nil {
+		return fmt.Errorf("find sealed segments: %w", err)
+	}
+	newest := ids[len(ids)-1]
+	keepNewest := sealed && !d.expired(newest, now, maxAge)
+	for _, id := range ids {
+		if slices.Contains(used, id) || slices.Contains(keep, id) || id == newest && keepNewest {
 			continue
 		}
 		if err := os.Remove(d.path(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -263,11 +313,15 @@ func (e *engine) trainDict(ctx context.Context) (int64, error) {
 	return e.dicts.add(content)
 }
 
-// maybeTrainDict retrains when the newest dictionary is a week old, or when
-// none exists and enough segments have sealed.
+// maybeTrainDict retrains when the newest dictionary is a week old, or older
+// than max-days, or when none exists and enough segments have sealed.
 func (e *engine) maybeTrainDict(ctx context.Context) {
 	now := e.now()
-	if age, ok := e.dicts.newestAge(now); ok && age < dictRetrainEvery || now.Sub(e.dictTried) < time.Hour {
+	every := dictRetrainEvery
+	if maxAge := e.dictMaxAge(); maxAge > 0 {
+		every = min(every, maxAge)
+	}
+	if age, ok := e.dicts.newestAge(now); ok && age < every || now.Sub(e.dictTried) < time.Hour {
 		return
 	}
 	e.dictTried = now

@@ -324,3 +324,21 @@ type summaryResp struct {
 		Groups map[string]Totals
 	}
 }
+
+// TestDeviceResolvedWhenQueued forgets the request's device between queueing
+// and the flush, as the guard does ten minutes after a request ends.
+func TestDeviceResolvedWhenQueued(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	devices := fakeDevices{"trace-r1": {ID: "node:a", Name: "laptop", Via: access.ViaTailnet}}
+	i.AttachDevices(devices)
+	i.HandleUsage(context.Background(), claudeRecord("r1", clock.t, nil))
+	delete(devices, "trace-r1")
+	mustFlush(t, i)
+	var id, name string
+	if err := i.db.QueryRow(`SELECT device_id, device_name FROM usage_events`).Scan(&id, &name); err != nil {
+		t.Fatal(err)
+	}
+	if id != "node:a" || name != "laptop" {
+		t.Fatalf("stored device %q %q, want node:a laptop", id, name)
+	}
+}

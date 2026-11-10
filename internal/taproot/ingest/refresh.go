@@ -129,7 +129,7 @@ func (i *Ingest) handleQuotaRefresh(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	obs, err := i.pollAccount(ctx, a, provider, now)
+	obs, err := i.pollAccount(ctx, a, provider)
 	if err != nil {
 		log.WithError(err).WithField("auth_index", authIndex).Info("taproot ingest: manual quota refresh failed")
 		writeError(c, http.StatusBadGateway, codeUpstreamFailed, "usage read failed: "+err.Error())
