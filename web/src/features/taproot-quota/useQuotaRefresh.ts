@@ -28,6 +28,8 @@ export function useQuotaRefresh(reload: () => Promise<unknown>) {
   /** Bumped per account after a refresh, so its reset-grant status is read again. */
   const [tokens, setTokens] = useState<Readonly<Record<string, number>>>({});
   const running = useRef(new Set<string>());
+  // A ref, not `allRunning`: two clicks in one render both see the state as false.
+  const allRunningRef = useRef(false);
 
   const poll = useCallback(async (authIndex: string): Promise<Outcome> => {
     try {
@@ -83,12 +85,13 @@ export function useQuotaRefresh(reload: () => Promise<unknown>) {
   /** One account at a time, so taproot never polls several usage endpoints at once. */
   const refreshAll = useCallback(
     async (targets: RefreshTarget[]) => {
-      if (allRunning) return;
+      if (allRunningRef.current) return;
       if (targets.length === 0) {
         showNotification(t('taproot_quota.ledger.refresh_all_none'), 'info');
         await reload();
         return;
       }
+      allRunningRef.current = true;
       setAllRunning(true);
       const counts = { ok: 0, limited: 0, failed: 0 };
       try {
@@ -103,9 +106,10 @@ export function useQuotaRefresh(reload: () => Promise<unknown>) {
         }
         await reload();
       } finally {
+        allRunningRef.current = false;
         setAllRunning(false);
       }
-      const values = { ...counts, count: targets.length };
+      const values = { ...counts, count: counts.ok + counts.limited + counts.failed };
       showNotification(
         counts.limited + counts.failed === 0
           ? t('taproot_quota.ledger.refresh_all_done', values)
@@ -113,7 +117,7 @@ export function useQuotaRefresh(reload: () => Promise<unknown>) {
         counts.failed > 0 ? 'error' : counts.limited > 0 ? 'warning' : 'success'
       );
     },
-    [allRunning, poll, reload, showNotification, t]
+    [poll, reload, showNotification, t]
   );
 
   return { busy, allRunning, tokens, refreshOne, refreshAll };

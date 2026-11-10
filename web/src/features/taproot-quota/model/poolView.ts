@@ -2,6 +2,7 @@
 
 import type { QuotaAccount, ProviderGroup } from './fromApi';
 import {
+  activeWindows,
   drainAt,
   isAccountWide,
   projectAccount,
@@ -42,6 +43,8 @@ export interface PoolView {
   projectionByAccount: Map<string, AccountProjection>;
   /** Drain of the recorded pool over the burn window ending now, fraction per hour. */
   burnPerHour: number;
+  /** See `nextResetNow`; the same figure the Dashboard shows. */
+  nextReset: ResetEvent | null;
   /**
    * Projection end, a local midnight: the range end, or the end of the fifth day after today when
    * the range ends earlier.
@@ -51,6 +54,14 @@ export interface PoolView {
 
 export function projectionHorizon(range: DateRange, now: number): number {
   return Math.max(range.to, addLocalDays(now, DAYS_AHEAD + 1));
+}
+
+/**
+ * The first reset that gives capacity back if usage stopped now. Reset times are observed, so
+ * this figure does not move with the burn or future-usage assumptions.
+ */
+function nextResetNow(accounts: QuotaAccount[], now: number, horizon: number): ResetEvent | null {
+  return projectPool(accounts, now, horizon, 0, 0).nextReset;
 }
 
 export function buildPoolView(group: ProviderGroup, options: PoolViewOptions): PoolView {
@@ -80,6 +91,7 @@ export function buildPoolView(group: ProviderGroup, options: PoolViewOptions): P
     recordedByAccount,
     projectionByAccount,
     burnPerHour: drainAt(recorded, now, burnWindowMs),
+    nextReset: nextResetNow(accounts, now, horizon),
     horizon,
   };
 }
@@ -90,7 +102,7 @@ export interface PoolNow {
   remainingNow: number;
   /** Enabled accounts without an account-wide window yet; the pool counts them as full. */
   unobserved: number;
-  /** First reset that gives capacity back if usage stopped now. */
+  /** See `nextResetNow`. */
   nextReset: ResetEvent | null;
 }
 
@@ -105,7 +117,7 @@ export function poolNow(group: ProviderGroup, now: number): PoolNow {
   return {
     capacity: projection.capacity,
     remainingNow: projection.remainingNow,
-    unobserved: accounts.filter((a) => !a.windows.some(isAccountWide)).length,
+    unobserved: accounts.filter((a) => !activeWindows(a.windows, now).some(isAccountWide)).length,
     nextReset: projection.nextReset,
   };
 }

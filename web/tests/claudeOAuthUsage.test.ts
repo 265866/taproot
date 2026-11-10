@@ -25,6 +25,7 @@ import {
   getStatusFromError,
 } from '@/utils/quota';
 import { getQuotaCacheKey } from '@/utils/quota/identity';
+import { formatInstantShort } from '@/utils/quota/relativeTime';
 import type { ClaudeQuotaState } from '@/types';
 import fixture from './fixtures/claude-oauth-usage.json';
 
@@ -497,7 +498,7 @@ describe('Claude usage snapshot rendering and retention', () => {
     const markup = render({ ...quota, status: 'error', stale: true });
     expect(markup).toContain('role="status"');
     expect(markup).toContain('Showing last successful check:');
-    expect(markup).toContain(new Date(observedAt).toLocaleString('en'));
+    expect(markup).toContain(formatInstantShort(Date.parse(observedAt), 'en'));
     expect(markup).toContain('$94.96 remaining');
   });
 

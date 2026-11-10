@@ -14,17 +14,22 @@ import {
 } from '@/features/taproot-quota/model/range';
 import {
   compactDuration,
+  formatChartMoment,
+  formatMoment,
   maskLabel,
   percent,
   percentPerHour,
 } from '@/features/taproot-quota/model/format';
 import {
+  CHART_BUCKETS,
   clipPolyline,
+  downsample,
+  drainPolyline,
   drainRows,
   niceCeiling,
   remainingRows,
 } from '@/features/taproot-quota/model/chart';
-import { HOUR_MS as H } from '@/features/taproot-quota/model/projection';
+import { HOUR_MS as H, drainAt } from '@/features/taproot-quota/model/projection';
 import type { AccountQuota, QuotaSeries, TaprootAccount } from '@/services/api/taproot';
 
 const account = (
@@ -231,6 +236,17 @@ describe('range', () => {
 });
 
 describe('format', () => {
+  test('two Sundays a week apart never read the same', () => {
+    const now = new Date(2026, 10, 11, 12, 0).getTime();
+    const pastSunday = new Date(2026, 10, 8, 16, 19).getTime();
+    const nextSunday = new Date(2026, 10, 15, 16, 19).getTime();
+    const plain = (text: string) => text.replace(/\s/g, ' ');
+    expect(plain(formatMoment(pastSunday, now, 'en'))).toBe('Nov 8, 4:19 PM');
+    expect(plain(formatMoment(nextSunday, now, 'en'))).toBe('Sun 4:19 PM');
+    expect(plain(formatChartMoment(pastSunday, 'en'))).toBe('Sun, Nov 8, 4:19 PM');
+    expect(plain(formatChartMoment(nextSunday, 'en'))).toBe('Sun, Nov 15, 4:19 PM');
+  });
+
   test('percent rounds to whole numbers', () => {
     expect(percent(5.554)).toBe('555%');
     expect(percent(0)).toBe('0%');
@@ -316,14 +332,75 @@ describe('chart', () => {
       0,
       20 * H,
       10 * H,
-      2 * H,
-      4
+      2 * H
     );
-    expect(rows.map((r) => r.t / H)).toEqual([0, 5, 10, 15, 20]);
+    expect(rows.map((r) => r.t / H)).toEqual([0, 2, 10, 12, 20]);
+    expect(rows[0].recorded).toBe(0);
     expect(rows[1].recorded).toBeCloseTo(5, 9);
-    expect(rows[2]).toMatchObject({ projected: expect.any(Number), recorded: expect.any(Number) });
-    expect(rows[3].projected).toBe(0);
-    expect(rows[3].recorded).toBeUndefined();
+    expect(rows[2].recorded).toBeCloseTo(5, 9);
+    expect(rows[2].projected).toBeCloseTo(5, 9);
+    expect(rows[3]).toEqual({ t: 12 * H, projected: 0 });
+    expect(rows[4]).toEqual({ t: 20 * H, projected: 0 });
+  });
+
+  test('drain rows keep a burst shorter than the gap between samples', () => {
+    const recorded = [
+      { t: 0, v: 3 },
+      { t: 1.7 * H, v: 3 },
+      { t: 1.9 * H, v: 2.5 },
+      { t: 16 * 24 * H, v: 2.5 },
+    ];
+    const rows = drainRows(recorded, [], 0, 16 * 24 * H, 16 * 24 * H, H);
+    const peak = Math.max(...rows.map((r) => r.recorded ?? 0));
+    expect(peak).toBeCloseTo(50, 6);
+    const at = (t: number) => rows.find((r) => r.t === t);
+    expect(at(1.9 * H)?.recorded).toBeCloseTo(50, 6);
+    expect(at(2.7 * H)?.recorded).toBeCloseTo(50, 6);
+    expect(at(2.9 * H)?.recorded).toBeCloseTo(0, 6);
+  });
+
+  test('drain rows count a jump while it is inside the window', () => {
+    const line = [
+      { t: 0, v: 1 },
+      { t: 5 * H, v: 1 },
+      { t: 5 * H, v: 0.4 },
+      { t: 20 * H, v: 0.4 },
+    ];
+    expect(drainPolyline(line, 0, 20 * H, 2 * H)).toEqual([
+      { t: 0, v: 0 },
+      { t: 2 * H, v: 0 },
+      { t: 5 * H, v: 0 },
+      { t: 5 * H, v: expect.closeTo(0.3, 9) },
+      { t: 7 * H, v: expect.closeTo(0.3, 9) },
+      { t: 7 * H, v: 0 },
+      { t: 20 * H, v: 0 },
+    ]);
+    for (const t of [3, 5, 6, 6.99, 7, 9].map((h) => h * H)) {
+      const exact = drainPolyline(line, t, t, 2 * H)[0].v;
+      expect(exact).toBeCloseTo(drainAt(line, t, 2 * H), 12);
+    }
+  });
+
+  test('downsampling keeps the envelope and both ends', () => {
+    const points = Array.from({ length: 10_000 }, (_, i) => ({
+      t: i * 60_000,
+      v: i === 4321 ? 9 : i === 7777 ? -9 : Math.sin(i / 50),
+    }));
+    const thin = downsample(points, 100);
+    expect(thin.length).toBeLessThanOrEqual(400);
+    expect(thin[0]).toBe(points[0]);
+    expect(thin[thin.length - 1]).toBe(points[points.length - 1]);
+    expect(Math.max(...thin.map((p) => p.v))).toBe(9);
+    expect(Math.min(...thin.map((p) => p.v))).toBe(-9);
+    for (let i = 1; i < thin.length; i++) expect(thin[i].t).toBeGreaterThanOrEqual(thin[i - 1].t);
+    expect(downsample(points.slice(0, 50), 100)).toEqual(points.slice(0, 50));
+  });
+
+  test('remaining rows stay within the chart budget', () => {
+    const recorded = Array.from({ length: 50_000 }, (_, i) => ({ t: i * 60_000, v: (i % 7) / 7 }));
+    const now = recorded[recorded.length - 1].t;
+    const rows = remainingRows(recorded, [{ t: now, v: 0.5 }], 0, now + H, now);
+    expect(rows.length).toBeLessThanOrEqual(4 * CHART_BUCKETS + 2);
   });
 
   test('nice ceiling', () => {

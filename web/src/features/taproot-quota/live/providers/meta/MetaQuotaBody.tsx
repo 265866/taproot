@@ -8,7 +8,7 @@ import { QuotaResetLabel } from '../../components/QuotaResetLabel';
 import { collectQuotaRowInstants, pickUrgentRowId } from '../../resetSchedule';
 import type { QuotaBodyProps } from '../../types';
 
-export function MetaQuotaBody({ quota, classes }: QuotaBodyProps<MetaQuotaState>) {
+export function MetaQuotaBody({ quota, classes, readAt }: QuotaBodyProps<MetaQuotaState>) {
   const { t, i18n } = useTranslation();
   const now = useNow();
   const soonestRowId = useMemo(
@@ -37,7 +37,8 @@ export function MetaQuotaBody({ quota, classes }: QuotaBodyProps<MetaQuotaState>
           null,
           window.resetAt === undefined ? null : window.resetAt * 1000,
           now,
-          i18n.resolvedLanguage
+          i18n.resolvedLanguage,
+          readAt
         );
         const soon = window.id === soonestRowId;
         const label =

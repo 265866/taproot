@@ -26,7 +26,7 @@ import { collectQuotaRowInstants, pickUrgentRowId, resetCreditRowId } from '../.
 import { planValueClassForTier, resolveCodexCardTier } from '../../cardTier';
 import type { QuotaBodyProps } from '../../types';
 
-export function CodexQuotaBody({ quota, classes }: QuotaBodyProps<CodexQuotaState>) {
+export function CodexQuotaBody({ quota, classes, readAt }: QuotaBodyProps<CodexQuotaState>) {
   const { t, i18n } = useTranslation();
   const { mask } = useEmailMask();
   const now = useNow();
@@ -178,7 +178,13 @@ export function CodexQuotaBody({ quota, classes }: QuotaBodyProps<CodexQuotaStat
           const windowLabel = window.labelKey
             ? t(window.labelKey, window.labelParams as Record<string, string | number>)
             : window.label;
-          const resetDisplay = buildResetDisplay(window.resetLabel, window.resetAtMs, now, locale);
+          const resetDisplay = buildResetDisplay(
+            window.resetLabel,
+            window.resetAtMs,
+            now,
+            locale,
+            readAt
+          );
 
           const soon = window.id === soonestRowId;
 

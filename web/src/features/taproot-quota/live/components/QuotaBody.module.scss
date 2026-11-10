@@ -54,7 +54,7 @@
 }
 
 .quotaReset {
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
 }
 
 /* Countdown beside the absolute reset time. The separator is a pseudo-element
@@ -166,7 +166,7 @@
 .antigravityQuotaGroupDescription {
   font-size: 11px;
   line-height: 1.4;
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
 }
 
 @include mobile {

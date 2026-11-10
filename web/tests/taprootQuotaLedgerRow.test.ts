@@ -80,6 +80,36 @@ describe('LedgerRow', () => {
     expect(html).toContain('No requests yet');
   });
 
+  test('says how old the quota reading is', () => {
+    const old = account({
+      windows: [
+        {
+          window: 'seven_day',
+          utilization: 0.36,
+          resetsAt: now + 2 * D,
+          observedAt: now - 26 * H,
+          periodMs: 7 * D,
+        },
+      ],
+    });
+    expect(render(old)).toContain('Quota read 1 day ago');
+    expect(render(blocked)).toContain('Quota read 1 minute ago');
+    // The minute clock can lag a fresh read; it must not read as a future time.
+    const fresh = account({
+      windows: [
+        {
+          window: 'seven_day',
+          utilization: 0,
+          resetsAt: null,
+          observedAt: now + 20_000,
+          periodMs: 7 * D,
+        },
+      ],
+    });
+    expect(render(fresh)).toContain('Quota read just now');
+    expect(render(account({}))).not.toContain('Quota read');
+  });
+
   test('shows the label when emails are shown', () => {
     expect(render(blocked, [blocked], true)).toContain('anthropic1@mail.example.org');
   });
