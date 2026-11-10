@@ -64,6 +64,9 @@ func testEngine(g *Guard) (*gin.Engine, *seen) {
 	}
 	e.GET("/healthz", record)
 	e.GET("/v1/models", record)
+	e.GET("/v1/models/:id", record)
+	e.POST("/v1/models", record)
+	e.POST("/v1/messages", record)
 	e.GET("/v8/management/config", record)
 	e.GET("/v0/management/config", record)
 	e.GET("/v0/resource/plugins/demo/page", record)
@@ -287,6 +290,7 @@ func TestAdmitsIPv6TailnetAddress(t *testing.T) {
 }
 
 // Each switch works on its own: Proxy without Admin, and Admin without Proxy.
+// Admin alone also reads the model list, which the dashboard shows.
 func TestPermissionMatrix(t *testing.T) {
 	peers := defaultPeers()
 	peers["100.64.0.30"] = fakePeer{login: testLogin, displayName: "Alice", node: "phone"}
@@ -298,18 +302,23 @@ func TestPermissionMatrix(t *testing.T) {
 	}
 	e, _ := testEngine(newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: devices}))
 	for _, c := range []struct {
-		name, remote string
-		proxy, admin string // "" admits; otherwise the denial code
+		name, remote         string
+		proxy, models, admin string // "" admits; otherwise the denial code
 	}{
-		{"both", adminIP, "", ""},
-		{"proxy only", otherNodeIP, "", "not_admin"},
-		{"admin only", "100.64.0.30", "no_proxy", ""},
-		{"neither", outsiderIP, "no_proxy", "not_admin"},
-		{"server", selfIP, "", "forbidden"},
-		{"loopback", "127.0.0.1", "", ""},
+		{"both", adminIP, "", "", ""},
+		{"proxy only", otherNodeIP, "", "", "not_admin"},
+		{"admin only", "100.64.0.30", "no_proxy", "", ""},
+		{"neither", outsiderIP, "no_proxy", "no_proxy", "not_admin"},
+		{"server", selfIP, "", "", "forbidden"},
+		{"loopback", "127.0.0.1", "", "", ""},
 	} {
-		for surface, want := range map[string]string{"/v1/models": c.proxy, "/v8/management/config": c.admin} {
-			rec := do(e, c.remote+":40000", surface, nil)
+		for _, r := range []struct{ method, path, want string }{
+			{http.MethodPost, "/v1/messages", c.proxy},
+			{http.MethodGet, "/v1/models", c.models},
+			{http.MethodGet, "/v8/management/config", c.admin},
+		} {
+			rec := doMethod(e, r.method, c.remote+":40000", r.path, nil)
+			surface, want := r.path, r.want
 			if want == "" {
 				if rec.Code != http.StatusOK {
 					t.Errorf("%s %s = %d %s, want 200", c.name, surface, rec.Code, rec.Body)
@@ -565,7 +574,7 @@ func TestNoAdminDevices(t *testing.T) {
 	if got := me(t, e, adminIP+":40000", nil); !got.Admin || got.Proxy {
 		t.Fatalf("admin-only device /me = %+v, want admin without proxy", got)
 	}
-	assertDenied(t, do(e, adminIP+":40000", "/v1/models", nil), "no_proxy")
+	assertDenied(t, doMethod(e, http.MethodPost, adminIP+":40000", "/v1/messages", nil), "no_proxy")
 }
 
 // Every caller with an identity may load the dashboard page; nobody else may.

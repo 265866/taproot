@@ -113,6 +113,14 @@ func isDashboardShell(r *http.Request) bool {
 		(r.Method == http.MethodGet || r.Method == http.MethodHead)
 }
 
+// isModelList is a read of the model list, which the dashboard shows. Its
+// handler answers from the in-memory model registry, with no upstream call
+// and no quota, so a device with Admin reads it without Proxy. Only GET of the
+// exact path counts (upstream serves no HEAD there): /v1/models/<id> and every other proxy route still need Proxy.
+func isModelList(r *http.Request) bool {
+	return r.URL.Path == "/v1/models" && r.Method == http.MethodGet
+}
+
 // classify matches on URL.Path, the same value gin routes on.
 func classify(path string) surface {
 	if adminPaths[path] {

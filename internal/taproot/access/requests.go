@@ -409,10 +409,12 @@ func requestInput(id Identity, node, client string, asked Ask) RequestInput {
 }
 
 // recordRefusal records a refused request from a tailnet device as an
-// access request. A failure is logged and never changes the refusal.
+// access request. A failure is logged and never changes the refusal. A device
+// with Admin is never recorded: it can turn on what it lacks itself, so a
+// request would only announce the owner to themselves.
 func (g *Guard) recordRefusal(r *http.Request, id Identity, asked Ask) {
 	asks := g.asks.Load()
-	if asks == nil || id.NodeID == "" {
+	if asks == nil || id.NodeID == "" || id.adminGrant() {
 		return
 	}
 	self, _ := g.cachedSelf()
@@ -496,7 +498,7 @@ func (g *Guard) handleRequest(c *gin.Context) {
 		apiError(c, http.StatusForbidden, "request_tailnet_only", "only a tailnet device can ask for access")
 		return
 	}
-	if id.Admin {
+	if id.adminGrant() {
 		apiError(c, http.StatusConflict, "has_access", "this device already has Admin")
 		return
 	}
