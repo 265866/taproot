@@ -13,10 +13,12 @@ import {
 } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
+import { NavBadgeMark } from '@/components/layout/NavBadgeMark';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { setPageAsideTarget, usePageAsideState } from '@/components/layout/pageAsideStore';
 import { MainRoutes } from '@/router/MainRoutes';
-import { authFilesApi, pluginsApi } from '@/services/api';
+import { pluginsApi } from '@/services/api';
 import {
   IconSidebarAccess,
   IconSidebarAccounts,
@@ -31,10 +33,19 @@ import {
   IconSidebarSystem,
   IconSidebarUsage,
   IconChevronDown,
+  IconMenu,
+  IconX,
 } from '@/components/ui/icons';
 import { TaprootMark } from '@/components/common/TaprootMark';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
-import { AUTH_FILES_CHANGED_EVENT } from '@/features/authFiles/authFilesEvents';
+import {
+  applyDocumentTitle,
+  navLinkLabel,
+  useAttentionStore,
+  type NavBadge,
+  type NavBadgeKey,
+} from '@/stores/useAttentionStore';
+import { usePageFreshnessStore } from '@/hooks/usePageFreshness';
 import {
   collectPluginResourceEntries,
   PLUGIN_RESOURCES_REFRESH_EVENT,
@@ -46,22 +57,23 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { hasOpenLayer } from '@/components/ui/layerStack';
 import { FOCUSABLE_SELECTOR, lockScroll, unlockScroll } from '@/components/ui/scrollLock';
 import { ROUTES } from '@/router/routes';
+import { displayVersion } from '@/utils/appVersion';
 import { getSidebarShortcutLabel, isSidebarToggleShortcut } from '@/utils/sidebarShortcut';
 import type { Theme } from '@/types';
 
 const sidebarIcons = {
-  dashboard: <IconSidebarDashboard size={18} />,
-  accounts: <IconSidebarAccounts size={18} />,
-  usage: <IconSidebarUsage size={18} />,
-  requestLogs: <IconSidebarLogs size={18} />,
-  routing: <IconSidebarRouting size={18} />,
-  config: <IconSidebarConfig size={18} />,
-  plugins: <IconSidebarPlugins size={18} />,
-  pluginStore: <IconSidebarStore size={18} />,
-  backups: <IconSidebarBackups size={18} />,
-  access: <IconSidebarAccess size={18} />,
-  settings: <IconSidebarSettings size={18} />,
-  system: <IconSidebarSystem size={18} />,
+  dashboard: <IconSidebarDashboard size={16} />,
+  accounts: <IconSidebarAccounts size={16} />,
+  usage: <IconSidebarUsage size={16} />,
+  requestLogs: <IconSidebarLogs size={16} />,
+  routing: <IconSidebarRouting size={16} />,
+  config: <IconSidebarConfig size={16} />,
+  plugins: <IconSidebarPlugins size={16} />,
+  pluginStore: <IconSidebarStore size={16} />,
+  backups: <IconSidebarBackups size={16} />,
+  access: <IconSidebarAccess size={16} />,
+  settings: <IconSidebarSettings size={16} />,
+  system: <IconSidebarSystem size={16} />,
 } satisfies Partial<Record<keyof typeof ROUTES, ReactNode>>;
 
 interface SidebarNavLinkItem {
@@ -71,8 +83,7 @@ interface SidebarNavLinkItem {
   metaKey?: string;
   label?: string;
   meta?: string;
-  badge?: number;
-  badgeLabel?: string;
+  badge?: NavBadge;
   icon: ReactNode;
 }
 
@@ -152,14 +163,13 @@ function PluginSidebarIcon({ src }: { src: string }) {
   return showImage ? (
     <img src={src} alt="" onError={() => setFailed(true)} />
   ) : (
-    <IconSidebarPlugins size={18} />
+    <IconSidebarPlugins size={16} />
   );
 }
 
-// Header action icons - smaller size for header buttons
 const headerIconProps: SVGProps<SVGSVGElement> = {
-  width: 16,
-  height: 16,
+  width: 14,
+  height: 14,
   viewBox: '0 0 24 24',
   fill: 'none',
   stroke: 'currentColor',
@@ -171,25 +181,6 @@ const headerIconProps: SVGProps<SVGSVGElement> = {
 };
 
 const headerIcons = {
-  refresh: (
-    <svg {...headerIconProps}>
-      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-    </svg>
-  ),
-  menu: (
-    <svg {...headerIconProps}>
-      <path d="M4 7h16" />
-      <path d="M4 12h16" />
-      <path d="M4 17h16" />
-    </svg>
-  ),
-  close: (
-    <svg {...headerIconProps}>
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
-  ),
   chevronLeft: (
     <svg {...headerIconProps}>
       <path d="m14 18-6-6 6-6" />
@@ -319,7 +310,10 @@ export function MainLayout() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [authFilesCount, setAuthFilesCount] = useState<number | null>(null);
+  const navBadges = useAttentionStore((state) => state.badges);
+  const attentionCount = useAttentionStore((state) => state.count);
+  const updatedAt = usePageFreshnessStore((state) => state.updatedAt);
+  const refreshIntervalMs = usePageFreshnessStore((state) => state.intervalMs);
   const [railTooltip, setRailTooltip] = useState<{
     targetID: string;
     label: string;
@@ -334,7 +328,6 @@ export function MainLayout() {
     () => new Set()
   );
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const authFilesCountRequestRef = useRef(0);
   const railTooltipRef = useRef<HTMLDivElement | null>(null);
   const focusedRailItemRef = useRef<HTMLElement | null>(null);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
@@ -352,9 +345,11 @@ export function MainLayout() {
     location.pathname === ROUTES.requestLogs &&
     new URLSearchParams(location.search).get('tab') === 'app';
   const isPluginResourcePage = location.pathname.startsWith('/plugin-pages');
+  const pageAside = usePageAsideState();
+  const hasPageAside = pageAside.owner !== null;
   const showSidebarLabels = !sidebarCollapsed || sidebarOpen;
 
-  // Keep floating header height available to sticky mobile elements and overlays.
+  // Keep the page header height available to sticky bars inside pages and to phone overlays.
   useLayoutEffect(() => {
     const updateHeaderHeight = () => {
       const height = headerRef.current?.offsetHeight;
@@ -443,33 +438,41 @@ export function MainLayout() {
     };
   }, []);
 
+  const themeMenuOpenRef = useRef(themeMenuOpen);
+  useEffect(() => {
+    themeMenuOpenRef.current = themeMenuOpen;
+  }, [themeMenuOpen]);
+
   const closeThemeMenu = useCallback((returnFocus: boolean) => {
     setThemeMenuOpen(false);
     if (returnFocus) themeButtonRef.current?.focus();
   }, []);
   useMenuDismiss(themeMenuOpen, themeMenuRef, closeThemeMenu);
 
-  // The open drawer is modal: focus moves into it, Tab stays inside it and the menu button that
-  // closes it, Escape closes it and returns focus, and the page behind does not scroll.
+  const closeDrawer = useCallback(() => {
+    setSidebarOpen(false);
+    menuButtonRef.current?.focus();
+  }, []);
+
+  // The open drawer is modal: focus moves into it, Tab stays inside it, Escape or its close button
+  // closes it and returns focus to the menu button, and the page behind does not scroll.
   useEffect(() => {
     if (!drawerOpen) return;
     lockScroll();
-    const focusables = () => [
-      ...(menuButtonRef.current ? [menuButtonRef.current] : []),
-      ...Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []),
-    ];
-    sidebarRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+    const focusables = () =>
+      Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []);
+    focusables()[0]?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (hasOpenLayer()) return;
       if (event.key === 'Escape') {
+        // The theme menu sits in the drawer; Escape closes the menu first.
+        if (themeMenuOpenRef.current) return;
         event.preventDefault();
-        setSidebarOpen(false);
-        menuButtonRef.current?.focus();
+        closeDrawer();
         return;
       }
       if (event.key !== 'Tab') return;
-      // The menu button and the drawer are not adjacent in the DOM, so step through them here.
       const items = focusables();
       if (items.length === 0) return;
       event.preventDefault();
@@ -483,7 +486,7 @@ export function MainLayout() {
       document.removeEventListener('keydown', handleKeyDown);
       unlockScroll();
     };
-  }, [drawerOpen]);
+  }, [drawerOpen, closeDrawer]);
 
   const toggleThemeMenu = useCallback(() => {
     setThemeMenuOpen((prev) => !prev);
@@ -511,39 +514,18 @@ export function MainLayout() {
     }
   }, [connectionStatus, supportsPlugin]);
 
-  const loadAuthFilesCount = useCallback(async () => {
-    const requestID = ++authFilesCountRequestRef.current;
-    if (connectionStatus !== 'connected') {
-      setAuthFilesCount(null);
-      return;
-    }
-
-    try {
-      const response = await authFilesApi.list();
-      if (requestID !== authFilesCountRequestRef.current) return;
-      setAuthFilesCount(Array.isArray(response?.files) ? response.files.length : null);
-    } catch {
-      if (requestID !== authFilesCountRequestRef.current) return;
-      setAuthFilesCount(null);
-    }
-  }, [connectionStatus]);
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadPluginResources();
-      void loadAuthFilesCount();
     }, 0);
 
     window.addEventListener(PLUGIN_RESOURCES_REFRESH_EVENT, loadPluginResources);
-    window.addEventListener(AUTH_FILES_CHANGED_EVENT, loadAuthFilesCount);
 
     return () => {
-      authFilesCountRequestRef.current += 1;
       window.clearTimeout(timer);
       window.removeEventListener(PLUGIN_RESOURCES_REFRESH_EVENT, loadPluginResources);
-      window.removeEventListener(AUTH_FILES_CHANGED_EVENT, loadAuthFilesCount);
     };
-  }, [apiBase, loadPluginResources, loadAuthFilesCount]);
+  }, [apiBase, loadPluginResources]);
 
   const pluginResourceGroups = pluginResources.reduce<
     Array<{ pluginID: string; pluginTitle: string; entries: PluginResourceEntry[] }>
@@ -596,10 +578,14 @@ export function MainLayout() {
       })
     : [];
 
-  const link = (key: keyof typeof sidebarIcons, labelKey: string): SidebarNavLinkItem => ({
+  const link = (
+    key: keyof typeof sidebarIcons & NavBadgeKey,
+    labelKey: string
+  ): SidebarNavLinkItem => ({
     path: ROUTES[key],
     labelKey,
     icon: sidebarIcons[key],
+    badge: navBadges[key],
   });
 
   const navGroups: SidebarNavGroup[] = [
@@ -608,14 +594,7 @@ export function MainLayout() {
       labelKey: 'nav_groups.observe',
       items: [
         link('dashboard', 'nav.dashboard'),
-        {
-          ...link('accounts', 'nav.accounts'),
-          badge: authFilesCount ?? undefined,
-          badgeLabel:
-            typeof authFilesCount === 'number'
-              ? t('sidebar.accounts_count', { count: authFilesCount })
-              : undefined,
-        },
+        link('accounts', 'nav.accounts'),
         link('usage', 'nav.usage'),
         link('requestLogs', 'nav.request_logs'),
       ],
@@ -674,8 +653,8 @@ export function MainLayout() {
   const pageTitle = pageLabel ? t('shell.page_title', { page: pageLabel }) : brandName;
 
   useEffect(() => {
-    document.title = pageTitle;
-  }, [pageTitle]);
+    applyDocumentTitle(pageTitle, attentionCount);
+  }, [pageTitle, attentionCount]);
 
   // After a page change, focus the new page so keyboard and screen-reader users land on it rather
   // than on the link they left (which the closing drawer also makes inert), and announce it.
@@ -710,7 +689,7 @@ export function MainLayout() {
       invalidateConfig();
       const [page, shared] = await Promise.all([
         triggerHeaderRefresh(),
-        Promise.allSettled([fetchConfig(true), loadPluginResources(), loadAuthFilesCount()]),
+        Promise.allSettled([fetchConfig(true), loadPluginResources()]),
       ]);
       const report = summarizeRefreshAll(shared, page);
       if (report?.kind === 'failed') {
@@ -804,22 +783,10 @@ export function MainLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [hideRailTooltip]);
 
-  const renderNavBadge = (badge?: number, badgeLabel?: string) =>
-    typeof badge === 'number' ? (
-      <>
-        {badge > 0 ? (
-          <span className="nav-badge" aria-hidden="true">
-            {badge}
-          </span>
-        ) : null}
-        {badgeLabel ? <span className="nav-badge-sr-only">{badgeLabel}</span> : null}
-      </>
-    ) : null;
-
   const renderNavLink = (item: SidebarNavLinkItem, className = 'nav-item') => {
     const itemLabel = item.label ?? (item.labelKey ? t(item.labelKey) : '');
     const itemMeta = item.meta ?? (item.metaKey ? t(item.metaKey) : '');
-    const accessibleLabel = item.badgeLabel ? `${itemLabel}, ${item.badgeLabel}` : itemLabel;
+    const accessibleLabel = navLinkLabel(itemLabel, item.badge);
 
     return (
       <NavLink
@@ -831,7 +798,7 @@ export function MainLayout() {
           setSidebarOpen(false);
           hideRailTooltip();
         }}
-        aria-label={showSidebarLabels ? undefined : accessibleLabel}
+        aria-label={showSidebarLabels && !item.badge ? undefined : accessibleLabel}
         aria-describedby={
           !showSidebarLabels && itemMeta && railTooltip?.targetID === item.path
             ? NAV_TOOLTIP_ID
@@ -860,10 +827,10 @@ export function MainLayout() {
             <span className="nav-text">
               <span className="nav-label">{itemLabel}</span>
             </span>
-            {renderNavBadge(item.badge, item.badgeLabel)}
+            <NavBadgeMark badge={item.badge} />
           </>
         ) : (
-          renderNavBadge(item.badge)
+          <NavBadgeMark badge={item.badge} />
         )}
       </NavLink>
     );
@@ -930,11 +897,21 @@ export function MainLayout() {
     );
   };
 
-  const mobileSidebarToggleLabel = sidebarOpen
-    ? t('sidebar.close_navigation')
-    : t('sidebar.open_navigation');
-
   const sidebarToggleLabel = sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse');
+  const menuButtonLabel =
+    attentionCount > 0
+      ? t('sidebar.open_navigation_attention', { count: attentionCount })
+      : t('sidebar.open_navigation');
+  const versionLabel = t('sidebar.version', { version: displayVersion(__APP_VERSION__) });
+
+  const themeIcon =
+    theme === 'auto'
+      ? headerIcons.autoTheme
+      : theme === 'dark'
+        ? headerIcons.moon
+        : theme === 'white'
+          ? headerIcons.whiteTheme
+          : headerIcons.sun;
 
   return (
     <div
@@ -955,136 +932,29 @@ export function MainLayout() {
       <div className="visually-hidden" aria-live="polite">
         {pageAnnouncement}
       </div>
-      <div className="top-gradient-blur" aria-hidden="true" />
 
-      <header className="main-header" ref={headerRef}>
-        <button
-          type="button"
-          className="sidebar-toggle-floating"
-          onClick={() => {
-            hideRailTooltip();
-            setSidebarCollapsed((prev) => !prev);
-          }}
-          onMouseEnter={(event) =>
-            handleRailTooltipMouseEnter(event, 'sidebar-toggle', sidebarToggleLabel, shortcutText)
-          }
-          onMouseLeave={handleRailTooltipMouseLeave}
-          onFocus={(event) =>
-            handleRailTooltipFocus(event, 'sidebar-toggle', sidebarToggleLabel, shortcutText)
-          }
-          onBlur={(event) =>
-            handleRailTooltipBlur(event, 'sidebar-toggle', sidebarToggleLabel, shortcutText)
-          }
-          aria-label={`${sidebarToggleLabel} (${shortcutText})`}
-          aria-describedby={railTooltip?.targetID === 'sidebar-toggle' ? NAV_TOOLTIP_ID : undefined}
-        >
-          {sidebarCollapsed ? headerIcons.chevronRight : headerIcons.chevronLeft}
-        </button>
-
-        <div className="mobile-sidebar-actions">
-          <Button
-            ref={menuButtonRef}
-            className="mobile-menu-btn"
-            variant="ghost"
-            size="sm"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            title={mobileSidebarToggleLabel}
-            aria-label={mobileSidebarToggleLabel}
-            aria-expanded={sidebarOpen}
-            aria-controls={SIDEBAR_ID}
-          >
-            {sidebarOpen ? headerIcons.close : headerIcons.menu}
-          </Button>
-        </div>
-
-        <div className="header-actions floating-actions">
-          <Button
-            className={refreshing ? 'header-refreshing' : undefined}
-            variant="ghost"
-            size="sm"
-            onClick={handleRefreshAll}
-            title={t('header.refresh_all')}
-            aria-label={t('header.refresh_all')}
-            aria-disabled={refreshing}
-          >
-            {headerIcons.refresh}
-          </Button>
-          <div className={`theme-menu ${themeMenuOpen ? 'open' : ''}`} ref={themeMenuRef}>
-            <Button
-              ref={themeButtonRef}
-              variant="ghost"
-              size="sm"
-              onClick={toggleThemeMenu}
-              title={t('theme.switch')}
-              aria-label={t('theme.switch')}
-              aria-expanded={themeMenuOpen}
-              aria-controls={themeMenuOpen ? THEME_MENU_ID : undefined}
-            >
-              {theme === 'auto'
-                ? headerIcons.autoTheme
-                : theme === 'dark'
-                  ? headerIcons.moon
-                  : theme === 'white'
-                    ? headerIcons.whiteTheme
-                    : headerIcons.sun}
-            </Button>
-            {themeMenuOpen && (
-              <div
-                id={THEME_MENU_ID}
-                className="notification entering theme-menu-popover"
-                role="group"
-                aria-label={t('theme.switch')}
-              >
-                {THEME_CARDS.map((tc) => (
-                  <button
-                    key={tc.key}
-                    type="button"
-                    className={`theme-card ${theme === tc.key ? 'active' : ''}`}
-                    onClick={() => handleThemeSelect(tc.key)}
-                    aria-pressed={theme === tc.key}
-                  >
-                    <div
-                      className="theme-card-preview"
-                      style={{
-                        background: tc.colors.bg,
-                        border: `1px solid ${tc.colors.border}`,
-                      }}
-                    >
-                      <div
-                        className="theme-card-header"
-                        style={{
-                          background: tc.colors.card,
-                          borderBottom: `1px solid ${tc.colors.border}`,
-                        }}
-                      />
-                      <div className="theme-card-body">
-                        <div
-                          className="theme-card-sidebar"
-                          style={{
-                            background: tc.colors.card,
-                            borderRight: `1px solid ${tc.colors.border}`,
-                          }}
-                        />
-                        <div className="theme-card-content" style={{ background: tc.colors.bg }}>
-                          <div
-                            className="theme-card-line"
-                            style={{ background: tc.colors.textMuted }}
-                          />
-                          <div
-                            className="theme-card-line short"
-                            style={{ background: tc.colors.textMuted }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <span className="theme-card-label">{t(tc.labelKey)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      <button
+        type="button"
+        className="sidebar-toggle-floating"
+        onClick={() => {
+          hideRailTooltip();
+          setSidebarCollapsed((prev) => !prev);
+        }}
+        onMouseEnter={(event) =>
+          handleRailTooltipMouseEnter(event, 'sidebar-toggle', sidebarToggleLabel, shortcutText)
+        }
+        onMouseLeave={handleRailTooltipMouseLeave}
+        onFocus={(event) =>
+          handleRailTooltipFocus(event, 'sidebar-toggle', sidebarToggleLabel, shortcutText)
+        }
+        onBlur={(event) =>
+          handleRailTooltipBlur(event, 'sidebar-toggle', sidebarToggleLabel, shortcutText)
+        }
+        aria-label={`${sidebarToggleLabel} (${shortcutText})`}
+        aria-describedby={railTooltip?.targetID === 'sidebar-toggle' ? NAV_TOOLTIP_ID : undefined}
+      >
+        {sidebarCollapsed ? headerIcons.chevronRight : headerIcons.chevronLeft}
+      </button>
 
       <div className="main-body">
         <div
@@ -1101,14 +971,20 @@ export function MainLayout() {
         >
           <div className="sidebar-header">
             <div className="sidebar-brand" title={brandName}>
-              <TaprootMark className="sidebar-brand-logo" />
-              {showSidebarLabels && (
-                <span className="sidebar-brand-text">
-                  <span className="sidebar-brand-title">{brandName}</span>
-                  <span className="sidebar-brand-subtitle">{t('sidebar.subtitle')}</span>
-                </span>
-              )}
+              <span className="sidebar-brand-mark">
+                <TaprootMark className="sidebar-brand-logo" />
+              </span>
+              {showSidebarLabels && <span className="sidebar-brand-title">{brandName}</span>}
             </div>
+            <button
+              type="button"
+              className="sidebar-close"
+              onClick={closeDrawer}
+              aria-label={t('sidebar.close_navigation')}
+              title={t('sidebar.close_navigation')}
+            >
+              <IconX size={18} />
+            </button>
           </div>
 
           <nav className="nav-section" aria-label={t('shell.main_navigation')}>
@@ -1123,6 +999,82 @@ export function MainLayout() {
               </div>
             ))}
           </nav>
+
+          <div className="sidebar-footer">
+            {showSidebarLabels && (
+              <span className="sidebar-version" title={versionLabel}>
+                {versionLabel}
+              </span>
+            )}
+            <div className={`theme-menu ${themeMenuOpen ? 'open' : ''}`} ref={themeMenuRef}>
+              <button
+                ref={themeButtonRef}
+                type="button"
+                className="sidebar-icon-button"
+                onClick={toggleThemeMenu}
+                title={t('theme.switch')}
+                aria-label={t('theme.switch')}
+                aria-expanded={themeMenuOpen}
+                aria-controls={themeMenuOpen ? THEME_MENU_ID : undefined}
+              >
+                {themeIcon}
+              </button>
+              {themeMenuOpen && (
+                <div
+                  id={THEME_MENU_ID}
+                  className="notification entering theme-menu-popover"
+                  role="group"
+                  aria-label={t('theme.switch')}
+                >
+                  {THEME_CARDS.map((tc) => (
+                    <button
+                      key={tc.key}
+                      type="button"
+                      className={`theme-card ${theme === tc.key ? 'active' : ''}`}
+                      onClick={() => handleThemeSelect(tc.key)}
+                      aria-pressed={theme === tc.key}
+                    >
+                      <div
+                        className="theme-card-preview"
+                        style={{
+                          background: tc.colors.bg,
+                          border: `1px solid ${tc.colors.border}`,
+                        }}
+                      >
+                        <div
+                          className="theme-card-header"
+                          style={{
+                            background: tc.colors.card,
+                            borderBottom: `1px solid ${tc.colors.border}`,
+                          }}
+                        />
+                        <div className="theme-card-body">
+                          <div
+                            className="theme-card-sidebar"
+                            style={{
+                              background: tc.colors.card,
+                              borderRight: `1px solid ${tc.colors.border}`,
+                            }}
+                          />
+                          <div className="theme-card-content" style={{ background: tc.colors.bg }}>
+                            <div
+                              className="theme-card-line"
+                              style={{ background: tc.colors.textMuted }}
+                            />
+                            <div
+                              className="theme-card-line short"
+                              style={{ background: tc.colors.textMuted }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <span className="theme-card-label">{t(tc.labelKey)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </aside>
 
         {railTooltip && (
@@ -1143,9 +1095,40 @@ export function MainLayout() {
         <div
           className={`content${isLogsPage ? ' content-logs' : ''}${
             isPluginResourcePage ? ' content-plugin-resource' : ''
-          }`}
+          }${hasPageAside ? ' content-has-aside' : ''}`}
           ref={contentRef}
         >
+          <PageHeader
+            ref={headerRef}
+            title={pageLabel || brandName}
+            updatedAt={updatedAt}
+            intervalMs={refreshIntervalMs}
+            onRefresh={handleRefreshAll}
+            refreshing={refreshing}
+            refreshLabel={t('header.refresh_all')}
+            leading={
+              <button
+                ref={menuButtonRef}
+                type="button"
+                className="page-menu-button"
+                onClick={() => setSidebarOpen((prev) => !prev)}
+                title={menuButtonLabel}
+                aria-label={menuButtonLabel}
+                aria-expanded={sidebarOpen}
+                aria-controls={SIDEBAR_ID}
+              >
+                <IconMenu size={20} />
+                {attentionCount > 0 ? (
+                  <span className="nav-badge nav-badge-danger" aria-hidden="true">
+                    {attentionCount}
+                  </span>
+                ) : null}
+              </button>
+            }
+          />
+          {hasPageAside ? (
+            <aside ref={setPageAsideTarget} className="page-aside" aria-label={pageAside.label} />
+          ) : null}
           <main
             id={MAIN_CONTENT_ID}
             ref={mainRef}

@@ -9,10 +9,8 @@
 
 .topBar {
   position: sticky;
-  // Below the floating header buttons. The shell's top fade has the same z-index and comes
-  // earlier in the document, so the bar paints over the fade's blur but under the drawer.
-  top: calc(var(--header-height) - 10px);
-  z-index: $z-dropdown - 2;
+  top: var(--header-height);
+  z-index: $z-page-sticky;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;

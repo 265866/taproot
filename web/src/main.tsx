@@ -13,6 +13,19 @@ document.title = 'Taproot';
 document.documentElement.setAttribute('translate', 'no');
 document.documentElement.classList.add('notranslate');
 
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('demo-attention')) {
+  void Promise.all([import('@/stores/useAttentionStore'), import('@/stores/demoAttention')]).then(
+    ([{ useAttentionStore }, { DEMO_ATTENTION }]) =>
+      useAttentionStore.getState().setAttention(DEMO_ATTENTION)
+  );
+}
+
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('demo-aside')) {
+  void import('@/components/layout/DemoPageAside').then(({ DemoPageAside }) =>
+    createRoot(document.createElement('div')).render(<DemoPageAside />)
+  );
+}
+
 try {
   purgeLegacyStorage(window.localStorage);
 } catch {

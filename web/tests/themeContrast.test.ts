@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { THEMES, contrast, luminance, mustColor, oklch, over } from './helpers/themeTokens';
+import {
+  THEMES,
+  contrast,
+  deltaE,
+  luminance,
+  mustColor,
+  oklch,
+  over,
+  readWeb,
+} from './helpers/themeTokens';
 
 const OPAQUE_SURFACES = [
   'bg-secondary',
@@ -163,5 +172,104 @@ describe('switches', () => {
   }
   test('dark: the white thumb carries the off state against the page', () => {
     expect(contrast(white, mustColor(THEMES.dark, 'bg-secondary'))).toBeGreaterThanOrEqual(3);
+  });
+});
+
+const STATUSES = ['ok', 'warning', 'danger', 'info'] as const;
+
+for (const [mode, tokens] of Object.entries(THEMES)) {
+  describe(`${mode} theme status tokens`, () => {
+    const c = (name: string) => mustColor(tokens, name);
+
+    test('status text meets AA on every surface and on its own tint', () => {
+      for (const status of STATUSES) {
+        const text = c(`status-${status}-text`);
+        for (const surface of OPAQUE_SURFACES) {
+          const aa = contrast(text, c(surface)) >= 4.5;
+          expect({ status, surface, aa }).toEqual({ status, surface, aa: true });
+        }
+        for (const surface of ['bg-secondary', 'bg-primary', 'floating-surface']) {
+          const tint = over(c(`status-${status}-bg`), c(surface));
+          const aa = contrast(text, tint) >= 4.5;
+          expect({ status, on: `tint over ${surface}`, aa }).toEqual({
+            status,
+            on: `tint over ${surface}`,
+            aa: true,
+          });
+        }
+      }
+    });
+
+    test('status inks (icons, dots) reach the 3:1 UI minimum on every surface', () => {
+      for (const status of STATUSES) {
+        for (const surface of OPAQUE_SURFACES) {
+          const ok = contrast(c(`status-${status}`), c(surface)) >= 3;
+          expect({ status, surface, ok }).toEqual({ status, surface, ok: true });
+        }
+      }
+    });
+
+    test('a status tint is visible against the page and the cards', () => {
+      for (const status of STATUSES) {
+        for (const surface of ['bg-secondary', 'bg-primary']) {
+          const tint = over(c(`status-${status}-bg`), c(surface));
+          const visible = Math.abs(luminance(tint) - luminance(c(surface))) > 0.004;
+          expect({ status, surface, visible }).toEqual({ status, surface, visible: true });
+        }
+      }
+    });
+
+    test('ok, warning, and danger carry hue; info stays neutral like the interface', () => {
+      expect(oklch(c('status-ok')).h).toBeGreaterThan(140);
+      expect(oklch(c('status-ok')).h).toBeLessThan(180);
+      expect(oklch(c('status-warning')).h).toBeGreaterThan(60);
+      expect(oklch(c('status-warning')).h).toBeLessThan(100);
+      expect(oklch(c('status-danger')).h).toBeLessThan(45);
+      // Warning and danger sit side by side in lists, so their inks must not read as one color.
+      expect(deltaE(c('status-warning'), c('status-danger'))).toBeGreaterThanOrEqual(10);
+      for (const name of ['status-info', 'status-info-text']) {
+        expect({ name, neutral: oklch(c(name)).c < 0.02 }).toEqual({ name, neutral: true });
+      }
+    });
+
+    test('status never borrows a provider color', () => {
+      const providers = ['provider-claude', 'provider-codex'].map((name) => tokens[name]);
+      for (const status of STATUSES) {
+        for (const suffix of ['', '-text', '-bg', '-border']) {
+          const value = tokens[`status-${status}${suffix}`];
+          expect(value).toBeDefined();
+          expect(value).not.toContain('--provider');
+          expect(providers).not.toContain(value);
+        }
+      }
+    });
+  });
+}
+
+describe('console type scale and spacing', () => {
+  const root = THEMES.light;
+  const px = (name: string) => {
+    const value = root[name];
+    expect({ name, defined: /^[\d.]+px$/.test(value ?? '') }).toEqual({ name, defined: true });
+    return parseFloat(value);
+  };
+
+  test('the type roles grow in order, from tags to stat values', () => {
+    const roles = ['tag', 'small', 'caption', 'meta', 'table', 'body', 'title', 'verdict', 'stat'];
+    const sizes = roles.map((role) => px(`fs-${role}`));
+    expect(sizes).toEqual([...sizes].sort((a, b) => a - b));
+    expect(new Set(sizes).size).toBe(sizes.length);
+    expect(px('fs-body')).toBe(13);
+  });
+
+  test('spacing steps sit on a 4px grid', () => {
+    for (let step = 1; step <= 7; step++) expect(px(`space-${step}`)).toBe(step * 4);
+  });
+
+  test('the console primitives use status tokens, never provider colors', () => {
+    for (const name of ['StatTile', 'Section', 'SeverityTag', 'DataTable', 'SegmentedControl']) {
+      const scss = readWeb(`src/components/ui/${name}.module.scss`);
+      expect({ name, provider: scss.includes('--provider') }).toEqual({ name, provider: false });
+    }
   });
 });

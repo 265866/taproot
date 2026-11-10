@@ -398,9 +398,8 @@ $label-x: $tier-pad + 1px + $index-size + 10px; // where tier names begin
 
 .policy {
   position: sticky;
-  // Below the floating header buttons, over the shell's top fade (see SecondaryScreenShell).
   top: var(--header-height);
-  z-index: $z-dropdown - 2;
+  z-index: $z-page-sticky;
   display: flex;
   flex-direction: column;
   padding: 20px;

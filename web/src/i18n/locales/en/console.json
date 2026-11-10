@@ -1,0 +1,28 @@
+{
+  "console": {
+    "updated_just_now": "updated just now",
+    "updated_seconds": "updated {{count}} s ago",
+    "updated_minutes": "updated {{count}} min ago",
+    "updated_hours": "updated {{count}} h ago",
+    "ago_just_now": "just now",
+    "ago_seconds": "{{count}} s ago",
+    "ago_minutes": "{{count}} min ago",
+    "ago_hours": "{{count}} h ago",
+    "refreshes_every_seconds": "refreshes every {{count}} s",
+    "refreshes_every_minutes": "refreshes every {{count}} min",
+    "updated_at": "Last updated {{time}}",
+    "section_error": "Couldn't load this: {{message}}",
+    "section_error_bare": "Couldn't load this.",
+    "retry": "Retry",
+    "stale": "Stale",
+    "stale_hint": "Showing the last data that loaded",
+    "loading": "Loading",
+    "severity": {
+      "blocking": "Blocking",
+      "waiting": "Waiting",
+      "overdue": "Overdue",
+      "at_risk": "At risk",
+      "ok": "OK"
+    }
+  }
+}

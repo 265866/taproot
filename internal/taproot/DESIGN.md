@@ -523,10 +523,13 @@ The Dashboard's right rail and verdict answer "is everything OK, and what needs 
 - **Removed:** Quick Start, AI Providers, every sponsor, the login page, and the non-English locales (English only; the i18n layer stays, and each feature owns `src/i18n/locales/en/<feature>.json`).
 - **Home page data:** the headline, success rate, throughput chart, and provider rows read `GET /usage/summary` (5-minute buckets, by provider) for the current 10-minute bucket and the 19 before it, and merge pairs into 10-minute columns, so they share one window and survive restarts; upstream's in-memory per-credential counters reset on every restart. A usage event is one upstream attempt, so the page says "upstream requests". Credentials come from `/v8/management/credentials`. The page rereads both, and the Today card's summary and quota, every 30 s while the tab is visible, keeps the last good data when a read fails, and says so. Chart times are formatted in the browser's zone from the bucket starts.
   - **For the redesign.** The redesigned Dashboard reads its verdict from `GET /status`, its Needs-you list and sidebar badges from `GET /attention`, and its Pools from `GET /pools` (see "Status"), so its numbers match the Accounts page's model. The current page does not read them yet.
-- **Style:** a quiet, dark quota dashboard.
-  - Near-black background, quiet borders, and large numerals for the headline figures.
-  - Provider accents: Claude orange, Codex blue.
-  - A collapsible left nav.
+- **Style:** a quiet, dense, dark ops console.
+  - Near-black background and hairline borders, with a 13px body and compact rows.
+  - Provider accents mark identity only: Claude orange, Codex blue. State uses the status tokens (ok, warning, danger, and a neutral info), whose text meets WCAG AA in every theme.
+  - A collapsible left nav, with the version and the theme menu in its footer, and a drawer on phones.
+  - A page header on every page: the page's name, when its data loaded, and Refresh All. A page can add a full-height right rail beside it; in windows under 1192 px and on phones the rail follows the header.
+  - Sidebar badges and a dot in the tab title for what needs the user. The shell holds them in a store that nothing feeds yet; the attention endpoint will.
+  - Shared console primitives (stat tiles, sections with loading, error, and stale states, severity tags, compact tables, a segmented control, and the updated stamp). `web/README.md` lists them.
   - Recharts for charts.
 
 ## Decisions
