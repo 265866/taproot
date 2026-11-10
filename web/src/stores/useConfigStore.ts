@@ -21,6 +21,8 @@ interface ConfigState {
   fetchConfig: (forceRefresh?: boolean) => Promise<Config>;
   updateConfigValue: (section: RawConfigSection, value: unknown) => void;
   clearCache: (section?: RawConfigSection) => void;
+  /** Forces the next fetch to hit the server but keeps the last good config on screen. */
+  invalidate: () => void;
   isCacheValid: () => boolean;
 }
 
@@ -143,16 +145,19 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   },
 
   clearCache: (section) => {
-    fullConfigCache = null;
+    get().invalidate();
 
-    // 缓存失效通常伴随乐观写或“切换连接/登出/全量刷新”，需要让 in-flight 的旧请求失效
-    configRequestToken += 1;
-    inFlightConfigRequest = null;
-
-    // 无 section 代表“切换连接/登出/全量刷新”，连 config 快照一起清除
+    // 无 section 代表“切换连接/登出”，连 config 快照一起清除
     if (!section) {
       set({ config: null });
     }
+  },
+
+  invalidate: () => {
+    fullConfigCache = null;
+    // Also orphan the request in flight, so a response read before the invalidation cannot land.
+    configRequestToken += 1;
+    inFlightConfigRequest = null;
   },
 
   isCacheValid: () => isFullCacheValid(),

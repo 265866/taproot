@@ -14,7 +14,13 @@ import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import {
+  REFRESH_CANCELLED,
+  REFRESH_OK,
+  refreshFailed,
+  useHeaderRefresh,
+  type HeaderRefreshOutcome,
+} from '@/hooks/useHeaderRefresh';
 import { useRevealGroup } from '@/hooks/motion';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { buildRoutingBoard, routingApi, type RoutingApplyResult } from '@/services/api/routing';
@@ -118,25 +124,27 @@ export function RoutingPage() {
     });
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<HeaderRefreshOutcome> => {
     const requestId = ++requestRef.current;
     const isCurrent = () => requestId === requestRef.current;
     if (!connected) {
       setLoading(false);
-      return;
+      return REFRESH_CANCELLED;
     }
     setLoading(true);
     setError(null);
     try {
       const [config, files] = await Promise.all([fetchConfig(true), routingApi.listCredentials()]);
-      if (!isCurrent()) return;
+      if (!isCurrent()) return REFRESH_CANCELLED;
       const next = buildRoutingBoard(config.raw ?? {}, files);
       setBoard(next);
       setDraft(draftFromBoard(next));
       loadModels(next, requestId);
+      return REFRESH_OK;
     } catch (err) {
-      if (!isCurrent()) return;
+      if (!isCurrent()) return REFRESH_CANCELLED;
       setError(getErrorMessage(err));
+      return refreshFailed(err);
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -165,13 +173,16 @@ export function RoutingPage() {
   // The global header refresh reloads the board; with a draft it asks first.
   const refresh = useCallback(() => {
     if (!dirty) return load();
-    showConfirmation({
-      title: t('routing.unsaved_title'),
-      message: t('routing.refresh_discards'),
-      confirmText: t('routing.refresh'),
-      cancelText: t('routing.unsaved_cancel'),
-      variant: 'danger',
-      onConfirm: () => load(),
+    return new Promise<HeaderRefreshOutcome>((resolve) => {
+      showConfirmation({
+        title: t('routing.unsaved_title'),
+        message: t('routing.refresh_discards'),
+        confirmText: t('routing.refresh'),
+        cancelText: t('routing.unsaved_cancel'),
+        variant: 'danger',
+        onConfirm: async () => resolve(await load()),
+        onCancel: () => resolve(REFRESH_CANCELLED),
+      });
     });
   }, [dirty, load, showConfirmation, t]);
 

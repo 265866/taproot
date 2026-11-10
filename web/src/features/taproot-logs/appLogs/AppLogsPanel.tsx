@@ -24,7 +24,7 @@ import {
   IconTrash2,
   IconX,
 } from '@/components/ui/icons';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { outcomeFromError, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { useEmailMask } from '@/hooks/useEmailMask';
@@ -136,35 +136,38 @@ export function AppLogsPanel() {
     showNotification(t('taproot_logs.app.download_success'), 'success');
   };
 
-  const loadErrorLogs = async () => {
+  const loadErrorLogs = async (): Promise<string> => {
     if (useAuthStore.getState().connectionStatus !== 'connected') {
       setLoadingErrors(false);
-      return;
+      return '';
     }
     const request = requests.errors.invalidate();
     setLoadingErrors(true);
     setErrorLogsError('');
     try {
       const res = await logsApi.fetchErrorLogs();
-      if (!requests.errors.isCurrent(request)) return;
+      if (!requests.errors.isCurrent(request)) return '';
       // The API returns { files: [...] }.
       setErrorLogs(Array.isArray(res.files) ? res.files : []);
+      return '';
     } catch (err: unknown) {
-      if (!requests.errors.isCurrent(request)) return;
+      if (!requests.errors.isCurrent(request)) return '';
       console.error('Failed to load error logs:', err);
       setErrorLogs([]);
       const message = getErrorMessage(err);
-      setErrorLogsError(
-        message
-          ? `${t('taproot_logs.app.error_logs_load_error')}: ${message}`
-          : t('taproot_logs.app.error_logs_load_error')
-      );
+      const shown = message
+        ? `${t('taproot_logs.app.error_logs_load_error')}: ${message}`
+        : t('taproot_logs.app.error_logs_load_error');
+      setErrorLogsError(shown);
+      return shown;
     } finally {
       if (requests.errors.isCurrent(request)) setLoadingErrors(false);
     }
   };
 
-  useHeaderRefresh(() => (activeTab === 'errors' ? loadErrorLogs() : loadLogs(false)));
+  useHeaderRefresh(async () =>
+    outcomeFromError(activeTab === 'errors' ? await loadErrorLogs() : await loadLogs(false))
+  );
 
   const downloadErrorLog = async (name: string) => {
     const session = requests.session.capture();

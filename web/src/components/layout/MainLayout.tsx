@@ -41,7 +41,10 @@ import {
   resolvePluginAssetURL,
   type PluginResourceEntry,
 } from '@/features/plugins/pluginResources';
-import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { summarizeRefreshAll, triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { hasOpenLayer } from '@/components/ui/layerStack';
+import { FOCUSABLE_SELECTOR, lockScroll, unlockScroll } from '@/components/ui/scrollLock';
 import { ROUTES } from '@/router/routes';
 import { getSidebarShortcutLabel, isSidebarToggleShortcut } from '@/utils/sidebarShortcut';
 import type { Theme } from '@/types';
@@ -85,6 +88,11 @@ interface SidebarNavDrawerItem {
 type SidebarNavItem = SidebarNavLinkItem | SidebarNavDrawerItem;
 
 const NAV_TOOLTIP_ID = 'sidebar-nav-tooltip';
+const SIDEBAR_ID = 'main-navigation';
+const MAIN_CONTENT_ID = 'main-content';
+const THEME_MENU_ID = 'theme-menu';
+// $breakpoint-mobile in variables.scss: at and below it the sidebar is an off-canvas drawer.
+const MOBILE_BREAKPOINT_PX = 768;
 const NAV_TOOLTIP_VIEWPORT_MARGIN = 8;
 
 interface SidebarNavGroup {
@@ -100,7 +108,7 @@ const flattenNavItems = (items: SidebarNavItem[]): SidebarNavLinkItem[] =>
 function useMenuDismiss(
   open: boolean,
   menuRef: RefObject<HTMLDivElement | null>,
-  onClose: () => void
+  onClose: (returnFocus: boolean) => void
 ) {
   useEffect(() => {
     if (!open) {
@@ -109,22 +117,30 @@ function useMenuDismiss(
 
     const handlePointerDown = (event: MouseEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) {
-        onClose();
+        onClose(false);
       }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose();
+        onClose(true);
+      }
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        onClose(false);
       }
     };
 
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown', handleEscape);
+    document.addEventListener('focusin', handleFocusIn);
 
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('focusin', handleFocusIn);
     };
   }, [open, menuRef, onClose]);
 }
@@ -296,7 +312,7 @@ export function MainLayout() {
   const supportsPlugin = useAuthStore((state) => state.supportsPlugin);
 
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
-  const clearCache = useConfigStore((state) => state.clearCache);
+  const invalidateConfig = useConfigStore((state) => state.invalidate);
 
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
@@ -312,6 +328,7 @@ export function MainLayout() {
     top: number;
   } | null>(null);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [pluginResources, setPluginResources] = useState<PluginResourceEntry[]>([]);
   const [expandedPluginResourceIDs, setExpandedPluginResourceIDs] = useState<Set<string>>(
     () => new Set()
@@ -322,6 +339,12 @@ export function MainLayout() {
   const focusedRailItemRef = useRef<HTMLElement | null>(null);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
+  const themeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const isMobile = useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`);
+  const drawerOpen = isMobile && sidebarOpen;
 
   const brandName = t('title.main');
   // The app log tail sizes itself to the viewport, so its tab gets the fixed-height layout.
@@ -420,8 +443,47 @@ export function MainLayout() {
     };
   }, []);
 
-  const closeThemeMenu = useCallback(() => setThemeMenuOpen(false), []);
+  const closeThemeMenu = useCallback((returnFocus: boolean) => {
+    setThemeMenuOpen(false);
+    if (returnFocus) themeButtonRef.current?.focus();
+  }, []);
   useMenuDismiss(themeMenuOpen, themeMenuRef, closeThemeMenu);
+
+  // The open drawer is modal: focus moves into it, Tab stays inside it and the menu button that
+  // closes it, Escape closes it and returns focus, and the page behind does not scroll.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    lockScroll();
+    const focusables = () => [
+      ...(menuButtonRef.current ? [menuButtonRef.current] : []),
+      ...Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []),
+    ];
+    sidebarRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (hasOpenLayer()) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSidebarOpen(false);
+        menuButtonRef.current?.focus();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      // The menu button and the drawer are not adjacent in the DOM, so step through them here.
+      const items = focusables();
+      if (items.length === 0) return;
+      event.preventDefault();
+      const index = items.indexOf(document.activeElement as HTMLElement);
+      const step = event.shiftKey ? -1 : 1;
+      const next = index === -1 ? (event.shiftKey ? items.length - 1 : 0) : index + step;
+      items[(next + items.length) % items.length].focus();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      unlockScroll();
+    };
+  }, [drawerOpen]);
 
   const toggleThemeMenu = useCallback(() => {
     setThemeMenuOpen((prev) => !prev);
@@ -604,6 +666,28 @@ export function MainLayout() {
     return nestedIndex === -1 ? null : nestedIndex;
   };
 
+  const routeOrder = getRouteOrder(location.pathname);
+  const currentNavItem = routeOrder === null ? undefined : navItems[Math.floor(routeOrder)];
+  const pageLabel = currentNavItem
+    ? (currentNavItem.label ?? (currentNavItem.labelKey ? t(currentNavItem.labelKey) : ''))
+    : '';
+  const pageTitle = pageLabel ? t('shell.page_title', { page: pageLabel }) : brandName;
+
+  useEffect(() => {
+    document.title = pageTitle;
+  }, [pageTitle]);
+
+  // After a page change, focus the new page so keyboard and screen-reader users land on it rather
+  // than on the link they left (which the closing drawer also makes inert), and announce it.
+  const [pageAnnouncement, setPageAnnouncement] = useState('');
+  const announcedPathRef = useRef(location.pathname);
+  useEffect(() => {
+    if (announcedPathRef.current === location.pathname) return;
+    announcedPathRef.current = location.pathname;
+    if (!hasOpenLayer()) mainRef.current?.focus({ preventScroll: true });
+    setPageAnnouncement(pageTitle);
+  }, [location.pathname, pageTitle]);
+
   const getTransitionVariant = useCallback((fromPathname: string, toPathname: string) => {
     const normalize = (pathname: string) => {
       const trimmed =
@@ -620,25 +704,26 @@ export function MainLayout() {
   }, []);
 
   const handleRefreshAll = async () => {
-    clearCache();
-    const results = await Promise.allSettled([
-      fetchConfig(true),
-      loadPluginResources(),
-      loadAuthFilesCount(),
-      triggerHeaderRefresh(),
-    ]);
-    const rejected = results.find((result) => result.status === 'rejected');
-    if (rejected && rejected.status === 'rejected') {
-      const reason = rejected.reason;
-      const message =
-        typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : '';
-      showNotification(
-        `${t('notification.refresh_failed')}${message ? `: ${message}` : ''}`,
-        'error'
-      );
-      return;
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      invalidateConfig();
+      const [page, shared] = await Promise.all([
+        triggerHeaderRefresh(),
+        Promise.allSettled([fetchConfig(true), loadPluginResources(), loadAuthFilesCount()]),
+      ]);
+      const report = summarizeRefreshAll(shared, page);
+      if (report?.kind === 'failed') {
+        showNotification(
+          `${t('notification.refresh_failed')}${report.message ? `: ${report.message}` : ''}`,
+          'error'
+        );
+      } else if (report?.kind === 'success') {
+        showNotification(t('notification.data_refreshed'), 'success');
+      }
+    } finally {
+      setRefreshing(false);
     }
-    showNotification(t('notification.data_refreshed'), 'success');
   };
 
   const togglePluginResourceDrawer = useCallback((drawerID: string) => {
@@ -708,7 +793,7 @@ export function MainLayout() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isSidebarToggleShortcut(event)) {
+      if (isSidebarToggleShortcut(event) && !hasOpenLayer()) {
         event.preventDefault();
         hideRailTooltip();
         setSidebarCollapsed((prev) => !prev);
@@ -846,8 +931,8 @@ export function MainLayout() {
   };
 
   const mobileSidebarToggleLabel = sidebarOpen
-    ? t('sidebar.toggle_collapse', { defaultValue: 'Close navigation' })
-    : t('sidebar.toggle_expand', { defaultValue: 'Open navigation' });
+    ? t('sidebar.close_navigation')
+    : t('sidebar.open_navigation');
 
   const sidebarToggleLabel = sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse');
 
@@ -857,6 +942,19 @@ export function MainLayout() {
         isPluginResourcePage ? 'plugin-resource-shell' : ''
       }`}
     >
+      <a
+        className="skip-link"
+        href={`#${MAIN_CONTENT_ID}`}
+        onClick={(event) => {
+          event.preventDefault();
+          mainRef.current?.focus();
+        }}
+      >
+        {t('shell.skip_to_content')}
+      </a>
+      <div className="visually-hidden" aria-live="polite">
+        {pageAnnouncement}
+      </div>
       <div className="top-gradient-blur" aria-hidden="true" />
 
       <header className="main-header" ref={headerRef}>
@@ -885,12 +983,15 @@ export function MainLayout() {
 
         <div className="mobile-sidebar-actions">
           <Button
+            ref={menuButtonRef}
             className="mobile-menu-btn"
             variant="ghost"
             size="sm"
             onClick={() => setSidebarOpen((prev) => !prev)}
             title={mobileSidebarToggleLabel}
             aria-label={mobileSidebarToggleLabel}
+            aria-expanded={sidebarOpen}
+            aria-controls={SIDEBAR_ID}
           >
             {sidebarOpen ? headerIcons.close : headerIcons.menu}
           </Button>
@@ -898,22 +999,26 @@ export function MainLayout() {
 
         <div className="header-actions floating-actions">
           <Button
+            className={refreshing ? 'header-refreshing' : undefined}
             variant="ghost"
             size="sm"
             onClick={handleRefreshAll}
             title={t('header.refresh_all')}
+            aria-label={t('header.refresh_all')}
+            aria-disabled={refreshing}
           >
             {headerIcons.refresh}
           </Button>
           <div className={`theme-menu ${themeMenuOpen ? 'open' : ''}`} ref={themeMenuRef}>
             <Button
+              ref={themeButtonRef}
               variant="ghost"
               size="sm"
               onClick={toggleThemeMenu}
               title={t('theme.switch')}
               aria-label={t('theme.switch')}
-              aria-haspopup="menu"
               aria-expanded={themeMenuOpen}
+              aria-controls={themeMenuOpen ? THEME_MENU_ID : undefined}
             >
               {theme === 'auto'
                 ? headerIcons.autoTheme
@@ -925,8 +1030,9 @@ export function MainLayout() {
             </Button>
             {themeMenuOpen && (
               <div
+                id={THEME_MENU_ID}
                 className="notification entering theme-menu-popover"
-                role="menu"
+                role="group"
                 aria-label={t('theme.switch')}
               >
                 {THEME_CARDS.map((tc) => (
@@ -935,8 +1041,7 @@ export function MainLayout() {
                     type="button"
                     className={`theme-card ${theme === tc.key ? 'active' : ''}`}
                     onClick={() => handleThemeSelect(tc.key)}
-                    role="menuitemradio"
-                    aria-checked={theme === tc.key}
+                    aria-pressed={theme === tc.key}
                   >
                     <div
                       className="theme-card-preview"
@@ -982,17 +1087,17 @@ export function MainLayout() {
       </header>
 
       <div className="main-body">
-        <button
-          type="button"
+        <div
           className={`sidebar-backdrop ${sidebarOpen ? 'visible' : ''}`}
           onClick={() => setSidebarOpen(false)}
-          aria-label={t('common.close')}
-          aria-hidden={!sidebarOpen}
-          tabIndex={sidebarOpen ? 0 : -1}
+          aria-hidden="true"
         />
 
         <aside
+          id={SIDEBAR_ID}
+          ref={sidebarRef}
           className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}
+          inert={isMobile && !sidebarOpen}
         >
           <div className="sidebar-header">
             <div className="sidebar-brand" title={brandName}>
@@ -1006,7 +1111,7 @@ export function MainLayout() {
             </div>
           </div>
 
-          <div className="nav-section">
+          <nav className="nav-section" aria-label={t('shell.main_navigation')}>
             {navGroups.map((group, idx) => (
               <div className="nav-group" key={group.id}>
                 {showSidebarLabels ? (
@@ -1017,7 +1122,7 @@ export function MainLayout() {
                 {group.items.map((item) => renderNavItem(item))}
               </div>
             ))}
-          </div>
+          </nav>
         </aside>
 
         {railTooltip && (
@@ -1042,6 +1147,9 @@ export function MainLayout() {
           ref={contentRef}
         >
           <main
+            id={MAIN_CONTENT_ID}
+            ref={mainRef}
+            tabIndex={-1}
             className={`main-content${isLogsPage ? ' main-content-logs' : ''}${
               isPluginResourcePage ? ' main-content-plugin-resource' : ''
             }`}

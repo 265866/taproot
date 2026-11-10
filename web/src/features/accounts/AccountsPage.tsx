@@ -48,7 +48,7 @@ import { useQuotaData } from '@/features/taproot-quota/useQuotaData';
 import { REFRESHABLE_PROVIDERS, useQuotaRefresh } from '@/features/taproot-quota/useQuotaRefresh';
 import quotaStyles from '@/features/taproot-quota/quota.module.scss';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { outcomeFromError, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useInterval } from '@/hooks/useInterval';
 import { useNow } from '@/hooks/useNow';
 import { ROUTES } from '@/router/routes';
@@ -182,10 +182,10 @@ export function AccountsPage() {
     void reloadQuota();
   }, [loadFilesInBackground, reloadQuota]);
 
-  const reloadAll = useCallback(
-    () => Promise.all([reloadQuota(), loadFilesInBackground()]).then(() => undefined),
-    [loadFilesInBackground, reloadQuota]
-  );
+  const reloadAll = useCallback(async () => {
+    const [quotaError, filesError] = await Promise.all([reloadQuota(), loadFilesInBackground()]);
+    return outcomeFromError(filesError || quotaError);
+  }, [loadFilesInBackground, reloadQuota]);
   useHeaderRefresh(reloadAll);
 
   /* ---------- the account model ---------- */

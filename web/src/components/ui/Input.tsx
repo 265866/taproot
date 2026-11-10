@@ -14,14 +14,15 @@ export function Input({
   rightElement,
   className = '',
   id,
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   ...rest
 }: InputProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const hintId = hint ? `${inputId}-hint` : undefined;
   const errorId = error ? `${inputId}-error` : undefined;
-  const describedBy =
-    [rest['aria-describedby'], errorId, hintId].filter(Boolean).join(' ') || undefined;
+  const describedBy = [ariaDescribedBy, errorId, hintId].filter(Boolean).join(' ') || undefined;
 
   return (
     <div className="form-group">
@@ -30,9 +31,9 @@ export function Input({
         <input
           id={inputId}
           className={`input ${className}`.trim()}
-          aria-invalid={Boolean(error) || rest['aria-invalid']}
-          aria-describedby={describedBy}
           {...rest}
+          aria-invalid={error ? true : ariaInvalid}
+          aria-describedby={describedBy}
         />
         {rightElement && (
           <div

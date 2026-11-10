@@ -230,7 +230,6 @@ export function Sheet({
         aria-describedby={description ? descId : undefined}
         aria-label={!title && ariaLabel ? ariaLabel : undefined}
         tabIndex={-1}
-        onMouseDown={(e) => e.stopPropagation()}
       >
         <button
           ref={closeBtnRef}
