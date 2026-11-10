@@ -14,6 +14,7 @@ import {
   type HeaderRefreshOutcome,
 } from '@/hooks/useHeaderRefresh';
 import { getErrorMessage } from '@/utils/helpers';
+import { browserStorage } from '@/utils/browserStorage';
 import { pollWhileVisible } from '@/utils/pollWhileVisible';
 import { hasAccounts, showFirstRun } from '../model/firstRun';
 import {
@@ -194,7 +195,7 @@ export function useDashboardData(api: DashboardApi = taprootApi) {
   const connected = useAuthStore((state) => state.connectionStatus === 'connected');
   const attention = useAttentionFeedStore();
   const [timeWindow, setWindowState] = useState<DashboardWindow>(() =>
-    readStoredWindow(typeof localStorage === 'undefined' ? undefined : localStorage)
+    readStoredWindow(browserStorage())
   );
   const [reads, setReads] = useState<DashboardReads>(initialReads);
   // The load reads these without depending on them, so the poll keeps one schedule.
@@ -226,7 +227,7 @@ export function useDashboardData(api: DashboardApi = taprootApi) {
 
   const setWindow = useCallback(
     (next: DashboardWindow) => {
-      storeWindow(typeof localStorage === 'undefined' ? undefined : localStorage, next);
+      storeWindow(browserStorage(), next);
       windowRef.current = next;
       setWindowState(next);
       void load();

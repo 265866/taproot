@@ -281,6 +281,12 @@
 .statAccount {
   color: var(--text-secondary);
   font-weight: 400;
+
+  // A shown email is longer than its stats column on a phone.
+  @media (max-width: $breakpoint-mobile) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .masked {

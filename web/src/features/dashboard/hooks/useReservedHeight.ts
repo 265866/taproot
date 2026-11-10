@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState, type CSSProperties } from 'react';
+import { browserStorage } from '@/utils/browserStorage';
 
 const STORAGE_KEY = 'taproot.dashboard.rail-heights';
 
@@ -48,7 +49,6 @@ export function storeReservedHeight(
   }
 }
 
-const browserStorage = () => (typeof localStorage === 'undefined' ? undefined : localStorage);
 const browserLayout = () =>
   railLayout((query) => typeof window !== 'undefined' && window.matchMedia(query).matches);
 
@@ -70,7 +70,13 @@ export function useReservedHeight(
     if (height > 0) storeReservedHeight(browserStorage(), browserLayout(), section, height);
   });
 
+  // A stored height from a much longer list, or a corrupt one, holds at most one screen.
   const style: CSSProperties | undefined =
-    loading && reserved !== null ? { minHeight: reserved } : undefined;
+    loading && reserved !== null
+      ? {
+          minHeight:
+            typeof window === 'undefined' ? reserved : Math.min(reserved, window.innerHeight),
+        }
+      : undefined;
   return [setNode, style] as const;
 }
