@@ -33,6 +33,14 @@ A browser on the server connects as the server's own node, which never gets Admi
 
 Taproot reads `taproot.yaml` strictly, and the error names the key and its line. Fix the spelling, or remove the key. [Configuration](configuration.md#taprootyaml) lists every key. A key that a newer patch release added stops an older release too.
 
+## Taproot stops on `more than one YAML document`
+
+`taproot.yaml` has a line with only `---`, which starts a second YAML document, and taproot reads only one. Merge the documents into one, and remove the `---` line.
+
+## Taproot stops with `no --config flag`
+
+Taproot was started without `--config` in a directory with no `config.yaml`. Start it with `taproot --config <dir>/config.yaml`. On its first start, taproot writes a default `config.yaml` and `taproot.yaml` in `<dir>`.
+
 ## Taproot stops on `access.allow-logins`, `access.admin-nodes`, or `access.trusted-cidrs`
 
 These keys from 0.1.0 were removed. Replace them with `access.devices` and `access.addresses`, as the error says. [Move from 0.1.0](updating.md#move-from-010) shows the steps.

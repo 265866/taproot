@@ -75,8 +75,10 @@ func (b *Backups) handleRestore(c *gin.Context) {
 	resp.Message = "Config and auth files are restored. Taproot is restarting to finish restoring the database."
 	c.JSON(http.StatusOK, resp)
 	c.Writer.Flush()
+	b.restartRequested.Store(true)
 	go func() {
 		if errRestart := b.restart(); errRestart != nil {
+			b.restartRequested.Store(false)
 			log.WithError(errRestart).Error("taproot backups: restart after restore failed; restart manually")
 		}
 	}()

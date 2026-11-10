@@ -38,7 +38,7 @@ func TestSetupNamesMissingTaprootYAML(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 	want := "taproot.yaml not found at " + filepath.Join(cwd, "taproot.yaml") + ":"
-	if _, err := Setup(context.Background(), nil, "config.yaml"); err == nil || !strings.Contains(err.Error(), want) {
+	if _, _, err := Setup(context.Background(), nil, "config.yaml"); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("Setup with --config config.yaml = %v, want %q", err, want)
 	}
 }

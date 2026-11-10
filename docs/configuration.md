@@ -19,6 +19,8 @@ The data directory holds your OAuth refresh tokens and every prompt. Treat it, a
 
 A backup holds `config.yaml`, `taproot.yaml`, the database, the credential files in `auths/`, and the Codex refresh journal. It leaves out the request logs and `auths/kv.db`, a cache that taproot rebuilds. A restore adds the journal entries that the auth directory lacks and never deletes one, so taproot does not send a Codex refresh token again that the journal records as sent.
 
+A restore finishes with a restart. Taproot exits with status 75, and the database from the backup takes effect when its supervisor starts it again. Every shipped example restarts it (`Restart=always`, `--restart unless-stopped`), and so does a restart policy that restarts only failures, such as systemd's `Restart=on-failure`. Without a supervisor, start taproot again yourself.
+
 ## The two configuration files
 
 - `config.yaml` is CLIProxyAPI's configuration. On the first start, taproot writes [`examples/taproot/config.yaml`](../examples/taproot/config.yaml), the minimal configuration for taproot, with `oauth.auth-dir` moved beside the file. CLIProxyAPI ignores keys it does not know, so a taproot setting in `config.yaml` has no effect.

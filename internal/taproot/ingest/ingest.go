@@ -63,6 +63,7 @@ type Ingest struct {
 	pendingObs []observation
 	dropped    int64
 	wake       chan struct{}
+	writerDone chan struct{}
 
 	// writeMu serializes flushes so the quota tracker has a single user.
 	writeMu sync.Mutex
@@ -104,6 +105,7 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 		pollInterval:   interval,
 		now:            time.Now,
 		wake:           make(chan struct{}, 1),
+		writerDone:     make(chan struct{}),
 		tracker:        newQuotaTracker(),
 		claudeUsageURL: devUsageURL(devClaudeUsageURLEnv, claudeUsageURL),
 		codexUsageURL:  devUsageURL(devCodexUsageURLEnv, codexUsageURL),
@@ -178,13 +180,18 @@ func (i *Ingest) authList() []*coreauth.Auth {
 	return src.List()
 }
 
-// Start runs background work until ctx ends.
+// Start runs background work until ctx ends. Records still queued when ctx
+// ends are written before the writer exits; Wait waits for that.
 func (i *Ingest) Start(ctx context.Context) {
 	go i.runWriter(ctx)
 	go i.runMaintenance(ctx)
 }
 
+// Wait returns once the writer started by Start has exited.
+func (i *Ingest) Wait() { <-i.writerDone }
+
 func (i *Ingest) runWriter(ctx context.Context) {
+	defer close(i.writerDone)
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 	for {
