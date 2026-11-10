@@ -2,6 +2,17 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## Unreleased
+
+### Upgrading from 0.4
+
+- The home page is a new Dashboard. It opens with a verdict (serving normally, degraded, or down), lists what needs you with one button each, and shows each provider's pool right now. Below that, a window of 1 hour to 30 days shows client requests, failures, latency, cost, recent failures, and the top devices and models. The old hero, tiles, provider rows, and "Where to go from here" cards are gone, and the model count moved to **System**. See [Dashboard](docs/dashboard.md).
+- The database gains three tables: `client_requests`, `client_request_slots`, and `backup_scheduled_run`. They are created at start, and nothing else in the schema changes. `client_requests` records each client request once, however many accounts it tried. It starts empty, so the Dashboard counts only requests made after the upgrade. Usage keeps its full history, and a server with usage history shows the Dashboard rather than the first-run checklist. Client requests are kept as long as usage events.
+- `/taproot/api/v1` has new admin-only endpoints: `GET /requests/summary`, `GET /requests/recent`, `GET /status`, `GET /attention`, and `GET /pools`. No existing endpoint changed.
+- The sidebar shows badges on **Accounts**, **Access**, and **Backups**, and the tab title starts with a dot while something needs you. The Accounts badge used to count accounts. It now counts problems.
+- On a touch screen, every button and link on the Dashboard and the sidebar is at least 44 pixels tall, and Usage's and Accounts' range buttons grow to match. On a phone, and on a phone held sideways, text is a step larger.
+- A successful **Send test** of the Discord alerts, or a new webhook, clears the record of failed deliveries, so the "Discord alerts are not being delivered" item leaves **Needs you**.
+
 ## [0.4.0](https://github.com/265866/taproot/compare/taproot-v0.3.0...taproot-v0.4.0) (2026-11-10)
 
 ### Upgrading from 0.3
