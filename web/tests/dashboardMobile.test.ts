@@ -312,3 +312,19 @@ describe('small helpers', () => {
     expect(exampleAddress('https://taproot.tailnet-0000.ts.net')).toBe('https://server');
   });
 });
+
+describe("the Accounts page's quota stats", () => {
+  const css = compile('features/taproot-quota/quota.module.scss');
+
+  test('wrap inside the card where four in a row do not fit, as beside a tablet sidebar', () => {
+    const base = css.slice(css.indexOf('\n.stats {'), css.indexOf('}', css.indexOf('\n.stats {')));
+    expect(base).toContain('flex-wrap: wrap');
+    expect(base).not.toContain('grid-template-columns');
+  });
+
+  test('phones keep two even columns', () => {
+    const phone = rule(css, '.stats', PHONE);
+    expect(phone).toContain('display: grid');
+    expect(phone).toContain('repeat(2, minmax(0, 1fr))');
+  });
+});
