@@ -44,7 +44,8 @@ const sameAddresses = (a: AddressGrant[], b: AddressGrant[]) =>
 
 /**
  * Carries the unsaved changes in `draft`, made against `before`, over to freshly loaded `after`,
- * so saving one request does not throw away switches the person was still editing.
+ * so saving one request does not throw away switches the person was still editing. An edit to
+ * something the server changed in between is dropped: saving it would undo that change.
  */
 export function rebaseDraft(
   before: AccessDevices,
@@ -53,18 +54,32 @@ export function rebaseDraft(
 ): AccessDraft {
   const next = draftFrom(after);
   const saved = new Map(before.devices.map((d) => [d.id, d]));
+  const fresh = new Map(after.devices.map((d) => [d.id, d]));
   for (const [id, p] of Object.entries(draft.devices)) {
     const old = saved.get(id);
-    if (old && (old.proxy !== p.proxy || old.admin !== p.admin) && id in next.devices) {
+    const now = fresh.get(id);
+    if (
+      old &&
+      now &&
+      (old.proxy !== p.proxy || old.admin !== p.admin) &&
+      old.proxy === now.proxy &&
+      old.admin === now.admin
+    ) {
       next.devices[id] = { ...p };
     }
   }
   for (const [id, label] of Object.entries(draft.labels)) {
     const old = saved.get(id);
-    if (old && old.label !== label && id in next.labels) next.labels[id] = label;
+    const now = fresh.get(id);
+    if (old && now && old.label !== label && old.label === now.label) next.labels[id] = label;
   }
-  next.forget = draft.forget.filter((id) => after.devices.some((d) => d.id === id));
-  if (!sameAddresses(draft.addresses, before.addresses)) next.addresses = draft.addresses;
+  next.forget = draft.forget.filter((id) => fresh.has(id));
+  if (
+    !sameAddresses(draft.addresses, before.addresses) &&
+    sameAddresses(before.addresses, after.addresses)
+  ) {
+    next.addresses = draft.addresses;
+  }
   return next;
 }
 
@@ -314,7 +329,9 @@ export function accessUpdate(
   }
   const own = ownDeviceId(me);
   if (own && !devices.some((d) => d.id === own && d.admin)) return { ok: false, error: 'lockout' };
-  return { ok: true, update: { devices, addresses: draft.addresses } };
+  const update = { devices, addresses: draft.addresses };
+  // An older server sends no version and checks none.
+  return { ok: true, update: data.version ? { version: data.version, ...update } : update };
 }
 
 export interface AllowForm extends Permissions {
@@ -357,14 +374,15 @@ export function labelFor(raw: string, tailscaleName: string): Validation<string>
 }
 
 /**
- * The device list that allows one request: the saved grants, with the requesting device's entry
- * added or replaced. Unsaved switch changes are not part of it.
+ * The update that allows one request: the requesting device's entry alone, which the server sets
+ * and leaves every other device as saved, so a page loaded before another save cannot undo it.
+ * Unsaved switch changes are not part of it.
  */
 export function allowUpdate(
   data: AccessDevices,
   request: AccessRequest,
   form: AllowForm
-): Validation<{ devices: DeviceGrant[] }> {
+): Validation<{ device: DeviceGrant }> {
   if (!form.proxy && !form.admin) return { ok: false, error: 'allow_nothing' };
   const device = data.devices.find((d) => d.id === request.nodeId);
   const name = device?.name ?? '';
@@ -374,24 +392,93 @@ export function allowUpdate(
       ? ({ ok: true, update: device.label } as const)
       : labelFor(form.name, name);
   if (!label.ok) return label;
-  const devices: DeviceGrant[] = [];
-  for (const d of data.devices) {
-    if (d.server || d.id === request.nodeId || !(d.proxy || d.admin)) continue;
-    devices.push(grantOf(d, d));
-  }
-  devices.push({
-    id: request.nodeId,
-    name,
-    label: label.update,
-    proxy: form.proxy,
-    admin: form.admin,
-  });
-  return { ok: true, update: { devices } };
+  return {
+    ok: true,
+    update: {
+      device: { id: request.nodeId, name, label: label.update, proxy: form.proxy, admin: form.admin },
+    },
+  };
 }
 
-/** An IPv4 or IPv6 address, optionally with a prefix length. The server parses it exactly. */
-const CIDR =
-  /^(?:\d{1,3}(?:\.\d{1,3}){3}(?:\/\d{1,2})?|[0-9a-fA-F:]*:[0-9a-fA-F:.]*(?:\/\d{1,3})?)$/;
+/** An address as its bytes (4 or 16) and a prefix length. */
+interface Prefix {
+  bytes: number[];
+  bits: number;
+}
+
+function parseIPv4(text: string): number[] | null {
+  const parts = text.split('.');
+  if (parts.length !== 4 || parts.some((p) => !/^(0|[1-9]\d{0,2})$/.test(p) || Number(p) > 255)) {
+    return null;
+  }
+  return parts.map(Number);
+}
+
+function parseIPv6(text: string): number[] | null {
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const groups = (half: string): number[] | null => {
+    if (half === '') return [];
+    const out: number[] = [];
+    const parts = half.split(':');
+    for (const [i, part] of parts.entries()) {
+      if (i === parts.length - 1 && part.includes('.')) {
+        const v4 = parseIPv4(part);
+        if (!v4) return null;
+        out.push(...v4);
+      } else if (/^[0-9a-fA-F]{1,4}$/.test(part)) {
+        const n = parseInt(part, 16);
+        out.push(n >> 8, n & 0xff);
+      } else {
+        return null;
+      }
+    }
+    return out;
+  };
+  const head = groups(halves[0]);
+  const tail = halves.length === 2 ? groups(halves[1]) : [];
+  if (!head || !tail) return null;
+  if (halves.length === 1) return head.length === 16 ? head : null;
+  const zeros = 16 - head.length - tail.length;
+  return zeros >= 2 ? [...head, ...new Array<number>(zeros).fill(0), ...tail] : null;
+}
+
+/**
+ * Parses an address or CIDR the way the server does, or returns null. A bare IPv4-mapped IPv6
+ * address is the IPv4 address, as on the server.
+ */
+function parsePrefix(text: string): Prefix | null {
+  const [addr, bits, extra] = text.split('/');
+  if (extra !== undefined) return null;
+  const bytes = addr.includes(':') ? parseIPv6(addr) : parseIPv4(addr);
+  if (!bytes) return null;
+  if (bits === undefined) {
+    const mapped =
+      bytes.length === 16 && bytes.slice(0, 10).every((b) => b === 0) && bytes[10] === 0xff && bytes[11] === 0xff;
+    return mapped ? { bytes: bytes.slice(12), bits: 32 } : { bytes, bits: bytes.length * 8 };
+  }
+  if (!/^(0|[1-9]\d{0,2})$/.test(bits) || Number(bits) > bytes.length * 8) return null;
+  return { bytes, bits: Number(bits) };
+}
+
+function overlaps(a: Prefix, b: Prefix): boolean {
+  if (a.bytes.length !== b.bytes.length) return false;
+  const bits = Math.min(a.bits, b.bits);
+  for (let i = 0; i < bits; i++) {
+    const bit = (bytes: number[]) => (bytes[i >> 3] >> (7 - (i & 7))) & 1;
+    if (bit(a.bytes) !== bit(b.bytes)) return false;
+  }
+  return true;
+}
+
+/**
+ * Tailscale's address ranges. An address entry is matched before the device's identity, so one
+ * covering these would give every tailnet device Proxy and take Admin from the admins; the server
+ * refuses it.
+ */
+const TAILNET = [parsePrefix('100.64.0.0/10'), parsePrefix('fd7a:115c:a1e0::/48')].filter(
+  (p): p is Prefix => p !== null
+);
 
 export function newAddress(
   cidr: string,
@@ -399,7 +486,11 @@ export function newAddress(
   draft: AccessDraft
 ): Validation<AddressGrant> {
   const value = cidr.trim();
-  if (!CIDR.test(value)) return { ok: false, error: 'address_format', detail: value };
+  const prefix = parsePrefix(value);
+  if (!prefix) return { ok: false, error: 'address_format', detail: value };
+  if (TAILNET.some((t) => overlaps(prefix, t))) {
+    return { ok: false, error: 'address_tailnet', detail: value };
+  }
   const bare = (a: string) => a.replace(/\/(32|128)$/, '');
   if (draft.addresses.some((a) => bare(a.cidr) === bare(value))) {
     return { ok: false, error: 'address_duplicate', detail: value };

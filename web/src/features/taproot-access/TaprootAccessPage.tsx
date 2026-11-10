@@ -16,7 +16,9 @@ import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconCopy, IconPencil, IconPlus, IconSearch } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import {
+  TaprootApiError,
   taprootApi,
   type AccessDevice,
   type AccessDevices,
@@ -72,11 +74,16 @@ export function TaprootAccessPage() {
   // Relative times and New badges are as of the last load.
   const [now, setNow] = useState(() => Date.now());
   const dataRef = useRef<AccessDevices | null>(null);
+  // Only the newest load lands, and a save makes loads already in flight stale, so a response
+  // read before a save never replaces the page after it.
+  const loadSeq = useRef(0);
 
   /** Loads the page. With keepDraft, unsaved switches survive the reload. */
   const load = useCallback(async (keepDraft = false) => {
+    const seq = ++loadSeq.current;
     try {
       const [devices, who] = await Promise.all([taprootApi.accessDevices(), taprootApi.me()]);
+      if (seq !== loadSeq.current) return;
       const before = dataRef.current;
       dataRef.current = devices;
       setData(devices);
@@ -88,13 +95,26 @@ export function TaprootAccessPage() {
       setLoadError('');
       if (!keepDraft) setSaveError('');
     } catch (err: unknown) {
-      setLoadError(getErrorMessage(err));
+      if (seq === loadSeq.current) setLoadError(getErrorMessage(err));
     }
   }, []);
   useEffect(() => {
     void load();
   }, [load]);
-  useHeaderRefresh(load);
+  const refresh = useCallback(() => load(true), [load]);
+  useHeaderRefresh(refresh);
+
+  const changes = data && draft ? changeCount(data, draft) : 0;
+  useUnsavedChangesGuard({
+    shouldBlock: changes > 0,
+    dialog: {
+      title: t('taproot_access.unsaved_title'),
+      message: t('taproot_access.unsaved_message'),
+      confirmText: t('taproot_access.unsaved_confirm'),
+      cancelText: t('taproot_access.unsaved_cancel'),
+      variant: 'danger',
+    },
+  });
 
   const save = async () => {
     if (!data || !draft) return;
@@ -105,12 +125,18 @@ export function TaprootAccessPage() {
     }
     setSaving(true);
     setSaveError('');
+    loadSeq.current++;
     try {
       await taprootApi.putSettings({ access: result.update });
       showNotification(t('taproot_access.saved'), 'success');
       await load();
     } catch (err: unknown) {
-      setSaveError(getErrorMessage(err));
+      if (err instanceof TaprootApiError && err.code === 'access_changed') {
+        await load(true);
+        setSaveError(t('taproot_access.errors.access_changed'));
+      } else {
+        setSaveError(getErrorMessage(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -123,6 +149,7 @@ export function TaprootAccessPage() {
     if (!result.ok) {
       return t(`taproot_access.errors.${result.error}`, { detail: result.detail ?? '' });
     }
+    loadSeq.current++;
     const outcome = await runAllow({
       save: () => taprootApi.putSettings({ access: result.update }).then(() => undefined),
       close: () => taprootApi.allowRequest(request.nodeId).then(() => undefined),
@@ -144,6 +171,7 @@ export function TaprootAccessPage() {
   };
 
   const deny = async (request: AccessRequest) => {
+    loadSeq.current++;
     try {
       await taprootApi.dismissRequest(request.nodeId);
       showNotification(t('taproot_access.denied'), 'success');
