@@ -58,19 +58,60 @@
   transform: scale(0.96);
 }
 
+// A dimmed near-white fill still reads as the strongest control on the bar.
+.bar :global(.btn.btn-primary:disabled) {
+  opacity: 1;
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-tertiary);
+}
+
+.shortLabel {
+  display: none;
+}
+
+// Two rows on a phone: the selection controls scroll sideways, and the four actions share one row.
 @include mobile {
   .container {
     width: calc(100vw - 16px);
   }
 
+  // A wrapping column sizes its line to the widest child, so the rows would overflow the bar.
   .bar {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
+    gap: 8px;
+    padding: 8px 10px;
   }
 
-  .left,
+  .left {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .left :global(.btn) {
+    flex: 0 0 auto;
+  }
+
   .right {
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .right :global(.btn) {
+    min-width: 0;
+    padding-inline: 4px;
+    white-space: nowrap;
+  }
+
+  .longLabel {
+    display: none;
+  }
+
+  .shortLabel {
+    display: inline;
   }
 }
 

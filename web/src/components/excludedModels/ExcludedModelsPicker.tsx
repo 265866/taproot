@@ -122,12 +122,21 @@ export function ExcludedModelsPicker({
   /** 只清精确勾选，通配符规则留给它自己的编辑器——否则一次点击会抹掉用户手写的规则。 */
   const handleClear = () => commit(customRules);
 
+  /**
+   * While the rule editor has focus it shows the user's own text, and each change replaces the
+   * custom rules on top of the exact rules from when editing began. Writing the normalized text
+   * back would drop a new blank line and turn a half-typed catalog id into a chip.
+   */
+  const [ruleDraft, setRuleDraft] = useState<{ text: string; exactRules: string[] } | null>(null);
+
   const handleRuleEditorChange = (text: string) => {
     const typedReserved = text
       .split(/\r?\n/)
       .some((line) => reservedKeys.has(line.trim().toLowerCase()));
     setReservedHit(typedReserved);
-    commit(replaceCustomExcludedRules(rules, candidateIds, text));
+    const baseRules = ruleDraft?.exactRules ?? exactRules;
+    setRuleDraft({ text, exactRules: baseRules });
+    commit(replaceCustomExcludedRules(baseRules, candidateIds, text));
   };
 
   const dismissPanel = useCallback(() => {
@@ -280,12 +289,14 @@ export function ExcludedModelsPicker({
           <textarea
             id={`${baseId}-rules`}
             className="input"
-            value={formatExcludedRulesText(customRules)}
+            value={ruleDraft?.text ?? formatExcludedRulesText(customRules)}
             placeholder={t('excluded_models.rules_placeholder')}
             rows={3}
             disabled={disabled}
             spellCheck={false}
+            onFocus={() => setRuleDraft({ text: formatExcludedRulesText(customRules), exactRules })}
             onChange={(event) => handleRuleEditorChange(event.target.value)}
+            onBlur={() => setRuleDraft(null)}
           />
 
           {reservedHit ? (

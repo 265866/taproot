@@ -9,4 +9,6 @@ export interface OAuthModelAliasEntry {
   alias: string;
   fork?: boolean;
   forceMapping?: boolean;
+  /** Backend fields the dashboard does not edit, such as `display-name`, kept for the write. */
+  extra?: Record<string, unknown>;
 }

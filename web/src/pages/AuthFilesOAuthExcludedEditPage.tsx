@@ -18,7 +18,12 @@ import { ROUTES } from '@/router/routes';
 import { useAuthStore, useNotificationStore } from '@/stores';
 import { authFilesApi } from '@/services/api';
 import { buildOAuthProviderOptions, normalizeProviderKey } from '@/features/authFiles/constants';
-import { getStringSetSignature, isOAuthEditorDirty } from '@/features/authFiles/oauthEditorState';
+import {
+  getStringSetSignature,
+  isEditorBackEscape,
+  isOAuthEditorDirty,
+} from '@/features/authFiles/oauthEditorState';
+import { hasOpenLayer } from '@/components/ui/layerStack';
 import type { AuthFileItem, OAuthModelAliasEntry } from '@/types';
 import { getErrorMessage } from '@/utils/helpers';
 import styles from '@/features/authFiles/components/OAuthEditor.module.scss';
@@ -140,7 +145,7 @@ export function AuthFilesOAuthExcludedEditPage() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (isEditorBackEscape(event, hasOpenLayer())) {
         handleBack();
       }
     };

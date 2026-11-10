@@ -186,7 +186,8 @@ export function BatchActionBar(props: BatchActionBarProps) {
             onClick={onDownload}
             disabled={disableControls || selectionCount === 0}
           >
-            {t('auth_files.batch_download')}
+            <span className={styles.longLabel}>{t('auth_files.batch_download')}</span>
+            <span className={styles.shortLabel}>{t('auth_files.batch_download_short')}</span>
           </Button>
           <Button size="sm" onClick={onEnable} disabled={batchStatusDisabled}>
             {t('auth_files.batch_enable')}
