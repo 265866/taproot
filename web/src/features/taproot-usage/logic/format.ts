@@ -9,7 +9,7 @@ export function formatUSD(value: number): string {
   if (!Number.isFinite(value) || value === 0) return '$0.00';
   const abs = Math.abs(value);
   if (abs < 0.01) return value < 0 ? '-<$0.01' : '<$0.01';
-  const digits = abs >= 1000 ? 0 : 2;
+  const digits = Math.round(abs * 100) >= 100_000 ? 0 : 2;
   return `${value < 0 ? '-' : ''}$${abs.toLocaleString('en-US', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -53,15 +53,20 @@ export function formatRatio(value: number | null, digits = 1): string {
 
 export function formatMs(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return DASH;
-  if (value < 1000) return `${Math.round(value)} ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(value < 10_000 ? 2 : 1)} s`;
-  const minutes = Math.floor(value / 60_000);
-  const seconds = Math.round((value % 60_000) / 1000);
-  return `${minutes}m ${seconds}s`;
+  // Each unit is chosen after rounding to it, so 59,999 ms reads `1m 0s`, never `60.0 s`.
+  const ms = Math.round(value);
+  if (ms < 1000) return `${ms} ms`;
+  const centis = Math.round(value / 10);
+  if (centis < 1000) return `${(centis / 100).toFixed(2)} s`;
+  const decis = Math.round(value / 100);
+  if (decis < 600) return `${(decis / 10).toFixed(1)} s`;
+  const seconds = Math.round(value / 1000);
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 export function formatDuration(ms: number): string {
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
   const minutes = Math.round(ms / 60_000);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
@@ -73,6 +78,11 @@ const timeFormat = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '
 const dayHourFormat = new Intl.DateTimeFormat('en-US', {
   weekday: 'short',
   hour: 'numeric',
+});
+const dayHourMinuteFormat = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
+  hour: 'numeric',
+  minute: '2-digit',
 });
 const utcDayFormat = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -106,7 +116,9 @@ export function formatBucketTick(
   dayZone: DayZone
 ): string {
   if (bucket === '1d') return (dayZone === 'utc' ? utcDayFormat : localDayFormat).format(ms);
-  return spanMs <= 24 * 3_600_000 ? timeFormat.format(ms) : dayHourFormat.format(ms);
+  if (spanMs <= 24 * 3_600_000) return timeFormat.format(ms);
+  // Hourly buckets start on UTC hours, which fall at :30 or :45 in some zones.
+  return (new Date(ms).getMinutes() === 0 ? dayHourFormat : dayHourMinuteFormat).format(ms);
 }
 
 export function formatBucketLabel(ms: number, bucket: UsageBucket, dayZone: DayZone): string {

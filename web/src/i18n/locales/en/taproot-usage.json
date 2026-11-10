@@ -3,6 +3,9 @@
     "title": "Usage",
     "subtitle": "Cost, requests, tokens, and latency across the pool",
     "load_failed": "Could not load usage: {{message}}",
+    "stale_current": "The figures below loaded at {{time}} and may be out of date.",
+    "stale_previous": "The figures below are from the previous selection, loaded at {{time}}, not from the one chosen above.",
+    "range_invalid": "Fix the range above to load usage.",
     "retry": "Retry",
     "none_group": "(none)",
     "other_group": "Other",
@@ -78,7 +81,10 @@
       "series_p50": "{{provider}} p50",
       "series_p95": "{{provider}} p95",
       "no_data": "No requests in this range.",
-      "total": "Total"
+      "total": "Total",
+      "summary_total": "{{title}}: {{total}} in total, highest {{peak}} at {{bucket}}.",
+      "summary_peak": "{{title}}: highest {{series}} {{peak}} at {{bucket}}.",
+      "summary_empty": "{{title}}: no data in this range."
     },
     "breakdown": {
       "title": "Breakdown by {{group}}",
@@ -123,10 +129,13 @@
       "cost": "Cost",
       "cache_read": "Cache read",
       "cache_write": "Cache write",
-      "switched_badge": "{{count}} switches",
+      "switched_badge_one": "{{count}} switch",
+      "switched_badge_other": "{{count}} switches",
       "load_more": "Load more sessions",
       "empty": "No sessions in this range.",
-      "empty_switched": "No loaded session switched accounts.",
+      "empty_switched": "No session in this range switched accounts.",
+      "empty_switched_partial_one": "The {{count}} session loaded so far did not switch accounts. Load more to check the rest of the range.",
+      "empty_switched_partial_other": "None of the {{count}} sessions loaded so far switched accounts. Load more to check the rest of the range.",
       "view_requests": "View requests for session {{id}}",
       "truncated_note": "A request count ending in + marks a session with more than 50,000 requests in this range. Its row covers only the first 50,000."
     },
@@ -276,6 +285,7 @@
       "ttl_desc": "Flags a device when more than {{share}} of its Claude main-conversation cache writes were 5-minute, over at least {{min}} requests with a reported split. Subagent requests are left out: Claude Code sets their TTL separately.",
       "ttl_share": "of main-conversation cache writes were 5-minute",
       "ttl_measured": "Measured: {{fiveMinute}} tokens written with a 5-minute TTL and {{oneHour}} with a one-hour TTL, over {{requests}} main-conversation requests.",
+      "ttl_keep": "Keep the 5-minute TTL on {{device}} for now: by the estimate below, a one-hour TTL would have cost about {{amount}} more in this range.",
       "ttl_fix_before": "On {{device}}, add",
       "ttl_fix_after": "to",
       "ttl_fix_version": " (Claude Code 2.1.242 or later). The main conversation then writes with a one-hour TTL.",
@@ -284,8 +294,7 @@
       "estimate_rewrites_other": "{{count}} cache writes totalling {{tokens}} tokens followed a 5 to 60 minute pause, so a one-hour TTL would likely have read them instead (about {{cost}}). Writing the rest at the one-hour rate would add about {{premium}}.",
       "estimate_none": "No cache write followed a 5 to 60 minute pause in this range. Writing at the one-hour rate would add about {{premium}}.",
       "estimate_net_saving": "Net: about {{amount}} saved at API prices.",
-      "estimate_net_cost": "Net: about {{amount}} more at API prices.",
-      "estimate_net_cost_hint": "A one-hour TTL pays off when sessions pause for 5 to 60 minutes; if this device rarely pauses that long, the 5-minute TTL is cheaper."
+      "estimate_net_cost": "Net: about {{amount}} more at API prices."
     }
   }
 }

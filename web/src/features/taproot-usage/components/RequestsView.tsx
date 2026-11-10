@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MaskedValueChip } from '@/components/common/MaskedValueChip';
-import { useEmailMask, useHidesValue } from '@/hooks/useEmailMask';
+import { useHidesValue } from '@/hooks/useEmailMask';
 import { Select } from '@/components/ui/Select';
 import {
   taprootApi,
@@ -11,9 +11,10 @@ import {
 } from '@/services/api/taproot';
 import { useTaprootQuery } from '../hooks/useTaprootQuery';
 import type { FailedFilter } from '../hooks/useUsageParams';
-import { toIso, type TimeWindow } from '../logic/range';
+import { requestsSelection, toIso, type TimeWindow } from '../logic/range';
 import { DASH, formatDateTime, formatMs, formatTokens, formatUSDPrecise } from '../logic/format';
 import { deviceFilterKey } from '../logic/devices';
+import { QueryError } from './QueryError';
 import { RequestDrawer } from './RequestDrawer';
 import styles from '../TaprootUsage.module.scss';
 
@@ -29,6 +30,8 @@ export interface RequestFilters {
 
 interface Props {
   window: TimeWindow;
+  /** The range as chosen, which a refresh or a tab switch leaves unchanged. */
+  rangeSelection: string;
   refreshKey: number;
   filters: RequestFilters;
   onFiltersChange: (patch: Partial<RequestFilters>) => void;
@@ -36,12 +39,14 @@ interface Props {
   models: readonly string[];
   devices: readonly UsageDevice[];
   accountLabel: (authIndex: string) => string;
-  deviceLabel: (deviceKey: string) => string;
+  /** The device list's name, else `fallbackName` (an event's own), else the key. */
+  deviceLabel: (deviceKey: string, fallbackName?: string) => string;
   showEmails: boolean;
 }
 
 export function RequestsView({
   window,
+  rangeSelection,
   refreshKey,
   filters,
   onFiltersChange,
@@ -53,8 +58,8 @@ export function RequestsView({
   showEmails,
 }: Props) {
   const { t } = useTranslation();
-  const { mask } = useEmailMask();
-  const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filters.account}|${filters.model}|${filters.session}|${filters.device}|${filters.failed}`;
+  const filterSelection = `${filters.account}|${filters.model}|${filters.session}|${filters.device}|${filters.failed}`;
+  const filterKey = `${window.fromMs}|${window.toMs}|${refreshKey}|${filterSelection}`;
   // cursors[i] opens page i; page 0 has none.
   const [paging, setPaging] = useState<{
     key: string;
@@ -71,29 +76,35 @@ export function RequestsView({
 
   useEffect(() => setSessionDraft(filters.session), [filters.session]);
 
-  const query = useTaprootQuery(`${filterKey}|${cursor ?? ''}`, () =>
-    taprootApi.usageEvents({
-      from: toIso(window.fromMs),
-      to: toIso(window.toMs),
-      authIndex: filters.account || undefined,
-      model: filters.model || undefined,
-      sessionId: filters.session || undefined,
-      deviceId: filters.device || undefined,
-      failed: filters.failed === '' ? undefined : filters.failed === 'true',
-      cursor,
-      limit: PAGE_SIZE,
-    })
+  const query = useTaprootQuery(
+    `${filterKey}|${cursor ?? ''}`,
+    () =>
+      taprootApi.usageEvents({
+        from: toIso(window.fromMs),
+        to: toIso(window.toMs),
+        authIndex: filters.account || undefined,
+        model: filters.model || undefined,
+        sessionId: filters.session || undefined,
+        deviceId: filters.device || undefined,
+        failed: filters.failed === '' ? undefined : filters.failed === 'true',
+        cursor,
+        limit: PAGE_SIZE,
+      }),
+    requestsSelection(rangeSelection, filterSelection, current.page)
   );
   const events = query.data?.events ?? [];
-  const nextCursor = query.data?.nextCursor ?? null;
+  // Only a page that answers this exact request may page on: a cursor from another filter, window,
+  // or page would page through the wrong results.
+  const nextCursor = query.loading || query.error ? null : (query.data?.nextCursor ?? null);
 
-  const accountOptions = useMemo(
-    () => [
+  const accountOptions = useMemo(() => {
+    const keys = accounts.map((a) => a.authIndex);
+    if (filters.account && !keys.includes(filters.account)) keys.unshift(filters.account);
+    return [
       { value: '', label: t('taproot_usage.requests.any_account') },
-      ...accounts.map((a) => ({ value: a.authIndex, label: accountLabel(a.authIndex) })),
-    ],
-    [accounts, accountLabel, t]
-  );
+      ...keys.map((key) => ({ value: key, label: accountLabel(key) })),
+    ];
+  }, [accounts, filters.account, accountLabel, t]);
   const modelOptions = useMemo(() => {
     const list =
       filters.model && !models.includes(filters.model) ? [filters.model, ...models] : models;
@@ -228,14 +239,7 @@ export function RequestsView({
         </button>
       </form>
 
-      {query.error ? (
-        <div className={styles.error} role="alert">
-          <span>{mask(t('taproot_usage.load_failed', { message: query.error.message }))}</span>
-          <button type="button" className={styles.ghostButton} onClick={query.reload}>
-            {t('taproot_usage.retry')}
-          </button>
-        </div>
-      ) : null}
+      <QueryError query={query} />
       {query.loading ? <div className={styles.loadingBar} /> : null}
 
       {!query.loading && events.length === 0 && !query.error ? (
@@ -243,7 +247,10 @@ export function RequestsView({
       ) : null}
 
       {events.length > 0 ? (
-        <div className={styles.tableScroll}>
+        <div
+          className={`${styles.tableScroll} ${query.current ? '' : styles.stale}`}
+          aria-busy={query.loading}
+        >
           <table className={styles.table}>
             <thead>
               <tr>
@@ -277,7 +284,7 @@ export function RequestsView({
                     </button>
                   </td>
                   <td>{accountLabel(e.authIndex)}</td>
-                  <td>{deviceLabel(deviceFilterKey(e.deviceId ?? ''))}</td>
+                  <td>{deviceLabel(deviceFilterKey(e.deviceId ?? ''), e.deviceName)}</td>
                   <td>{e.model || DASH}</td>
                   <td className={styles.num}>
                     {formatTokens(e.inputTokens)} / {formatTokens(e.outputTokens)}
