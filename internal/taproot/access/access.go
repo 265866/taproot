@@ -25,14 +25,17 @@
 //     device's stable ID, and access.devices decides: proxy: true reaches the
 //     proxy, admin: true the admin surface. A device that is not listed has
 //     neither. Names never grant anything, because a stable ID is never
-//     reused and a name can be.
+//     reused and a name can be. A device with Admin also reads GET
+//     /v1/models without Proxy: the dashboard shows the model list, which
+//     comes from the local model registry and costs no quota.
 //
 // Every caller with an identity may load the dashboard page and its chunks,
 // which are static, so a device without Admin can ask for access there.
 // A tailnet device that is refused is told its own name, login, and ID, and
-// its refusal is recorded as an access request (see requests.go); nobody
-// else gets more than "forbidden". Such a device may also POST to
-// RequestPath, which records a request and grants nothing.
+// unless it has Admin, its refusal is recorded as an access request (see
+// requests.go); nobody else gets more than "forbidden". A device without
+// Admin may also POST to RequestPath, which records a request and grants
+// nothing.
 //
 // While no device has Admin, the server is unclaimed: Setup logs a one-time
 // setup code, and a tailnet device other than the server, without Admin, may
@@ -219,6 +222,13 @@ type Identity struct {
 	noAdminGrant bool
 	// self is true for a tailnet caller on the server's own node.
 	self bool
+}
+
+// adminGrant reports whether the caller is a tailnet device whose grant has
+// Admin, including while the guard withholds it because the server's own node
+// is unknown. Such a device can turn on anything itself on the Access page.
+func (id Identity) adminGrant() bool {
+	return id.device && !id.noAdminGrant
 }
 
 // Guard decides whether a request may reach the proxy or the admin surface.
@@ -508,6 +518,9 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 		switch {
 		case reason != "":
 		case surf == surfaceProxy && !id.Proxy:
+			if id.Admin && isModelList(r) {
+				break
+			}
 			reason = "device " + quoteHeader(id.Node) + " (" + id.NodeID + ") has no Proxy"
 			if id.device {
 				denial = g.noProxyDenial(r, id)
@@ -595,8 +608,11 @@ func (g *Guard) noProxyDenial(r *http.Request, id Identity) gin.H {
 		scheme = "https"
 	}
 	// The Host passed the browser checks, so it is one of the server's names.
-	message := fmt.Sprintf("This device needs approval on taproot. Don't run /login. Open %s://%s on this device to name it, or ask the server's admin. (%s, %s, ID %s)",
-		scheme, r.Host, cmp.Or(name, "unnamed device"), id.Login, id.NodeID)
+	format := "This device needs approval on taproot. Don't run /login. Open %s://%s on this device to name it, or ask the server's admin. (%s, %s, ID %s)"
+	if id.adminGrant() {
+		format = "This device has Admin but not Proxy on taproot. Don't run /login. Open %s://%s and turn on Proxy for this device on the Access page. (%s, %s, ID %s)"
+	}
+	message := fmt.Sprintf(format, scheme, r.Host, cmp.Or(name, "unnamed device"), id.Login, id.NodeID)
 	return deviceDenial("no_proxy", id, name, message)
 }
 

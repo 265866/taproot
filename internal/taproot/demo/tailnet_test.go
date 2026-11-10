@@ -100,18 +100,24 @@ func TestDemoTailnet(t *testing.T) {
 	e := gin.New()
 	e.Use(g.Middleware())
 	e.GET("/v1/models", func(c *gin.Context) { c.Status(http.StatusOK) })
+	e.POST("/v1/messages", func(c *gin.Context) { c.Status(http.StatusOK) })
 	e.GET("/v8/management/config", func(c *gin.Context) { c.Status(http.StatusOK) })
-	code := func(ip, path string) int {
-		r := httptest.NewRequest(http.MethodGet, path, nil)
+	codeFor := func(method, ip, path string) int {
+		r := httptest.NewRequest(method, path, nil)
 		r.RemoteAddr, r.Host = ip+":40000", "server:8399"
 		w := httptest.NewRecorder()
 		e.ServeHTTP(w, r)
 		return w.Code
 	}
+	code := func(ip, path string) int { return codeFor(http.MethodGet, ip, path) }
 	status := map[bool]int{true: http.StatusOK, false: http.StatusForbidden}
 	for _, d := range tailnetDevices {
-		if got := code(d.ip, "/v1/models"); got != status[d.proxy] {
+		if got := codeFor(http.MethodPost, d.ip, "/v1/messages"); got != status[d.proxy] {
 			t.Errorf("%s proxy = %d, want %d", d.name, got, status[d.proxy])
+		}
+		// Admin alone reads the model list, which the dashboard shows.
+		if got := code(d.ip, "/v1/models"); got != status[d.proxy || d.admin] {
+			t.Errorf("%s model list = %d, want %d", d.name, got, status[d.proxy || d.admin])
 		}
 		if got := code(d.ip, "/v8/management/config"); got != status[d.admin] {
 			t.Errorf("%s admin = %d, want %d", d.name, got, status[d.admin])

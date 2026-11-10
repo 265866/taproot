@@ -23,6 +23,13 @@ const (
 	shareeID = "ndana-1CNTRL"
 )
 
+// phone is alice@github's phone, which the request harness grants Admin and
+// not Proxy.
+const (
+	phoneIP = "100.64.0.5"
+	phoneID = "nphoneCNTRL"
+)
+
 // requestHarness is a guard on the fake tailnet with a sharee device, an
 // access.addresses entry, a request store, and a clock the test moves.
 type requestHarness struct {
@@ -38,8 +45,10 @@ func newRequestHarness(t *testing.T) *requestHarness {
 	t.Helper()
 	peers := defaultPeers()
 	peers[shareeIP] = fakePeer{login: "dana@example.com", displayName: "dana", node: "dana-1", sharee: true}
+	peers[phoneIP] = fakePeer{login: testLogin, displayName: "Alice", node: "phone", os: "iOS"}
 	ts := newFakeTailscaled(t, peers)
-	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Addresses: []AddressGrant{{CIDR: "192.0.2.20"}}})
+	devices := append(slices.Clone(defaultDevices), DeviceGrant{ID: phoneID, Name: "phone", Admin: true})
+	g := newTestGuard(t, Config{TailscaleSocket: ts.socket, Devices: devices, Addresses: []AddressGrant{{CIDR: "192.0.2.20"}}})
 	h := &requestHarness{g: g, ts: ts, now: time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)}
 	g.now = func() time.Time {
 		h.mu.Lock()
@@ -727,5 +736,94 @@ func TestRequestsConcurrentWriters(t *testing.T) {
 	var both int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM access_requests WHERE allowed_at IS NOT NULL AND dismissed_at IS NOT NULL`).Scan(&both); err != nil || both != 0 {
 		t.Fatalf("rows both allowed and denied = %d, %v", both, err)
+	}
+}
+
+// A device with Admin and no Proxy reads the model list, which the dashboard
+// shows, and nothing else on the proxy surface. Its refusals are never
+// recorded or announced: it can turn on Proxy itself. Every other caller's
+// refusals and admissions are as before.
+func TestAdminWithoutProxy(t *testing.T) {
+	h := newRequestHarness(t)
+	e, _ := testEngine(h.g)
+	phone := phoneIP + ":1234"
+
+	if rec := do(e, phone, "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("phone GET /v1/models = %d %s, want 200", rec.Code, rec.Body)
+	}
+	if rec := do(e, phone, "/v1/models?client_version=0.159.3", nil); rec.Code != http.StatusOK {
+		t.Fatalf("phone /v1/models with a query = %d, want 200", rec.Code)
+	}
+	if rec := do(e, phone, "/v8/management/config", nil); rec.Code != http.StatusOK {
+		t.Fatalf("phone admin surface = %d, want 200", rec.Code)
+	}
+	// Only GET of the exact path; every other proxy request needs
+	// Proxy, and each refusal is spaced past the write interval so it would
+	// be written if it were recorded.
+	for _, r := range []struct{ method, path string }{
+		{http.MethodPost, "/v1/messages"},
+		{http.MethodPost, "/v1/models"},
+		{http.MethodHead, "/v1/models"},
+		{http.MethodGet, "/v1/models/claude-sonnet-5-5"},
+		{http.MethodGet, "/v1beta/models"},
+	} {
+		h.advance(2 * time.Minute)
+		body := assertDenied(t, doMethod(e, r.method, phone, r.path, claudeCode()), "no_proxy")
+		if !strings.Contains(body.Error.Message, "turn on Proxy for this device on the Access page") || body.Error.NodeID != phoneID {
+			t.Fatalf("%s %s denial = %+v, want the admin's advice", r.method, r.path, body.Error)
+		}
+	}
+	// Its own request from the gate is refused too; it has the dashboard.
+	gate := map[string]string{"Origin": "http://localhost:8317", RequestHeader: "1"}
+	if rec := postRequest(e, phone, `{}`, gate); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "has_access") {
+		t.Fatalf("phone self-request = %d %s, want 409 has_access", rec.Code, rec.Body)
+	}
+	if got := h.open(t); len(got) != 0 || h.noticeCount() != 0 {
+		t.Fatalf("after the phone's refusals: requests %+v, %d notices, want none", got, h.noticeCount())
+	}
+
+	// While the server's own node is unknown, the guard withholds Admin, so
+	// the model list needs Proxy again, but the device's grant still has
+	// Admin, so its refusal is still not recorded.
+	h.g.selfMu.Lock()
+	h.g.selfNode, h.g.selfExpires, h.g.selfRetryAt = nil, time.Time{}, time.Time{}
+	h.g.selfMu.Unlock()
+	h.ts.failStatus(1)
+	h.advance(2 * time.Minute)
+	assertDenied(t, do(e, phone, "/v1/models", map[string]string{"Host": "127.0.0.1:8317"}), "no_proxy")
+	if got := h.open(t); len(got) != 0 || h.noticeCount() != 0 {
+		t.Fatalf("with the server unknown: requests %+v, %d notices, want none", got, h.noticeCount())
+	}
+	h.advance(2 * time.Minute)
+	if rec := do(e, phone, "/v1/models", nil); rec.Code != http.StatusOK {
+		t.Fatalf("phone /v1/models after the server is known again = %d %s, want 200", rec.Code, rec.Body)
+	}
+
+	// A device with neither permission still becomes a request, from the
+	// model list too, and a Proxy-only device's dashboard refusal still asks
+	// for Admin.
+	assertDenied(t, do(e, outsiderIP+":1234", "/v1/models", nil), "no_proxy")
+	assertDenied(t, do(e, otherNodeIP+":1234", "/v8/management/config", nil), "not_admin")
+	got := h.open(t)
+	if len(got) != 2 || got[bobID].Asked != AskProxy || got[workerID].Asked != AskAdmin {
+		t.Fatalf("requests = %+v, want bob-pc asking for proxy and worker for admin", got)
+	}
+	if n := h.noticeCount(); n != 2 {
+		t.Fatalf("notices = %d, want 2", n)
+	}
+
+	// Loopback reaches everything, an access.addresses entry and the server's
+	// own node reach the proxy only, and none of them is recorded.
+	for _, remote := range []string{"127.0.0.1:1234", "192.0.2.20:1234", selfIP + ":1234"} {
+		for _, r := range []struct{ method, path string }{{http.MethodGet, "/v1/models"}, {http.MethodPost, "/v1/messages"}} {
+			if rec := doMethod(e, r.method, remote, r.path, nil); rec.Code != http.StatusOK {
+				t.Fatalf("%s %s %s = %d %s, want 200", remote, r.method, r.path, rec.Code, rec.Body)
+			}
+		}
+	}
+	assertForbidden(t, do(e, "192.0.2.20:1234", "/v8/management/config", nil))
+	assertForbidden(t, do(e, selfIP+":1234", "/v8/management/config", nil))
+	if got := h.open(t); len(got) != 2 {
+		t.Fatalf("requests = %+v, want bob-pc and worker only", got)
 	}
 }
