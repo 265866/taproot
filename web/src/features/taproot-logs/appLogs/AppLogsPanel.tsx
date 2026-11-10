@@ -28,6 +28,8 @@ import { REFRESH_STARTED, outcomeFromError, useHeaderRefresh } from '@/hooks/use
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { MaskedValueChip } from '@/components/common/MaskedValueChip';
+import { useMaskableField } from '../hooks/useMaskableField';
 import { logsApi, responseDataToText, type ErrorLogFile } from '@/services/api/logs';
 import { taprootApi } from '@/services/api/taproot';
 import { ROUTES } from '@/router/routes';
@@ -88,6 +90,7 @@ export function AppLogsPanel() {
   const [searchQuery, setSearchQuery] = useState(() =>
     decodeUrlValue(params.get(LOG_SEARCH_PARAM) ?? '')
   );
+  const searchField = useMaskableField(searchQuery);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const urlSearch = params.get(LOG_SEARCH_PARAM) ?? '';
   useEffect(() => {
@@ -578,28 +581,37 @@ export function AppLogsPanel() {
 
             <div className={styles.filters}>
               <div className={styles.searchWrapper}>
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t('taproot_logs.app.search_placeholder')}
-                  aria-label={t('taproot_logs.app.search_placeholder')}
-                  className={styles.searchInput}
-                  rightElement={
-                    searchQuery ? (
-                      <button
-                        type="button"
-                        className={styles.searchClear}
-                        onClick={() => setSearchQuery('')}
-                        title={t('taproot_logs.app.clear_search')}
-                        aria-label={t('taproot_logs.app.clear_search')}
-                      >
-                        <IconX size={16} />
-                      </button>
-                    ) : (
-                      <IconSearch size={16} className={styles.searchIcon} />
-                    )
-                  }
-                />
+                {searchField.masked ? (
+                  <MaskedValueChip
+                    value={searchQuery}
+                    label={t('taproot_logs.app.search_placeholder')}
+                    onClear={searchField.clearToInput(() => setSearchQuery(''))}
+                  />
+                ) : (
+                  <Input
+                    {...searchField.inputProps}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t('taproot_logs.app.search_placeholder')}
+                    aria-label={t('taproot_logs.app.search_placeholder')}
+                    className={styles.searchInput}
+                    rightElement={
+                      searchQuery ? (
+                        <button
+                          type="button"
+                          className={styles.searchClear}
+                          onClick={() => setSearchQuery('')}
+                          title={t('taproot_logs.app.clear_search')}
+                          aria-label={t('taproot_logs.app.clear_search')}
+                        >
+                          <IconX size={16} />
+                        </button>
+                      ) : (
+                        <IconSearch size={16} className={styles.searchIcon} />
+                      )
+                    }
+                  />
+                )}
               </div>
 
               <Select
@@ -903,7 +915,12 @@ export function AppLogsPanel() {
                       ))}
                     </pre>
                   ) : (
-                    <div className={styles.logList} role="list" onKeyDown={moveLineFocus}>
+                    <div
+                      className={styles.logList}
+                      role="grid"
+                      aria-label={t('taproot_logs.app.log_content')}
+                      onKeyDown={moveLineFocus}
+                    >
                       {parsedVisibleLines.map((line) => {
                         const stop = line.id === focusLineId ? 0 : -1;
                         const rowClassNames = [styles.logRow];
@@ -915,20 +932,25 @@ export function AppLogsPanel() {
                             key={line.id}
                             data-log-id={line.id}
                             className={rowClassNames.join(' ')}
-                            role="listitem"
+                            role="row"
                             tabIndex={stop}
+                            aria-label={mask(line.raw)}
+                            aria-keyshortcuts="c"
+                            aria-description={t('taproot_logs.app.double_click_copy_hint')}
                             onFocus={() => setActiveLineId(line.id)}
                             onDoubleClick={() => {
                               void copyLogLine(line.raw);
                             }}
-                            title={t('taproot_logs.app.double_click_copy_hint', {
-                              defaultValue: 'Double-click to copy',
-                            })}
+                            title={t('taproot_logs.app.double_click_copy_hint')}
                           >
-                            <div className={styles.timestamp} title={serverTimeLabel}>
+                            <div
+                              className={styles.timestamp}
+                              role="gridcell"
+                              title={serverTimeLabel}
+                            >
                               {line.timestamp || ''}
                             </div>
-                            <div className={styles.rowMain}>
+                            <div className={styles.rowMain} role="gridcell">
                               {line.level && (
                                 <span
                                   className={[

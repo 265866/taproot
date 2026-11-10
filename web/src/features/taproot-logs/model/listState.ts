@@ -12,6 +12,8 @@ export interface ListState {
   /** The next page failed; the list stops loading pages by itself until the user retries. */
   moreError: string;
   loaded: boolean;
+  /** The time the walk's first page was asked at; every later page of the walk uses it. */
+  anchor: number;
 }
 
 export const INITIAL_LIST: ListState = {
@@ -21,6 +23,7 @@ export const INITIAL_LIST: ListState = {
   error: '',
   moreError: '',
   loaded: false,
+  anchor: 0,
 };
 
 /** A new walk keeps what is on screen until its first page arrives. */
@@ -29,7 +32,7 @@ export function startWalk(prev: ListState): ListState {
   return { ...prev, loading: true, error: '', moreError: '' };
 }
 
-export function walkLoaded(page: RequestLogPage): ListState {
+export function walkLoaded(page: RequestLogPage, anchor: number): ListState {
   return {
     rows: page.logs,
     nextCursor: page.nextCursor,
@@ -37,11 +40,13 @@ export function walkLoaded(page: RequestLogPage): ListState {
     error: '',
     moreError: '',
     loaded: true,
+    anchor,
   };
 }
 
 /**
- * A failed refresh of the same filters keeps the loaded list under the error. A failed walk for new
+ * A failed refresh of the same filters keeps the loaded list, and the anchor its cursor belongs
+ * to, under the error. A failed walk for new
  * filters cannot: the rows on screen belong to the old ones.
  */
 export function walkFailed(prev: ListState, sameQuery: boolean, message: string): ListState {

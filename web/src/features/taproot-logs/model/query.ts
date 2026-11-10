@@ -38,7 +38,8 @@ const RANGE_MS: Record<Exclude<RangePreset, 'all'>, number> = {
 
 const TEXT_KEYS = ['status', 'model', 'authIndex', 'sessionId', 'q'] as const;
 /** Keys whose values can hold an email, so the address bar carries them encoded. */
-const ENCODED_KEYS: readonly string[] = ['sessionId', 'q'];
+const ENCODED_KEYS = ['sessionId', 'q'] as const;
+const isEncodedKey = (key: string) => (ENCODED_KEYS as readonly string[]).includes(key);
 
 const isRange = (value: string | null): value is RangePreset =>
   RANGE_PRESETS.includes(value as RangePreset);
@@ -65,10 +66,29 @@ export function writeQuery(params: URLSearchParams, query: RequestLogQuery): URL
   else next.set('range', query.range);
   for (const key of TEXT_KEYS) {
     const value = query[key].trim();
-    if (value) next.set(key, ENCODED_KEYS.includes(key) ? encodeUrlValue(value) : value);
+    if (value) next.set(key, isEncodedKey(key) ? encodeUrlValue(value) : value);
     else next.delete(key);
   }
   return next;
+}
+
+/**
+ * A link from before encoding carries a search or a session id in plain text. Returns the params
+ * with those values encoded, or null when the address bar already has them encoded.
+ */
+export function encodePlainValues(params: URLSearchParams): URLSearchParams | null {
+  const query = parseQuery(params);
+  const next = new URLSearchParams(params);
+  let changed = false;
+  for (const key of ENCODED_KEYS) {
+    const stored = params.get(key);
+    const encoded = encodeUrlValue(query[key]);
+    if (stored === null || stored === encoded) continue;
+    if (encoded) next.set(key, encoded);
+    else next.delete(key);
+    changed = true;
+  }
+  return changed ? next : null;
 }
 
 export function activeFilterCount(query: RequestLogQuery): number {

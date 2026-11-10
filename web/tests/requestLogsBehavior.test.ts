@@ -13,6 +13,7 @@ import { JsonTree } from '@/features/taproot-logs/components/JsonTree';
 import { RequestLogFilters } from '@/features/taproot-logs/components/RequestLogFilters';
 import { RequestLogTable } from '@/features/taproot-logs/components/RequestLogTable';
 import { isFormattableJson, parseJsonBody } from '@/features/taproot-logs/model/body';
+import { encodeUrlValue } from '@/utils/urlValue';
 import { childPage } from '@/features/taproot-logs/model/jsonTree';
 import { JsonNumber, JsonObject, parseJsonValue } from '@/features/taproot-logs/model/jsonValue';
 import {
@@ -24,7 +25,12 @@ import {
   walkFailed,
   walkLoaded,
 } from '@/features/taproot-logs/model/listState';
-import { DEFAULT_QUERY, parseQuery, writeQuery } from '@/features/taproot-logs/model/query';
+import {
+  DEFAULT_QUERY,
+  encodePlainValues,
+  parseQuery,
+  writeQuery,
+} from '@/features/taproot-logs/model/query';
 import { parseUpstream } from '@/features/taproot-logs/model/upstream';
 import { THEMES, contrast, mustColor, readWeb } from './helpers/themeTokens';
 
@@ -45,13 +51,18 @@ const row = (id: string): RequestLogMeta => ({
 });
 
 describe('request log list state', () => {
-  const loaded = walkLoaded({ logs: [row('a'), row('b')], nextCursor: 'c1' });
+  const loaded = walkLoaded({ logs: [row('a'), row('b')], nextCursor: 'c1' }, 1000);
 
   test('a failed refresh of the same filters keeps the list and its cursor', () => {
     const failed = walkFailed(startWalk(loaded), true, 'unavailable');
     expect(failed.rows.map((r) => r.requestId)).toEqual(['a', 'b']);
     expect(failed.nextCursor).toBe('c1');
     expect(failed).toMatchObject({ loading: false, loaded: true, error: 'unavailable' });
+  });
+
+  test('the cursor keeps its time anchor until a refresh succeeds', () => {
+    expect(walkFailed(startWalk(loaded), true, 'unavailable').anchor).toBe(1000);
+    expect(walkLoaded({ logs: [row('c')], nextCursor: 'c2' }, 2000).anchor).toBe(2000);
   });
 
   test('a failed walk for new filters does not show the old filters rows', () => {
@@ -236,6 +247,19 @@ describe('formatted JSON shows what was stored', () => {
   });
 });
 
+describe('deeply nested JSON', () => {
+  const depth = 100_000;
+  test('valid JSON too deep for the formatter says so instead of calling it invalid', () => {
+    const text = '['.repeat(depth) + ']'.repeat(depth);
+    expect(parseJsonBody(text)).toEqual({ ok: false, reason: 'too_deep' });
+    expect(en.taproot_logs.body.too_deep_to_format).toContain('too deeply');
+  });
+
+  test('invalid JSON that is also deep is still invalid', () => {
+    expect(parseJsonBody('['.repeat(depth))).toEqual({ ok: false, reason: 'invalid' });
+  });
+});
+
 describe('stream events', () => {
   test('[DONE] gets no Formatted toggle that would do nothing', () => {
     expect(isFormattableJson('[DONE]')).toBe(false);
@@ -320,6 +344,25 @@ describe('request log search and emails', () => {
     );
     expect(html).not.toContain('alice@example.com');
     expect(html).toContain('Clear Search');
+  });
+});
+
+describe('links from before encoding', () => {
+  test('a plain search or session id is rewritten encoded, keeping the other params', () => {
+    const next = encodePlainValues(
+      new URLSearchParams('q=alice%40example.com&sessionId=s-1&status=429&requestId=r1')
+    );
+    expect(next?.toString()).not.toContain('alice');
+    expect(next?.get('q')).toBe(encodeUrlValue('alice@example.com'));
+    expect(next?.get('sessionId')).toBe(encodeUrlValue('s-1'));
+    expect(next?.get('status')).toBe('429');
+    expect(next?.get('requestId')).toBe('r1');
+  });
+
+  test('an encoded address bar is left alone', () => {
+    const params = writeQuery(new URLSearchParams(), { ...DEFAULT_QUERY, q: 'alice@example.com' });
+    expect(encodePlainValues(params)).toBeNull();
+    expect(encodePlainValues(new URLSearchParams('range=1h'))).toBeNull();
   });
 });
 

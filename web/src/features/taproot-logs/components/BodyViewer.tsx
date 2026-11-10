@@ -181,6 +181,12 @@ function RawText({ text: raw }: { text: string }) {
   );
 }
 
+const NOT_FORMATTED = {
+  too_large: 'taproot_logs.body.too_large_to_format',
+  too_deep: 'taproot_logs.body.too_deep_to_format',
+  invalid: 'taproot_logs.body.not_json',
+} as const;
+
 /** Parses after the first paint so opening a 30 MB body shows "Formatting…" instead of a frozen tab. */
 function useDeferredJson(text: string): ParsedJson | null {
   const [parsed, setParsed] = useState<{ text: string; result: ParsedJson } | null>(null);
@@ -205,13 +211,7 @@ function FormattedJson({ text }: { text: string }) {
   if (!parsed.ok) {
     return (
       <>
-        <div className={styles.notice}>
-          {t(
-            parsed.reason === 'too_large'
-              ? 'taproot_logs.body.too_large_to_format'
-              : 'taproot_logs.body.not_json'
-          )}
-        </div>
+        <div className={styles.notice}>{t(NOT_FORMATTED[parsed.reason])}</div>
         <RawText text={text} />
       </>
     );

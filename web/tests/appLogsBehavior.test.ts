@@ -1,4 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
+import '../src/i18n/index';
+import { AppLogsPanel } from '@/features/taproot-logs/appLogs/AppLogsPanel';
+import { usePrivacyStore } from '@/stores/usePrivacyStore';
+import { encodeUrlValue } from '@/utils/urlValue';
 import { isLogAnchorEvicted } from '@/features/taproot-logs/appLogs/hooks/useLogScroller';
 import {
   formatUtcOffset,
@@ -86,6 +93,27 @@ describe('app log viewer', () => {
     expect(panel).toContain("const LOG_SEARCH_PARAM = 'logQ';");
     expect(panel).toContain('decodeUrlValue(params.get(LOG_SEARCH_PARAM)');
     expect(panel).not.toContain("useState<TabType>('logs')");
+  });
+
+  test('a saved search holding an email shows as a masked chip while emails are hidden', () => {
+    usePrivacyStore.setState({ showEmails: false });
+    const html = renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: [`/?tab=app&logQ=${encodeUrlValue('alice@example.com')}`] },
+        createElement(AppLogsPanel)
+      )
+    );
+    expect(html).not.toContain('alice@example.com');
+    expect(html).toContain('Clear Search logs by content or keyword');
+  });
+
+  test('the line list is a grid whose rows are named by their line', () => {
+    expect(panel).toContain('role="grid"');
+    expect(panel).not.toMatch(/role="list(item)?"/);
+    expect(panel).toMatch(/role="row"\n\s+tabIndex=\{stop\}\n\s+aria-label=\{mask\(line\.raw\)\}/);
+    expect(panel).toContain('aria-keyshortcuts="c"');
+    expect(panel.match(/role="gridcell"/g)).toHaveLength(2);
   });
 
   test('phones wrap each line under its time, whatever the wrap setting', () => {

@@ -24,7 +24,6 @@ export function useRequestLogs(query: RequestLogQuery, enabled = true) {
   const [reloadKey, setReloadKey] = useState(0);
   // Each walk gets a generation; responses from an older filter are dropped.
   const generation = useRef(0);
-  const anchor = useRef(0);
   const loadingMore = useRef(false);
   const walked = useRef<{ query: RequestLogQuery; reloadKey: number } | null>(null);
 
@@ -35,14 +34,14 @@ export function useRequestLogs(query: RequestLogQuery, enabled = true) {
     walked.current = { query, reloadKey };
     const sameQuery = previous?.query === query;
     const current = ++generation.current;
-    anchor.current = Date.now();
+    const anchor = Date.now();
     loadingMore.current = false;
     setState(startWalk);
     taprootApi
-      .requestLogs(toFilter(query, anchor.current, { limit: PAGE_SIZE }))
+      .requestLogs(toFilter(query, anchor, { limit: PAGE_SIZE }))
       .then((page) => {
         if (generation.current !== current) return;
-        setState(walkLoaded(page));
+        setState(walkLoaded(page, anchor));
       })
       .catch((error: unknown) => {
         if (generation.current !== current) return;
@@ -57,7 +56,7 @@ export function useRequestLogs(query: RequestLogQuery, enabled = true) {
     loadingMore.current = true;
     setState(startMore);
     taprootApi
-      .requestLogs(toFilter(query, anchor.current, { cursor, limit: PAGE_SIZE }))
+      .requestLogs(toFilter(query, state.anchor, { cursor, limit: PAGE_SIZE }))
       .then((page) => {
         if (generation.current !== current) return;
         setState((prev) => moreLoaded(prev, page));
@@ -69,7 +68,7 @@ export function useRequestLogs(query: RequestLogQuery, enabled = true) {
       .finally(() => {
         if (generation.current === current) loadingMore.current = false;
       });
-  }, [query, state.nextCursor, state.loading]);
+  }, [query, state.nextCursor, state.loading, state.anchor]);
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 

@@ -1,7 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MaskedValueChip } from '@/components/common/MaskedValueChip';
-import { useHidesValue } from '@/hooks/useEmailMask';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { IconSearch, IconX } from '@/components/ui/icons';
@@ -12,6 +11,7 @@ import {
   DEFAULT_QUERY,
   type RequestLogQuery,
 } from '../model/query';
+import { useMaskableField } from '../hooks/useMaskableField';
 import styles from './RequestLogFilters.module.scss';
 
 const DEBOUNCE_MS = 300;
@@ -24,6 +24,9 @@ function DebouncedInput({
   placeholder,
   list,
   icon,
+  autoFocus,
+  onFocus,
+  onBlur,
 }: {
   value: string;
   onCommit: (value: string) => void;
@@ -31,6 +34,9 @@ function DebouncedInput({
   placeholder: string;
   list?: string;
   icon?: boolean;
+  autoFocus?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(value);
@@ -54,7 +60,12 @@ function DebouncedInput({
             onCommit('');
           }
         }}
-        onBlur={() => draft !== value && onCommit(draft)}
+        onFocus={onFocus}
+        onBlur={() => {
+          if (draft !== value) onCommit(draft);
+          onBlur?.();
+        }}
+        autoFocus={autoFocus}
         aria-label={label}
         placeholder={placeholder}
         list={list}
@@ -78,6 +89,27 @@ function DebouncedInput({
   );
 }
 
+/** A text field whose value can hold an email, shown masked while emails are hidden. */
+function MaskableInput(props: {
+  value: string;
+  onCommit: (value: string) => void;
+  label: string;
+  placeholder: string;
+  icon?: boolean;
+}) {
+  const field = useMaskableField(props.value);
+  if (field.masked) {
+    return (
+      <MaskedValueChip
+        value={props.value}
+        label={props.label}
+        onClear={field.clearToInput(() => props.onCommit(''))}
+      />
+    );
+  }
+  return <DebouncedInput {...props} {...field.inputProps} />;
+}
+
 export function RequestLogFilters({
   query,
   onChange,
@@ -91,8 +123,6 @@ export function RequestLogFilters({
 }) {
   const { t } = useTranslation();
   const modelListId = useId();
-  const hideSearch = useHidesValue(query.q);
-  const hideSession = useHidesValue(query.sessionId);
   const set = <K extends keyof RequestLogQuery>(key: K, value: RequestLogQuery[K]) =>
     onChange({ ...query, [key]: value });
   const active = activeFilterCount(query);
@@ -107,21 +137,13 @@ export function RequestLogFilters({
   return (
     <div className={styles.filters} role="search" aria-label={t('taproot_logs.filters.label')}>
       <div className={styles.search}>
-        {hideSearch ? (
-          <MaskedValueChip
-            value={query.q}
-            label={t('taproot_logs.filters.search')}
-            onClear={() => set('q', '')}
-          />
-        ) : (
-          <DebouncedInput
-            value={query.q}
-            onCommit={(value) => set('q', value)}
-            label={t('taproot_logs.filters.search')}
-            placeholder={t('taproot_logs.filters.search_placeholder')}
-            icon
-          />
-        )}
+        <MaskableInput
+          value={query.q}
+          onCommit={(value) => set('q', value)}
+          label={t('taproot_logs.filters.search')}
+          placeholder={t('taproot_logs.filters.search_placeholder')}
+          icon
+        />
       </div>
       <Select
         className={styles.select}
@@ -176,20 +198,12 @@ export function RequestLogFilters({
         </datalist>
       </div>
       <div className={styles.small}>
-        {hideSession ? (
-          <MaskedValueChip
-            value={query.sessionId}
-            label={t('taproot_logs.filters.session')}
-            onClear={() => set('sessionId', '')}
-          />
-        ) : (
-          <DebouncedInput
-            value={query.sessionId}
-            onCommit={(value) => set('sessionId', value)}
-            label={t('taproot_logs.filters.session')}
-            placeholder={t('taproot_logs.filters.session')}
-          />
-        )}
+        <MaskableInput
+          value={query.sessionId}
+          onCommit={(value) => set('sessionId', value)}
+          label={t('taproot_logs.filters.session')}
+          placeholder={t('taproot_logs.filters.session')}
+        />
       </div>
       {active > 0 && (
         <Button variant="ghost" size="sm" onClick={() => onChange(DEFAULT_QUERY)}>

@@ -14,7 +14,13 @@ import { RequestLogFilters } from './components/RequestLogFilters';
 import { RequestLogTable } from './components/RequestLogTable';
 import { StorageStats } from './components/StorageStats';
 import { useRequestLogs } from './hooks/useRequestLogs';
-import { parseQuery, writeQuery, type DetailState, type RequestLogQuery } from './model/query';
+import {
+  encodePlainValues,
+  parseQuery,
+  writeQuery,
+  type DetailState,
+  type RequestLogQuery,
+} from './model/query';
 import styles from './TaprootLogsPage.module.scss';
 
 type Tab = 'requests' | 'app';
@@ -107,6 +113,11 @@ function RequestLogsView({
   const navigate = useNavigate();
   const location = useLocation();
   const openedFromList = (location.state as DetailState | null)?.fromList === true;
+
+  useEffect(() => {
+    const encoded = encodePlainValues(params);
+    if (encoded) setParams(encoded, { replace: true });
+  }, [params, setParams]);
 
   useEffect(() => {
     let cancelled = false;

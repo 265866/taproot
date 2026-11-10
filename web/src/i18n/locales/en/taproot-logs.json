@@ -115,6 +115,7 @@
       "formatting": "Formatting…",
       "too_large_to_format": "Too large to format in the browser; showing raw text. Download raw to read it whole.",
       "not_json": "Not valid JSON; showing raw text.",
+      "too_deep_to_format": "Nested too deeply to format in the browser; showing raw text.",
       "show_more_events": "Show more events ({{count}} left)"
     },
     "blob": {

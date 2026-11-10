@@ -30,13 +30,18 @@ export function sniffBody(text: string): BodyKind {
 }
 
 export type ParsedJson =
-  { ok: true; value: JsonValue } | { ok: false; reason: 'invalid' | 'too_large' };
+  { ok: true; value: JsonValue } | { ok: false; reason: 'invalid' | 'too_large' | 'too_deep' };
 
 export function parseJsonBody(text: string): ParsedJson {
   if (text.length > PARSE_LIMIT_BYTES) return { ok: false, reason: 'too_large' };
   try {
     return { ok: true, value: parseJsonValue(text) };
-  } catch {
+  } catch (error) {
+    // The lossless parser recurses and runs out of stack on JSON nested thousands deep, which the
+    // native parser still accepts.
+    if (error instanceof RangeError && isFormattableJson(text)) {
+      return { ok: false, reason: 'too_deep' };
+    }
     return { ok: false, reason: 'invalid' };
   }
 }
