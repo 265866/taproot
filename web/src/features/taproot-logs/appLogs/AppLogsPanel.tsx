@@ -24,7 +24,7 @@ import {
   IconTrash2,
   IconX,
 } from '@/components/ui/icons';
-import { outcomeFromError, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_STARTED, outcomeFromError, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { useEmailMask } from '@/hooks/useEmailMask';
@@ -165,9 +165,12 @@ export function AppLogsPanel() {
     }
   };
 
-  useHeaderRefresh(async () =>
-    outcomeFromError(activeTab === 'errors' ? await loadErrorLogs() : await loadLogs(false))
-  );
+  useHeaderRefresh(async () => {
+    if (activeTab === 'errors') return outcomeFromError(await loadErrorLogs());
+    // With file logging off there is nothing to reload, so claim no success.
+    if (!useConfigStore.getState().config?.loggingToFile) return REFRESH_STARTED;
+    return outcomeFromError(await loadLogs(false));
+  });
 
   const downloadErrorLog = async (name: string) => {
     const session = requests.session.capture();
