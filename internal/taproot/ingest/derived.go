@@ -56,11 +56,19 @@ func rebuildDerived(ctx context.Context, db *sql.DB) error {
 	return store.WithImmediateTx(ctx, db, func(c *sql.Conn) error {
 		started := time.Now()
 		var stale []derivedTable
+		// Tables that share a source share its count, which scans every event.
+		counts := map[string]int64{}
 		for _, t := range derivedTables() {
+			n, ok := counts[t.source]
+			if !ok {
+				if err := c.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events WHERE `+t.source).Scan(&n); err != nil {
+					return fmt.Errorf("count events for %s: %w", t.name, err)
+				}
+				counts[t.source] = n
+			}
 			var rebuild bool
-			if err := c.QueryRowContext(ctx, `SELECT (NOT EXISTS (SELECT 1 FROM `+t.name+`)
-				AND EXISTS (SELECT 1 FROM usage_events WHERE `+t.source+`))
-				OR (SELECT COUNT(*) FROM usage_events WHERE `+t.source+`) <> (`+t.covered+`)`).Scan(&rebuild); err != nil {
+			if err := c.QueryRowContext(ctx, `SELECT (NOT EXISTS (SELECT 1 FROM `+t.name+`) AND ? > 0) OR ? <> (`+t.covered+`)`,
+				n, n).Scan(&rebuild); err != nil {
 				return fmt.Errorf("check %s: %w", t.name, err)
 			}
 			if rebuild {

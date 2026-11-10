@@ -129,12 +129,12 @@ func TestRemovedAccountsLeaveQuotaViews(t *testing.T) {
 		t.Fatalf("accounts after removal: %+v", accounts.Accounts)
 	}
 
-	// An empty list means the manager has not loaded; nothing is marked.
+	// The attached manager has loaded, so an empty list removes the last one.
 	lister.auths = nil
 	if err := i.refreshAccounts(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if n := queryInt(t, i, `SELECT COUNT(*) FROM accounts WHERE removed_at IS NULL`); n != 1 {
+	if n := queryInt(t, i, `SELECT COUNT(*) FROM accounts WHERE removed_at IS NULL`); n != 0 {
 		t.Fatalf("live accounts after empty list: %d", n)
 	}
 

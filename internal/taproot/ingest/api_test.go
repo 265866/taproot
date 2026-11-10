@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -458,5 +459,56 @@ func TestResetPricesRestoresShippedRowsAndRepricesHistory(t *testing.T) {
 	call(t, r, http.MethodGet, summaryPath, nil, &summary)
 	if summary.Totals.CostUSD != shippedCost {
 		t.Fatalf("cost after reset %v, want the shipped-price cost %v", summary.Totals.CostUSD, shippedCost)
+	}
+}
+
+func TestLongSessionIsMarkedTruncated(t *testing.T) {
+	i, _, clock := newAPI(t)
+	ctx := context.Background()
+	start := clock.t.Add(-24 * time.Hour)
+	seed := func(session string, n int) {
+		t.Helper()
+		if _, err := i.db.ExecContext(ctx, `WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM seq WHERE x < ?)
+			INSERT INTO usage_events (event_key, ts, session_id, provider, model, auth_index, latency_ms, input_tokens, output_tokens)
+			SELECT ?||x, ? + x, ?, 'claude', 'claude-opus-5-5', 'auth-a', 100, 10, 20 FROM seq`, n, session, ms(start), session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("full", sessionsMaxRows)
+	seed("long", sessionsMaxRows+1)
+	pb := newPriceBook(seedPrices)
+	for session, truncated := range map[string]bool{"full": false, "long": true} {
+		s, err := i.loadSession(ctx, session, ms(start), ms(clock.t), pb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.Truncated != truncated || s.Requests != sessionsMaxRows || s.Totals.InputTokens != 10*sessionsMaxRows {
+			t.Fatalf("%s: truncated %v, requests %d, input %d", session, s.Truncated, s.Requests, s.Totals.InputTokens)
+		}
+	}
+}
+
+func TestUsageSummaryNamesUnpricedModels(t *testing.T) {
+	i, r, clock := newAPI(t)
+	ctx := context.Background()
+	for n, model := range []string{"claude-opus-5-5", "unpriced-model", "unpriced-model", "no-tokens-model"} {
+		rec := usage.Record{RequestID: fmt.Sprint(n), Provider: "claude", Model: model, AuthIndex: "auth-a",
+			RequestedAt: clock.t.Add(-time.Hour), Latency: time.Second, Detail: usage.Detail{InputTokens: 1000}}
+		if model == "no-tokens-model" {
+			rec.Detail, rec.Failed = usage.Detail{}, true
+		}
+		i.HandleUsage(ctx, rec)
+	}
+	mustFlush(t, i)
+	var resp struct {
+		Totals Totals `json:"totals"`
+	}
+	call(t, r, http.MethodGet, "/api/usage/summary"+q("from", rfc(clock.t.Add(-2*time.Hour)), "to", rfc(clock.t), "bucket", "1h"), nil, &resp)
+	if resp.Totals.Requests != 4 || strings.Join(resp.Totals.UnpricedModels, ",") != "unpriced-model" || math.Abs(resp.Totals.CostUSD-1000*4/1e6) > 1e-12 {
+		t.Fatalf("totals %+v", resp.Totals)
+	}
+	raw, err := json.Marshal(Totals{})
+	if err != nil || strings.Contains(string(raw), "unpricedModels") {
+		t.Fatalf("priced totals carry unpricedModels: %s", raw)
 	}
 }

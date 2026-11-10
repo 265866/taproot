@@ -48,3 +48,9 @@ export function affinityStats(sessions: UsageSession[]): AffinityStats {
 export function sessionDurationMs(session: Pick<UsageSession, 'firstAt' | 'lastAt'>): number {
   return Math.max(0, Date.parse(session.lastAt) - Date.parse(session.firstAt));
 }
+
+/** A session's request count, with a `+` when the server read only its first requests. */
+export function sessionRequestsLabel(s: Pick<UsageSession, 'requests' | 'truncated'>): string {
+  const count = s.requests.toLocaleString();
+  return s.truncated ? `${count}+` : count;
+}
