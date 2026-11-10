@@ -33,6 +33,16 @@ export const getModelAliasDraftSignature = (entries: ModelAliasDraftEntry[]): st
       )
   );
 
+/** The field a half-filled alias row lacks; a blank or complete row lacks nothing. */
+export const getMissingMappingField = (
+  entry: Pick<ModelAliasDraftEntry, 'name' | 'alias'>
+): 'name' | 'alias' | undefined => {
+  const hasName = Boolean(entry.name?.trim());
+  const hasAlias = Boolean(entry.alias?.trim());
+  if (hasName === hasAlias) return undefined;
+  return hasName ? 'alias' : 'name';
+};
+
 export const isOAuthEditorDirty = (
   initialProvider: string,
   currentProvider: string,
@@ -41,3 +51,22 @@ export const isOAuthEditorDirty = (
 ): boolean =>
   normalizeProviderKey(initialProvider) !== normalizeProviderKey(currentProvider) ||
   baselineContentSignature !== currentContentSignature;
+
+type EscapeKeyEvent = Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'target'>;
+
+const isEditableTarget = (target: EventTarget | null): boolean => {
+  const element = target as { tagName?: string; isContentEditable?: boolean } | null;
+  if (!element) return false;
+  if (element.isContentEditable) return true;
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(String(element.tagName ?? '').toUpperCase());
+};
+
+/**
+ * Escape leaves an editor page only when nothing else claims the key: a field the user is typing
+ * in, a list or menu that closed on it (and prevented its default), or an open dialog.
+ */
+export const isEditorBackEscape = (event: EscapeKeyEvent, layerOpen: boolean): boolean =>
+  event.key === 'Escape' &&
+  !event.defaultPrevented &&
+  !layerOpen &&
+  !isEditableTarget(event.target);

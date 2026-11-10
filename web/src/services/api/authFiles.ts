@@ -388,6 +388,19 @@ const normalizeOauthExcludedModels = (payload: unknown): Record<string, string[]
   return result;
 };
 
+// Fields the dashboard edits. Everything else on an alias entry, such as `display-name` and
+// `openapi`, rides along in `extra` so a save writes it back unchanged.
+const OAUTH_ALIAS_EDITED_FIELDS = new Set([
+  'name',
+  'id',
+  'model',
+  'alias',
+  'fork',
+  'force-mapping',
+  'forceMapping',
+  'extra',
+]);
+
 export const normalizeOauthModelAlias = (
   payload: unknown
 ): Record<string, OAuthModelAliasEntry[]> => {
@@ -418,6 +431,12 @@ export const normalizeOauthModelAlias = (
         if (typeof forceMappingValue === 'boolean') {
           normalizedEntry.forceMapping = forceMappingValue;
         }
+        const extra = isRecord(entry.extra)
+          ? entry.extra
+          : Object.fromEntries(
+              Object.entries(entry).filter(([field]) => !OAUTH_ALIAS_EDITED_FIELDS.has(field))
+            );
+        if (Object.keys(extra).length) normalizedEntry.extra = extra;
         return normalizedEntry;
       })
       .filter(Boolean)
@@ -442,6 +461,7 @@ export const serializeOauthModelAliases = (
 ): Array<Record<string, unknown>> =>
   aliases.map((entry) => {
     const payload: Record<string, unknown> = {
+      ...entry.extra,
       name: entry.name,
       alias: entry.alias,
     };
@@ -478,14 +498,25 @@ function queueOauthMapWrite(path: string, write: () => Promise<void>): Promise<v
   return pending;
 }
 
-async function updateOauthProviderMap(path: string, provider: string, value?: unknown) {
+const UNCHANGED = Symbol('unchanged');
+
+// Computes the provider's next value from the server's current map inside the write queue,
+// so concurrent edits build on each other. Returning undefined removes the provider.
+async function updateOauthProviderMap(
+  path: string,
+  provider: string,
+  nextValue: (current: Record<string, unknown>, key: string) => unknown
+): Promise<boolean> {
   const key = normalizeOAuthProviderKey(provider);
   if (!key) throw new Error('Invalid OAuth provider');
-  return queueOauthMapWrite(path, async () => {
+  let written = false;
+  await queueOauthMapWrite(path, async () => {
     const assertConnection = guardConfigConnection();
     const current = await getConfigValue<unknown>(path, {});
     assertConnection();
     if (current != null && !isRecord(current)) throw new Error('Invalid OAuth configuration map');
+    const value = nextValue(current ?? {}, key);
+    if (value === UNCHANGED) return;
     // v8 reads preserve YAML key spelling. The UI groups normalized providers, so
     // remove every spelling of this provider, preserving unrelated entries verbatim.
     const next = Object.fromEntries(
@@ -500,7 +531,9 @@ async function updateOauthProviderMap(path: string, provider: string, value?: un
       });
     }
     await apiClient.put(path, next);
+    written = true;
   });
+  return written;
 }
 
 export interface AuthFileRefreshResult {
@@ -629,11 +662,13 @@ export const authFilesApi = {
     return normalizeOauthExcludedModels(data);
   },
 
-  saveOauthExcludedModels: (provider: string, models: string[]) =>
-    updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider, models),
+  saveOauthExcludedModels: async (provider: string, models: string[]) => {
+    await updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider, () => models);
+  },
 
-  deleteOauthExcludedEntry: (provider: string) =>
-    updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider),
+  deleteOauthExcludedEntry: async (provider: string) => {
+    await updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider, () => undefined);
+  },
 
   replaceOauthExcludedModels: (map: Record<string, string[]>) =>
     queueOauthMapWrite(OAUTH_EXCLUDED_MODELS_ENDPOINT, async () => {
@@ -647,18 +682,27 @@ export const authFilesApi = {
   },
 
   saveOauthModelAlias: async (channel: string, aliases: OAuthModelAliasEntry[]) => {
-    const normalizedChannel = normalizeOAuthProviderKey(String(channel ?? ''));
-    const normalizedAliases =
-      normalizeOauthModelAlias({ [normalizedChannel]: aliases })[normalizedChannel] ?? [];
-    await updateOauthProviderMap(
-      OAUTH_MODEL_ALIAS_ENDPOINT,
-      normalizedChannel,
-      serializeOauthModelAliases(normalizedAliases)
-    );
+    await authFilesApi.updateOauthModelAlias(channel, () => aliases);
   },
 
-  deleteOauthModelAlias: (channel: string) =>
-    updateOauthProviderMap(OAUTH_MODEL_ALIAS_ENDPOINT, channel),
+  /**
+   * Applies `mutate` to the provider's aliases as the server holds them at write time. Return
+   * null to skip the write, or an empty list to remove the provider. Resolves to whether it wrote.
+   */
+  updateOauthModelAlias: (
+    channel: string,
+    mutate: (current: OAuthModelAliasEntry[]) => OAuthModelAliasEntry[] | null
+  ) =>
+    updateOauthProviderMap(OAUTH_MODEL_ALIAS_ENDPOINT, channel, (current, key) => {
+      const next = mutate(normalizeOauthModelAlias(current)[key] ?? []);
+      if (next === null) return UNCHANGED;
+      const normalized = normalizeOauthModelAlias({ [key]: next })[key] ?? [];
+      return normalized.length ? serializeOauthModelAliases(normalized) : undefined;
+    }),
+
+  deleteOauthModelAlias: async (channel: string) => {
+    await updateOauthProviderMap(OAUTH_MODEL_ALIAS_ENDPOINT, channel, () => undefined);
+  },
 
   // Get models supported by the credential
   async getModelsForAuthFile(

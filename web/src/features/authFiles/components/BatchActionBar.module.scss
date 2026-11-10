@@ -58,19 +58,56 @@
   transform: scale(0.96);
 }
 
+// A dimmed near-white fill still reads as the strongest control on the bar.
+.bar :global(.btn.btn-primary:disabled) {
+  opacity: 1;
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-tertiary);
+}
+
+.shortLabel {
+  display: none;
+}
+
+// On a phone the count sits on its own line, then the four selection controls and the four actions
+// each share one row with short labels, so every control shows without scrolling.
 @include mobile {
   .container {
     width: calc(100vw - 16px);
   }
 
+  // A wrapping column sizes its line to the widest child, so the rows would overflow the bar.
   .bar {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
+    gap: 8px;
+    padding: 8px 10px;
   }
 
   .left,
   .right {
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .count {
+    grid-column: 1 / -1;
+  }
+
+  .bar :global(.btn) {
+    min-width: 0;
+    padding-inline: 4px;
+    white-space: nowrap;
+  }
+
+  .longLabel {
+    display: none;
+  }
+
+  .shortLabel {
+    display: inline;
   }
 }
 

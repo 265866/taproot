@@ -13,6 +13,8 @@ interface OAuthAliasMappingRowProps {
   options: { value: string; label?: string }[];
   disabled: boolean;
   canRemove: boolean;
+  /** Set after a save attempt when the row has only one of its two fields. */
+  missingField?: 'name' | 'alias';
   onChange: (field: keyof OAuthModelAliasEntry, value: string | boolean) => void;
   onRemove: () => void;
 }
@@ -23,6 +25,7 @@ export function OAuthAliasMappingRow({
   options,
   disabled,
   canRemove,
+  missingField,
   onChange,
   onRemove,
 }: OAuthAliasMappingRowProps) {
@@ -46,6 +49,7 @@ export function OAuthAliasMappingRow({
           onChange={(value) => onChange('name', value)}
           disabled={disabled}
           options={options}
+          error={missingField === 'name' ? t('oauth_model_alias.missing_source') : undefined}
         />
         <span className={styles.mappingSeparator} aria-hidden="true">
           →
@@ -61,7 +65,14 @@ export function OAuthAliasMappingRow({
             disabled={disabled}
             autoComplete="off"
             spellCheck={false}
+            aria-invalid={missingField === 'alias' ? true : undefined}
+            aria-describedby={missingField === 'alias' ? `${id}-alias-error` : undefined}
           />
+          {missingField === 'alias' && (
+            <div id={`${id}-alias-error`} className="error-box">
+              {t('oauth_model_alias.missing_alias')}
+            </div>
+          )}
         </div>
       </div>
       <div className={styles.mappingFooter}>
