@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { Button } from '@/components/ui/Button';
@@ -91,7 +91,13 @@ export function AccountsPage() {
   const navigate = useNavigate();
 
   const [range, setRange] = useState<DateRange>(() => defaultRange(Date.now()));
-  const [tab, setTab] = useState('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // `?provider=codex` (or `?signIn=codex`) opens on that provider's tab, as links from the
+  // Dashboard do.
+  const [tab, setTab] = useState(() => {
+    const provider = searchParams.get('provider') ?? searchParams.get('signIn');
+    return provider ? normalizeProviderKey(provider) : 'all';
+  });
   const [view, setView] = useState<ChartView>('remaining');
   const [burnHours, setBurnHours] = useState<BurnWindowHours>(3);
   const [future, setFuture] = useState<FutureUsage>('same');
@@ -180,6 +186,20 @@ export function AccountsPage() {
     void loadFilesInBackground();
     void reloadQuota();
   }, [loadFilesInBackground, reloadQuota]);
+
+  // A started sign-in or a chosen tab is not part of the page's address: a reload must not
+  // start the sign-in again.
+  const clearDeepLink = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('signIn');
+        next.delete('provider');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [setSearchParams]);
 
   const reloadAll = useCallback(async () => {
     const [quotaError, filesError] = await Promise.all([reloadQuota(), loadFilesInBackground()]);
@@ -409,6 +429,8 @@ export function AccountsPage() {
             disableControls={disableControls}
             onUpload={handleUploadClick}
             onAdded={reloadAfterSignIn}
+            startProvider={searchParams.get('signIn')}
+            onStartHandled={clearDeepLink}
           />
         </div>
       </header>

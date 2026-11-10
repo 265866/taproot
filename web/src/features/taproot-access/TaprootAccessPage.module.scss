@@ -303,6 +303,16 @@
   gap: 10px;
   padding: 12px 20px;
 
+  // The request a link opened the page for (`?focus=`).
+  &[data-focused] {
+    background: var(--bg-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
   & + & {
     border-top: 1px solid var(--border-color);
   }

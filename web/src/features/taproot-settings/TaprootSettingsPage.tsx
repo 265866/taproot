@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
@@ -41,6 +42,7 @@ type Save = (update: TaprootSettingsUpdate) => Promise<void>;
 
 export function TaprootSettingsPage() {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
   const [settings, setSettings] = useState<TaprootSettings | null>(null);
   const [me, setMe] = useState<TaprootMe | null>(null);
   const [error, setError] = useState('');
@@ -127,7 +129,13 @@ export function TaprootSettingsPage() {
           />
           <BackupsSection settings={settings.backups} zone={settings.info} save={save} />
           <IngestSection settings={settings.ingest} save={save} />
-          {settings.alerts && <AlertsSection settings={settings.alerts} save={save} />}
+          {settings.alerts && (
+            <AlertsSection
+              settings={settings.alerts}
+              save={save}
+              focused={searchParams.get('section') === 'alerts'}
+            />
+          )}
           <AboutSection settings={settings} me={me} />
         </div>
       )}

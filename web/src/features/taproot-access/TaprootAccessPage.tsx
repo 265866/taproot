@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
@@ -17,6 +18,7 @@ import { IconCopy, IconPencil, IconPlus, IconSearch } from '@/components/ui/icon
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { REFRESH_CANCELLED, REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
+import { useFocusOnArrival } from '@/hooks/useFocusOnArrival';
 import {
   TaprootApiError,
   taprootApi,
@@ -62,6 +64,7 @@ type Translate = ReturnType<typeof useTranslation>['t'];
 type SetDraft = (update: (draft: AccessDraft | null) => AccessDraft | null) => void;
 
 export function TaprootAccessPage() {
+  const [searchParams] = useSearchParams();
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const { mask } = useEmailMask();
@@ -218,6 +221,7 @@ export function TaprootAccessPage() {
           }}
           onAllow={allow}
           onDeny={(request) => void deny(request)}
+          focusNodeId={searchParams.get('focus')}
         />
       )}
     </div>
@@ -240,6 +244,8 @@ export interface AccessViewProps {
   onDeny: (request: AccessRequest) => void;
   /** Starts with the folded devices shown, for tests. */
   initiallyUnfolded?: boolean;
+  /** A device's node ID whose request the page scrolls to and focuses (`?focus=`). */
+  focusNodeId?: string | null;
 }
 
 /** The loaded page: requests, the device table, and the save bar. */
@@ -258,6 +264,7 @@ export function AccessView({
   onAllow,
   onDeny,
   initiallyUnfolded = false,
+  focusNodeId = null,
 }: AccessViewProps) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
@@ -314,6 +321,7 @@ export function AccessView({
               disabled={!data.enabled}
               onAllow={onAllow}
               onDeny={onDeny}
+              focused={request.nodeId === focusNodeId}
             />
           ))}
         </section>
@@ -420,6 +428,7 @@ function RequestRow({
   disabled,
   onAllow,
   onDeny,
+  focused,
 }: {
   request: AccessRequest;
   /** The requesting device's row, when the page lists it. */
@@ -428,6 +437,8 @@ function RequestRow({
   disabled: boolean;
   onAllow: AccessViewProps['onAllow'];
   onDeny: AccessViewProps['onDeny'];
+  /** The page was opened for this request: scroll to it and focus it. */
+  focused: boolean;
 }) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
@@ -435,6 +446,8 @@ function RequestRow({
   const [form, setForm] = useState<AllowForm | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const rowRef = useRef<HTMLDivElement>(null);
+  useFocusOnArrival(rowRef, focused);
   const name = nameText(
     deviceName({
       label: device?.label ?? '',
@@ -471,7 +484,12 @@ function RequestRow({
   };
 
   return (
-    <div className={styles.request}>
+    <div
+      className={styles.request}
+      ref={rowRef}
+      tabIndex={focused ? -1 : undefined}
+      data-focused={focused || undefined}
+    >
       <div className={styles.requestHead}>
         <span className={styles.device}>
           <span className={styles.name}>
