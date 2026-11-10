@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -35,11 +36,17 @@ type ClientRequest struct {
 	Latency   time.Duration
 	// TTFT is the time to the first response byte of a stream, or zero.
 	TTFT time.Duration
-	// Attempts counts upstream attempts; nil when no usage record can be
-	// linked to the request.
+	// Attempts counts upstream attempts: 0 when no account was tried, nil
+	// when unknown.
 	Attempts     *int
 	ErrorCode    string
 	ErrorMessage string
+	// ClientGone says the client's connection closed before the handler
+	// returned. Go cancels the request's context as soon as the client
+	// closes, which a client may do right after the last event of a complete
+	// stream, so the request counts as abandoned only if its last linked
+	// attempt did not succeed.
+	ClientGone bool
 }
 
 const (
@@ -67,6 +74,7 @@ type RequestLink struct {
 
 	attempts    int
 	lastAttempt time.Time
+	lastOK      bool
 	model       string
 	provider    string
 	authIndex   string
@@ -75,13 +83,18 @@ type RequestLink struct {
 }
 
 // pendingRequest is a finished client request waiting to be written. A
-// websocket's entry carries no row and only ends its link.
+// websocket's entry carries no row of its own once it served a turn, and
+// carries the turns that left no usage record.
 type pendingRequest struct {
 	req       ClientRequest
 	link      *RequestLink
 	errorBody []byte
 	ready     time.Time
 	noRow     bool
+	// refused are websocket turns refused before any account was tried;
+	// unexplained are turns that count only when the connection published
+	// no usage record at all.
+	refused, unexplained []ClientRequest
 }
 
 // TrackRequest starts linking usage records to the client request with
@@ -122,17 +135,25 @@ func (i *Ingest) FinishRequest(link *RequestLink, r ClientRequest, errorBody []b
 	p := pendingRequest{req: r, link: link, errorBody: errorBody, ready: i.now().Add(clientSettle)}
 	if link != nil {
 		p.req.Device = link.device
-		if link.websocket {
-			i.linkMu.Lock()
-			turns := link.turns
-			i.linkMu.Unlock()
-			// A connection that served a turn is recorded per turn; one that
-			// failed before any turn, such as a refused upgrade, is one request.
-			p.noRow = turns > 0 || r.Status < http.StatusBadRequest
-		}
 	} else if r.RequestID != "" {
 		p.req.Device = i.requestDevice(r.RequestID)
 	}
+	i.enqueueRequest(p)
+}
+
+// FinishWebsocket queues the end of a Responses websocket with the turns
+// that published no usage record. refused are turns upstream refused before
+// trying any account. unexplained are the connection's other turn errors:
+// once the settle wait is over, they count as refused turns only if the
+// connection published no usage record, because then no attempt explains
+// them.
+func (i *Ingest) FinishWebsocket(link *RequestLink, r ClientRequest, refused, unexplained []ClientRequest) {
+	if link == nil {
+		i.FinishRequest(nil, r, nil)
+		return
+	}
+	p := pendingRequest{req: r, link: link, ready: i.now().Add(clientSettle), refused: refused, unexplained: unexplained}
+	p.req.Device = link.device
 	i.enqueueRequest(p)
 }
 
@@ -184,6 +205,7 @@ func (i *Ingest) observeAttempt(r usage.Record) {
 	}
 	l.attempts++
 	l.lastAttempt = r.RequestedAt
+	l.lastOK = !r.Failed
 	if l.websocket {
 		l.turns++
 	}
@@ -256,21 +278,47 @@ func (i *Ingest) takeRequests(readyBy time.Time) []ClientRequest {
 
 	out := make([]ClientRequest, 0, len(ready))
 	for _, p := range ready {
+		var turns []ClientRequest
 		if p.link != nil {
 			i.linkMu.Lock()
 			l := p.link
 			if i.links[l.traceID] == l {
 				delete(i.links, l.traceID)
 			}
+			if l.websocket {
+				// A connection that served a turn is recorded per turn; one that
+				// failed before any turn, such as a refused upgrade, is one request.
+				p.noRow = l.turns > 0 || p.req.Status < http.StatusBadRequest
+				turns = slices.Clone(p.refused)
+				if l.turns == 0 {
+					turns = append(turns, p.unexplained...)
+				}
+				zero := 0
+				for k := range turns {
+					turns[k].Attempts, turns[k].Failed, turns[k].Device = &zero, true, l.device
+					turns[k].Model = cmp.Or(turns[k].Model, l.model)
+				}
+			}
 			if !p.noRow {
-				attempts := l.attempts
-				p.req.Attempts = &attempts
+				if p.req.ClientGone && (l.attempts == 0 || !l.lastOK) {
+					p.req.Status = StatusClientClosed
+				}
+				// A request answered without an error went to an account even
+				// when none of its usage records arrived in time.
+				if attempts := l.attempts; attempts > 0 || p.req.Status >= http.StatusBadRequest {
+					p.req.Attempts = &attempts
+				}
 				p.req.Model = cmp.Or(l.model, p.req.Model)
 				p.req.Provider = cmp.Or(l.provider, p.req.Provider)
 				p.req.AuthIndex = cmp.Or(l.authIndex, p.req.AuthIndex)
 				p.req.Stream = p.req.Stream || l.stream
 			}
 			i.linkMu.Unlock()
+		} else if p.req.ClientGone {
+			p.req.Status = StatusClientClosed
+		}
+		for _, t := range turns {
+			out = append(out, i.finalize(t, nil))
 		}
 		if p.noRow {
 			continue
@@ -404,12 +452,24 @@ func (d *slotDelta) add(r ClientRequest) {
 		d.failed++
 	}
 	d.retries += retries(r.Attempts)
-	d.latency.add(r.Latency.Milliseconds())
-	if r.TTFT > 0 {
-		d.ttft.add(r.TTFT.Milliseconds())
+	if servedTiming(r.Attempts, r.Status) {
+		d.latency.add(r.Latency.Milliseconds())
+		if r.TTFT > 0 {
+			d.ttft.add(r.TTFT.Milliseconds())
+		}
 	}
 }
 
+// servedTiming says whether a request's latency and time to first token
+// describe the pool serving it: it reached an account, or may have when its
+// attempts are unknown, and the client did not abandon it. A refusal answers
+// in microseconds and an abandoned request stops when the client gives up,
+// so either would pull the medians away from what serving a request takes.
+func servedTiming(attempts *int, status int) bool {
+	return (attempts == nil || *attempts > 0) && status != StatusClientClosed
+}
+
+// retries is the attempts beyond the first; unknown attempts count none.
 func retries(attempts *int) int64 {
 	if attempts == nil || *attempts < 2 {
 		return 0
@@ -517,7 +577,7 @@ func rebuildClientSlots(ctx context.Context, db *sql.DB) error {
 		if !stale {
 			return nil
 		}
-		rows, err := c.QueryContext(ctx, `SELECT ts, device_id, model, failed, attempts, latency_ms, COALESCE(ttft_ms, 0) FROM client_requests`)
+		rows, err := c.QueryContext(ctx, `SELECT ts, device_id, model, status, failed, attempts, latency_ms, COALESCE(ttft_ms, 0) FROM client_requests`)
 		if err != nil {
 			return fmt.Errorf("read client requests: %w", err)
 		}
@@ -529,7 +589,7 @@ func rebuildClientSlots(ctx context.Context, db *sql.DB) error {
 				ts, lat, ttft int64
 				attempts      sql.NullInt64
 			)
-			if err := rows.Scan(&ts, &r.Device.ID, &r.Model, &r.Failed, &attempts, &lat, &ttft); err != nil {
+			if err := rows.Scan(&ts, &r.Device.ID, &r.Model, &r.Status, &r.Failed, &attempts, &lat, &ttft); err != nil {
 				closeRows(rows)
 				return fmt.Errorf("scan client request: %w", err)
 			}

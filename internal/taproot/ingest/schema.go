@@ -165,9 +165,10 @@ CREATE TABLE IF NOT EXISTS price_seed (
 );
 
 -- One row per client request on a proxy route, or per websocket turn. ts is
--- the request's start. attempts is NULL when no usage record could be
--- linked; 0 means no account was tried. request_id is upstream's request ID,
--- which request logs and usage_events.trace_id share.
+-- the request's start. attempts is 0 when no account was tried, and NULL
+-- when unknown: nothing links the request, or it was answered without an
+-- error but none of its usage records arrived. request_id is upstream's
+-- request ID, which request logs and usage_events.trace_id share.
 CREATE TABLE IF NOT EXISTS client_requests (
 	id INTEGER PRIMARY KEY,
 	ts INTEGER NOT NULL,
@@ -187,8 +188,8 @@ CREATE TABLE IF NOT EXISTS client_requests (
 	error_code TEXT NOT NULL DEFAULT '',
 	error_message TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS client_requests_ts ON client_requests(ts, id);
-CREATE INDEX IF NOT EXISTS client_requests_failed_ts ON client_requests(ts, id) WHERE failed = 1;
+CREATE INDEX IF NOT EXISTS client_requests_ts ON client_requests(ts);
+CREATE INDEX IF NOT EXISTS client_requests_failed_ts ON client_requests(ts) WHERE failed = 1;
 CREATE INDEX IF NOT EXISTS client_requests_device_ts ON client_requests(device_id, ts);
 
 -- Derived from client_requests in 15-minute slots (ts / 900000), which every

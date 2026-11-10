@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/265866/taproot/internal/interfaces"
 	"github.com/265866/taproot/internal/logging"
 	"github.com/265866/taproot/internal/taproot/ingest"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -69,7 +71,7 @@ func clientRequestKind(c *gin.Context) (record, websocket bool) {
 // the rewritten error. On the request path it only takes timestamps and
 // keeps the first bytes of the body and of an error response; the database
 // write happens on ingest's writer.
-func clientRequests(sink *ingest.Ingest) gin.HandlerFunc {
+func clientRequests(sink *ingest.Ingest, accounts *noAccounts) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		record, websocket := clientRequestKind(c)
 		if !record {
@@ -101,17 +103,30 @@ func clientRequests(sink *ingest.Ingest) gin.HandlerFunc {
 			var errBody []byte
 			if w != nil {
 				c.Writer = w.ResponseWriter
-				if !w.first.IsZero() && isStream(w.Header()) {
-					r.Stream, r.TTFT = true, w.first.Sub(start)
+				if w.wrote && isStream(w.Header()) {
+					r.Stream = true
+					if !w.first.IsZero() {
+						r.TTFT = w.first.Sub(start)
+					}
 				}
 				errBody = w.errBody
 			}
 			r.Model = requestModel(c, body)
 			body.release()
-			if !returned {
+			switch {
+			case !returned:
 				// A panic: upstream's recovery answers 500 once it unwinds.
 				r.Status, r.Failed, r.ErrorCode = http.StatusInternalServerError, true, "internal_error"
-			} else {
+			case websocket:
+				// After the upgrade, each turn is a request and the errors in
+				// the context are the turns'.
+				r.Failed = r.Status >= http.StatusBadRequest
+				if !r.Failed {
+					refused, unexplained := refusedTurns(c, accounts, r)
+					sink.FinishWebsocket(link, r, refused, unexplained)
+					return
+				}
+			default:
 				classify(c, clientCtx, &r)
 			}
 			sink.FinishRequest(link, r, errBody)
@@ -123,7 +138,9 @@ func clientRequests(sink *ingest.Ingest) gin.HandlerFunc {
 
 // classify sets whether the request failed. A stream that already sent 200
 // and then ended in an error takes that error's status, as the request log
-// does. A request the client abandoned is 499 and not a failure.
+// does. A request the client abandoned is 499 and not a failure; when only
+// the client's context says so, ingest decides from the request's last
+// attempt (see ingest.ClientRequest.ClientGone).
 func classify(c *gin.Context, clientCtx context.Context, r *ingest.ClientRequest) {
 	if v, ok := c.Get(noAccountKey); ok {
 		refused, _ := v.(noAccount)
@@ -131,10 +148,7 @@ func classify(c *gin.Context, clientCtx context.Context, r *ingest.ClientRequest
 		r.Model = cmp.Or(refused.model, r.Model)
 		return
 	}
-	var errs []*interfaces.ErrorMessage
-	if v, ok := c.Get("API_RESPONSE_ERROR"); ok {
-		errs, _ = v.([]*interfaces.ErrorMessage)
-	}
+	errs := apiResponseErrors(c)
 	var actionable *interfaces.ErrorMessage
 	cancelled := false
 	for k := len(errs) - 1; k >= 0; k-- {
@@ -164,9 +178,60 @@ func classify(c *gin.Context, clientCtx context.Context, r *ingest.ClientRequest
 		if actionable.Error != nil {
 			r.ErrorMessage = actionable.Error.Error()
 		}
-	case cancelled || clientCtx.Err() != nil:
+	case cancelled:
 		r.Status = ingest.StatusClientClosed
+	case clientCtx.Err() != nil:
+		r.ClientGone = true
 	}
+}
+
+// apiResponseErrors are the errors upstream's handlers reported for the
+// request, oldest first.
+func apiResponseErrors(c *gin.Context) []*interfaces.ErrorMessage {
+	v, _ := c.Get("API_RESPONSE_ERROR")
+	errs, _ := v.([]*interfaces.ErrorMessage)
+	return errs
+}
+
+// refusalCodes are the codes of upstream's auth manager errors for a request
+// it found no account to try for. Without Home mode, which taproot refuses,
+// the manager reports an attempted account's error instead whenever it tried
+// one, so these mean no account was tried.
+var refusalCodes = map[string]bool{
+	"auth_not_found": true, "auth_unavailable": true, "auth_disabled": true, "model_cooldown": true,
+	"provider_not_found": true, "executor_not_found": true, "session_auth_unavailable": true,
+}
+
+// refusedTurns reads the turns of a Responses websocket that published no
+// usage record from the errors upstream reported into the connection's gin
+// context, which is the only place it reports them. refused are turns no
+// account was tried for: no account serves the model, or every account that
+// does is cooling down or unavailable. unexplained are the other errors
+// except client cancellations, such as a turn the per-turn API key check
+// refused or a malformed turn; they are turns only if the connection
+// published no usage record, since otherwise an attempt may explain them.
+// The errors carry no time, so each turn is dated when the connection ends.
+func refusedTurns(c *gin.Context, accounts *noAccounts, conn ingest.ClientRequest) (refused, unexplained []ingest.ClientRequest) {
+	for _, e := range apiResponseErrors(c) {
+		if e == nil || e.Error == nil || clienterror.IsClientCancellation(e.StatusCode, e.Error) {
+			continue
+		}
+		turn := ingest.ClientRequest{Start: conn.Start.Add(conn.Latency), RequestID: conn.RequestID, Path: conn.Path,
+			Status: cmp.Or(errorStatus(e), http.StatusInternalServerError), ErrorMessage: e.Error.Error()}
+		var authErr *coreauth.Error
+		var cooling interface{ IsModelCooldown() bool }
+		if model, ok := unknownProviderModel([]byte(turn.ErrorMessage)); ok {
+			turn.Model = model
+			code, text, _ := accounts.message(model)
+			turn.ErrorCode, turn.ErrorMessage = code, cmp.Or(text, turn.ErrorMessage)
+			refused = append(refused, turn)
+		} else if errors.As(e.Error, &authErr) && refusalCodes[authErr.Code] || errors.As(e.Error, &cooling) && cooling.IsModelCooldown() {
+			refused = append(refused, turn)
+		} else {
+			unexplained = append(unexplained, turn)
+		}
+	}
+	return refused, unexplained
 }
 
 func errorStatus(e *interfaces.ErrorMessage) int {
@@ -254,19 +319,23 @@ func (b *bodyPrefix) release() {
 	}
 }
 
-// recordingWriter notes when the first response byte is written and keeps
-// the start of an error response.
+// recordingWriter notes whether the response has a body and when its first
+// byte other than an SSE comment was written, and keeps the start of an
+// error response. Handlers can send SSE keep-alive comments before the
+// first token (streaming.send-keepalive-before-ft), and those are not one.
 type recordingWriter struct {
 	gin.ResponseWriter
+	wrote   bool
 	first   time.Time
 	errBody []byte
 }
 
-func (w *recordingWriter) seen(n int) bool {
-	if n == 0 {
+func seen[T string | []byte](w *recordingWriter, p T) bool {
+	if len(p) == 0 {
 		return false
 	}
-	if w.first.IsZero() {
+	w.wrote = true
+	if w.first.IsZero() && !sseCommentsOnly(p) {
 		w.first = time.Now()
 	}
 	// A compressed body cannot be read for its message.
@@ -275,17 +344,33 @@ func (w *recordingWriter) seen(n int) bool {
 }
 
 func (w *recordingWriter) Write(p []byte) (int, error) {
-	if w.seen(len(p)) {
+	if seen(w, p) {
 		w.errBody = append(w.errBody, p[:min(len(p), errorBodyLimit-len(w.errBody))]...)
 	}
 	return w.ResponseWriter.Write(p)
 }
 
 func (w *recordingWriter) WriteString(s string) (int, error) {
-	if w.seen(len(s)) {
+	if seen(w, s) {
 		w.errBody = append(w.errBody, s[:min(len(s), errorBodyLimit-len(w.errBody))]...)
 	}
 	return w.ResponseWriter.WriteString(s)
+}
+
+// sseCommentsOnly says whether every line of p is empty or an SSE comment.
+func sseCommentsOnly[T string | []byte](p T) bool {
+	lineStart := true
+	for k := range len(p) {
+		switch b := p[k]; {
+		case b == '\n' || b == '\r':
+			lineStart = true
+		case lineStart && b != ':':
+			return false
+		default:
+			lineStart = false
+		}
+	}
+	return true
 }
 
 // FlushError and Unwrap keep upstream's error-aware flush and

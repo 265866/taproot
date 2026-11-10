@@ -379,6 +379,10 @@ func TestRequestsSummaryMediansTopListsAndCost(t *testing.T) {
 		{Start: base.Add(2 * time.Minute), Device: laptopDevice, Model: "claude-opus-5-5", Status: 200, Latency: 2000 * time.Millisecond, TTFT: 500 * time.Millisecond, Attempts: &one},
 		{Start: base.Add(20 * time.Minute), Device: laptopDevice, Model: "gpt-6-sol", Status: 529, Failed: true, Latency: 3000 * time.Millisecond, Attempts: &one},
 		{Start: base.Add(50 * time.Minute), Device: access.Device{ID: "local", Name: "server (local)"}, Model: "claude-opus-5-5", Status: 400, Failed: true, ErrorCode: "unknown_provider", Latency: 5 * time.Millisecond, Attempts: &zero},
+		// Abandoned: its timings say when the client gave up, not how fast the pool was.
+		{Start: base.Add(51 * time.Minute), Device: laptopDevice, Model: "claude-opus-5-5", Status: StatusClientClosed, Latency: 10 * time.Millisecond, TTFT: 50 * time.Millisecond, Attempts: &one},
+		// Attempts unknown: an account served it, and it counts no retries.
+		{Start: base.Add(52 * time.Minute), Device: laptopDevice, Model: "claude-opus-5-5", Status: 200, Latency: 2500 * time.Millisecond, TTFT: 450 * time.Millisecond},
 	}
 	seedClientRows(t, i, reqs)
 	ctx := context.Background()
@@ -393,21 +397,30 @@ func TestRequestsSummaryMediansTopListsAndCost(t *testing.T) {
 		t.Fatalf("status %d", code)
 	}
 	tot := got.Totals
-	if tot.Requests != 4 || tot.Failed != 2 || tot.Retries != 1 || tot.FailureRate == nil || *tot.FailureRate != 0.5 {
+	if tot.Requests != 6 || tot.Failed != 2 || tot.Retries != 1 || tot.FailureRate == nil || relErr(*tot.FailureRate, 2.0/6) > 1e-9 {
 		t.Fatalf("totals = %+v", tot)
 	}
-	// Four latencies: 5, 1000, 2000, 3000 ms; the median is the second.
-	if tot.MedianLatencyMs == nil || relErr(*tot.MedianLatencyMs, 1000) > 0.06 || tot.MedianTTFTMs == nil || relErr(*tot.MedianTTFTMs, 400) > 0.06 {
-		t.Fatalf("medians = %v %v", derefFloat(tot.MedianLatencyMs), derefFloat(tot.MedianTTFTMs))
+	// The medians leave out the refusal and the abandoned request. Latencies
+	// 1000, 2000, 2500, and 3000 ms give the second; TTFTs 400, 450, and 500
+	// give 450. Slots and raw rows (5-minute buckets) agree.
+	var raw requestsSummary
+	call(t, r, http.MethodGet, "/api/requests/summary"+q("from", rfc(base), "to", rfc(base.Add(2*time.Hour)), "bucket", "5m"), nil, &raw)
+	for name, tot := range map[string]requestTotals{"slots": tot, "raw": raw.Totals} {
+		if tot.MedianLatencyMs == nil || relErr(*tot.MedianLatencyMs, 2000) > 0.06 || tot.MedianTTFTMs == nil || relErr(*tot.MedianTTFTMs, 450) > 0.06 {
+			t.Fatalf("%s medians = %v %v, want 2000 and 450", name, derefFloat(tot.MedianLatencyMs), derefFloat(tot.MedianTTFTMs))
+		}
+		if tot.Retries != 1 {
+			t.Fatalf("%s retries = %d, want 1", name, tot.Retries)
+		}
 	}
-	if len(got.Buckets) != 2 || got.Buckets[0].Requests != 4 || got.Buckets[1].Requests != 0 || got.Buckets[1].FailureRate != nil {
+	if len(got.Buckets) != 2 || got.Buckets[0].Requests != 6 || got.Buckets[1].Requests != 0 || got.Buckets[1].FailureRate != nil {
 		t.Fatalf("buckets = %+v", got.Buckets)
 	}
-	if len(got.TopDevices) != 2 || got.TopDevices[0].DeviceID != laptopDevice.ID || got.TopDevices[0].Name != "laptop" || got.TopDevices[0].Requests != 3 ||
+	if len(got.TopDevices) != 2 || got.TopDevices[0].DeviceID != laptopDevice.ID || got.TopDevices[0].Name != "laptop" || got.TopDevices[0].Requests != 5 ||
 		got.TopDevices[0].CostUSD <= 0 || got.TopDevices[1].DeviceID != "local" || got.TopDevices[1].CostUSD != 0 {
 		t.Fatalf("top devices = %+v", got.TopDevices)
 	}
-	if len(got.TopModels) != 2 || got.TopModels[0].Model != "claude-opus-5-5" || got.TopModels[0].Requests != 3 || got.TopModels[0].CostUSD != tot.CostUSD || tot.CostUSD <= 0 {
+	if len(got.TopModels) != 2 || got.TopModels[0].Model != "claude-opus-5-5" || got.TopModels[0].Requests != 5 || got.TopModels[0].CostUSD != tot.CostUSD || tot.CostUSD <= 0 {
 		t.Fatalf("top models = %+v, cost %v", got.TopModels, tot.CostUSD)
 	}
 	var one1 requestsSummary
@@ -545,5 +558,134 @@ func TestClientSlotsRebuildWhenStale(t *testing.T) {
 	}
 	if got != want || want[0] != 500 {
 		t.Fatalf("rebuilt slots = %v, want %v", got, want)
+	}
+}
+
+// Attempts 0 means no account was tried, so a request answered without an
+// error whose usage records never arrived has unknown attempts.
+func TestClientRequestAttemptsUnknownWithoutUsage(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	for id, status := range map[string]int{"served01": 200, "refuse01": 429} {
+		link := i.TrackRequest(id, false, "/v1/messages")
+		i.FinishRequest(link, ClientRequest{Start: clock.t, RequestID: id, Status: status, Failed: status >= 400}, nil)
+	}
+	clock.t = clock.t.Add(clientSettle)
+	mustFlush(t, i)
+	got := map[string]clientRow{}
+	for _, r := range clientRows(t, i) {
+		got[r.requestID] = r
+	}
+	if r := got["served01"]; r.attempts.Valid {
+		t.Errorf("served without usage records: attempts = %d, want NULL", r.attempts.Int64)
+	}
+	if r := got["refuse01"]; !r.attempts.Valid || r.attempts.Int64 != 0 {
+		t.Errorf("refused: attempts = %+v, want 0", r.attempts)
+	}
+}
+
+// A client may close its connection right after the last event of a
+// complete stream, before the handler returns. Such a request is abandoned
+// only when its last attempt did not succeed.
+func TestClientRequestClientGoneKeepsSuccessfulStreams(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	ctx := context.Background()
+	for _, c := range []struct {
+		id       string
+		attempts []bool // failed, per attempt
+		link     bool
+		want     int
+	}{
+		{"gone0001", []bool{false}, true, 200},
+		{"gone0002", []bool{true, false}, true, 200},
+		{"gone0003", []bool{false, true}, true, StatusClientClosed},
+		{"gone0004", nil, true, StatusClientClosed},
+		{"gone0005", nil, false, StatusClientClosed},
+	} {
+		var link *RequestLink
+		if c.link {
+			link = i.TrackRequest(c.id, false, "/v1/messages")
+		}
+		for n, failed := range c.attempts {
+			rec := usage.Record{TraceID: c.id, Provider: "claude", Model: "claude-opus-5-5", RequestedAt: clock.t.Add(time.Duration(n) * time.Second), Failed: failed}
+			if failed {
+				rec.Fail = usage.Failure{StatusCode: StatusClientClosed}
+			}
+			i.HandleUsage(ctx, rec)
+		}
+		i.FinishRequest(link, ClientRequest{Start: clock.t, RequestID: c.id, Status: 200, Stream: true, ClientGone: true}, nil)
+		clock.t = clock.t.Add(time.Minute)
+	}
+	clock.t = clock.t.Add(clientSettle)
+	mustFlush(t, i)
+	got := clientRows(t, i)
+	if len(got) != 5 {
+		t.Fatalf("rows = %+v", got)
+	}
+	for k, want := range []int{200, 200, StatusClientClosed, StatusClientClosed, StatusClientClosed} {
+		if r := got[k]; r.status != want || r.failed {
+			t.Errorf("%s: status %d failed %t, want %d and not failed", r.requestID, r.status, r.failed, want)
+		} else if want == StatusClientClosed && r.code != "client_closed" {
+			t.Errorf("%s: code %q, want client_closed", r.requestID, r.code)
+		}
+	}
+}
+
+// Turns refused before any account publish no usage record; the websocket's
+// end records them with no attempts. Other turn errors count only when no
+// usage record of the connection can explain them.
+func TestClientRequestWebsocketRefusedTurns(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	i.AttachDevices(stubDevices{"wsref001": laptopDevice, "wsref002": laptopDevice})
+	refused := ClientRequest{Start: clock.t.Add(time.Hour), RequestID: "wsref001", Path: "/v1/responses", Status: 429,
+		ErrorMessage: `{"error":{"code":"model_cooldown","message":"All credentials for model gpt-6-sol are cooling down"}}`}
+	unexplained := ClientRequest{Start: clock.t.Add(time.Hour), RequestID: "wsref001", Path: "/v1/responses", Status: 401, ErrorMessage: "invalid API key"}
+
+	served := i.TrackRequest("wsref001", true, "/v1/responses")
+	i.HandleUsage(context.Background(), usage.Record{TraceID: "wsref001", Provider: "codex", Model: "gpt-6-sol", RequestedAt: clock.t, Stream: true})
+	i.FinishWebsocket(served, ClientRequest{Start: clock.t, RequestID: "wsref001", Path: "/v1/responses", Status: 200}, []ClientRequest{refused}, []ClientRequest{unexplained})
+
+	unserved := i.TrackRequest("wsref002", true, "/v1/responses")
+	refused.RequestID, unexplained.RequestID = "wsref002", "wsref002"
+	refused.Model = "gpt-6-sol"
+	i.FinishWebsocket(unserved, ClientRequest{Start: clock.t, RequestID: "wsref002", Path: "/v1/responses", Status: 200}, []ClientRequest{refused}, []ClientRequest{unexplained})
+
+	clock.t = clock.t.Add(clientSettle)
+	mustFlush(t, i)
+	got := clientRows(t, i)
+	byID := map[string][]clientRow{}
+	for _, r := range got {
+		byID[r.requestID] = append(byID[r.requestID], r)
+	}
+	if rows := byID["wsref001"]; len(rows) != 2 || rows[0].failed || !rows[1].failed || rows[1].status != 429 ||
+		rows[1].code != "rate_limited" || rows[1].attempts.Int64 != 0 || !rows[1].attempts.Valid || rows[1].model != "gpt-6-sol" ||
+		rows[1].deviceID != laptopDevice.ID || rows[1].message != "All credentials for model gpt-6-sol are cooling down" {
+		t.Errorf("served connection rows = %+v, want its turn and the refused one", rows)
+	}
+	if rows := byID["wsref002"]; len(rows) != 2 || rows[0].status != 429 || rows[1].status != 401 || rows[1].code != "unauthorized" ||
+		!rows[0].failed || !rows[1].failed || rows[1].attempts.Int64 != 0 || !rows[1].attempts.Valid {
+		t.Errorf("unserved connection rows = %+v, want both errors as turns", rows)
+	}
+}
+
+// The ts index needs no id: SQLite keeps the rowid in every index entry.
+func TestClientRequestIndexes(t *testing.T) {
+	i, _ := newTestIngest(t, Config{})
+	for _, name := range []string{"client_requests_ts", "client_requests_failed_ts"} {
+		rows, err := i.db.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cols []string
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				t.Fatal(err)
+			}
+			cols = append(cols, c)
+		}
+		closeRows(rows)
+		if !slices.Equal(cols, []string{"ts"}) {
+			t.Errorf("%s columns = %v, want [ts]", name, cols)
+		}
 	}
 }

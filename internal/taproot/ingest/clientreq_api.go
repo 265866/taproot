@@ -131,7 +131,7 @@ func (b *requestsBuilder) scanRaw(ctx context.Context, q querier, fromMs, toMs i
 	if fromMs >= toMs {
 		return nil
 	}
-	rows, err := q.QueryContext(ctx, `SELECT ts, device_id, model, failed, COALESCE(attempts, 0), latency_ms, COALESCE(ttft_ms, 0)
+	rows, err := q.QueryContext(ctx, `SELECT ts, device_id, model, status, failed, attempts, latency_ms, COALESCE(ttft_ms, 0)
 		FROM client_requests WHERE ts >= ? AND ts < ?`, fromMs, toMs)
 	if err != nil {
 		return fmt.Errorf("query client requests: %w", err)
@@ -139,16 +139,20 @@ func (b *requestsBuilder) scanRaw(ctx context.Context, q querier, fromMs, toMs i
 	defer closeRows(rows)
 	for rows.Next() {
 		var (
-			ts, failed, attempts, lat, ttft int64
-			device, model                   string
+			ts, failed, lat, ttft int64
+			status                int
+			attempts              *int
+			device, model         string
 		)
-		if err := rows.Scan(&ts, &device, &model, &failed, &attempts, &lat, &ttft); err != nil {
+		if err := rows.Scan(&ts, &device, &model, &status, &failed, &attempts, &lat, &ttft); err != nil {
 			return fmt.Errorf("scan client request: %w", err)
 		}
-		b.add(b.days.bucketStart(ts), device, model, 1, failed, max(attempts-1, 0))
-		b.lat.add(lat)
-		if ttft > 0 {
-			b.ttft.add(ttft)
+		b.add(b.days.bucketStart(ts), device, model, 1, failed, retries(attempts))
+		if servedTiming(attempts, status) {
+			b.lat.add(lat)
+			if ttft > 0 {
+				b.ttft.add(ttft)
+			}
 		}
 	}
 	return rows.Err()

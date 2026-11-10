@@ -43,7 +43,7 @@ func benchEngine(b *testing.B, record bool) (*gin.Engine, func() int) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		sink.Start(ctx)
-		e.Use(clientRequests(sink))
+		e.Use(clientRequests(sink, &noAccounts{}))
 		rows = func() int {
 			cancel()
 			sink.Wait()
@@ -73,7 +73,9 @@ func benchEngine(b *testing.B, record bool) (*gin.Engine, func() int) {
 
 func checkRows(b *testing.B, rows func() int, sent int, record bool) {
 	b.Helper()
-	if n := rows(); record && n != sent {
+	// The queue holds 50,000 requests through their 2-second settle and drops
+	// the rest by design, which a fast enough loop reaches.
+	if n := rows(); record && n != sent && (sent <= 50_000 || n < 50_000) {
 		b.Fatalf("recorded %d of %d requests", n, sent)
 	}
 }

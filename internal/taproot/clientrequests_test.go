@@ -20,6 +20,7 @@ import (
 	"github.com/265866/taproot/internal/logging"
 	"github.com/265866/taproot/internal/taproot/ingest"
 	"github.com/265866/taproot/internal/taproot/store"
+	"github.com/265866/taproot/sdk/api/handlers"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/gin-gonic/gin"
@@ -59,7 +60,7 @@ func newClientRequestsHarness(t *testing.T, routes func(e *gin.Engine, sink *ing
 	accounts := &noAccounts{}
 	accounts.attach(coreauth.NewManager(nil, nil, nil))
 	e := gin.New()
-	e.Use(logging.GinLogrusLogger(), logging.GinLogrusRecovery(), clientRequests(sink), accounts.middleware())
+	e.Use(logging.GinLogrusLogger(), logging.GinLogrusRecovery(), clientRequests(sink, accounts), accounts.middleware())
 	routes(e, sink)
 	return &clientRequestsHarness{engine: e, sink: sink, db: db, stop: stopped}
 }
@@ -128,7 +129,7 @@ func TestClientRequestsRecordModelRoutesOnly(t *testing.T) {
 		t.Fatalf("rows = %+v, want /v1/messages and generateContent only", got)
 	}
 	if got[0].path != "/v1/messages" || got[0].model != "claude-opus-5-5" || got[0].provider != "claude" || got[0].status != 200 ||
-		got[0].failed || got[0].requestID == "" || !got[0].attempts.Valid || got[0].attempts.Int64 != 0 {
+		got[0].failed || got[0].requestID == "" || got[0].attempts.Valid {
 		t.Fatalf("messages row = %+v", got[0])
 	}
 	if got[1].path != "/v1beta/models/*action" || got[1].model != "gemini-3-pro" || got[1].provider != "" {
@@ -296,6 +297,151 @@ func TestClientRequestsDoNotWaitForTheDatabase(t *testing.T) {
 	}
 }
 
+// The reviewer's case: a client that closes its connection after the last
+// event of a stream, while the handler still has work to do, cancels the
+// request's context. The stream succeeded, so it keeps its status; one whose
+// last attempt failed is abandoned.
+func TestClientRequestsKeepStreamsTheClientClosedAfterTheEnd(t *testing.T) {
+	stream := func(lastFailed bool) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			_, _ = c.GetRawData()
+			rec := usage.Record{TraceID: logging.GetGinRequestID(c), Provider: "claude", Model: claudeModel, RequestedAt: time.Now(), Stream: true}
+			if lastFailed {
+				rec.Failed, rec.Fail = true, usage.Failure{StatusCode: ingest.StatusClientClosed}
+			}
+			sinkOf(c).HandleUsage(c, rec)
+			c.Header("Content-Type", "text/event-stream")
+			c.Status(http.StatusOK)
+			_, _ = c.Writer.WriteString("event: message_stop\ndata: {}\n\n")
+			c.Writer.Flush()
+			select {
+			case <-c.Request.Context().Done():
+			case <-time.After(10 * time.Second):
+				t.Error("the server never saw the client close")
+			}
+		}
+	}
+	h := newClientRequestsHarness(t, func(e *gin.Engine, sink *ingest.Ingest) {
+		e.Use(func(c *gin.Context) { c.Set("test.sink", sink) })
+		e.POST("/v1/messages", stream(false))
+		e.POST("/v1/chat/completions", stream(true))
+	})
+	srv := httptest.NewServer(h.engine)
+	defer srv.Close()
+	const n = 20
+	for k := range 2 * n {
+		path := "/v1/messages"
+		if k >= n {
+			path = "/v1/chat/completions"
+		}
+		resp, err := http.Post(srv.URL+path, "application/json", strings.NewReader(`{"stream":true}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 64)
+		var got []byte
+		for !bytes.Contains(got, []byte("data: {}\n\n")) {
+			m, err := resp.Body.Read(buf)
+			got = append(got, buf[:m]...)
+			if err != nil {
+				t.Fatalf("read %q: %v", got, err)
+			}
+		}
+		_ = resp.Body.Close()
+	}
+	srv.Close()
+	rows := h.rows(t)
+	counts := map[string]int{}
+	for _, r := range rows {
+		counts[fmt.Sprint(r.path, " ", r.status, " ", r.code)]++
+	}
+	if counts["/v1/messages 200 "] != n || counts["/v1/chat/completions 499 client_closed"] != n {
+		t.Fatalf("rows by path, status, and code = %v, want %d of each", counts, n)
+	}
+}
+
+func sinkOf(c *gin.Context) *ingest.Ingest { return c.MustGet("test.sink").(*ingest.Ingest) }
+
+// Keep-alive comments that handlers send before the first token are not
+// the first byte, but they make the response a stream.
+func TestClientRequestsTTFTSkipsKeepAlives(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	w := &recordingWriter{ResponseWriter: c.Writer}
+	_, _ = w.WriteString(": keep-alive\n\n")
+	_, _ = w.Write([]byte(":\r\n\r\n: ping\n\n"))
+	if !w.first.IsZero() || !w.wrote {
+		t.Fatalf("after keep-alives: first %v, wrote %t", w.first, w.wrote)
+	}
+	_, _ = w.WriteString("event: message_start\ndata: {}\n\n")
+	if w.first.IsZero() {
+		t.Fatal("the first event did not set the first byte")
+	}
+	for p, want := range map[string]bool{": keep-alive\n\n": true, "\n": true, "": true, "data: x\n\n": false, ": a\ndata: x\n": false, "{}": false} {
+		if got := sseCommentsOnly(p); got != want {
+			t.Errorf("sseCommentsOnly(%q) = %t, want %t", p, got, want)
+		}
+	}
+
+	h := newClientRequestsHarness(t, func(e *gin.Engine, _ *ingest.Ingest) {
+		e.POST("/v1/messages", func(c *gin.Context) {
+			c.Header("Content-Type", "text/event-stream")
+			c.Status(http.StatusOK)
+			_, _ = c.Writer.WriteString(": keep-alive\n\n")
+			c.Set("API_RESPONSE_ERROR", []*interfaces.ErrorMessage{{StatusCode: 529, Error: errors.New("overloaded")}})
+		})
+	})
+	h.do(http.MethodPost, "/v1/messages", `{}`)
+	var ttft sql.NullInt64
+	h.stop()
+	if err := h.db.QueryRow(`SELECT ttft_ms FROM client_requests`).Scan(&ttft); err != nil || ttft.Valid {
+		t.Fatalf("ttft = %+v (%v), want NULL for a stream that sent only keep-alives", ttft, err)
+	}
+	if got := h.rows(t); len(got) != 1 || !got[0].stream || got[0].status != 529 {
+		t.Fatalf("rows = %+v, want a failed stream", got)
+	}
+}
+
+// Upstream's own refusal errors, as its handlers report them, are turns no
+// account was tried for; other errors are not, and a client's cancellation is
+// no turn at all.
+func TestRefusedTurnsClassifyUpstreamErrors(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	unknown := `{"error":{"message":"unknown provider for model gpt-6-nonexistent","type":"invalid_request_error","code":"model_not_found"}}`
+	c.Set("API_RESPONSE_ERROR", []*interfaces.ErrorMessage{
+		handlers.ExecutionErrorMessage(coreauth.NewModelCooldownError("gpt-6-sol", "codex", 30*time.Second)),
+		handlers.ExecutionErrorMessage(&coreauth.Error{Code: "auth_unavailable", Message: "no auth available", HTTPStatus: http.StatusServiceUnavailable}),
+		{StatusCode: http.StatusBadRequest, Error: errors.New(unknown)},
+		{StatusCode: http.StatusBadGateway, Error: errors.New(`{"error":{"message":"upstream connection reset"}}`)},
+		{StatusCode: ingest.StatusClientClosed, Error: context.Canceled},
+	})
+	accounts := &noAccounts{}
+	accounts.attach(coreauth.NewManager(nil, nil, nil))
+	start := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	refused, unexplained := refusedTurns(c, accounts, ingest.ClientRequest{Start: start, Latency: time.Hour, RequestID: "ws01", Path: "/v1/responses"})
+	if len(refused) != 3 || len(unexplained) != 1 {
+		t.Fatalf("refused %+v, unexplained %+v", refused, unexplained)
+	}
+	for k, want := range []struct {
+		status    int
+		model     string
+		code      string
+		inMessage string
+	}{
+		{http.StatusTooManyRequests, "", "", "cooling down"},
+		{http.StatusServiceUnavailable, "", "", "no auth available"},
+		{http.StatusBadRequest, "gpt-6-nonexistent", codeNoAccounts, "no accounts configured"},
+	} {
+		g := refused[k]
+		if g.Status != want.status || g.Model != want.model || g.ErrorCode != want.code || !strings.Contains(g.ErrorMessage, want.inMessage) ||
+			!g.Start.Equal(start.Add(time.Hour)) || g.Path != "/v1/responses" || g.RequestID != "ws01" {
+			t.Errorf("refused[%d] = %+v, want %+v", k, g, want)
+		}
+	}
+	if unexplained[0].Status != http.StatusBadGateway {
+		t.Errorf("unexplained = %+v", unexplained[0])
+	}
+}
+
 func TestBodyModel(t *testing.T) {
 	for body, want := range map[string]string{
 		`{"model":"claude-opus-5-5","messages":[]}`:              "claude-opus-5-5",
@@ -328,14 +474,15 @@ type readCloser struct{ *bytes.Reader }
 func (readCloser) Close() error { return nil }
 
 type recentJSON struct {
-	DeviceID, Path, Model, Provider string
-	Status, Attempts                int
-	Failed                          bool
+	DeviceID, Path, Model, Provider, ErrorCode string
+	Status, Attempts                           int
+	Failed                                     bool
 }
 
 // TestClientRequestsThroughTheServer drives the real server: requests from
 // devices with Proxy and a Codex websocket turn are recorded with their
-// device and attempts, a refused request is not, and the endpoints are
+// device and attempts, as is a websocket turn upstream refused before any
+// account; a request the guard refused is not, and the endpoints are
 // admin-only.
 func TestClientRequestsThroughTheServer(t *testing.T) {
 	upstream := fakeUpstream(t)
@@ -377,11 +524,28 @@ func TestClientRequestsThroughTheServer(t *testing.T) {
 			break
 		}
 	}
+	// No account serves this model, so upstream refuses the turn before any
+	// account and publishes no usage record.
+	refusedConn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/v1/responses", nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer func() { _ = refusedConn.Close() }()
+	refused := strings.Replace(turn, codexModel, "gpt-6-nonexistent", 1)
+	if err := refusedConn.WriteMessage(websocket.TextMessage, []byte(refused)); err != nil {
+		t.Fatal(err)
+	}
+	// Upstream answers the refusal with an error event and ends the session.
+	for {
+		if _, _, err := refusedConn.ReadMessage(); err != nil {
+			break
+		}
+	}
 
 	// Rows appear once their usage records settle, about two seconds on.
 	var got []recentJSON
 	deadline := time.Now().Add(10 * time.Second)
-	for len(got) < 3 && time.Now().Before(deadline) {
+	for len(got) < 4 && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 		rec := f.do(req{remote: "127.0.0.1", path: "/taproot/api/v1/requests/recent?limit=100"})
 		var body struct{ Requests []recentJSON }
@@ -392,20 +556,27 @@ func TestClientRequestsThroughTheServer(t *testing.T) {
 	}
 	byKey := map[string]recentJSON{}
 	for _, r := range got {
-		byKey[r.DeviceID+" "+r.Path] = r
+		key := r.DeviceID + " " + r.Path
+		if r.Failed {
+			key += " failed"
+		}
+		byKey[key] = r
 	}
 	for key, w := range map[string]recentJSON{
 		"node:ndesktopCNTRL /v1/messages":  {Model: claudeModel, Provider: "claude", Status: 200, Attempts: 1},
 		"node:nworkerCNTRL /v1/messages":   {Model: claudeModel, Provider: "claude", Status: 200, Attempts: 1},
 		"node:ndesktopCNTRL /v1/responses": {Model: codexModel, Provider: "codex", Status: 200, Attempts: 1},
+		"node:ndesktopCNTRL /v1/responses failed": {Model: "gpt-6-nonexistent", Provider: "codex", Status: 400, Attempts: 0,
+			ErrorCode: codeUnknownProvider, Failed: true},
 	} {
 		g, ok := byKey[key]
-		if !ok || g.Model != w.Model || g.Provider != w.Provider || g.Status != w.Status || g.Attempts != w.Attempts || g.Failed {
+		if !ok || g.Model != w.Model || g.Provider != w.Provider || g.Status != w.Status || g.Attempts != w.Attempts ||
+			g.Failed != w.Failed || g.ErrorCode != w.ErrorCode {
 			t.Errorf("%s = %+v (found %t), want %+v", key, g, ok, w)
 		}
 	}
-	if len(got) != 3 {
-		t.Errorf("recorded %d requests, want 3 (the refused one is not a client request): %+v", len(got), got)
+	if len(got) != 4 {
+		t.Errorf("recorded %d requests, want 4 (the request the guard refused is not a client request): %+v", len(got), got)
 	}
 	for _, path := range []string{"/taproot/api/v1/requests/summary", "/taproot/api/v1/requests/recent"} {
 		if rec := f.do(req{remote: workerIP, path: path}); rec.Code != http.StatusForbidden {
