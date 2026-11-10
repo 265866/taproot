@@ -463,9 +463,28 @@ export function resolveRoute(
   return { tiers, hasActive };
 }
 
-/** Credentials whose live model lists the board needs (disabled ones never serve). */
-export function neededCredentialModels(board: RoutingBoard): string[] {
-  return board.members.flatMap((member) => (member.disabled ? [] : [member.credentialName]));
+/**
+ * Credentials whose live model lists to fetch (disabled ones never serve): those not loaded yet
+ * or whose last load failed, or every one on an explicit refresh.
+ */
+export function neededCredentialModels(
+  board: RoutingBoard,
+  catalog: RoutingModelCatalog,
+  refetch = false
+): string[] {
+  return board.members.flatMap((member) =>
+    member.disabled || (!refetch && Array.isArray(catalog.credentials[member.credentialName]))
+      ? []
+      : [member.credentialName]
+  );
+}
+
+/** A typed count the backend accepts (a non-negative integer), or null while it is not one. */
+export function parseCount(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) ? value : null;
 }
 
 export function clampWeight(value: number): number {

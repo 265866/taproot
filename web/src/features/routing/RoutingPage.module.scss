@@ -306,7 +306,7 @@ $label-x: $tier-pad + 1px + $index-size + 10px; // where tier names begin
 }
 
 .tierPriorityChanged {
-  color: var(--amber-color);
+  color: var(--amber-text);
 }
 
 /* State reads as a quiet status line on the right; its dot carries the color. */
@@ -350,12 +350,13 @@ $label-x: $tier-pad + 1px + $index-size + 10px; // where tier names begin
   border-color: color-mix(in srgb, var(--viz-success) 38%, var(--border-color));
 
   .tierIndex {
-    background: var(--viz-success);
-    color: #fff;
+    background: var(--success-badge-bg);
+    box-shadow: inset 0 0 0 1px var(--viz-success);
+    color: var(--success-badge-text);
   }
 
   .tierState {
-    color: var(--viz-success);
+    color: var(--success-badge-text);
     font-weight: 600;
   }
 }
@@ -366,7 +367,7 @@ $label-x: $tier-pad + 1px + $index-size + 10px; // where tier names begin
 }
 
 .tierCooling .tierState {
-  color: var(--amber-color);
+  color: var(--amber-text);
 }
 
 .tierUnknown .tierState {

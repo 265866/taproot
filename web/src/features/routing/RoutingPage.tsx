@@ -97,15 +97,15 @@ export function RoutingPage() {
   const [saving, setSaving] = useState(false);
   const [weightEdit, setWeightEdit] = useState<{ key: string; session: number } | null>(null);
   const [weightOpen, setWeightOpen] = useState(false);
+  const [moveAnnouncement, setMoveAnnouncement] = useState('');
   const requestRef = useRef(0);
   const catalogRef = useRef<RoutingModelCatalog>(EMPTY_CATALOG);
 
   const connected = connectionStatus === 'connected';
 
-  const loadModels = useCallback((next: RoutingBoard, requestId: number) => {
+  const loadModels = useCallback((next: RoutingBoard, requestId: number, refetch: boolean) => {
     const isCurrent = () => requestId === requestRef.current;
-    const known = catalogRef.current;
-    const credentials = neededCredentialModels(next).filter((name) => !(name in known.credentials));
+    const credentials = neededCredentialModels(next, catalogRef.current, refetch);
     const total = credentials.length;
     if (total === 0) {
       setModelProgress(null);
@@ -124,31 +124,37 @@ export function RoutingPage() {
     });
   }, []);
 
-  const load = useCallback(async (): Promise<HeaderRefreshOutcome> => {
-    const requestId = ++requestRef.current;
-    const isCurrent = () => requestId === requestRef.current;
-    if (!connected) {
-      setLoading(false);
-      return REFRESH_CANCELLED;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const [config, files] = await Promise.all([fetchConfig(true), routingApi.listCredentials()]);
-      if (!isCurrent()) return REFRESH_CANCELLED;
-      const next = buildRoutingBoard(config.raw ?? {}, files);
-      setBoard(next);
-      setDraft(draftFromBoard(next));
-      loadModels(next, requestId);
-      return REFRESH_OK;
-    } catch (err) {
-      if (!isCurrent()) return REFRESH_CANCELLED;
-      setError(getErrorMessage(err));
-      return refreshFailed(err);
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
-  }, [connected, fetchConfig, loadModels]);
+  const load = useCallback(
+    async (refetchModels = false): Promise<HeaderRefreshOutcome> => {
+      const requestId = ++requestRef.current;
+      const isCurrent = () => requestId === requestRef.current;
+      if (!connected) {
+        setLoading(false);
+        return REFRESH_CANCELLED;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const [config, files] = await Promise.all([
+          fetchConfig(true),
+          routingApi.listCredentials(),
+        ]);
+        if (!isCurrent()) return REFRESH_CANCELLED;
+        const next = buildRoutingBoard(config.raw ?? {}, files);
+        setBoard(next);
+        setDraft(draftFromBoard(next));
+        loadModels(next, requestId, refetchModels);
+        return REFRESH_OK;
+      } catch (err) {
+        if (!isCurrent()) return REFRESH_CANCELLED;
+        setError(getErrorMessage(err));
+        return refreshFailed(err);
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [connected, fetchConfig, loadModels]
+  );
 
   useEffect(() => {
     void load();
@@ -172,7 +178,7 @@ export function RoutingPage() {
 
   // The global header refresh reloads the board; with a draft it asks first.
   const refresh = useCallback(() => {
-    if (!dirty) return load();
+    if (!dirty) return load(true);
     return new Promise<HeaderRefreshOutcome>((resolve) => {
       showConfirmation({
         title: t('routing.unsaved_title'),
@@ -180,7 +186,7 @@ export function RoutingPage() {
         confirmText: t('routing.refresh'),
         cancelText: t('routing.unsaved_cancel'),
         variant: 'danger',
-        onConfirm: async () => resolve(await load()),
+        onConfirm: async () => resolve(await load(true)),
         onCancel: () => resolve(REFRESH_CANCELLED),
       });
     });
@@ -217,15 +223,18 @@ export function RoutingPage() {
     [board, catalog]
   );
 
+  /** The priorities of the applied arrangement, or null when locked members forbid it. */
   const applyTiers = useCallback(
-    (tiers: RoutingTier[]) => {
-      if (!board || !draft) return;
+    (tiers: RoutingTier[]): Record<string, number> | null => {
+      if (!board || !draft) return null;
       try {
-        assignPriorities(tiers, board.members);
+        const next = assignPriorities(tiers, board.members);
         setDraft({ ...draft, tiers });
+        return next;
       } catch (err) {
         if (!(err instanceof RoutingPriorityError)) throw err;
         showNotification(t('routing.locked_priority_conflict'), 'warning');
+        return null;
       }
     },
     [board, draft, showNotification, t]
@@ -240,7 +249,20 @@ export function RoutingPage() {
 
   const handleStep = useCallback(
     (key: string, direction: 'up' | 'down') => {
-      if (draft) applyTiers(stepMember(draft.tiers, key, direction));
+      if (draft) {
+        const tiers = stepMember(draft.tiers, key, direction);
+        const nextPriorities = applyTiers(tiers);
+        const index = tiers.findIndex((tier) => tier.memberKeys.includes(key));
+        if (nextPriorities && index >= 0) {
+          setMoveAnnouncement(
+            t('routing.moved_announcement', {
+              name: mask(members.get(key)?.name ?? ''),
+              tier: index === 0 ? t('routing.tier_primary') : t('routing.tier_backup', { index }),
+              priority: nextPriorities[key],
+            })
+          );
+        }
+      }
       // Keep keyboard focus on the moved card after it re-renders in its new tier.
       requestAnimationFrame(() => {
         const card = document.querySelector<HTMLElement>(
@@ -249,7 +271,7 @@ export function RoutingPage() {
         card?.focus();
       });
     },
-    [draft, applyTiers]
+    [draft, applyTiers, mask, members, t]
   );
 
   const handleEditWeights = useCallback((key: string) => {
@@ -391,6 +413,9 @@ export function RoutingPage() {
       </header>
 
       {renderBody()}
+      <p className={styles.srOnly} role="status" aria-live="polite">
+        {moveAnnouncement}
+      </p>
 
       <ProviderModelRules disableControls={!connected} />
 

@@ -77,7 +77,7 @@
   width: 20px;
   height: 32px;
   border-radius: 6px;
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
   cursor: inherit;
   transition: color var(--dur-hover) var(--ease-out-strong);
 
@@ -140,7 +140,7 @@
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--viz-success);
+  color: var(--success-badge-text);
 }
 
 .chip {

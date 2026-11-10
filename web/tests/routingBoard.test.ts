@@ -8,6 +8,7 @@ import {
   draftFromBoard,
   moveMember,
   neededCredentialModels,
+  parseCount,
   resolveRoute,
   stepMember,
   tiersFromMembers,
@@ -103,8 +104,18 @@ describe('routing board reading', () => {
   });
 
   test('disabled credentials need no live model list', () => {
-    expect(neededCredentialModels(board())).not.toContain('off.json');
-    expect(neededCredentialModels(board())).toContain('main.json');
+    const empty = { credentials: {} };
+    expect(neededCredentialModels(board(), empty)).not.toContain('off.json');
+    expect(neededCredentialModels(board(), empty)).toContain('main.json');
+  });
+
+  test('a model list that failed to load is fetched again; a refresh refetches all', () => {
+    const catalog = { credentials: { 'main.json': ['gpt-5'], 'mid.json': null } };
+    const needed = neededCredentialModels(board(), catalog);
+    expect(needed).toContain('mid.json');
+    expect(needed).not.toContain('main.json');
+    expect(neededCredentialModels(board(), catalog, true)).toContain('main.json');
+    expect(neededCredentialModels(board(), catalog, true)).not.toContain('off.json');
   });
 });
 
@@ -344,5 +355,34 @@ describe('route preview', () => {
     const preview = resolveRoute(current, draft, catalog, null, 0);
     expect(preview.tiers[0].state).toBe('active');
     expect(preview.tiers[0].members[0].share).toBeNull();
+  });
+});
+
+describe('routing settings match the backend parser', () => {
+  test('only soonest-reset-first accepts underscores and spaces', () => {
+    const read = (strategy: string) => readRoutingSettings({ routing: { strategy } }).strategy;
+    expect(read('fill_first')).toBe('round-robin');
+    expect(read('weighted_round_robin')).toBe('round-robin');
+    expect(read(' Fill-First ')).toBe('fill-first');
+    expect(read('soonest reset first')).toBe('soonest-reset-first');
+  });
+
+  test('session affinity reads YAML 1.1 booleans', () => {
+    const read = (value: unknown) =>
+      readRoutingSettings({ routing: { 'session-affinity': value } }).sessionAffinity;
+    expect(read('yes')).toBe(true);
+    expect(read('on')).toBe(true);
+    expect(read('no')).toBe(false);
+    expect(read(true)).toBe(true);
+  });
+});
+
+describe('routing count fields', () => {
+  test('accept any non-negative integer and nothing else', () => {
+    expect(parseCount('250')).toBe(250);
+    expect(parseCount(' 0 ')).toBe(0);
+    for (const text of ['', '-1', '1.5', 'abc', '1e3', '99999999999999999999']) {
+      expect(parseCount(text)).toBeNull();
+    }
   });
 });
