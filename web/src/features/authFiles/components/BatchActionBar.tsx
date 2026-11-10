@@ -12,6 +12,16 @@ const easePower2In = (progress: number) => progress ** 3;
 const BASE_TRANSFORM = 'translateX(-50%)';
 const HIDDEN_TRANSFORM = 'translateX(-50%) translateY(56px)';
 
+/** A phone shows the short label so a row of buttons fits the screen. */
+function Label({ long, short }: { long: string; short: string }) {
+  return (
+    <>
+      <span className={styles.longLabel}>{long}</span>
+      <span className={styles.shortLabel}>{short}</span>
+    </>
+  );
+}
+
 export type BatchActionBarProps = {
   selectionCount: number;
   /** Selectable accounts shown under the current search and filters. */
@@ -165,17 +175,20 @@ export function BatchActionBar(props: BatchActionBarProps) {
             onClick={onSelectAll}
             disabled={selectableCount === 0}
           >
-            {t('auth_files.batch_select_all')}
+            <Label
+              long={t('auth_files.batch_select_all')}
+              short={t('auth_files.batch_select_all_short')}
+            />
           </Button>
           <Button variant="ghost" size="sm" onClick={onInvert} disabled={selectableCount === 0}>
-            {t('auth_files.batch_invert')}
+            <Label long={t('auth_files.batch_invert')} short={t('auth_files.batch_invert_short')} />
           </Button>
           <Button variant="ghost" size="sm" onClick={onDeselectAll} disabled={selectionCount === 0}>
             {t('auth_files.batch_deselect')}
           </Button>
           {onDone && (
             <Button variant="ghost" size="sm" onClick={onDone}>
-              {t('auth_files.batch_done')}
+              <Label long={t('auth_files.batch_done')} short={t('auth_files.batch_done_short')} />
             </Button>
           )}
         </div>
@@ -186,8 +199,10 @@ export function BatchActionBar(props: BatchActionBarProps) {
             onClick={onDownload}
             disabled={disableControls || selectionCount === 0}
           >
-            <span className={styles.longLabel}>{t('auth_files.batch_download')}</span>
-            <span className={styles.shortLabel}>{t('auth_files.batch_download_short')}</span>
+            <Label
+              long={t('auth_files.batch_download')}
+              short={t('auth_files.batch_download_short')}
+            />
           </Button>
           <Button size="sm" onClick={onEnable} disabled={batchStatusDisabled}>
             {t('auth_files.batch_enable')}

@@ -95,6 +95,32 @@ describe('credential secrets under privacy mode', () => {
     expect(parsed.email).toBe('alice@example.com');
     expect(parsed.note).toBe('has "quotes" and \\ backslash');
   });
+
+  test('hides arrays, objects, and scalars under a secret key, not just strings', () => {
+    const credential = {
+      cookies: ['demo-c1', 'demo-c2'],
+      session_token: { value: 'demo-nested', parts: [1, [2, 'demo-deep']] },
+      pin_password: 123456,
+      api_key: null,
+      note: 'quotes "token": "demo-not-a-key" stay',
+      email: 'alice@example.com',
+      tags: ['keep'],
+    };
+    for (const space of [2, undefined]) {
+      const masked = maskCredentialSecrets(JSON.stringify(credential, null, space));
+      for (const secret of ['demo-c1', 'demo-c2', 'demo-nested', 'demo-deep', '123456']) {
+        expect(masked).not.toContain(secret);
+      }
+      const parsed = JSON.parse(masked) as Record<string, unknown>;
+      expect(parsed.cookies).toBe(SECRET_PLACEHOLDER);
+      expect(parsed.session_token).toBe(SECRET_PLACEHOLDER);
+      expect(parsed.pin_password).toBe(SECRET_PLACEHOLDER);
+      expect(parsed.api_key).toBe(SECRET_PLACEHOLDER);
+      expect(parsed.note).toBe(credential.note);
+      expect(parsed.email).toBe('alice@example.com');
+      expect(parsed.tags).toEqual(['keep']);
+    }
+  });
 });
 
 describe('OAuth status polling', () => {

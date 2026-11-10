@@ -70,7 +70,8 @@
   display: none;
 }
 
-// Two rows on a phone: the selection controls scroll sideways, and the four actions share one row.
+// On a phone the count sits on its own line, then the four selection controls and the four actions
+// each share one row with short labels, so every control shows without scrolling.
 @include mobile {
   .container {
     width: calc(100vw - 16px);
@@ -85,22 +86,17 @@
     padding: 8px 10px;
   }
 
-  .left {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .left :global(.btn) {
-    flex: 0 0 auto;
-  }
-
+  .left,
   .right {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .right :global(.btn) {
+  .count {
+    grid-column: 1 / -1;
+  }
+
+  .bar :global(.btn) {
     min-width: 0;
     padding-inline: 4px;
     white-space: nowrap;
