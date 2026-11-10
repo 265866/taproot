@@ -49,11 +49,12 @@ type pluginSource interface {
 	PluginName(pluginID string) string
 }
 
-// pendingRecord is a queued usage record with the plugin, if any, that made it.
+// pendingRecord is a queued usage record with the device that made it,
+// resolved when it was queued: the guard keeps a request's device for ten
+// minutes only, and a flush can come later.
 type pendingRecord struct {
 	usage.Record
-	pluginID string
-	inPlugin bool
+	device access.Device
 }
 
 // AttachDevices sets where usage events get their device from. Without it,
@@ -80,20 +81,25 @@ func (i *Ingest) AttachPlugins(src pluginSource) {
 // host, such as an interceptor's fallback execution, carries that request's
 // ID, and the usage belongs to the client. A plugin's own work, such as a
 // timer or a dashboard action, runs without a proxy request ID.
-func (i *Ingest) recordDevice(p pendingRecord) access.Device {
+func (i *Ingest) recordDevice(ctx context.Context, requestID string) access.Device {
 	if src := i.devices.Load(); src != nil {
-		if d, ok := (*src).RequestDevice(p.TraceID); ok {
+		if d, ok := (*src).RequestDevice(requestID); ok {
 			return d
 		}
 	}
-	if !p.inPlugin {
+	src := i.plugins.Load()
+	if src == nil {
+		return access.Device{}
+	}
+	pluginID, inPlugin := (*src).CallerPlugin(ctx)
+	if !inPlugin {
 		return access.Device{}
 	}
 	name := ""
-	if src := i.plugins.Load(); src != nil && p.pluginID != "" {
-		name = (*src).PluginName(p.pluginID)
+	if pluginID != "" {
+		name = (*src).PluginName(pluginID)
 	}
-	return access.PluginDevice(p.pluginID, name)
+	return access.PluginDevice(pluginID, name)
 }
 
 // deviceName is the name to show for a stored device.
