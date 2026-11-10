@@ -7,14 +7,12 @@ import type { TFunction } from 'i18next';
 import type { AuthFileItem, XaiBillingSummary, XaiQuotaState } from '@/types';
 import { apiCallApi, getApiCallErrorMessage } from '@/services/api';
 import {
-  XAI_API_CHAT_URL,
   XAI_API_ME_URL,
   XAI_API_REQUEST_HEADERS,
   XAI_BILLING_MONTHLY_URL,
   XAI_BILLING_WEEKLY_URL,
   XAI_SETTINGS_URL,
   XAI_USER_URL,
-  XAI_PAID_HEALTH_MODEL,
   XAI_REQUEST_HEADERS,
   normalizeStringValue,
   parseXaiBillingPayload,
@@ -101,52 +99,24 @@ const requestXaiBilling = async (
   return buildXaiBillingSummary(payload?.config);
 };
 
+/**
+ * A paid API credential has no quota totals to read. Its profile read proves the credential
+ * works without spending tokens, unlike a chat request.
+ */
 const requestXaiPaidHealth = async (authIndex: string): Promise<XaiBillingSummary> => {
-  const [profileRequest, chatRequest] = await Promise.allSettled([
-    apiCallApi.request(
-      {
-        authIndex,
-        method: 'GET',
-        url: XAI_API_ME_URL,
-        header: XAI_API_REQUEST_HEADERS,
-      },
-      { timeout: XAI_PAID_HEALTH_REQUEST_TIMEOUT_MS }
-    ),
-    apiCallApi.request(
-      {
-        authIndex,
-        method: 'POST',
-        url: XAI_API_CHAT_URL,
-        header: {
-          ...XAI_API_REQUEST_HEADERS,
-          'Content-Type': 'application/json',
-        },
-        data: JSON.stringify({
-          model: XAI_PAID_HEALTH_MODEL,
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-          stream: false,
-        }),
-      },
-      { timeout: XAI_PAID_HEALTH_REQUEST_TIMEOUT_MS }
-    ),
-  ]);
-
-  if (chatRequest.status === 'rejected') throw chatRequest.reason;
-  if (chatRequest.value.statusCode < 200 || chatRequest.value.statusCode >= 300) {
-    throw createStatusError(
-      getApiCallErrorMessage(chatRequest.value),
-      chatRequest.value.statusCode
-    );
+  const result = await apiCallApi.request(
+    {
+      authIndex,
+      method: 'GET',
+      url: XAI_API_ME_URL,
+      header: XAI_API_REQUEST_HEADERS,
+    },
+    { timeout: XAI_PAID_HEALTH_REQUEST_TIMEOUT_MS }
+  );
+  if (result.statusCode < 200 || result.statusCode >= 300) {
+    throw createStatusError(getApiCallErrorMessage(result), result.statusCode);
   }
-
-  const profile =
-    profileRequest.status === 'fulfilled' &&
-    profileRequest.value.statusCode >= 200 &&
-    profileRequest.value.statusCode < 300
-      ? profileRequest.value.body
-      : null;
-  return buildXaiPaidHealthSummary(profile);
+  return buildXaiPaidHealthSummary(result.body);
 };
 
 const readJsonRecord = (result: { statusCode: number; body?: unknown; bodyText?: string }) => {

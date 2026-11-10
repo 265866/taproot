@@ -110,7 +110,7 @@ export const buildXaiPaidHealthSummary = (profile: unknown): XaiBillingSummary =
     mode: 'paid-health',
     source: 'api.x.ai-fallback',
     planType: 'paid',
-    healthStatus: 'chat-ok',
+    healthStatus: 'credential-ok',
     userId,
     teamId,
     periodType: 'unknown',
