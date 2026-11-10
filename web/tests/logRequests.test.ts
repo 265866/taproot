@@ -202,7 +202,7 @@ describe('logs controller lifecycle wiring', () => {
     expect(page).not.toContain('logsApi.fetchLogs(');
     expect(source).toContain('const cursor = logBufferRef.current.cursor;');
     expect(source).toContain('logsApi.fetchLogs(buildLogsQuery(cursor))');
-    const checked = source.indexOf('if (!requests.logs.isCurrent(request)) return;');
+    const checked = source.indexOf("if (!requests.logs.isCurrent(request)) return '';");
     const applied = source.indexOf('applyLogPage(logBufferRef.current, data, cursor)');
     expect(checked).toBeGreaterThan(0);
     expect(applied).toBeGreaterThan(checked);

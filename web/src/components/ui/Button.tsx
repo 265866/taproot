@@ -1,9 +1,10 @@
-import type { ButtonHTMLAttributes, PropsWithChildren } from 'react';
+import type { ButtonHTMLAttributes, PropsWithChildren, Ref } from 'react';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'md' | 'sm';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  ref?: Ref<HTMLButtonElement>;
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;

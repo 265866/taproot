@@ -2,6 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { authFilesApi } from '@/services/api';
 import { useAuthStore, useConfigStore, useModelsStore } from '@/stores';
 import { useApiKeysForModels } from '@/hooks/useApiKeysForModels';
+import {
+  REFRESH_CANCELLED,
+  REFRESH_OK,
+  refreshFailed,
+  type HeaderRefreshOutcome,
+} from '@/hooks/useHeaderRefresh';
 import { useProviderRecentRequests } from '@/components/providers/hooks/useProviderRecentRequests';
 import {
   mergeRecentRequestBucketGroups,
@@ -117,13 +123,16 @@ export function useDashboardOverview() {
 
   const [authFiles, setAuthFiles] = useState<AuthFileItem[] | null>(null);
 
-  const loadAuthFiles = useCallback(async () => {
-    if (!connected) return;
+  /** Resolves to the read's failure, or null. */
+  const loadAuthFiles = useCallback(async (): Promise<HeaderRefreshOutcome | null> => {
+    if (!connected) return null;
     try {
       const response = await authFilesApi.list();
       setAuthFiles(response.files);
-    } catch {
+      return null;
+    } catch (err: unknown) {
       setAuthFiles(null);
+      return refreshFailed(err);
     }
   }, [connected]);
 
@@ -144,14 +153,15 @@ export function useDashboardOverview() {
     void loadModels();
   }, [connected, fetchConfig, loadAuthFiles, loadModels]);
 
-  const refresh = useCallback(async () => {
-    if (!connected) return;
-    await Promise.allSettled([
-      fetchConfig(true),
+  const refresh = useCallback(async (): Promise<HeaderRefreshOutcome> => {
+    if (!connected) return REFRESH_CANCELLED;
+    const [config, authFilesFailure] = await Promise.all([
+      fetchConfig(true).then(() => REFRESH_OK, refreshFailed),
       loadAuthFiles(),
       loadModels(),
-      refreshRecentRequests(),
+      refreshRecentRequests().catch(() => undefined),
     ]);
+    return authFilesFailure ?? config;
   }, [connected, fetchConfig, loadAuthFiles, loadModels, refreshRecentRequests]);
 
   const { traffic, providers } = useMemo(() => {

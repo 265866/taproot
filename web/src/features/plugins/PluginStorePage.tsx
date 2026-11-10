@@ -18,7 +18,7 @@ import {
   IconSettings,
   IconShield,
 } from '@/components/ui/icons';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { pluginStoreApi } from '@/services/api';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { getErrorMessage, isRecord } from '@/utils/helpers';
@@ -495,8 +495,9 @@ export function PluginStorePage() {
   const loadStore = useCallback(async () => {
     if (!connected) {
       setLoading(false);
-      setError({ kind: 'generic', message: t('notification.connection_required') });
-      return;
+      const message = t('notification.connection_required');
+      setError({ kind: 'generic', message });
+      return refreshFailed(message);
     }
 
     setLoading(true);
@@ -504,24 +505,28 @@ export function PluginStorePage() {
     try {
       const store = await pluginStoreApi.list();
       setData(store);
+      return REFRESH_OK;
     } catch (err: unknown) {
       const status = getErrorStatus(err);
+      let next: StoreLoadError;
       if (status === 404) {
-        setError({ kind: 'unsupported', message: t('plugin_store.unsupported_backend') });
+        next = { kind: 'unsupported', message: t('plugin_store.unsupported_backend') };
       } else if (status === 502) {
         const detail = getErrorDetailMessage(err);
-        setError({
+        next = {
           kind: 'registry',
           message: detail
             ? `${t('plugin_store.registry_failed')}: ${detail}`
             : t('plugin_store.registry_failed'),
-        });
+        };
       } else {
-        setError({
+        next = {
           kind: 'generic',
           message: getErrorMessage(err, t('plugin_store.load_failed')),
-        });
+        };
       }
+      setError(next);
+      return refreshFailed(next.message);
     } finally {
       setLoading(false);
     }

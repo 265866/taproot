@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useNotificationStore } from '@/stores';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { IconAlertTriangle, IconCheckCircle2, IconInfo, IconX } from '@/components/ui/icons';
+import {
+  IconAlertTriangle,
+  IconCheckCircle2,
+  IconCircleAlert,
+  IconInfo,
+  IconX,
+} from '@/components/ui/icons';
 import { NOTIFICATION_DURATION_MS } from '@/utils/constants';
 import type { Notification } from '@/types';
 import { createNotificationTimer } from './notificationTimer';
@@ -19,7 +25,7 @@ const notificationIcons = {
   success: IconCheckCircle2,
   info: IconInfo,
   warning: IconAlertTriangle,
-  error: IconInfo,
+  error: IconCircleAlert,
 };
 
 function NotificationCard({

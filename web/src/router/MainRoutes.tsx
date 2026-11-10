@@ -1,5 +1,7 @@
-import { Suspense, lazy, type ComponentType } from 'react';
+import { Suspense, lazy, useEffect, useState, type ComponentType } from 'react';
 import { Navigate, useLocation, useRoutes, type Location } from 'react-router-dom';
+import { PageErrorBoundary } from '@/components/common/PageErrorBoundary';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuthStore } from '@/stores';
 import { pageImports } from './pageImports';
 import { LEGACY_REDIRECTS, ROUTES, legacyRedirectTarget } from './routes';
@@ -87,8 +89,29 @@ const createMainRoutes = (supportsPlugin: boolean) => [
   { path: '*', element: <Navigate to={ROUTES.dashboard} replace /> },
 ];
 
+const LOADING_DELAY_MS = 150;
+
+/** Shown while a page's code downloads; held back briefly so a fast load does not flash it. */
+function PageLoading() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setVisible(true), LOADING_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return (
+    <div className="page-loading" aria-busy="true">
+      {visible ? <LoadingSpinner size={24} /> : null}
+    </div>
+  );
+}
+
 export function MainRoutes({ location }: { location?: Location }) {
   const supportsPlugin = useAuthStore((state) => state.supportsPlugin);
+  const currentLocation = useLocation();
   const element = useRoutes(createMainRoutes(supportsPlugin), location);
-  return <Suspense fallback={null}>{element}</Suspense>;
+  return (
+    <PageErrorBoundary resetKey={(location ?? currentLocation).pathname}>
+      <Suspense fallback={<PageLoading />}>{element}</Suspense>
+    </PageErrorBoundary>
+  );
 }
