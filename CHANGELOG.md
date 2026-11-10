@@ -2,7 +2,9 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
-## Unreleased
+## [0.4.0](https://github.com/265866/taproot/compare/taproot-v0.3.0...taproot-v0.4.0) (2026-11-10)
+
+### Upgrading from 0.3
 
 - `PUT /taproot/api/v1/settings` refuses a field it does not know with 400 `invalid_body`, where it used to ignore it. It accepts only `access.version`, `access.devices`, `access.device`, `access.addresses`, `requestLogs.maxDays`, `requestLogs.maxBytes`, `requestLogs.excludePaths`, `requestLogs.keepUnrouted404`, `backups.dailyAt`, `backups.keep`, `ingest.pollInterval`, `alerts.discordWebhook`, and `alerts.enabled`. A script that sends back what `GET /settings` returns must first drop the read-only fields, such as `access.enabled`, `backups.nextRunAt`, and `info`, and a misspelled field, such as `daily-at` for `dailyAt`, now fails rather than changing nothing.
 - `access.cache-ttl` is at most `10m`, and taproot no longer starts with a larger value. A device that took over another's tailnet address kept the other device's access for up to the whole TTL. Before you update, lower `access.cache-ttl` in `taproot.yaml` to `10m` or less, or remove it to use the default `1m`.
@@ -10,8 +12,6 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 - NixOS: `services.taproot.settings.server.host` must now be a literal Tailscale address, an IPv4 address in 100.64.0.0/10 or a bracketed IPv6 address in fd7a:115c:a1e0::/48. A configuration that set it to a MagicDNS name, a LAN address, or another IPv4 address no longer evaluates. Remove that setting and set `services.taproot.tailscale.address` to the output of `tailscale ip -4` instead.
 - `taproot.yaml` must hold one YAML document. Taproot used to read only the first document after a `---` line and ignore the rest; it now refuses to start with a second one. Merge them into one before you update.
 - After a restore, taproot exits with status 75 so that its supervisor restarts it; a normal stop still exits 0. The shipped units and compose file restart on any exit. If your own unit or monitor treats a non-zero exit as a failure, allow 75.
-
-## [0.4.0](https://github.com/265866/taproot/compare/taproot-v0.3.0...taproot-v0.4.0) (2026-11-10)
 
 ### Fixed
 
