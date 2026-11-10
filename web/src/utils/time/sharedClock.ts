@@ -87,3 +87,6 @@ export function createSharedClock(options: SharedClockOptions = {}): TestableSha
 
 /** The app-wide minute clock. Import this rather than making another one. */
 export const MINUTE_CLOCK: SharedClock = createSharedClock();
+
+/** A one-second clock for "updated 8 s ago" stamps. It runs only while a stamp is on screen. */
+export const SECOND_CLOCK: SharedClock = createSharedClock({ intervalMs: 1000 });

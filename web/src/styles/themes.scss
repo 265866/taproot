@@ -24,8 +24,34 @@
 
   --radius-lg: 6px;
   --radius-md: 4px;
+  --radius-sm: 3px;
   --space-page: 32px;
   --space-card: 24px;
+
+  // Console type scale: the dense operations pages (the shell, the Dashboard, and the primitives
+  // in components/ui that they share). Named by role so a page picks a role, not a pixel size.
+  --fs-tag: 10.5px; // severity tags, sidebar group labels
+  --fs-small: 11px; // badges, table headers
+  --fs-caption: 11.5px; // stat tile labels and sub-lines, the sidebar footer
+  --fs-meta: 12px; // section captions, links, the updated stamp
+  --fs-table: 12.5px; // table rows, compact buttons
+  --fs-body: 13px; // body text, nav items, section titles
+  --fs-title: 15px; // the phone bar title
+  --fs-verdict: 20px;
+  --fs-stat: 22px;
+  --lh-tight: 1.15;
+  --lh-body: 1.45;
+
+  // Console spacing: a 4px grid.
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --console-gutter: var(--space-7); // the content column's side padding on desktop
+  --console-gap: 18px; // between sections
 }
 
 // 浅色主题
@@ -96,6 +122,26 @@
 
   --count-badge-bg: rgba(139, 134, 128, 0.18);
   --count-badge-text: #4f4a44;
+
+  // Status: what state something is in. Each status has an ink (icons, dots, 3:1 on every
+  // surface), a text color (AA on every surface and on its own tint), a tint, and a border.
+  // Info is neutral, since the interface has no hue of its own. Provider colors never mark status.
+  --status-ok: #047857;
+  --status-ok-text: #065f46;
+  --status-ok-bg: rgba(16, 185, 129, 0.14);
+  --status-ok-border: rgba(16, 185, 129, 0.35);
+  --status-warning: #9a6700;
+  --status-warning-text: #7a4f00;
+  --status-warning-bg: rgba(202, 138, 4, 0.14);
+  --status-warning-border: rgba(202, 138, 4, 0.36);
+  --status-danger: #b84a3a;
+  --status-danger-text: #8a3a30;
+  --status-danger-bg: rgba(198, 87, 70, 0.12);
+  --status-danger-border: rgba(198, 87, 70, 0.35);
+  --status-info: #6a645e;
+  --status-info-text: #4f4a44;
+  --status-info-bg: rgba(139, 134, 128, 0.18);
+  --status-info-border: rgba(139, 134, 128, 0.32);
 
   --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   --shadow-lg: 0 10px 18px -3px rgb(0 0 0 / 0.1);
@@ -270,6 +316,23 @@
 
   --count-badge-bg: rgba(255, 255, 255, 0.1);
   --count-badge-text: var(--text-secondary);
+
+  --status-ok: #10b981;
+  --status-ok-text: #6ee7b7;
+  --status-ok-bg: rgba(16, 185, 129, 0.14);
+  --status-ok-border: rgba(16, 185, 129, 0.4);
+  --status-warning: #f59e0b;
+  --status-warning-text: #fcd34d;
+  --status-warning-bg: rgba(245, 158, 11, 0.12);
+  --status-warning-border: rgba(245, 158, 11, 0.36);
+  --status-danger: #c65746;
+  --status-danger-text: #f1b0a6;
+  --status-danger-bg: rgba(198, 87, 70, 0.16);
+  --status-danger-border: rgba(198, 87, 70, 0.45);
+  --status-info: #a3a3a3;
+  --status-info-text: #d4d4d4;
+  --status-info-bg: rgba(255, 255, 255, 0.1);
+  --status-info-border: rgba(255, 255, 255, 0.14);
 
   --shadow: none;
   --shadow-lg: 0 12px 28px -6px rgb(0 0 0 / 0.6);
