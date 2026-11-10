@@ -3,10 +3,12 @@ package taproot
 import (
 	"bytes"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 
 	"github.com/265866/taproot/internal/httpwire"
+	"github.com/265866/taproot/internal/registry"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
@@ -19,8 +21,9 @@ import (
 const unknownProvider = "unknown provider for model "
 
 // noAccounts makes upstream's "unknown provider for model X" say what is
-// wrong when the pool has no account at all, which is how every new server
-// starts. Upstream builds that message deep in its handlers, so a middleware
+// wrong with the pool: it has no account at all, which is how every new
+// server starts, every account is disabled, or no enabled account serves the
+// model. Upstream builds that message deep in its handlers, so a middleware
 // holds back 400 responses to POSTs and rewrites the message on the way out.
 // Every other response passes straight through.
 type noAccounts struct {
@@ -33,9 +36,24 @@ func (n *noAccounts) attach(m *coreauth.Manager) {
 	}
 }
 
-func (n *noAccounts) poolEmpty() bool {
+// message explains why no account serves model, or returns false before the
+// manager is attached.
+func (n *noAccounts) message(model string) (string, bool) {
 	m := n.auths.Load()
-	return m != nil && len(m.List()) == 0
+	if m == nil {
+		return "", false
+	}
+	auths := m.List()
+	if len(auths) == 0 {
+		return "no accounts configured: sign in to an account on the taproot dashboard's Accounts page, then retry model " + model, true
+	}
+	if !slices.ContainsFunc(auths, func(a *coreauth.Auth) bool { return !a.Disabled }) {
+		return "every account is disabled: enable one on the taproot dashboard's Accounts page, then retry model " + model, true
+	}
+	if provider := modelProvider(model); provider != "" {
+		return "no enabled " + provider + " account serves model " + model + ": add or enable one on the taproot dashboard's Accounts page", true
+	}
+	return "no enabled account serves model " + model + ": check the model name, or add an account that serves it on the taproot dashboard's Accounts page", true
 }
 
 func (n *noAccounts) middleware() gin.HandlerFunc {
@@ -52,7 +70,7 @@ func (n *noAccounts) middleware() gin.HandlerFunc {
 			return
 		}
 		body := w.body.Bytes()
-		if rewritten, ok := rewriteUnknownProvider(body); ok && n.poolEmpty() {
+		if rewritten, ok := rewriteUnknownProvider(body, n.message); ok {
 			body = rewritten
 			w.Header().Del("Content-Length")
 		}
@@ -63,14 +81,32 @@ func (n *noAccounts) middleware() gin.HandlerFunc {
 	}
 }
 
-// rewriteUnknownProvider replaces upstream's message in a JSON error body.
-func rewriteUnknownProvider(body []byte) ([]byte, bool) {
+// modelProvider names the provider whose accounts serve model, for the two
+// providers the dashboard signs in to, or returns "". Clients often send an
+// alias, such as claude-sonnet-4-5, that the static catalog lists only with
+// its date, so the name's prefix counts too.
+func modelProvider(model string) string {
+	switch {
+	case strings.HasPrefix(model, "claude-") || registry.LookupStaticModelInfoByChannel(model, "claude") != nil:
+		return "Claude"
+	case strings.HasPrefix(model, "gpt-") || registry.LookupStaticModelInfoByChannel(model, "codex") != nil:
+		return "Codex"
+	}
+	return ""
+}
+
+// rewriteUnknownProvider replaces upstream's message in a JSON error body with
+// the one message gives for the model.
+func rewriteUnknownProvider(body []byte, message func(model string) (string, bool)) ([]byte, bool) {
 	msg := ojson.GetBytes(body, "error.message")
 	if msg.Type != ojson.String || !strings.HasPrefix(msg.Str, unknownProvider) {
 		return nil, false
 	}
-	model := strings.TrimPrefix(msg.Str, unknownProvider)
-	out, err := ojson.SetBytes(body, "error.message", "no accounts configured: sign in to an account on the taproot dashboard's Accounts page, then retry model "+model)
+	text, ok := message(strings.TrimPrefix(msg.Str, unknownProvider))
+	if !ok {
+		return nil, false
+	}
+	out, err := ojson.SetBytes(body, "error.message", text)
 	if err != nil {
 		return nil, false
 	}

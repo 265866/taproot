@@ -90,17 +90,19 @@ func TestSetupRequiresTailscaledSocket(t *testing.T) {
 	}
 }
 
-// With no account at all, upstream's "unknown provider for model" becomes a
-// message that says what to do. Once an account exists, the message is upstream's.
-func TestEmptyPoolSaysNoAccounts(t *testing.T) {
+// Upstream's "unknown provider for model" becomes a message that says what is
+// wrong with the pool: no account at all, every account disabled, or no
+// enabled account for the model's provider.
+func TestUnknownProviderSaysWhatThePoolLacks(t *testing.T) {
 	f := newServer(t)
-	requests := []struct{ path, body, model string }{
-		{"/v1/messages", `{"model":"claude-sonnet-4-5","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, "claude-sonnet-4-5"},
-		{"/v1/messages", `{"model":"claude-sonnet-4-5","stream":true,"max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, "claude-sonnet-4-5"},
-		{"/v1/chat/completions", `{"model":"gpt-5","messages":[{"role":"user","content":"hi"}]}`, "gpt-5"},
-		{"/v1/responses", `{"model":"gpt-5","stream":true,"input":"hi"}`, "gpt-5"},
+	requests := []struct{ path, body, model, provider string }{
+		{"/v1/messages", `{"model":"claude-sonnet-4-5","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, "claude-sonnet-4-5", "Claude"},
+		{"/v1/messages", `{"model":"claude-sonnet-4-5","stream":true,"max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, "claude-sonnet-4-5", "Claude"},
+		{"/v1/chat/completions", `{"model":"gpt-5","messages":[{"role":"user","content":"hi"}]}`, "gpt-5", "Codex"},
+		{"/v1/responses", `{"model":"gpt-5","stream":true,"input":"hi"}`, "gpt-5", "Codex"},
 		// The model name is the client's, so it stays escaped in the rewritten body.
-		{"/backend-api/codex/responses", `{"model":"gpt-5\"x","stream":true,"input":"hi"}`, "gpt-5\"x"},
+		{"/backend-api/codex/responses", `{"model":"gpt-5\"x","stream":true,"input":"hi"}`, "gpt-5\"x", "Codex"},
+		{"/v1/chat/completions", `{"model":"example-model","messages":[{"role":"user","content":"hi"}]}`, "example-model", ""},
 	}
 	send := func(path, body string) (int, string) {
 		rec := f.do(req{remote: "127.0.0.1", host: "localhost:8317", method: http.MethodPost, path: path, headers: map[string]string{"Content-Type": "application/json"}, body: body})
@@ -110,21 +112,37 @@ func TestEmptyPoolSaysNoAccounts(t *testing.T) {
 		}
 		return rec.Code, parsed.Error.Message
 	}
-	for _, r := range requests {
-		code, msg := send(r.path, r.body)
-		want := "no accounts configured: sign in to an account on the taproot dashboard's Accounts page, then retry model " + r.model
-		if code != http.StatusBadRequest || msg != want {
-			t.Errorf("POST %s with no accounts = %d %q, want 400 %q", r.path, code, msg, want)
+	check := func(state string, want func(model, provider string) string) {
+		t.Helper()
+		for _, r := range requests {
+			code, msg := send(r.path, r.body)
+			if w := want(r.model, r.provider); code != http.StatusBadRequest || msg != w {
+				t.Errorf("%s: POST %s = %d %q, want 400 %q", state, r.path, code, msg, w)
+			}
 		}
 	}
 
-	if _, err := f.auths.Register(context.Background(), &auth.Auth{ID: "claude-x.json", Provider: "claude"}); err != nil {
+	check("no accounts", func(model, _ string) string {
+		return "no accounts configured: sign in to an account on the taproot dashboard's Accounts page, then retry model " + model
+	})
+
+	ctx := context.Background()
+	if _, err := f.auths.Register(ctx, &auth.Auth{ID: "claude-x.json", Provider: "claude", Disabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range requests {
-		code, msg := send(r.path, r.body)
-		if want := "unknown provider for model " + r.model; code != http.StatusBadRequest || msg != want {
-			t.Errorf("POST %s with an account = %d %q, want upstream's 400 %q", r.path, code, msg, want)
-		}
+	check("every account disabled", func(model, _ string) string {
+		return "every account is disabled: enable one on the taproot dashboard's Accounts page, then retry model " + model
+	})
+
+	// The test registers no models, so no model has a provider, as when a
+	// pool holds only accounts of another provider.
+	if _, err := f.auths.Register(ctx, &auth.Auth{ID: "claude-y.json", Provider: "claude"}); err != nil {
+		t.Fatal(err)
 	}
+	check("no account for the model", func(model, provider string) string {
+		if provider == "" {
+			return "no enabled account serves model " + model + ": check the model name, or add an account that serves it on the taproot dashboard's Accounts page"
+		}
+		return "no enabled " + provider + " account serves model " + model + ": add or enable one on the taproot dashboard's Accounts page"
+	})
 }
