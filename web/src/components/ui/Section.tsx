@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { Children, useId, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -53,7 +53,9 @@ export function Section({
   const { mask } = useEmailMask();
   const titleId = useId();
   const Heading = headingLevel === 2 ? 'h2' : 'h3';
-  const hasContent = children !== undefined && children !== null && children !== false;
+  // Children.toArray drops null, booleans, and empty arrays, so `rows.map(...)` over no rows is
+  // no content and the skeleton or the bare error still shows.
+  const hasContent = Children.toArray(children).length > 0;
   const showStale = hasContent && (stale || Boolean(error));
   const showSkeleton = Boolean(loading) && !hasContent && !error;
 

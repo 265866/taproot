@@ -98,6 +98,32 @@ describe('Section', () => {
     expect(html).not.toContain('aria-busy');
   });
 
+  test('an empty list of rows is no content: the first load still shows its skeleton', () => {
+    const rows: string[] = [];
+    const html = render(
+      createElement(Section, {
+        title: 'Recent failures',
+        loading: true,
+        children: rows.map((row) => createElement('p', { key: row }, row)),
+      })
+    );
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('>Loading<');
+  });
+
+  test('an empty list of rows is no content: an error takes the body, not marked stale', () => {
+    const html = render(
+      createElement(Section, {
+        title: 'Recent failures',
+        error: 'bad gateway',
+        children: [null, false, []],
+      })
+    );
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain('Stale');
+    expect(html.match(/role="alert"/g)).toHaveLength(1);
+  });
+
   test('failed with nothing loaded: the error takes the body, with Retry', () => {
     const html = render(
       createElement(Section, { title: 'Traffic', error: 'bad gateway', onRetry: () => undefined })
