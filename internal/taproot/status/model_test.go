@@ -1,6 +1,7 @@
 package status
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -408,6 +409,27 @@ func TestAttentionPoolUnderFifteenPercent(t *testing.T) {
 		if ok && it.Title != "Codex pool is under 15%" {
 			t.Errorf("title = %q", it.Title)
 		}
+	}
+}
+
+// An unreadable backups source replaces the overdue item, whose age it cannot
+// know, and is listed only while the daily schedule is on.
+func TestAttentionUnreadableBackups(t *testing.T) {
+	stale := backupState{scheduled: true, watchingSince: t0.Add(-27 * time.Hour)}
+	readErr := map[string]error{sourceBackups: errors.New("open backups: permission denied")}
+	accounts := accountsFrom(nil, nil, t0)
+	eval := func(b backupState, unreadable map[string]error) Attention {
+		return attention(attentionInputs{now: t0, accounts: accounts, backup: b, unreadable: unreadable, firstSeen: func(string) time.Time { return t0 }})
+	}
+	if att := eval(stale, nil); len(att.Items) != 1 || att.Items[0].Kind != "backup_overdue" {
+		t.Fatalf("readable and stale: %+v, want the overdue item", att.Items)
+	}
+	att := eval(stale, readErr)
+	if len(att.Items) != 1 || att.Items[0].ID != "unreadable:backups" || att.Counts.Backups != 1 {
+		t.Errorf("unreadable and stale: %+v, want only the unreadable item, on the Backups badge", att)
+	}
+	if att := eval(backupState{}, readErr); len(att.Items) != 0 {
+		t.Errorf("schedule off: %+v, want nothing", att.Items)
 	}
 }
 

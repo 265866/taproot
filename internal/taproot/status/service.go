@@ -144,6 +144,10 @@ func (s *Service) handle(pick func(evaluation) any) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		e, err := s.evaluate(c.Request.Context())
 		if err != nil {
+			if c.Request.Context().Err() != nil {
+				c.Abort()
+				return
+			}
 			log.WithError(err).Warn("taproot status: evaluate")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "could not read the server's state; see the server log"}})
 			return

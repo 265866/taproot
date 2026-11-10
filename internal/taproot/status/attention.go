@@ -156,7 +156,9 @@ func attention(in attentionInputs) Attention {
 		add(unreadableItem(sourceAccess, err))
 	}
 	if err := in.unreadable[sourceBackups]; err != nil {
-		add(unreadableItem(sourceBackups, err))
+		if in.backup.scheduled {
+			add(unreadableItem(sourceBackups, err))
+		}
 	} else if it, ok := backupItem(in.backup, in.now); ok {
 		add(it)
 	}
@@ -201,9 +203,9 @@ func attention(in attentionInputs) Attention {
 		switch {
 		case strings.HasPrefix(it.Kind, "account_"), it.Kind == "pool_low":
 			out.Counts.Accounts++
-		case it.Kind == "access_request", it.Kind == "tailscaled_down", it.ID == "unreadable:access":
+		case it.Kind == "access_request", it.Kind == "tailscaled_down", it.Kind == "source_unreadable" && it.Subject.Type == "access":
 			out.Counts.Access++
-		case it.Kind == "backup_overdue", it.ID == "unreadable:backups":
+		case it.Kind == "backup_overdue", it.Kind == "source_unreadable" && it.Subject.Type == "backups":
 			out.Counts.Backups++
 		}
 	}

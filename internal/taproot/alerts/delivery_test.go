@@ -289,8 +289,9 @@ func TestDeliveryHealthTracksFailuresUntilASuccess(t *testing.T) {
 
 // An alert whose delivery failed and whose condition then cleared queues
 // nothing more, so the Dashboard's item must clear another way: a successful
-// test send, or a new start of alerts.
-func TestDeliveryHealthClearsOnATestSendOrARestart(t *testing.T) {
+// test send, or a new webhook. Turning alerts off and on tests nothing, so
+// the failures stay, and an undone settings save puts them back.
+func TestDeliveryHealthClearsOnATestSendOrANewWebhook(t *testing.T) {
 	fail := func(h *harness) {
 		h.svc.recordDelivery(errors.New("discord answered 503"))
 		if got := h.svc.DeliveryHealth(); got.Failures != 1 {
@@ -325,14 +326,19 @@ func TestDeliveryHealthClearsOnATestSendOrARestart(t *testing.T) {
 	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook}); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.svc.DeliveryHealth(); got.Failures != 0 || !got.Active {
-		t.Fatalf("after turning alerts off and on: %+v, want a fresh count", got)
+	if got := h.svc.DeliveryHealth(); got.Failures != 1 || !got.Active {
+		t.Fatalf("after turning alerts off and on: %+v, want the failure kept", got)
 	}
-	fail(h)
-	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook}); err != nil {
+
+	restore := h.svc.SnapshotConfig()
+	if err := h.svc.SetConfig(Config{DiscordWebhook: testWebhook + "2"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.svc.DeliveryHealth(); got.Failures != 1 {
-		t.Fatalf("an unchanged config: %+v, want the failures kept", got)
+	if got := h.svc.DeliveryHealth(); got.Failures != 0 {
+		t.Fatalf("after a new webhook: %+v, want a fresh count", got)
+	}
+	restore()
+	if got := h.svc.DeliveryHealth(); got.Failures != 1 || h.svc.webhook() != testWebhook {
+		t.Fatalf("after undoing the save: %+v, want the old webhook and its failure back", got)
 	}
 }

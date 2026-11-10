@@ -185,13 +185,12 @@ func (s *Service) SetConfig(cfg Config) error {
 		}
 	}
 	newWebhook := cfg.DiscordWebhook != "" && !unchanged
-	restarted := !unchanged || cfg.Active() != s.cfg.Active()
 	s.cfg = cfg
 	if !unchanged {
 		s.webhookInvalid = false
 	}
 	s.cfgMu.Unlock()
-	if restarted {
+	if !unchanged {
 		s.healthMu.Lock()
 		s.health = DeliveryHealth{}
 		s.healthMu.Unlock()
@@ -210,16 +209,22 @@ func (s *Service) SetConfig(cfg Config) error {
 }
 
 // SnapshotConfig returns a function that puts back the current webhook,
-// switch, and invalid mark exactly, without validating them, to undo a
-// SetConfig.
+// switch, invalid mark, and delivery health exactly, without validating
+// them, to undo a SetConfig.
 func (s *Service) SnapshotConfig() (restore func()) {
 	s.cfgMu.RLock()
 	cfg, invalid := s.cfg, s.webhookInvalid
 	s.cfgMu.RUnlock()
+	s.healthMu.Lock()
+	health := s.health
+	s.healthMu.Unlock()
 	return func() {
 		s.cfgMu.Lock()
 		s.cfg, s.webhookInvalid = cfg, invalid
 		s.cfgMu.Unlock()
+		s.healthMu.Lock()
+		s.health = health
+		s.healthMu.Unlock()
 		s.signal()
 	}
 }
@@ -316,8 +321,8 @@ type DeliveryHealth struct {
 
 // DeliveryHealth reports the queue's recent delivery outcomes. A successful
 // test send counts as a delivery and a failed one does not; messages the
-// queue skipped do not count. A new webhook, or turning alerts off or on,
-// starts the count again.
+// queue skipped do not count. A new webhook starts the count again; turning
+// alerts off and on keeps it, because nothing has tested the webhook since.
 func (s *Service) DeliveryHealth() DeliveryHealth {
 	s.healthMu.Lock()
 	h := s.health
