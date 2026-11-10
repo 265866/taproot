@@ -338,6 +338,9 @@
     "plan_supergrok_heavy": "SuperGrok Heavy",
     "plan_paid": "Paid",
     "paid_health": "The paid API credential works. xAI does not expose quota totals for it.",
+    "paid_team_blocked": "xAI has blocked this credential's team from API requests.",
+    "paid_key_blocked": "xAI has blocked this API key.",
+    "paid_key_disabled": "This API key is disabled in xAI.",
     "pay_as_you_go_label": "Pay as you go",
     "pay_as_you_go_enabled": "Enabled, cap {{cap}}",
     "pay_as_you_go_disabled": "Disabled"

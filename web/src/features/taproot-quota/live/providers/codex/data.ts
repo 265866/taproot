@@ -490,9 +490,10 @@ const createCodexRedeemRequestId = (): string => {
 };
 
 /**
- * Redeem ids of consume calls that got no definite answer, per credential. A retry sends the same
- * id, so the server can recognize it rather than spend a second credit after a lost response.
- * Tab memory only, dropped when the connection changes.
+ * Redeem ids of consume calls that got no definite answer (a transport error or a retryable
+ * status), per credential. A retry sends the same id, so the server can recognize it rather than
+ * spend a second credit after a lost response. Tab memory only, dropped when the connection
+ * changes.
  */
 const unconfirmedRedeems = {
   revision: apiClient.getConnectionRevision(),
@@ -512,6 +513,10 @@ const redeemRequestIdFor = (authIndex: string): string => {
   }
   return id;
 };
+
+/** Answers that may hide an applied redeem, so a retry must send the same id. */
+const isRetryableRedeemStatus = (status: number): boolean =>
+  status >= 500 || status === 408 || status === 409 || status === 429;
 
 const consumeCodexRateLimitResetCredit = async (
   file: AuthFileItem,
@@ -541,10 +546,12 @@ const consumeCodexRateLimitResetCredit = async (
     throw new Error(t('codex_quota.reset_not_confirmed'));
   }
 
+  if (!isRetryableRedeemStatus(result.statusCode)) {
+    unconfirmedRedeems.ids.delete(authIndex);
+  }
   if (result.statusCode < 200 || result.statusCode >= 300) {
     throw createStatusError(getApiCallErrorMessage(result), result.statusCode);
   }
-  unconfirmedRedeems.ids.delete(authIndex);
   const code = isRecord(result.body) ? result.body.code : undefined;
   if (code !== 'reset' && code !== 'already_redeemed') {
     throw new Error(t('codex_quota.reset_not_confirmed'));

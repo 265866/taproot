@@ -24,6 +24,7 @@ import {
   isDisabledAuthFile,
   isPaidXaiAuthFile,
   isXaiFile,
+  readXaiPaidBlock,
 } from '@/utils/quota';
 import { normalizeAuthIndex } from '@/utils/authIndex';
 import type { QuotaProviderData } from '../types';
@@ -99,11 +100,17 @@ const requestXaiBilling = async (
   return buildXaiBillingSummary(payload?.config);
 };
 
+/** xAI answered the profile read and refuses this credential's API requests. */
+class XaiPaidBlockedError extends Error {}
+
 /**
  * A paid API credential has no quota totals to read. Its profile read proves the credential
- * works without spending tokens, unlike a chat request.
+ * works without spending tokens, unlike a chat request, unless the profile says xAI blocks it.
  */
-const requestXaiPaidHealth = async (authIndex: string): Promise<XaiBillingSummary> => {
+const requestXaiPaidHealth = async (
+  authIndex: string,
+  t: TFunction
+): Promise<XaiBillingSummary> => {
   const result = await apiCallApi.request(
     {
       authIndex,
@@ -115,6 +122,10 @@ const requestXaiPaidHealth = async (authIndex: string): Promise<XaiBillingSummar
   );
   if (result.statusCode < 200 || result.statusCode >= 300) {
     throw createStatusError(getApiCallErrorMessage(result), result.statusCode);
+  }
+  const block = readXaiPaidBlock(result.body);
+  if (block) {
+    throw new XaiPaidBlockedError(t(`xai_quota.paid_${block}`));
   }
   return buildXaiPaidHealthSummary(result.body);
 };
@@ -179,7 +190,7 @@ const fetchXaiQuota = async (file: AuthFileItem, t: TFunction): Promise<XaiBilli
   }
 
   if (isPaidXaiAuthFile(file)) {
-    return requestXaiPaidHealth(authIndex);
+    return requestXaiPaidHealth(authIndex, t);
   }
 
   const requestHeader = buildXaiRequestHeaders(file);
@@ -198,8 +209,9 @@ const fetchXaiQuota = async (file: AuthFileItem, t: TFunction): Promise<XaiBilli
       : new Error(t('xai_quota.empty_data'));
 
   try {
-    return await requestXaiPaidHealth(authIndex);
-  } catch {
+    return await requestXaiPaidHealth(authIndex, t);
+  } catch (error) {
+    if (error instanceof XaiPaidBlockedError) throw error;
     // Preserve the original free billing error when neither account mode can be queried.
     throw billingError;
   }

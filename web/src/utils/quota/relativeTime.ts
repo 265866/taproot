@@ -105,8 +105,8 @@ export interface ResetDisplay {
   absolute: string;
   /** Null when no usable instant was available — render the absolute half alone. */
   relative: string | null;
-  /** The instant is behind `nowMs`: the reset happened after the value beside it was read. */
-  passed: boolean;
+  /** The instant fell between the read and `nowMs`: the values beside it predate this reset. */
+  resetSinceRead: boolean;
 }
 
 /**
@@ -119,13 +119,16 @@ export interface ResetDisplay {
  * pre-existing rendering — which is what a store entry cached by an older
  * build, with no `resetAtMs` field, will hit.
  *
+ * `readAtMs` is passed only for a quota window's reset, so an expiry never reads as a reset.
+ *
  * Returns null when there is nothing worth rendering at all.
  */
 export function buildResetDisplay(
   absoluteLabel: string | undefined | null,
   atMs: number | undefined | null,
   nowMs: number,
-  locale?: string
+  locale?: string,
+  readAtMs?: number
 ): ResetDisplay | null {
   const trimmed = typeof absoluteLabel === 'string' ? absoluteLabel.trim() : '';
   const absolute = trimmed && trimmed !== '-' ? trimmed : null;
@@ -136,6 +139,7 @@ export function buildResetDisplay(
   return {
     absolute: absolute ?? formatInstantShort(usableMs as number, locale),
     relative: usableMs === null ? null : formatRelativeInstant(usableMs, nowMs, locale),
-    passed: usableMs !== null && usableMs <= nowMs,
+    resetSinceRead:
+      usableMs !== null && readAtMs !== undefined && readAtMs < usableMs && usableMs <= nowMs,
   };
 }

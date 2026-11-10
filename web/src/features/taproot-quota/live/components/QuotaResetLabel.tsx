@@ -30,7 +30,7 @@ export function QuotaResetLabel({ display, classes, soon = false }: QuotaResetLa
               : classes.quotaResetRelative
           }
         >
-          {display.passed ? t('taproot_quota.live.reset_since_read') : display.relative}
+          {display.resetSinceRead ? t('taproot_quota.live.reset_since_read') : display.relative}
         </span>
       )}
     </>

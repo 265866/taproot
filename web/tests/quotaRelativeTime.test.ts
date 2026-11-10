@@ -97,9 +97,16 @@ describe('formatInstantShort', () => {
 });
 
 describe('buildResetDisplay', () => {
-  test('marks an instant that is already behind now', () => {
-    expect(buildResetDisplay(null, NOW - 5 * MINUTE_MS, NOW, 'en')?.passed).toBe(true);
-    expect(buildResetDisplay(null, NOW + 5 * MINUTE_MS, NOW, 'en')?.passed).toBe(false);
+  test('marks a reset that fell between the read and now', () => {
+    const readAt = NOW - HOUR_MS;
+    const sinceRead = (at: number, read?: number) =>
+      buildResetDisplay(null, at, NOW, 'en', read)?.resetSinceRead;
+    expect(sinceRead(NOW - 5 * MINUTE_MS, readAt)).toBe(true);
+    expect(sinceRead(NOW + 5 * MINUTE_MS, readAt)).toBe(false);
+    // Already past when read: the provider's own stale instant, not a reset since.
+    expect(sinceRead(readAt - MINUTE_MS, readAt)).toBe(false);
+    // No read time means the instant is not a quota window reset, such as an expiry.
+    expect(sinceRead(NOW - 5 * MINUTE_MS)).toBe(false);
   });
 
   test('pairs a baked absolute label with a computed relative one', () => {
@@ -114,7 +121,7 @@ describe('buildResetDisplay', () => {
     expect(buildResetDisplay('08-13 14:30', null, NOW, 'en')).toEqual({
       absolute: '08-13 14:30',
       relative: null,
-      passed: false,
+      resetSinceRead: false,
     });
     expect(buildResetDisplay('08-13 14:30', undefined, NOW, 'en')?.relative).toBeNull();
   });

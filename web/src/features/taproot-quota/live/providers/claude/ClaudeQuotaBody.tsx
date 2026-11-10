@@ -21,6 +21,7 @@ import type { QuotaBodyProps } from '../../types';
 export function ClaudeQuotaBody({
   quota,
   classes,
+  readAt,
   planItems,
   afterPlan,
 }: QuotaBodyProps<ClaudeQuotaState>) {
@@ -130,7 +131,8 @@ export function ClaudeQuotaBody({
           formatQuotaResetTime(balance.resetsAt ?? undefined),
           resolveResetMs([balance.resetsAt]),
           now,
-          language
+          language,
+          readAt
         );
         return (
           <div key={balance.key} className={classes.quotaRow}>
@@ -179,7 +181,8 @@ export function ClaudeQuotaBody({
             window.resetLabel,
             window.resetAtMs,
             now,
-            i18n.resolvedLanguage
+            i18n.resolvedLanguage,
+            readAt
           );
 
           const soon = window.id === soonestRowId;

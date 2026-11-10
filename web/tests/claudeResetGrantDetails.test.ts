@@ -75,6 +75,12 @@ describe('Claude reset grant details', () => {
     expect(markup).not.toContain('<button');
   });
 
+  test('an expired grant reads as past, never as a quota reset', () => {
+    const markup = render([grant({ endsAt: new Date(Date.now() - 5 * 60_000).toISOString() })]);
+    expect(markup).not.toContain('reset since read');
+    expect(markup).toContain('minutes ago');
+  });
+
   test.each(['en'])('translates fallback labels in %s', async (lng) => {
     await i18n.changeLanguage(lng);
     try {

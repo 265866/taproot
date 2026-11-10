@@ -67,9 +67,9 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
       role="img"
       aria-label={ariaLabel}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        {/* The wrapper is a named image; Recharts' focusable layer inside it would be an
-            unnamed application stop that steps one of thousands of rows per key press. */}
+      {/* The wrapper is the one named image. Hidden, the chart inside exposes neither a second
+          image named by its tick text nor a focusable layer that steps through every row. */}
+      <ResponsiveContainer width="100%" height="100%" aria-hidden="true">
         <ComposedChart
           data={rows}
           margin={{ top: 28, right: 12, bottom: 0, left: 0 }}

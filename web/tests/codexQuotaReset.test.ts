@@ -99,6 +99,9 @@ describe('Codex reset gateway cooldown', () => {
   test.each([
     ['a lost response', () => Promise.reject(new Error('socket hang up'))],
     ['a gateway error', () => Promise.resolve(response({}, 502))],
+    ['a request timeout', () => Promise.resolve(response({}, 408))],
+    ['a conflict', () => Promise.resolve(response({}, 409))],
+    ['rate limiting', () => Promise.resolve(response({}, 429))],
   ])('retries after %s with the same redeem id', async (_name, fail) => {
     const { request } = setup({ code: 'reset' });
     const succeed = request.getMockImplementation()!;
@@ -114,6 +117,21 @@ describe('Codex reset gateway cooldown', () => {
     await reset();
     expect(redeemIds(request)[2]).not.toBe(first);
   });
+
+  test.each([400, 401, 403, 404, 422])(
+    'an HTTP %i refusal settles the redeem id',
+    async (status) => {
+      const { request } = setup({ code: 'reset' });
+      const succeed = request.getMockImplementation()!;
+      request.mockImplementationOnce(() => Promise.resolve(response({}, status)));
+      await expect(reset()).rejects.toThrow();
+      request.mockImplementation(succeed);
+      await reset();
+      const [first, second] = redeemIds(request);
+      expect(first).toBeString();
+      expect(second).not.toBe(first);
+    }
+  );
 
   test('a confirmed refusal settles the redeem id', async () => {
     const { request } = setup({ code: 'no_credit' });

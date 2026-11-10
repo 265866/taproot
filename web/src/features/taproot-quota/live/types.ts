@@ -98,6 +98,8 @@ export function bindQuotaClasses(module: Record<string, string>, source: string)
 export interface QuotaBodyProps<TState> {
   quota: TState;
   classes: QuotaClassMap;
+  /** When `quota` was read, epoch ms; a window reset after it reads "reset since read". */
+  readAt?: number;
   /** Host-owned chips appended to the provider's plan row (`codexPlanItem` spans). */
   planItems?: ReactNode;
   /** Host-owned content placed right after the plan row, before usage rows. */

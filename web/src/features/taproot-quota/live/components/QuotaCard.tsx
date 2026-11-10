@@ -171,6 +171,7 @@ export function QuotaCard(props: QuotaCardProps) {
         ) : quota && !retainedClaudeUsage ? (
           <adapter.Body
             quota={quota}
+            readAt={quota.readAt}
             classes={quotaClasses}
             planItems={claudePlanItems}
             afterPlan={claudeAfterPlan}
@@ -186,6 +187,7 @@ export function QuotaCard(props: QuotaCardProps) {
         {retainedClaudeUsage && quota && (
           <adapter.Body
             quota={quota}
+            readAt={quota.readAt}
             classes={quotaClasses}
             planItems={claudePlanItems}
             afterPlan={claudeAfterPlan}

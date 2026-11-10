@@ -160,6 +160,61 @@ describe('xAI paid OAuth quota fallback', () => {
     expect(summary).toMatchObject({ mode: 'paid-health', userId: 'paid-user' });
   });
 
+  test.each([
+    [{ team_blocked: true }, 'xai_quota.paid_team_blocked'],
+    [
+      { team_blocked: false, api_key: { blocked: true, disabled: false } },
+      'xai_quota.paid_key_blocked',
+    ],
+    [
+      { team_blocked: false, api_key: { blocked: false, disabled: true } },
+      'xai_quota.paid_key_disabled',
+    ],
+  ])('reports a credential xAI refuses (%o) instead of healthy', async (profile, message) => {
+    apiCallApi.request = async (payload) => {
+      if (payload.url === XAI_API_ME_URL) {
+        return result(200, { user_id: 'user-1', team_id: 'team-1', ...profile });
+      }
+      throw new Error(`Unexpected URL: ${payload.url}`);
+    };
+
+    await expect(
+      XAI_CONFIG.fetchQuota(
+        { name: 'paid.json', type: 'xai', auth_index: 'xai:6', using_api: true, prefix: 'paid' },
+        t
+      )
+    ).rejects.toThrow(message);
+  });
+
+  test('reports a refused credential found through the billing fallback', async () => {
+    apiCallApi.request = async (payload) => {
+      if (payload.url === XAI_API_ME_URL) {
+        return result(200, { user_id: 'paid-user', team_blocked: true });
+      }
+      return result(403, { error: 'Access denied' });
+    };
+
+    await expect(
+      XAI_CONFIG.fetchQuota({ name: 'unknown.json', type: 'xai', auth_index: 'xai:7' }, t)
+    ).rejects.toThrow('xai_quota.paid_team_blocked');
+  });
+
+  test('stays healthy when the profile says nothing is blocked', async () => {
+    apiCallApi.request = async () =>
+      result(200, {
+        user_id: 'user-1',
+        team_id: 'team-1',
+        team_blocked: false,
+        api_key: { blocked: false, disabled: false },
+      });
+
+    const summary = await XAI_CONFIG.fetchQuota(
+      { name: 'paid.json', type: 'xai', auth_index: 'xai:8', using_api: true, prefix: 'paid' },
+      t
+    );
+    expect(summary).toMatchObject({ mode: 'paid-health', healthStatus: 'credential-ok' });
+  });
+
   test('preserves the billing error when the paid fallback also fails', async () => {
     apiCallApi.request = async (payload) => {
       if (payload.url === XAI_API_ME_URL) return result(401, { error: 'Invalid token' });
