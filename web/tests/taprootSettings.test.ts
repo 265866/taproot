@@ -110,7 +110,7 @@ describe('request log retention', () => {
   test('validates days, size, and exclude rules', () => {
     expect(retentionUpdate({ ...base, days: '0' })).toMatchObject({ error: 'days_range' });
     expect(retentionUpdate({ ...base, days: '2.5' })).toMatchObject({ error: 'days_range' });
-    expect(retentionUpdate({ ...base, days: '3651' })).toMatchObject({ error: 'days_range' });
+    expect(retentionUpdate({ ...base, days: '106752' })).toMatchObject({ error: 'days_range' });
     // Fields behind "Keep forever" are not validated.
     expect(retentionUpdate({ ...base, daysLimited: false, days: 'x' }).ok).toBe(true);
     expect(retentionUpdate({ ...base, size: 'lots' })).toMatchObject({ error: 'size_format' });
@@ -163,9 +163,26 @@ describe('backup schedule', () => {
     }
     expect(backupsUpdate({ ...form, dailyAt: '23:59' }).ok).toBe(true);
     expect(backupsUpdate({ ...form, dailyAt: '00:00' }).ok).toBe(true);
-    for (const keep of ['0', '-1', '1.5', '', '1001']) {
+    for (const keep of ['0', '-1', '1.5', '']) {
       expect(backupsUpdate({ ...form, keep })).toMatchObject({ error: 'keep_range' });
     }
+  });
+
+  test('takes every value the server takes, so a saved value never blocks the card', () => {
+    // The server needs only keep >= 1 and any number of days.
+    const backups = backupsForm({ dailyAt: '03:13', keep: 2000 });
+    expect(backupsUpdate({ ...backups, dailyAt: '04:00' })).toEqual({
+      ok: true,
+      update: { dailyAt: '04:00', keep: 2000 },
+    });
+    const retention = retentionForm(
+      { maxDays: 5000, maxBytes: -1, excludePaths: [], keepUnrouted404: false },
+      true
+    );
+    expect(retentionUpdate({ ...retention, keepUnrouted404: true })).toMatchObject({
+      ok: true,
+      update: { requestLogs: { maxDays: 5000, keepUnrouted404: true } },
+    });
   });
 });
 

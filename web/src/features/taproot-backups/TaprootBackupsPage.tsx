@@ -6,7 +6,12 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { IconDownload, IconPlus } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { REFRESH_OK, refreshFailed, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import {
+  REFRESH_CANCELLED,
+  REFRESH_OK,
+  refreshFailed,
+  useHeaderRefresh,
+} from '@/hooks/useHeaderRefresh';
 import { formatBytes } from '@/features/taproot-logs/model/format';
 import { ROUTES } from '@/router/routes';
 import {
@@ -17,13 +22,19 @@ import {
 } from '@/services/api/taproot';
 import { useNotificationStore } from '@/stores';
 import { getErrorMessage } from '@/utils/helpers';
+import { createLoadSequence } from '@/utils/loadSequence';
 import {
   RESTART_PROBE_MS,
   confirmationMatches,
+  isRestartWatchFinished,
+  lockedOutKey,
+  restartProbeFailure,
+  restoreRefusal,
   startRestartWatch,
   stepRestartWatch,
   summarizeBackups,
   type RestartWatch,
+  type RestoreRefusal,
 } from './model/backups';
 import { formatCreatedAt, serverZoneLabel } from './model/schedule';
 import { NextBackup } from './NextBackup';
@@ -40,31 +51,25 @@ export function TaprootBackupsPage() {
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
   const [restored, setRestored] = useState<RestoreResult | null>(null);
   const [watch, setWatch] = useState<RestartWatch | null>(null);
-
-  // The schedule line is informational; the list still works without it.
-  const loadSettings = useCallback(
-    () =>
-      taprootApi
-        .settings()
-        .then(setSettings)
-        .catch(() => {}),
-    []
-  );
+  const [loads] = useState(createLoadSequence);
 
   const load = useCallback(async () => {
-    const settingsLoaded = loadSettings();
-    let outcome = REFRESH_OK;
-    try {
-      const res = await taprootApi.backups();
-      setBackups(res.backups);
-      setError('');
-    } catch (err: unknown) {
-      setError(getErrorMessage(err));
-      outcome = refreshFailed(err);
+    const isCurrent = loads.start();
+    const [list, schedule] = await Promise.allSettled([
+      taprootApi.backups(),
+      taprootApi.settings(),
+    ]);
+    if (!isCurrent()) return REFRESH_CANCELLED;
+    // The schedule line is informational; the list still works without it.
+    if (schedule.status === 'fulfilled') setSettings(schedule.value);
+    if (list.status === 'rejected') {
+      setError(getErrorMessage(list.reason));
+      return refreshFailed(list.reason);
     }
-    await settingsLoaded;
-    return outcome;
-  }, [loadSettings]);
+    setBackups(list.value.backups);
+    setError('');
+    return REFRESH_OK;
+  }, [loads]);
 
   useEffect(() => {
     void load();
@@ -73,23 +78,25 @@ export function TaprootBackupsPage() {
 
   // After a restore that restarts the server, probe until it answers again.
   useEffect(() => {
-    if (!watch || watch.phase === 'back' || watch.phase === 'gave_up') return;
+    if (!watch || isRestartWatchFinished(watch)) return;
     const timer = window.setTimeout(() => {
       taprootApi
         .backups()
-        .then((res) => {
-          setWatch((current) => current && stepRestartWatch(current, true));
-          setBackups(res.backups);
+        .then(() => {
+          setWatch((current) => current && stepRestartWatch(current, 'ok'));
           // The restore may have replaced taproot.yaml and with it the schedule.
-          void loadSettings();
+          void load();
         })
-        .catch(() => setWatch((current) => current && stepRestartWatch(current, false)));
+        .catch((err: unknown) =>
+          setWatch((current) => current && stepRestartWatch(current, restartProbeFailure(err)))
+        );
     }, RESTART_PROBE_MS);
     return () => window.clearTimeout(timer);
-  }, [watch, loadSettings]);
+  }, [watch, load]);
 
   const create = async () => {
     setCreating(true);
+    loads.invalidate();
     try {
       const entry = await taprootApi.createBackup();
       showNotification(t('taproot_backups.created', { id: entry.id }), 'success');
@@ -132,7 +139,7 @@ export function TaprootBackupsPage() {
         <div className={styles.figure}>
           <span className={styles.label}>{t('taproot_backups.count')}</span>
           <span className="numeral-lg">{backups ? totals.count : '—'}</span>
-          <span className={styles.sub}>{formatBytes(totals.bytes)}</span>
+          <span className={styles.sub}>{backups ? formatBytes(totals.bytes) : ''}</span>
         </div>
         <div className={styles.figure}>
           <span className={styles.label}>{t('taproot_backups.latest')}</span>
@@ -251,6 +258,7 @@ export function TaprootBackupsPage() {
       {restoreTarget && (
         <RestoreDialog
           backup={restoreTarget}
+          onStart={loads.invalidate}
           onClose={() => setRestoreTarget(null)}
           onRestored={onRestored}
           onFailed={() => void load()}
@@ -262,11 +270,14 @@ export function TaprootBackupsPage() {
 
 function RestoreDialog({
   backup,
+  onStart,
   onClose,
   onRestored,
   onFailed,
 }: {
   backup: Backup;
+  /** A restore writes a pre-restore backup, so list reads already in flight are stale. */
+  onStart: () => void;
   onClose: () => void;
   onRestored: (result: RestoreResult) => void;
   /** A restore can fail after it saved the pre-restore backup, so the list may have changed. */
@@ -277,8 +288,9 @@ function RestoreDialog({
   const inputId = useId();
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [refusal, setRefusal] = useState<RestoreRefusal | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const refusalRef = useRef<HTMLDivElement>(null);
   const ready = confirmationMatches(typed, backup.id);
 
   // Modal focuses its first control on a zero-delay timer; land on the id field after it.
@@ -287,18 +299,33 @@ function RestoreDialog({
     return () => window.clearTimeout(timer);
   }, []);
 
+  // The restore button was disabled while busy, which drops focus to the page body.
+  useEffect(() => {
+    if (refusal) refusalRef.current?.focus();
+  }, [refusal]);
+
+  const lockoutAsked = refusal?.kind === 'would_lock_out';
   const restore = async () => {
     if (!ready || busy) return;
     setBusy(true);
-    setError('');
+    setRefusal(null);
+    onStart();
     try {
-      onRestored(await taprootApi.restoreBackup(backup.id));
+      onRestored(await taprootApi.restoreBackup(backup.id, { allowLockout: lockoutAsked }));
     } catch (err: unknown) {
-      setError(getErrorMessage(err));
+      setRefusal(restoreRefusal(err));
       setBusy(false);
       onFailed();
     }
   };
+
+  let refusalText = '';
+  if (refusal?.kind === 'would_lock_out') refusalText = t('taproot_backups.restore_lockout');
+  else if (refusal?.kind === 'incompatible')
+    refusalText = t('taproot_backups.restore_incompatible', { message: refusal.message });
+  else if (refusal?.kind === 'restart_pending')
+    refusalText = t('taproot_backups.restore_restart_pending');
+  else if (refusal) refusalText = t('taproot_backups.restore_failed', { message: refusal.message });
 
   return (
     <Modal
@@ -313,7 +340,7 @@ function RestoreDialog({
             {t('common.cancel')}
           </Button>
           <Button variant="danger" onClick={() => void restore()} disabled={!ready} loading={busy}>
-            {t('taproot_backups.restore_confirm')}
+            {t(lockoutAsked ? 'taproot_backups.restore_anyway' : 'taproot_backups.restore_confirm')}
           </Button>
         </>
       }
@@ -344,15 +371,24 @@ function RestoreDialog({
           id={inputId}
           className="input"
           value={typed}
-          onChange={(event) => setTyped(event.target.value)}
+          onChange={(event) => {
+            setTyped(event.target.value);
+            // "Restore anyway" answers the refusal for this backup only while the id still matches.
+            if (lockoutAsked) setRefusal(null);
+          }}
           autoComplete="off"
           spellCheck={false}
           disabled={busy}
           aria-invalid={typed !== '' && !ready}
         />
-        {error && (
-          <div className={`error-box ${styles.dialogError}`} role="alert">
-            {mask(t('taproot_backups.restore_failed', { message: error }))}
+        {refusalText && (
+          <div
+            ref={refusalRef}
+            tabIndex={-1}
+            className={`error-box ${styles.dialogError}`}
+            role="alert"
+          >
+            {mask(refusalText)}
           </div>
         )}
       </form>
@@ -371,14 +407,16 @@ function RestoreBanner({
 }) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
+  const phase = !watch || watch.phase === 'down' ? 'waiting' : watch.phase;
   const restartText =
     result.restart === 'manual'
       ? t('taproot_backups.restart_manual')
-      : watch?.phase === 'back'
-        ? t('taproot_backups.restart_back')
-        : watch?.phase === 'gave_up'
-          ? t('taproot_backups.restart_gave_up')
-          : t('taproot_backups.restart_waiting');
+      : phase === 'locked_out'
+        ? t(`taproot_backups.${lockedOutKey(watch?.refusal ?? null)}`, {
+            host: window.location.host,
+            message: watch?.refusal?.message ?? '',
+          })
+        : t(`taproot_backups.restart_${phase}`);
   return (
     <div className={styles.banner} role="status">
       <div>
@@ -387,7 +425,13 @@ function RestoreBanner({
         <p>
           {t('taproot_backups.pre_restore_saved')} <code>{result.preRestoreBackupId}</code>
         </p>
-        <p className={result.restart === 'manual' ? styles.bannerAction : ''}>{restartText}</p>
+        <p
+          className={
+            result.restart === 'manual' || phase === 'locked_out' ? styles.bannerAction : ''
+          }
+        >
+          {mask(restartText)}
+        </p>
       </div>
       <Button size="sm" variant="ghost" onClick={onDismiss}>
         {t('common.close')}

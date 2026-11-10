@@ -1,7 +1,7 @@
 {
   "taproot_settings": {
     "title": "Settings",
-    "description": "The parts of taproot.yaml you can change here. Each section applies at once and is written to taproot.yaml after the server accepts it.",
+    "description": "The settings you can change here. Each section applies at once and is written to taproot.yaml after the server accepts it; the request recording switch is written to config.yaml.",
     "loading": "Loading settings…",
     "load_failed": "Could not load settings: {{message}}",
     "save": "Save",
@@ -61,7 +61,7 @@
     },
     "alerts": {
       "title": "Alerts",
-      "description": "Posts to a Discord channel when an account hits a quota limit, a provider's accounts are all out, a login stops working, or a Claude reset grant with resets left expires within a day.",
+      "description": "Posts to a Discord channel when an account hits a quota limit, a provider's accounts are all out, a login stops working, a Claude reset grant with resets left expires within a day, a device asks for access, or taproot can't reach tailscaled.",
       "state_active": "On",
       "state_off": "Off",
       "state_none": "No webhook",
@@ -78,11 +78,11 @@
       "cleared": "Webhook removed"
     },
     "errors": {
-      "days_range": "Days must be a whole number from 1 to 3650.",
+      "days_range": "Days must be a whole number from 1 to 106751.",
       "size_format": "Write the size as a number and unit, such as 20 GB or 512 MB.",
       "size_min": "The size limit must be at least 1 MB.",
       "exclude_format": "{{detail}} must be a path starting with /, optionally after a method.",
-      "keep_range": "Keep must be a whole number from 1 to 1000.",
+      "keep_range": "Keep must be a whole number, 1 or more.",
       "time_format": "Use a 24-hour time such as 00:00 or 14:30.",
       "duration_format": "Use a duration such as 15m or 1h30m, or 0.",
       "webhook_format": "Paste a Discord webhook URL, which starts with https://discord.com/api/webhooks/."

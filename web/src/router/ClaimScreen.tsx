@@ -1,9 +1,16 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { TaprootMark } from '@/components/common/TaprootMark';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { CLAIM_CODE_LENGTH, formatClaimInput, submitClaim } from './claimCode';
+
+/** Where the code is, by how taproot runs: the examples' container name, or the systemd unit. */
+const LOG_COMMANDS = [
+  "podman logs taproot 2>&1 | grep 'setup code'",
+  "docker logs taproot 2>&1 | grep 'setup code'",
+  "sudo journalctl -u taproot | grep 'setup code'",
+];
 
 const SLOT = '\u0000';
 
@@ -70,7 +77,6 @@ export function ClaimScreen({ node, claim, onClaimed }: ClaimScreenProps) {
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          maxLength={CLAIM_CODE_LENGTH + 1}
           autoFocus
         />
         {error && (
@@ -82,10 +88,13 @@ export function ClaimScreen({ node, claim, onClaimed }: ClaimScreenProps) {
           {t('connection_gate.claim_submit')}
         </Button>
         <p className="connection-gate-hint">
-          {withSlot(
-            t('connection_gate.claim_hint', { command: SLOT }),
-            <code>podman logs taproot</code>
-          )}
+          {t('connection_gate.claim_hint')}
+          {LOG_COMMANDS.map((command) => (
+            <Fragment key={command}>
+              <br />
+              <code>{command}</code>
+            </Fragment>
+          ))}
         </p>
       </form>
     </div>

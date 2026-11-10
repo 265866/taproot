@@ -106,6 +106,13 @@ describe('alerts section', () => {
     expect(html).toContain('type="password"');
   });
 
+  test('without a webhook the Send alerts switch reads off, even when taproot.yaml says on', () => {
+    const toggle = (html: string) => /<input[^>]*type="checkbox"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(toggle(render(none))).not.toContain('checked');
+    expect(toggle(render(none))).toContain('disabled');
+    expect(toggle(render(active))).toContain('checked');
+  });
+
   test('a saved webhook with alerts switched off reads as off', () => {
     expect(render({ ...active, enabled: false, active: false })).toContain('>Off<');
   });

@@ -22,6 +22,8 @@ export interface DeniedDevice {
   proxy: boolean;
   /** No device has Admin yet, so this one may claim the server with the setup code. */
   claimable: boolean;
+  /** No device has Admin yet. Set without `claimable` for a device that may not claim. */
+  unclaimed: boolean;
   /** The device already has an open access request. */
   requested: boolean;
 }

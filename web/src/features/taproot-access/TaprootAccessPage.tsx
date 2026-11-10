@@ -40,6 +40,7 @@ import {
   draftFrom,
   draftLabel,
   draftPermissions,
+  enableAddress,
   isNew,
   labelFor,
   layoutDevices,
@@ -452,6 +453,13 @@ function RequestRow({
     relativeTime(request.lastSeen, now),
     t('taproot_access.request_count', { count: request.count }),
   ].filter(Boolean);
+  // A device may name itself anything, so the request also shows what Tailscale says it is.
+  const selfNamed = !!device && !device.label && !!request.name && request.name !== device.name;
+  const identity = [
+    selfNamed && device.name ? t('taproot_access.tailscale_name', { name: device.name }) : '',
+    device?.addresses[0] ?? '',
+    t('taproot_access.request_id', { id: request.nodeId }),
+  ].filter(Boolean);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -474,8 +482,14 @@ function RequestRow({
             {request.asked === 'admin' && (
               <span className={styles.badge}>{t('taproot_access.wants_dashboard')}</span>
             )}
+            {selfNamed && <span className={styles.badge}>{t('taproot_access.self_named')}</span>}
           </span>
-          <span className={styles.details}>{meta.join(' · ')}</span>
+          <span className={styles.details}>
+            <MetaList items={meta} />
+          </span>
+          <span className={styles.details}>
+            <MetaList items={identity} />
+          </span>
         </span>
         {!form && (
           <span className={styles.requestActions}>
@@ -547,6 +561,16 @@ function RequestRow({
       )}
     </div>
   );
+}
+
+/** Items joined by middle dots, each kept on one line. */
+function MetaList({ items }: { items: string[] }) {
+  return items.map((item, i) => (
+    <span key={`${i}:${item}`} className={styles.metaItem}>
+      {i > 0 && ' · '}
+      {item}
+    </span>
+  ));
 }
 
 function GroupHeader({ title, badge, hint }: { title: string; badge?: string; hint?: string }) {
@@ -635,7 +659,8 @@ function Switch({
   onChange: (value: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const note = lock ? t(`taproot_access.${LOCK_NOTES[lock]}`) : '';
+  const reasonId = useId();
+  const reason = lock ? t(`taproot_access.lock_reason.${lock}`) : '';
   return (
     <span className={styles.switch} role="cell">
       <ToggleSwitch
@@ -643,8 +668,16 @@ function Switch({
         onChange={onChange}
         disabled={lock !== null}
         ariaLabel={label}
+        ariaDescribedBy={lock ? reasonId : undefined}
       />
-      {note && <span className={styles.lockNote}>{note}</span>}
+      {lock && (
+        <span className={styles.lockNote} title={reason}>
+          <span aria-hidden="true">{t(`taproot_access.${LOCK_NOTES[lock]}`)}</span>
+          <span id={reasonId} className={styles.srOnly}>
+            {reason}
+          </span>
+        </span>
+      )}
     </span>
   );
 }
@@ -653,6 +686,7 @@ const LOCK_NOTES: Record<NonNullable<SwitchLock>, string> = {
   server_always: 'always',
   server_never: 'never',
   needed_by_you: 'needed_by_you',
+  address_never: 'never',
 };
 
 const OS_NAMES: Record<string, string> = {
@@ -921,7 +955,7 @@ function Addresses({
 
   const add = (event: FormEvent) => {
     event.preventDefault();
-    const result = newAddress(cidr, note, draft);
+    const result = newAddress(cidr, note, draft, saved);
     if (!result.ok) {
       setError(t(`taproot_access.errors.${result.error}`, { detail: result.detail ?? '' }));
       return;
@@ -939,7 +973,7 @@ function Addresses({
         d && {
           ...d,
           addresses: on
-            ? [...d.addresses, address]
+            ? enableAddress(saved, d.addresses, address)
             : d.addresses.filter((a) => addressKey(a) !== addressKey(address)),
         }
     );
@@ -1015,7 +1049,7 @@ function Addresses({
           />
           <Switch
             checked={false}
-            lock="server_never"
+            lock="address_never"
             label={t('taproot_access.admin_label', { name: address.cidr })}
             onChange={() => undefined}
           />

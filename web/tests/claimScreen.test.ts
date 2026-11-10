@@ -18,6 +18,37 @@ describe('setup code input', () => {
     expect(formatClaimInput('code: 7KQ4')).toBe('CODE-7KQ4');
     expect(formatClaimInput('')).toBe('');
   });
+
+  test('a paste of the log line keeps the code in it', () => {
+    expect(formatClaimInput('setup code VXYN-7APN.')).toBe('VXYN-7APN');
+    expect(
+      formatClaimInput(
+        'level=warning msg="taproot access: setup code vxyn-7apn. No device has Admin: open http://server:8317/"'
+      )
+    ).toBe('VXYN-7APN');
+    expect(formatClaimInput('  VXYN-7APN\n')).toBe('VXYN-7APN');
+  });
+
+  test('a paste of several log lines keeps the newest code', () => {
+    expect(
+      formatClaimInput(
+        [
+          '[2026-11-10 09:00:00] [warn ] taproot access: setup code VXYN-7APN. No device has Admin',
+          '[2026-11-10 09:05:00] [warn ] taproot access: setup code QRST-8WXY. No device has Admin',
+        ].join('\n')
+      )
+    ).toBe('QRST-8WXY');
+  });
+
+  test('a journald host name is not taken for the code', () => {
+    expect(
+      formatClaimInput(
+        'Nov 10 09:00:00 data-cave taproot[812]: taproot access: setup code vxyn-7apn. No device has Admin: open http://data-cave:8317/'
+      )
+    ).toBe('VXYN-7APN');
+    // Without the label, the last code-shaped word is the best guess.
+    expect(formatClaimInput('data-cave VXYN-7APN')).toBe('VXYN-7APN');
+  });
 });
 
 describe('claiming the server', () => {

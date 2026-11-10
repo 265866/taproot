@@ -42,23 +42,38 @@ describe('sending the request', () => {
   const t = (key: string, options?: Record<string, unknown>) =>
     key === 'connection_gate.request_rate_limited' ? `wait ${String(options?.minutes)}` : key;
 
-  test('sends the trimmed name and reports success as null', async () => {
+  test('sends the trimmed name and reports it sent', async () => {
     const sent: string[] = [];
     const result = await submitAccessRequest('  Dana PC ', async (name) => sent.push(name), t);
-    expect(result).toBeNull();
+    expect(result).toEqual({ kind: 'sent' });
     expect(sent).toEqual(['Dana PC']);
   });
 
-  test('a rate limit says how many minutes to wait; other errors keep the server message', async () => {
-    const limited = new TaprootApiError(429, 'rate_limited', 'too many', 1800);
-    expect(await submitAccessRequest('x', () => Promise.reject(limited), t)).toBe('wait 30');
-    const bad = new TaprootApiError(400, 'invalid_name', 'the name holds control characters');
-    expect(await submitAccessRequest('x', () => Promise.reject(bad), t)).toBe(
-      'the name holds control characters'
+  test('a device that got Admin meanwhile is told to connect, not shown an error', async () => {
+    const allowed = new TaprootApiError(409, 'has_access', 'this device already has Admin');
+    expect(await submitAccessRequest('x', () => Promise.reject(allowed), t)).toEqual({
+      kind: 'has_access',
+    });
+  });
+
+  test("each refusal gets the gate's own words", async () => {
+    const failed = async (error: unknown) => {
+      const outcome = await submitAccessRequest('x', () => Promise.reject(error), t);
+      return outcome.kind === 'failed' ? outcome.message : outcome.kind;
+    };
+    expect(await failed(new TaprootApiError(429, 'rate_limited', 'too many', 1800))).toBe(
+      'wait 30'
     );
-    expect(await submitAccessRequest('x', () => Promise.reject(new Error('offline')), t)).toBe(
-      'connection_gate.request_failed'
+    expect(await failed(new TaprootApiError(400, 'invalid_name', 'the name is too long'))).toBe(
+      'connection_gate.request_invalid_name'
     );
+    expect(await failed(new TaprootApiError(409, 'requests_unavailable', 'no'))).toBe(
+      'connection_gate.request_unavailable'
+    );
+    expect(await failed(new TaprootApiError(500, 'internal', 'boom'))).toBe(
+      'connection_gate.request_failed_detail'
+    );
+    expect(await failed(new Error('offline'))).toBe('connection_gate.request_failed');
   });
 
   test('every string the form uses is in the shell catalog', () => {
@@ -74,6 +89,9 @@ describe('sending the request', () => {
       'request_rename',
       'request_rate_limited',
       'request_failed',
+      'request_failed_detail',
+      'request_invalid_name',
+      'request_unavailable',
     ]) {
       expect(gate[key]?.length).toBeGreaterThan(0);
     }

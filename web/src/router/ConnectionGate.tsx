@@ -46,6 +46,21 @@ export function ConnectionGateView({
     return <ClaimScreen node={device.node} claim={claim} onClaimed={onClaimed} />;
   }
 
+  // Nobody could allow a request from a device that cannot claim an unclaimed server.
+  if (status === 'error' && failure === 'not_admin' && device?.unclaimed) {
+    return (
+      <div className="connection-gate" role="alert">
+        <div className="connection-gate-card">
+          <h1 className="connection-gate-title">{t('connection_gate.unclaimed_title')}</h1>
+          <p className="connection-gate-body">{t('connection_gate.unclaimed_body')}</p>
+          <Button variant="secondary" onClick={onRetry}>
+            {t('connection_gate.retry')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (status === 'error' && failure === 'not_admin' && device) {
     return (
       <RequestAccessScreen

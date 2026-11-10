@@ -8,7 +8,7 @@ Taproot pools your Claude and Codex subscription accounts behind one endpoint on
 - **Usage and cost.** Requests, tokens, latency, and failures by account, model, session, and device, priced at API rates from an editable table.
 - **Request logs.** Every request and response, compressed, searchable, and deleted by age or total size.
 - **Backups.** A daily archive of the configuration, credentials, and database, which you can download or restore from the dashboard.
-- **Discord alerts.** A limit hit, an empty pool, a broken login, an expiring Claude reset grant, and a device that asks for access.
+- **Discord alerts.** A limit hit, an empty pool, a broken login, an expiring Claude reset grant, a device that asks for access, and lost contact with tailscaled.
 
 CLIProxyAPI's other providers still work through the proxy, without quota tracking or routing.
 

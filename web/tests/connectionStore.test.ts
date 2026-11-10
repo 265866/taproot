@@ -140,7 +140,20 @@ describe('same-origin management connection', () => {
       login: 'dana@example.com',
       proxy: false,
       claimable: false,
+      unclaimed: false,
       requested: true,
+    });
+  });
+
+  test('keeps that the server is unclaimed for a device that may not claim it', async () => {
+    status = 403;
+    denial = {
+      error: { code: 'not_admin', node: '', nodeId: 'nDANA0001CNTRL', unclaimed: true },
+    };
+    expect(await connectTo()).toBe(false);
+    expect(useAuthStore.getState().connectionFailureDevice).toMatchObject({
+      claimable: false,
+      unclaimed: true,
     });
   });
 
@@ -284,6 +297,7 @@ describe('connection gate', () => {
     login: 'alice@github',
     proxy: false,
     claimable: false,
+    unclaimed: false,
     requested: false,
   };
 
@@ -346,6 +360,7 @@ describe('connection gate', () => {
       login: 'alice@github',
       proxy: false,
       claimable: true,
+      unclaimed: true,
       requested: false,
     });
     expect(html).toContain('Set up taproot');
@@ -356,12 +371,29 @@ describe('connection gate', () => {
     expect(html).toContain('aria-label="Setup code"');
     expect(html).toContain('<button class="btn btn-primary" disabled="" type="submit">');
     expect(html).toContain('Claim this server');
-    expect(html).toContain('<code>podman logs taproot</code>');
-    expect(html).toContain('service log');
+    // Every install method's log command, not one runtime's.
+    for (const command of [
+      'podman logs taproot',
+      'docker logs taproot',
+      'sudo journalctl -u taproot',
+    ]) {
+      expect(html).toContain(`<code>${command}`);
+    }
     expect(html).toContain('&quot;setup code&quot;');
     expect(html).not.toContain('Try again');
     expect(html).not.toContain('can&#x27;t open taproot yet');
     expect(html).not.toContain('dashboard-body');
+  });
+
+  test('a device that cannot claim an unclaimed server is told so, not offered a request', () => {
+    const html = render('error', 'not_admin', { ...refused, node: '', unclaimed: true });
+    expect(html).toContain('This server isn&#x27;t set up yet');
+    expect(html).toContain('only a device in the server&#x27;s own tailnet can');
+    expect(html).not.toContain('Request access');
+    expect(html).not.toContain('Set up taproot');
+    // A device that may claim still gets the setup code form.
+    const claim = render('error', 'not_admin', { ...refused, claimable: true, unclaimed: true });
+    expect(claim).toContain('Set up taproot');
   });
 
   test('a device without a name never gets the setup code form', () => {

@@ -33,7 +33,7 @@
 // which are static, so a device without Admin can ask for access there.
 // A tailnet device that is refused is told its own name, login, and ID, and
 // unless it has Admin, its refusal is recorded as an access request (see
-// requests.go); nobody else gets more than "forbidden". A device without
+// requests.go); nobody else gets more than a plain denial. A device without
 // Admin may also POST to RequestPath, which records a request and grants
 // nothing.
 //
@@ -532,7 +532,7 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 			// the admin surface keeps the browser checks.
 			if surf == surfaceAdmin {
 				reason := "the guard is disabled, so only loopback reaches the admin surface"
-				denial := gin.H{"code": "forbidden", "message": "the access guard is disabled, so only loopback reaches this route"}
+				denial := gin.H{"code": "guard_disabled", "message": "the access guard is disabled, so only loopback reaches this route"}
 				if isLoopback(r.RemoteAddr) {
 					reason, denial = g.browserGuard(r, func() *selfNode { return nil })
 				}
@@ -597,9 +597,14 @@ func (g *Guard) Middleware() gin.HandlerFunc {
 				// the gate's request form rather than its sent state.
 				denial["requested"] = g.HasOpenRequest(r.Context(), id.NodeID)
 				// While unclaimed, the gate offers the setup code form instead,
-				// to a device that may claim the server.
-				if g.Claimable() && !id.Outside {
-					denial["claimable"] = true
+				// to a device that may claim the server. Any other device is
+				// told the server has no admin yet, since no one could allow a
+				// request from it.
+				if g.Claimable() {
+					denial["unclaimed"] = true
+					if !id.Outside {
+						denial["claimable"] = true
+					}
 				}
 				g.recordRefusal(r, id, AskAdmin)
 			}

@@ -37,6 +37,8 @@ export function AlertsSection({
   const [error, setError] = useState('');
 
   const dirty = form.webhook.trim() !== '' || form.enabled !== settings.enabled;
+  // With no webhook nothing can be sent, so the switch reads off whatever taproot.yaml says.
+  const hasWebhook = settings.webhookSet || form.webhook.trim() !== '';
   const title = t('taproot_settings.alerts.title');
 
   const run = async (kind: Exclude<Busy, null>, action: () => Promise<void>) => {
@@ -141,10 +143,10 @@ export function AlertsSection({
           {t('taproot_settings.alerts.webhook_hint')}
         </p>
         <ToggleSwitch
-          checked={form.enabled}
+          checked={form.enabled && hasWebhook}
           onChange={(enabled) => setForm({ ...form, enabled })}
           label={t('taproot_settings.alerts.enabled')}
-          disabled={!settings.webhookSet && !form.webhook.trim()}
+          disabled={!hasWebhook}
         />
       </div>
       {error && (

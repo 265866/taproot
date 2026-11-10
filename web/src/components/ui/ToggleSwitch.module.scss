@@ -63,6 +63,14 @@
   background: var(--primary-contrast);
 }
 
+.disabled input:checked + .track {
+  opacity: var(--toggle-locked-on-opacity);
+}
+
+.disabled input:checked + .track .thumb {
+  opacity: var(--toggle-locked-on-thumb-opacity);
+}
+
 .label {
   color: var(--text-primary);
   font-weight: 600;

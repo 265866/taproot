@@ -7,22 +7,46 @@ type Translate = {
   (key: string, options: Record<string, unknown>): string;
 };
 
-/** Sends the request and returns null on success, or the message to show. */
+export type AccessRequestOutcome =
+  | { kind: 'sent' }
+  /** An admin gave this device Admin while the form was open: connect instead. */
+  | { kind: 'has_access' }
+  | { kind: 'failed'; message: string };
+
+/** Sends the request and says what happened, with the message to show when it failed. */
 export async function submitAccessRequest(
   name: string,
   request: (name: string) => Promise<unknown>,
   t: Translate
-): Promise<string | null> {
+): Promise<AccessRequestOutcome> {
   try {
     await request(name.trim());
-    return null;
+    return { kind: 'sent' };
   } catch (err) {
-    if (err instanceof TaprootApiError && err.code === 'rate_limited') {
-      return t('connection_gate.request_rate_limited', {
-        minutes: Math.max(1, Math.ceil((err.retryAfter ?? 3600) / 60)),
-      });
+    if (!(err instanceof TaprootApiError)) {
+      return { kind: 'failed', message: t('connection_gate.request_failed') };
     }
-    if (err instanceof TaprootApiError && err.message) return err.message;
-    return t('connection_gate.request_failed');
+    switch (err.code) {
+      case 'has_access':
+        return { kind: 'has_access' };
+      case 'rate_limited':
+        return {
+          kind: 'failed',
+          message: t('connection_gate.request_rate_limited', {
+            minutes: Math.max(1, Math.ceil((err.retryAfter ?? 3600) / 60)),
+          }),
+        };
+      case 'invalid_name':
+        return { kind: 'failed', message: t('connection_gate.request_invalid_name') };
+      case 'requests_unavailable':
+        return { kind: 'failed', message: t('connection_gate.request_unavailable') };
+      default:
+        return {
+          kind: 'failed',
+          message: err.message
+            ? t('connection_gate.request_failed_detail', { message: err.message })
+            : t('connection_gate.request_failed'),
+        };
+    }
   }
 }

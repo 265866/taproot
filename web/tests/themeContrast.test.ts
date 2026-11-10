@@ -105,6 +105,22 @@ for (const [mode, tokens] of Object.entries(THEMES)) {
       expect(Math.abs(luminance(ring) - luminance(page))).toBeGreaterThan(0.02);
     });
 
+    test('a locked on switch stays distinct from an off one', () => {
+      const opacity = (name: string) => Number(tokens[name]);
+      for (const surface of OPAQUE_SURFACES) {
+        const under = c(surface);
+        const track = over({ ...c('accent'), a: opacity('toggle-locked-on-opacity') }, under);
+        const off = c('toggle-off-bg');
+        expect({ surface, ok: contrast(track, off) >= 2 }).toEqual({ surface, ok: true });
+        // Its thumb still shows which side it is on.
+        const thumb = over(
+          { ...c('primary-contrast'), a: opacity('toggle-locked-on-thumb-opacity') },
+          track
+        );
+        expect({ surface, ok: contrast(thumb, track) >= 3 }).toEqual({ surface, ok: true });
+      }
+    });
+
     test('the interface accent is neutral, so provider and status colors carry all the hue', () => {
       for (const name of [
         'accent',
@@ -129,3 +145,23 @@ for (const [mode, tokens] of Object.entries(THEMES)) {
     });
   });
 }
+
+describe('switches', () => {
+  const white = { r: 255, g: 255, b: 255, a: 1 };
+  for (const mode of ['light', 'white'] as const) {
+    test(`${mode}: the off track stands out from every surface and from its white thumb`, () => {
+      const c = (name: string) => mustColor(THEMES[mode], name);
+      const track = c('toggle-off-bg');
+      for (const surface of ['bg-secondary', 'bg-primary', 'bg-hover']) {
+        expect({ surface, ratio: contrast(track, c(surface)) >= 3 }).toEqual({
+          surface,
+          ratio: true,
+        });
+      }
+      expect(contrast(white, track)).toBeGreaterThanOrEqual(3);
+    });
+  }
+  test('dark: the white thumb carries the off state against the page', () => {
+    expect(contrast(white, mustColor(THEMES.dark, 'bg-secondary'))).toBeGreaterThanOrEqual(3);
+  });
+});

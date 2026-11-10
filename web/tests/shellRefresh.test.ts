@@ -48,7 +48,7 @@ describe('Refresh All reports what happened', () => {
   test('every page handler returns an outcome instead of swallowing its failure', () => {
     // The type makes a handler return an outcome; these pages used to resolve after catching.
     for (const [path, marker] of [
-      ['src/features/taproot-backups/TaprootBackupsPage.tsx', 'outcome = refreshFailed(err)'],
+      ['src/features/taproot-backups/TaprootBackupsPage.tsx', 'return refreshFailed(list.reason)'],
       ['src/features/taproot-settings/TaprootSettingsPage.tsx', 'return refreshFailed(err)'],
       ['src/features/taproot-access/TaprootAccessPage.tsx', 'return refreshFailed(err)'],
       ['src/features/routing/RoutingPage.tsx', 'onCancel: () => resolve(REFRESH_CANCELLED)'],

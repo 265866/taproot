@@ -47,7 +47,7 @@ func TestDenialLogQuotesThePath(t *testing.T) {
 	hook := captureLog(t)
 	forged := "/v1/x%0Ataproot%20access:%20setup%20code%20ABCD-EFGH"
 	assertForbidden(t, do(e, "203.0.113.9:40000", forged, nil))
-	assertForbidden(t, do(disabled, "203.0.113.9:40000", "/taproot"+forged, nil))
+	assertPlainDenied(t, do(disabled, "203.0.113.9:40000", "/taproot"+forged, nil), "guard_disabled")
 	lines := logged(hook, "denied")
 	if len(lines) != 2 {
 		t.Fatalf("denial lines = %q, want 2", lines)

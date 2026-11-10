@@ -42,10 +42,11 @@ export function RequestAccessScreen({
     if (pending) return;
     setPending(true);
     setError(null);
-    const failure = await submitAccessRequest(name, request, t);
+    const outcome = await submitAccessRequest(name, request, t);
     setPending(false);
-    if (failure === null) setSent(true);
-    else setError(failure);
+    if (outcome.kind === 'sent') setSent(true);
+    else if (outcome.kind === 'has_access') onCheck();
+    else setError(outcome.message);
   };
 
   if (sent) {

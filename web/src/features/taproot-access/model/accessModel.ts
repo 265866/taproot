@@ -110,7 +110,8 @@ export function ownDeviceId(me: TaprootMe | null): string | null {
 }
 
 /** Why a switch cannot be changed, or null when it can. */
-export type SwitchLock = 'server_always' | 'server_never' | 'needed_by_you' | null;
+export type SwitchLock =
+  'server_always' | 'server_never' | 'needed_by_you' | 'address_never' | null;
 
 export function proxyLock(device: AccessDevice): SwitchLock {
   return device.server ? 'server_always' : null;
@@ -480,10 +481,40 @@ const TAILNET = [parsePrefix('100.64.0.0/10'), parsePrefix('fd7a:115c:a1e0::/48'
   (p): p is Prefix => p !== null
 );
 
+/** The prefix as the server stores it: IPv4-mapped prefixes as IPv4, host bits cleared. */
+function canonical(prefix: Prefix): string {
+  let { bytes, bits } = prefix;
+  const mapped =
+    bytes.length === 16 &&
+    bits >= 96 &&
+    bytes.slice(0, 10).every((b) => b === 0) &&
+    bytes[10] === 0xff &&
+    bytes[11] === 0xff;
+  if (mapped) {
+    bytes = bytes.slice(12);
+    bits -= 96;
+  }
+  const masked = bytes.map((b, i) => {
+    const keep = Math.min(8, Math.max(0, bits - i * 8));
+    return b & (0xff << (8 - keep)) & 0xff;
+  });
+  return `${masked.join('.')}/${bits}`;
+}
+
+const canonicalText = (cidr: string) => {
+  const prefix = parsePrefix(cidr.trim());
+  return prefix ? canonical(prefix) : cidr.trim();
+};
+
+/**
+ * Checks a new address entry. It may not repeat an entry in the draft or a saved one switched off
+ * in it, compared as the server compares them, so 10.0.0.5/24 repeats 10.0.0.0/24.
+ */
 export function newAddress(
   cidr: string,
   note: string,
-  draft: AccessDraft
+  draft: AccessDraft,
+  saved: AddressGrant[] = []
 ): Validation<AddressGrant> {
   const value = cidr.trim();
   const prefix = parsePrefix(value);
@@ -491,11 +522,33 @@ export function newAddress(
   if (TAILNET.some((t) => overlaps(prefix, t))) {
     return { ok: false, error: 'address_tailnet', detail: value };
   }
-  const bare = (a: string) => a.replace(/\/(32|128)$/, '');
-  if (draft.addresses.some((a) => bare(a.cidr) === bare(value))) {
+  const key = canonical(prefix);
+  if (draft.addresses.some((a) => canonicalText(a.cidr) === key)) {
     return { ok: false, error: 'address_duplicate', detail: value };
   }
+  if (saved.some((a) => canonicalText(a.cidr) === key)) {
+    return { ok: false, error: 'address_switched_off', detail: value };
+  }
   return { ok: true, update: { cidr: value, note: note.trim() } };
+}
+
+const sameAddress = (a: AddressGrant, b: AddressGrant) => a.cidr === b.cidr && a.note === b.note;
+
+/**
+ * The draft's addresses after switching a saved one back on: saved entries keep their saved
+ * order, and entries added in this draft follow.
+ */
+export function enableAddress(
+  saved: AddressGrant[],
+  addresses: AddressGrant[],
+  address: AddressGrant
+): AddressGrant[] {
+  const on = [...addresses, address];
+  const isSaved = (a: AddressGrant) => saved.some((s) => sameAddress(s, a));
+  return [
+    ...saved.filter((s) => on.some((a) => sameAddress(s, a))),
+    ...addresses.filter((a) => !isSaved(a)),
+  ];
 }
 
 /** The steps of Allow, in order: save the grant, close the request, reload the page. */
