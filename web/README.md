@@ -87,6 +87,7 @@ Emails are hidden by default everywhere. Auth file names carry the email (`claud
 
 - A filter field whose value holds an email shows `MaskedValueChip` while emails are hidden. An edit field shows the value masked and read-only until emails are shown (see `AuthFileDetailsForm`).
 - A value that can hold an email goes into the URL through `encodeUrlValue` (`src/utils/urlValue.ts`).
+- While emails are hidden, a credential's raw JSON under Manage, Advanced settings also hides its tokens, secrets, and keys (`src/features/authFiles/secretMask.ts`). Copy and download keep them.
 - The preference lives in `src/stores/usePrivacyStore.ts` and lasts for the session. Pages that show masked values carry `ShowEmailsToggle`. Access shows Tailscale logins as they are, because they are what it groups devices by.
 
 The browser never receives or stores the management key. Keep keys, credentials, auth files, request logs, and backups out of fixtures and screenshots.
