@@ -6,12 +6,25 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  // clip, not hidden: hidden would make this the scroll container of every sticky element in a
-  // page, which never scrolls, so sticky bars would scroll away with the page. Only the block axis:
-  // sideways, .main-content clips at the window's edge, so a page can draw full-width rules into
-  // its gutter (the Dashboard's inline rail does). A browser without clip keeps hidden.
-  overflow: hidden;
-  overflow: visible clip;
+  // One rule for the wrapper and every layer. clip, not hidden: hidden would make this the scroll
+  // container of every sticky element in a page, which never scrolls, so sticky bars would scroll
+  // away with the page. Only the block axis: sideways, .main-content clips at the window's edge, so
+  // a page can draw full-width rules into its gutter (the Dashboard's inline rail does), and keeps
+  // them while it leaves. A horizontal slide clips sideways too, or the sliding layers would cross
+  // the gutters. A browser without clip keeps hidden.
+  &,
+  &__layer--exit,
+  &__layer--stacked-keep {
+    overflow: hidden;
+    overflow: visible clip;
+  }
+
+  &--sliding,
+  &--sliding &__layer--exit,
+  &--sliding &__layer--stacked-keep {
+    overflow: hidden;
+    overflow: clip;
+  }
 
   &__layer {
     display: flex;
@@ -26,7 +39,6 @@
     &--exit {
       position: absolute;
       inset: 0;
-      overflow: hidden;
       pointer-events: none;
       will-change: transform, opacity;
     }
@@ -40,7 +52,6 @@
         display: flex;
         position: absolute;
         inset: 0;
-        overflow: hidden;
         pointer-events: none;
         opacity: 0;
         will-change: transform, opacity;
