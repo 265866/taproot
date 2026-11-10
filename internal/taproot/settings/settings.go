@@ -38,7 +38,7 @@ type AccessControl interface {
 	Reconcile(access.Tailnet) (access.Grants, []access.DeviceGrant, bool)
 	// Claimable, CheckClaimCode, and EndClaim are the one-time setup code.
 	Claimable() bool
-	CheckClaimCode(code string, now time.Time) error
+	CheckClaimCode(nodeID, code string, now time.Time) error
 	EndClaim()
 	// ResolveRequests and PruneRequests are the access requests: a saved
 	// grant closes the request of the device it was given to, and the sweep

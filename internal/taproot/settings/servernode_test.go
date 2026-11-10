@@ -89,19 +89,14 @@ func TestNewAdminRefusedWhileTheServerNodeIsUnknown(t *testing.T) {
 // it up yet, and answers 503 only when tailscaled cannot be read.
 func TestClaimReadsTheServerNode(t *testing.T) {
 	f := newRealNodeFixture(t, unclaimedYAML, fakeLocalAPI(t))
-	code, err := f.guard.StartClaim()
-	if err != nil {
-		t.Fatal(err)
-	}
+	code := startClaim(t, f.guard)
 	f.caller = newDevice
 	if status, body, _ := f.postClaim(t, code); status != http.StatusOK {
 		t.Fatalf("claim with an empty cache = %d %s, want 200", status, body)
 	}
 
 	f = newRealNodeFixture(t, unclaimedYAML, "")
-	if code, err = f.guard.StartClaim(); err != nil {
-		t.Fatal(err)
-	}
+	code = startClaim(t, f.guard)
 	f.caller = newDevice
 	if status, body, _ := f.postClaim(t, code); status != http.StatusServiceUnavailable || errorCode(t, body) != "server_node_unknown" {
 		t.Fatalf("claim with tailscaled unreachable = %d %s, want 503 server_node_unknown", status, body)

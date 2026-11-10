@@ -86,7 +86,7 @@ func (s *Settings) claim(ctx context.Context, code string, caller access.Identit
 		}
 	}
 	name, _, _ := strings.Cut(strings.TrimSuffix(caller.Node, "."), ".")
-	if err := s.deps.Access.CheckClaimCode(code, s.now()); err != nil {
+	if err := s.deps.Access.CheckClaimCode(caller.NodeID, code, s.now()); err != nil {
 		if errors.Is(err, access.ErrClaimWrongCode) {
 			log.Warnf("taproot access: wrong setup code from %s (%s)", name, caller.NodeID)
 			return access.DeviceGrant{}, &apiError{status: http.StatusForbidden, code: "wrong_code", message: "that is not the setup code: look for \"setup code\" in taproot's log"}

@@ -117,7 +117,7 @@ func TestFirstRunClaim(t *testing.T) {
 	if resp := claim(lanIP, code); resp.StatusCode != http.StatusForbidden || errCode(resp) != "forbidden" {
 		t.Fatalf("claim from an access.addresses caller = %d, want the guard's 403", resp.StatusCode)
 	}
-	if resp := claim(selfIP, code); resp.StatusCode != http.StatusForbidden || errCode(resp) != "forbidden" {
+	if resp := claim(selfIP, code); resp.StatusCode != http.StatusForbidden || errCode(resp) != "server_node" {
 		t.Fatalf("claim from the server's own node = %d, want the guard's 403", resp.StatusCode)
 	}
 	if resp := claim(newIP, "AAAA-AAAA"); code != "AAAA-AAAA" && (resp.StatusCode != http.StatusForbidden || errCode(resp) != "wrong_code") {

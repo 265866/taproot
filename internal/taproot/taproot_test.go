@@ -198,7 +198,7 @@ func guardCode(rec *httptest.ResponseRecorder) string {
 		return ""
 	}
 	switch body.Error.Code {
-	case "forbidden", "no_proxy", "not_admin", "request_header_required":
+	case "forbidden", "no_proxy", "not_admin", "request_header_required", "server_node", "server_node_unknown", "unknown_host":
 		return body.Error.Code
 	}
 	return ""
@@ -592,7 +592,7 @@ func TestDisabledGuardKeepsTaprootAPILoopbackOnly(t *testing.T) {
 		if r.host == "" {
 			r.host = "localhost:8317"
 		}
-		if rec := f.do(r); guardCode(rec) != "forbidden" || strings.Contains(rec.Body.String(), refreshToken) {
+		if rec := f.do(r); !isGuardDenial(rec) || strings.Contains(rec.Body.String(), refreshToken) {
 			t.Errorf("loopback browser %s %s (Host %s) = %d %.200s, want the guard's 403", r.method, r.path, r.host, rec.Code, rec.Body)
 		}
 	}

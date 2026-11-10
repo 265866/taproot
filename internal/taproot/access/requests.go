@@ -532,7 +532,7 @@ func (g *Guard) handleRequest(c *gin.Context) {
 		apiError(c, http.StatusInternalServerError, "internal", "could not save the request")
 		return
 	}
-	log.Infof("taproot access: %s (%s, %s) asked for access", cmp.Or(quoteHeader(name), quoteHeader(in.Node)), id.Login, id.NodeID)
+	log.Infof("taproot access: %s (%s, %s) asked for access", quoteHeader(cmp.Or(name, in.Node)), id.Login, id.NodeID)
 	c.JSON(http.StatusOK, gin.H{"status": "pending"})
 }
 
