@@ -122,6 +122,8 @@ var zstdDecoder = sync.OnceValue(func() *zstd.Decoder {
 // saving under 2%, it returns (Raw, data). A JPEG or PNG that its native codec
 // packs is not also tried with whole-file zstd, which saves the CPU of a second
 // high-level compression of an already compressed image.
+// A JPEG or PNG whose native codec would need more than maxBlobCost of memory
+// gets only zstd. Pack waits while other calls hold the native memory budget.
 func Pack(data []byte) (kind Kind, stored []byte) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -129,22 +131,23 @@ func Pack(data []byte) (kind Kind, stored []byte) {
 			kind, stored = Raw, data
 		}
 	}()
-	if Native() {
+	native, cost := nativePlan(data)
+	if len(data) >= minZstdLen {
+		cost = max(cost, zstdCost(len(data)))
+	}
+	defer reserve(cost)()
+	if native != Raw {
 		var (
-			k   Kind
 			s   []byte
 			err error
 		)
-		switch {
-		case bytes.HasPrefix(data, jpegMagic):
-			k = Lepton
+		if native == Lepton {
 			s, err = leptonEncode(data)
-		case bytes.HasPrefix(data, pngMagic):
-			k = PNG
+		} else {
 			s, err = packPNG(data)
 		}
-		if err == nil && s != nil && worthKeeping(s, data) && verified(k, s, data) {
-			return k, s
+		if err == nil && s != nil && worthKeeping(s, data) && verified(native, s, data) {
+			return native, s
 		}
 	}
 	if len(data) >= minZstdLen {
@@ -162,13 +165,21 @@ func worthKeeping(stored, data []byte) bool {
 }
 
 func verified(kind Kind, stored, data []byte) bool {
-	got, err := Unpack(kind, stored, len(data))
+	got, err := unpack(kind, stored, len(data))
 	return err == nil && bytes.Equal(got, data)
 }
 
 // Unpack reverses Pack. rawLen is the original length; the result must have
-// exactly that length. For Raw the result is stored itself.
-func Unpack(kind Kind, stored []byte, rawLen int) (data []byte, err error) {
+// exactly that length. For Raw the result is stored itself. Native kinds wait
+// for their share of the native memory budget.
+func Unpack(kind Kind, stored []byte, rawLen int) ([]byte, error) {
+	defer reserve(unpackCost(kind, stored, rawLen))()
+	return unpack(kind, stored, rawLen)
+}
+
+// unpack is Unpack without the reservation, for Pack, which already holds
+// one.
+func unpack(kind Kind, stored []byte, rawLen int) (data []byte, err error) {
 	if rawLen < 0 {
 		return nil, fmt.Errorf("codec: negative raw length %d", rawLen)
 	}

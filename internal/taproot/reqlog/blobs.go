@@ -1130,8 +1130,13 @@ func (b *blobStore) writeEntries(ctx context.Context, out *os.File, live []blobR
 		done chan struct{}
 	}
 	workers := 1
+	var crashed map[blobHash]bool
 	if encode {
 		workers = max(1, runtime.NumCPU()/2)
+		var err error
+		if crashed, err = b.unfinishedEncodes(ctx); err != nil {
+			return nil, 0, err
+		}
 	}
 	jobs := make([]*job, len(live))
 	for i := range live {
@@ -1149,7 +1154,11 @@ func (b *blobStore) writeEntries(ctx context.Context, out *os.File, live []blobR
 			return
 		}
 		if encode && j.row.codec == codec.Raw {
-			j.row.codec, data = codec.Pack(data)
+			if crashed[j.row.hash] {
+				log.Warnf("reqlog: blob %x was being encoded when the process died; storing it unencoded", j.row.hash[:8])
+			} else if j.row.codec, data, j.err = b.encode(ctx, j.row.hash, data); j.err != nil {
+				return
+			}
 		}
 		j.row.stored = len(data)
 		j.data = data
@@ -1196,6 +1205,41 @@ func (b *blobStore) writeEntries(ctx context.Context, out *os.File, live []blobR
 		return nil, 0, fmt.Errorf("write pack: %w", err)
 	}
 	return moved, pos, nil
+}
+
+// unfinishedEncodes returns the blobs that encode marked and never cleared:
+// their encoding was running when the process died.
+func (b *blobStore) unfinishedEncodes(ctx context.Context) (map[blobHash]bool, error) {
+	rows, err := b.db.QueryContext(ctx, `SELECT hash FROM reqlog_pack_attempts`)
+	if err != nil {
+		return nil, fmt.Errorf("list unfinished encodes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[blobHash]bool{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan unfinished encode: %w", err)
+		}
+		if h, err := hashOf(raw); err == nil {
+			out[h] = true
+		}
+	}
+	return out, rows.Err()
+}
+
+// encode runs codec.Pack with a durable mark around it, so a blob that kills
+// the process (a native codec can abort or exhaust memory) is stored
+// unencoded after the restart rather than retried at every start.
+func (b *blobStore) encode(ctx context.Context, h blobHash, data []byte) (codec.Kind, []byte, error) {
+	if _, err := b.db.ExecContext(ctx, `INSERT OR IGNORE INTO reqlog_pack_attempts (hash) VALUES (?)`, h[:]); err != nil {
+		return codec.Raw, nil, fmt.Errorf("mark encode: %w", err)
+	}
+	kind, stored := codec.Pack(data)
+	if _, err := b.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM reqlog_pack_attempts WHERE hash = ?`, h[:]); err != nil {
+		return codec.Raw, nil, fmt.Errorf("clear encode mark: %w", err)
+	}
+	return kind, stored, nil
 }
 
 // blobCache keeps recently decoded blobs. Consecutive turns of a
