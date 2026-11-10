@@ -622,7 +622,6 @@ const LOCK_NOTES: Record<NonNullable<SwitchLock>, string> = {
   server_always: 'always',
   server_never: 'never',
   needed_by_you: 'needed_by_you',
-  from_request: 'from_request',
 };
 
 const OS_NAMES: Record<string, string> = {

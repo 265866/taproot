@@ -118,15 +118,21 @@ describe('the device table', () => {
     expect(html).toContain('other tailnet');
   });
 
-  test('the open fold lists the hidden devices; outside devices get Admin only from a request', () => {
+  test('the open fold lists the hidden devices, and their Admin switches work', () => {
     const html = render({ initiallyUnfolded: true });
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('dana&#x27;s device · 100.64.0.31');
     expect(html).toContain('dana&#x27;s device · fd7a:115c:a1e0::32');
     expect(html).toContain('dana&#x27;s device ·0003');
     expect(html).toContain('bob-phone');
-    expect(html).toContain('from a request');
-    expect(html).toContain('aria-label="Admin for dana&#x27;s device · 100.64.0.31"');
+    expect(html).not.toContain('from a request');
+    const danaAdmin = html.match(
+      /<input[^>]*aria-label="Admin for dana&#x27;s device · 100\.64\.0\.31"[^>]*>/
+    );
+    expect(danaAdmin?.[0]).toBeDefined();
+    expect(danaAdmin?.[0]).not.toContain('disabled');
+    const serverAdmin = html.match(/<input[^>]*aria-label="Admin for taproot-host"[^>]*>/);
+    expect(serverAdmin?.[0]).toContain('disabled');
   });
 
   test('rows show no presence and keep OS and MagicDNS in the tooltip', () => {

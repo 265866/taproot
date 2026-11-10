@@ -50,28 +50,27 @@ const (
 	workEntry   = `{"id": "nworkCNTRL", "name": "work-laptop.tailnet-1111.ts.net", "label": "Work laptop", "proxy": true, "admin": true}`
 )
 
-// A device outside the tailnet gets Admin only from its own request; Proxy
-// needs none, and Admin it already had stays.
-func TestOutsideAdminNeedsARequest(t *testing.T) {
+// A device outside the tailnet gets Proxy and Admin from its switches, with
+// no access request, and Admin it already had stays.
+func TestOutsideAdminFromTheSwitch(t *testing.T) {
 	f := newFixture(t, options{yaml: outsideYAML})
 	tn := outsideTailnet
 	f.access.tailnet = &tn
 
-	code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [`+laptopEntry+`, `+workEntry+`, {"id": "ndanaCNTRL", "proxy": true, "admin": true}]}}`)
-	if code != http.StatusBadRequest || errorCode(t, body) != "outside_admin_needs_request" {
-		t.Fatalf("Admin for a sharee's device = %d %s", code, body)
-	}
 	if code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [`+laptopEntry+`, `+workEntry+`, {"id": "ndanaCNTRL", "proxy": true}, {"id": "ndana2CNTRL", "proxy": true}]}}`); code != http.StatusOK {
 		t.Fatalf("Proxy for an outside device = %d %s", code, body)
 	}
-
-	f.openRequest(t, "ndanaCNTRL")
-	code, v, body := f.do(t, http.MethodPut, `{"access": {"devices": [`+laptopEntry+`, `+workEntry+`, {"id": "ndanaCNTRL", "label": "Dana's PC", "proxy": true, "admin": true}]}}`)
-	if code != http.StatusOK || len(v.Access.Devices) != 3 || v.Access.Devices[2] != (access.DeviceGrant{ID: "ndanaCNTRL", Label: "Dana's PC", Proxy: true, Admin: true}) {
-		t.Fatalf("Admin from a request = %d %s", code, body)
+	code, v, body := f.do(t, http.MethodPut, `{"access": {"devices": [`+laptopEntry+`, `+workEntry+`, {"id": "ndanaCNTRL", "label": "Dana's PC", "proxy": true, "admin": true}, {"id": "ndana2CNTRL", "admin": true}]}}`)
+	if code != http.StatusOK || len(v.Access.Devices) != 4 ||
+		v.Access.Devices[2] != (access.DeviceGrant{ID: "ndanaCNTRL", Label: "Dana's PC", Proxy: true, Admin: true}) ||
+		v.Access.Devices[3] != (access.DeviceGrant{ID: "ndana2CNTRL", Admin: true}) {
+		t.Fatalf("Admin for sharee devices without a request = %d %s", code, body)
 	}
-	if f.isOpen(t, "ndanaCNTRL") {
-		t.Fatal("the granted request is still open")
+	if got := f.parsed(t).Access.Devices[2]; !got.Admin || got.Label != "Dana's PC" {
+		t.Fatalf("file entry = %+v, want dana's Admin and label saved", got)
+	}
+	if f.isOpen(t, "ndanaCNTRL") || f.isOpen(t, "ndana2CNTRL") {
+		t.Fatal("a save without requests opened one")
 	}
 	if got := f.parsed(t).Access.Devices[1]; got.Label != "Work laptop" || !got.Admin {
 		t.Fatalf("file entry = %+v, want the work laptop's label and Admin kept", got)
@@ -93,17 +92,16 @@ func TestSaveClosesAnsweredRequestsOnly(t *testing.T) {
 	}
 }
 
-// When the tailnet cannot be read, a new Admin grant needs a request, so a
-// failed read never widens access.
-func TestOutsideCheckFailsClosed(t *testing.T) {
+// A save does not read the tailnet, so Admin saves while tailscaled cannot
+// be read, and the server's own node is still refused it.
+func TestAdminWithoutATailnetRead(t *testing.T) {
 	f := newFixture(t, options{yaml: outsideYAML})
 	put := `{"access": {"devices": [` + laptopEntry + `, ` + workEntry + `, {"id": "ndanaCNTRL", "proxy": true}, {"id": "nphoneCNTRL", "admin": true}]}}`
-	if code, _, body := f.do(t, http.MethodPut, put); code != http.StatusBadRequest || errorCode(t, body) != "outside_admin_needs_request" {
+	if code, _, body := f.do(t, http.MethodPut, put); code != http.StatusOK {
 		t.Fatalf("Admin without a tailnet read = %d %s", code, body)
 	}
-	f.openRequest(t, "nphoneCNTRL")
-	if code, _, body := f.do(t, http.MethodPut, put); code != http.StatusOK {
-		t.Fatalf("Admin from a request without a tailnet read = %d %s", code, body)
+	if code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [`+laptopEntry+`, {"id": "`+serverID+`", "proxy": true, "admin": true}]}}`); code != http.StatusBadRequest || errorCode(t, body) != "server_admin" {
+		t.Fatalf("Admin for the server's own node = %d %s", code, body)
 	}
 	// Labels are checked like the rest of the entry.
 	if code, _, body := f.do(t, http.MethodPut, `{"access": {"devices": [`+laptopEntry+`, {"id": "nphoneCNTRL", "label": "a\u0000b", "proxy": true}]}}`); code != http.StatusBadRequest || errorCode(t, body) != "invalid_access" {
@@ -133,9 +131,8 @@ func TestClaimRefusesOutsideDevices(t *testing.T) {
 	}
 }
 
-// The Allow form saves the grant, then closes the request. The save runs
-// while the request is still open, so Admin for an outside device passes
-// the check; allowing first would fail it.
+// The Allow form saves the grant, then closes the request, and Allow with
+// Admin works for an outside device.
 func TestAllowFormOrder(t *testing.T) {
 	f := newFixture(t, options{yaml: outsideYAML})
 	tn := outsideTailnet
@@ -159,12 +156,7 @@ func TestAllowFormOrder(t *testing.T) {
 	if f.isOpen(t, "ndanaCNTRL") {
 		t.Fatal("the allowed request is still open")
 	}
-	// Closed, it no longer lets Admin through.
-	if code, _, body := f.do(t, http.MethodPut, danaAdmin); code != http.StatusBadRequest || errorCode(t, body) != "outside_admin_needs_request" {
-		t.Fatalf("Admin after the request was allowed = %d %s", code, body)
-	}
-
-	// Asked again: Admin saves, then allow still finds the request.
+	// Asked again for Admin: Admin saves, then allow still finds the request.
 	if err := f.requests.Record(ctx, access.RequestInput{NodeID: "ndanaCNTRL", Self: true, Asked: access.AskAdmin}, 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +165,15 @@ func TestAllowFormOrder(t *testing.T) {
 	}
 	if found, err := f.requests.Allow(ctx, "ndanaCNTRL", time.Now()); err != nil || !found || f.isOpen(t, "ndanaCNTRL") {
 		t.Fatalf("allow after the save = %t, %v, open %t", found, err, f.isOpen(t, "ndanaCNTRL"))
+	}
+
+	// With the request closed, the switches still take Admin away and give
+	// it back.
+	if code, _, body := f.do(t, http.MethodPut, danaProxy); code != http.StatusOK {
+		t.Fatalf("Admin off = %d %s", code, body)
+	}
+	if code, _, body := f.do(t, http.MethodPut, danaAdmin); code != http.StatusOK {
+		t.Fatalf("Admin on without a request = %d %s", code, body)
 	}
 }
 

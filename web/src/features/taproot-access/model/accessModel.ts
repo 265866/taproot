@@ -95,20 +95,16 @@ export function ownDeviceId(me: TaprootMe | null): string | null {
 }
 
 /** Why a switch cannot be changed, or null when it can. */
-export type SwitchLock = 'server_always' | 'server_never' | 'needed_by_you' | 'from_request' | null;
+export type SwitchLock = 'server_always' | 'server_never' | 'needed_by_you' | null;
 
 export function proxyLock(device: AccessDevice): SwitchLock {
   return device.server ? 'server_always' : null;
 }
 
-/**
- * The server never has Admin, your own device keeps it, and a device outside the tailnet gets it
- * only through its own request's Allow form, unless it already has it.
- */
+/** The server never has Admin, and your own device keeps it. */
 export function adminLock(device: AccessDevice, me: TaprootMe | null): SwitchLock {
   if (device.server) return 'server_never';
   if (device.id === ownDeviceId(me)) return 'needed_by_you';
-  if (device.outside && !device.admin) return 'from_request';
   return null;
 }
 
@@ -424,9 +420,9 @@ export type AllowOutcome =
   | { kind: 'saved_not_closed'; error: unknown };
 
 /**
- * Runs Allow. It saves first, since Admin for a device outside the tailnet needs the request
- * still open. Once the save succeeded the page reloads, even when closing the request failed,
- * because the grant changed.
+ * Runs Allow. It saves first, so a failed save leaves the request open to try again. Once the
+ * save succeeded the page reloads, even when closing the request failed, because the grant
+ * changed.
  */
 export async function runAllow(steps: AllowSteps): Promise<AllowOutcome> {
   try {

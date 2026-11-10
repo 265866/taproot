@@ -40,7 +40,7 @@ On the Access page, allow the request with Proxy, Admin, or both, and a name, or
 
 ## Allow a device from another tailnet
 
-You can share the taproot server with another Tailscale account, such as a work laptop in a separate tailnet. Tailscale hides the names of that account's devices, so they show as `<owner>'s device · 100.64.0.31`, with the device's Tailscale IP, until you name them. The owner sees the same IP for the device in their own Tailscale admin console and apps, and you can search the Access page for it. You can switch on Proxy for such a device directly. Admin needs the device to send a request, which you then allow.
+You can share the taproot server with another Tailscale account, such as a work laptop in a separate tailnet. Tailscale hides the names of that account's devices, so they show as `<owner>'s device · 100.64.0.31`, with the device's Tailscale IP, until you name them. The owner sees the same IP for the device in their own Tailscale admin console and apps, and you can search the Access page for it. You can switch on Proxy, Admin, or both for such a device directly, or wait for it to send a request and allow that.
 
 Claim a new server from a device in the server's own tailnet.
 
