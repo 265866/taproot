@@ -32,9 +32,10 @@ export interface ResetResult {
   refilledFiveHour: boolean;
 }
 
-/** The message key for a claim that refused and spent nothing. */
-function refusalMessageKey(reason: string | null) {
-  return reason === 'not_next_grant' ? 'claude_reset.refused_not_next' : 'claude_reset.refused';
+/** The message for a settled claim that spent nothing, using the reason it gave. */
+function refusalMessageKey(code: string, reason: string | null) {
+  if (reason === 'not_next_grant') return 'claude_reset.refused_not_next';
+  return reason ? 'claude_reset.refused' : `claude_reset.${code}`;
 }
 
 /**
@@ -169,11 +170,11 @@ export function useClaudeResetGrants(
                 })
               : answer.unresolved
                 ? t('claude_reset.unknown')
-                : answer.code === 'refused'
-                  ? t(refusalMessageKey(answer.reason), { reason: answer.reason })
-                  : answer.code === 'reset'
-                    ? t(`claude_reset.kind.${group.kind}.done`)
-                    : t(`claude_reset.${answer.code}`),
+                : answer.code === 'reset'
+                  ? t(`claude_reset.kind.${group.kind}.done`)
+                  : answer.code === 'already_used'
+                    ? t('claude_reset.already_used')
+                    : t(refusalMessageKey(answer.code, answer.reason), { reason: answer.reason }),
             !answer.unresolved && (answer.code === 'reset' || answer.code === 'already_used')
               ? 'success'
               : 'error'

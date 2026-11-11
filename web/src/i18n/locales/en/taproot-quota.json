@@ -371,7 +371,6 @@
     "ineligible": "This account is not eligible.",
     "unavailable": "Resets are currently unavailable.",
     "rate_limited": "Request rate limited.",
-    "auth_error": "Authorization was refused.",
     "resets": "Resets",
     "hide_details": "Hide details",
     "weekly_day_note": "No reset moves the weekly reset day.",

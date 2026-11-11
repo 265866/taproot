@@ -46,10 +46,10 @@ export const ANTHROPIC_UNAVAILABLE_REASONS = [
 export type AnthropicUnavailableReason = (typeof ANTHROPIC_UNAVAILABLE_REASONS)[number];
 
 /**
- * Reasons a claim answer can carry. Every one but the two below means the server refused before
- * spending; those two mean it may have spent.
+ * Reasons a settled claim answer can carry, kept for its message. The two below mean the server
+ * may have spent, even in an answer that otherwise settles.
  */
-const CLAIM_REFUSAL_REASONS = new Set([
+const CLAIM_REASONS = new Set([
   'config_off',
   'tier',
   'seat',
@@ -80,17 +80,11 @@ export const ANTHROPIC_RESET_RESULTS = [
   'ineligible',
   'unavailable',
 ] as const;
-export type AnthropicResetUpstreamResult = (typeof ANTHROPIC_RESET_RESULTS)[number];
-/**
- * Upstream results plus the refusals that prove nothing was spent: two HTTP statuses, and an
- * error answer that names a refusal reason such as `not_next_grant`.
- */
-export type AnthropicResetSettledCode =
-  AnthropicResetUpstreamResult | 'rate_limited' | 'auth_error' | 'refused';
+export type AnthropicResetSettledCode = (typeof ANTHROPIC_RESET_RESULTS)[number];
 
 export interface AnthropicResetClaimAnswer {
   code: AnthropicResetSettledCode;
-  /** The server's reason, when it gave a known one. */
+  /** The server's reason, when it gave a known one; only for the message. */
   reason: string | null;
 }
 
@@ -377,12 +371,11 @@ export async function readClaudeOrganization(authIndex: string) {
   return uuid.toLowerCase();
 }
 
-/** A known refusal reason from a claim answer, or null. */
-function refusalReason(body: unknown): string | null {
-  const reason = isRecord(body) ? body.reason : undefined;
-  return typeof reason === 'string' && CLAIM_REFUSAL_REASONS.has(reason) ? reason : null;
-}
-
+/**
+ * Sends one claim. Only a 2xx whose body carries a known `result` settles it, as in Claude Code;
+ * every other answer, including an error status that names a reason, may have spent and throws
+ * `AnthropicResetGrantUnknownOutcome`, so the caller retries with the same request ID.
+ */
 export async function claimClaudeResetGrant(
   authIndex: string,
   organization: string,
@@ -410,29 +403,14 @@ export async function claimClaudeResetGrant(
       },
       { timeout: ANTHROPIC_RESET_GRANT_REDEEM_TIMEOUT_MS }
     );
-    if (response.statusCode === 429) return { code: 'rate_limited', reason: null };
-    if (response.statusCode === 401 || response.statusCode === 403)
-      return { code: 'auth_error', reason: null };
-    const body = response.body;
-    const result = isRecord(body) ? body.result : undefined;
-    const rawReason = isRecord(body) ? body.reason : undefined;
-    if (typeof rawReason === 'string' && CLAIM_INDETERMINATE_REASONS.has(rawReason)) {
-      throw new AnthropicResetGrantUnknownOutcome();
-    }
-    const reason = refusalReason(body);
+    const body = isRecord(response.body) ? response.body : {};
+    const code = oneOf(ANTHROPIC_RESET_RESULTS, body.result);
+    const reason = typeof body.reason === 'string' ? body.reason : null;
     const ok = response.statusCode >= 200 && response.statusCode < 300;
-    if (
-      ok &&
-      typeof result === 'string' &&
-      (ANTHROPIC_RESET_RESULTS as readonly string[]).includes(result)
-    ) {
-      return { code: result as AnthropicResetUpstreamResult, reason };
+    if (ok && code && !(reason && CLAIM_INDETERMINATE_REASONS.has(reason))) {
+      return { code, reason: reason && CLAIM_REASONS.has(reason) ? reason : null };
     }
-    if ((ok || (response.statusCode >= 400 && response.statusCode < 500)) && reason) {
-      return { code: 'refused', reason };
-    }
-  } catch (error) {
-    if (error instanceof AnthropicResetGrantUnknownOutcome) throw error;
+  } catch {
     /* The proxy may have sent the claim even if the management request failed. */
   }
   throw new AnthropicResetGrantUnknownOutcome();

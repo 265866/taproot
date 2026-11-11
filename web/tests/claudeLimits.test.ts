@@ -324,33 +324,88 @@ function renderResets(block: Json, usage: ClaudeUsageLimits) {
 }
 
 describe('claims', () => {
-  test('a refusal reason settles the claim with nothing spent', async () => {
-    for (const statusCode of [200, 409]) {
-      apiCallApi.request = async () => ({
-        statusCode,
-        body: { result: 'nope', reason: 'not_next_grant' },
-        bodyText: '',
-        header: {},
-      });
-      expect(await claimClaudeResetGrant('a', organization, 'launch-2610-fable', 'r')).toEqual({
-        code: 'refused',
-        reason: 'not_next_grant',
-      });
-    }
-    for (const reason of ['reset_unconfirmed', 'stamp_indeterminate']) {
-      apiCallApi.request = async () => ({
-        statusCode: 200,
-        body: { result: 'reset', reason },
-        bodyText: '',
-        header: {},
-      });
-      await expect(claimClaudeResetGrant('a', organization, 'g', 'r')).rejects.toBeInstanceOf(
-        AnthropicResetGrantUnknownOutcome
-      );
-    }
+  const answer = (statusCode: number, body: unknown) => async () => ({
+    statusCode,
+    body,
+    bodyText: '',
+    header: {},
   });
 
-  test('the journal treats a refusal as settled and lets the next claim start fresh', async () => {
+  test('only a 2xx with a known result settles; a reason never does on its own', async () => {
+    for (const [statusCode, body] of [
+      [400, { reason: 'not_next_grant' }],
+      [409, { reason: 'unavailable' }],
+      [409, { result: 'unavailable', reason: 'unavailable' }],
+      [422, { result: 'not_limited' }],
+      [200, { reason: 'not_next_grant' }],
+      [200, { result: 'nope', reason: 'not_next_grant' }],
+      [200, { result: 'reset', reason: 'reset_unconfirmed' }],
+      [200, { result: 'unavailable', reason: 'stamp_indeterminate' }],
+    ] as const) {
+      apiCallApi.request = answer(statusCode, body);
+      await expect(
+        claimClaudeResetGrant('a', organization, 'launch-2610-fable', 'r')
+      ).rejects.toBeInstanceOf(AnthropicResetGrantUnknownOutcome);
+    }
+    apiCallApi.request = answer(200, { result: 'unavailable', reason: 'not_next_grant' });
+    expect(await claimClaudeResetGrant('a', organization, 'launch-2610-fable', 'r')).toEqual({
+      code: 'unavailable',
+      reason: 'not_next_grant',
+    });
+    apiCallApi.request = answer(200, { result: 'unavailable', reason: 'made_up' });
+    expect(await claimClaudeResetGrant('a', organization, 'launch-2610-fable', 'r')).toEqual({
+      code: 'unavailable',
+      reason: null,
+    });
+  });
+
+  test('an error answer with a reason stays unknown, and the retry reuses the request ID', async () => {
+    const sent: Json[] = [];
+    const replies = [
+      answer(400, { reason: 'not_next_grant' }),
+      answer(409, { reason: 'unavailable' }),
+      answer(200, { result: 'reset' }),
+    ];
+    apiCallApi.request = async (request) => {
+      sent.push(JSON.parse(String(request.data)));
+      return replies[sent.length - 1]();
+    };
+    let ids = 0;
+    const operations = createResetGrantOperations({
+      revision: () => 1,
+      now: () => NOW,
+      requestId: () => `request-${++ids}`,
+      readOrganization: async () => organization,
+      readStatus: async () => status(cedar()),
+      resetCooldown: async (authIndex: string) => ({
+        status: 'ok',
+        auth_index: authIndex,
+        models: [],
+      }),
+      claim: claimClaudeResetGrant,
+    });
+    const first = operations.run('k', 'a', 'launch-2610-fable');
+    await expect(operations.run('k', 'a', 'launch-2610-fable')).rejects.toThrow('busy');
+    await expect(first).rejects.toBeInstanceOf(AnthropicResetGrantUnknownOutcome);
+    expect(operations.inspect('k')?.code).toBeUndefined();
+    await expect(operations.run('k', 'a', 'full-reset-2611')).rejects.toThrow('expired');
+    await expect(operations.run('k', 'a', 'launch-2610-fable')).rejects.toBeInstanceOf(
+      AnthropicResetGrantUnknownOutcome
+    );
+    expect(await operations.run('k', 'a', 'launch-2610-fable')).toEqual({
+      code: 'reset',
+      reason: null,
+      unresolved: false,
+    });
+    expect(ids).toBe(1);
+    expect(sent.map((body) => `${body.grant_id}/${body.request_id}`)).toEqual([
+      'launch-2610-fable/request-1',
+      'launch-2610-fable/request-1',
+      'launch-2610-fable/request-1',
+    ]);
+  });
+
+  test('a settled refusal lets the next claim start fresh', async () => {
     const sent: string[] = [];
     let n = 0;
     const operations = createResetGrantOperations({
@@ -366,15 +421,15 @@ describe('claims', () => {
       }),
       claim: async (_a: string, _o: string, grantId: string, requestId: string) => {
         sent.push(`${grantId}/${requestId}`);
-        return { code: 'refused' as const, reason: 'not_next_grant' };
+        return { code: 'unavailable' as const, reason: 'not_next_grant' };
       },
     });
     expect(await operations.run('k', 'a', 'launch-2610-fable')).toEqual({
-      code: 'refused',
+      code: 'unavailable',
       reason: 'not_next_grant',
       unresolved: false,
     });
-    expect(operations.inspect('k')?.code).toBe('refused');
+    expect(operations.inspect('k')?.code).toBe('unavailable');
     await operations.run('k', 'a', 'full-reset-2611');
     expect(sent).toEqual(['launch-2610-fable/request-1', 'full-reset-2611/request-2']);
   });

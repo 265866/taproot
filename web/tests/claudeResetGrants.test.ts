@@ -124,16 +124,11 @@ test('claim terminal mappings and ambiguous outcomes', async () => {
       reason: null,
     });
   }
-  for (const [statusCode, code] of [
-    [401, 'auth_error'],
-    [403, 'auth_error'],
-    [429, 'rate_limited'],
-  ] as const) {
+  for (const statusCode of [401, 403, 429]) {
     apiCallApi.request = async () => ({ statusCode, body: null, bodyText: '', header: {} });
-    expect(await claimClaudeResetGrant('a', organization, grant.id, 'r')).toEqual({
-      code,
-      reason: null,
-    });
+    await expect(claimClaudeResetGrant('a', organization, grant.id, 'r')).rejects.toBeInstanceOf(
+      AnthropicResetGrantUnknownOutcome
+    );
   }
   for (const statusCode of [200, 400, 500]) {
     apiCallApi.request = async () => ({
@@ -369,7 +364,7 @@ test('refused or unknown reset outcomes never clear routing cooldowns', async ()
   const operations = createResetGrantOperations(h.deps);
   await expect(operations.run('account', 'a', grant.id)).rejects.toThrow();
   expect(h.cleared).toEqual([]);
-  for (const code of [...ANTHROPIC_RESET_RESULTS, 'auth_error', 'rate_limited'] as const) {
+  for (const code of ANTHROPIC_RESET_RESULTS) {
     if (code === 'reset' || code === 'already_used') continue;
     h.deps.claim = async () => ({ code, reason: null });
     await operations.run('account', 'a', grant.id);
@@ -482,10 +477,10 @@ test('a retry refusal keeps the ambiguous original operation open', async () => 
   await expect(operations.run('account', 'a', grant.id)).rejects.toThrow();
   h.deps.claim = async (_auth, _org, _grant, id) => {
     h.ids.push(id);
-    return { code: 'rate_limited', reason: null };
+    return { code: 'not_limited', reason: null };
   };
   expect(await operations.run('account', 'a', grant.id)).toEqual({
-    code: 'rate_limited',
+    code: 'not_limited',
     reason: null,
     unresolved: true,
   });
@@ -641,13 +636,7 @@ test('all grant messages and confirmation are translated', () => {
       expect(locale[`failure_${stage}`]).toContain('{{code}}');
     }
     expect(locale.retry_confirm).toContain('{{name}}');
-    for (const key of [
-      ...ANTHROPIC_RESET_RESULTS,
-      'auth_error',
-      'rate_limited',
-      'unknown',
-      'expired',
-    ]) {
+    for (const key of [...ANTHROPIC_RESET_RESULTS, 'rate_limited', 'unknown', 'expired']) {
       expect(typeof locale[key]).toBe('string');
     }
   }
