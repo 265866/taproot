@@ -165,7 +165,7 @@ export function DashboardView({
 
   const fixes = useFixRuns(onChanged);
   const pageRef = useRef<HTMLDivElement>(null);
-  const railRef = useKeepFocus(pageRef);
+  const railRef = useKeepFocus(pageRef, digest);
 
   const verdict = (className: string) => (
     <Verdict status={reads.status} onRetry={retry} className={className} />

@@ -70,8 +70,11 @@ export function NeedsYou({
   const items = data?.items ?? [];
   const resolved = resolvedResults(runs, items, nowMs);
   const blocking = items.some((item) => item.severity === 'blocking');
-  // Rows the user opened or closed; the rest follow the default, the first open.
+  // Rows the user opened or closed; the rest follow the default: the item first shown at the top
+  // opens, and no other row opens on its own when that one leaves.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const [firstId, setFirstId] = useState<string | null>(null);
+  if (firstId === null && items.length > 0) setFirstId(items[0].id);
   const [sectionRef, reservedStyle] = useReservedHeight('needs', {
     loading: !data && !error,
     loaded: data !== null,
@@ -134,7 +137,7 @@ export function NeedsYou({
     body = (
       <ul className={styles.items}>
         {resolvedRows}
-        {items.map((item, index) => {
+        {items.map((item) => {
           const props = {
             item,
             action: itemAction(item, loggingToFile),
@@ -143,7 +146,7 @@ export function NeedsYou({
             onRun: (task: () => Promise<string>) => void run(item, task),
           };
           if (!compact) return <NeedItem key={item.id} {...props} />;
-          const open = toggled[item.id] ?? index === 0;
+          const open = toggled[item.id] ?? item.id === firstId;
           return (
             <CompactNeedItem
               key={item.id}

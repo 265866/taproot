@@ -107,10 +107,15 @@
 // The phone Digest: a raised card, tinted by the state. The page sets the padding.
 @media (max-width: $breakpoint-mobile) {
   .verdict {
-    min-height: 96px;
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background: var(--bg-primary);
+
+    // Holds a loaded card's height while loading only; a loaded card that wraps to fewer lines on a
+    // wide phone or tablet must not show a blank band.
+    &[aria-busy='true'] {
+      min-height: 96px;
+    }
 
     &[data-state='normal'] {
       border-color: color-mix(in srgb, var(--status-ok) 30%, var(--border-color));

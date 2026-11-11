@@ -77,6 +77,7 @@
       "title": "Recent failures",
       "caption": "{{count}} in {{window}}",
       "open_logs": "Open in Request Logs",
+      "open_logs_short": "Request Logs",
       "none": "No failed client requests.",
       "none_in_window": "No failed client requests in this window.",
       "time": "Time",

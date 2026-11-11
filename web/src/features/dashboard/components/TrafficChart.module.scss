@@ -338,8 +338,8 @@
   }
 }
 
-// Phones read the axis a step larger, like the rest of the page.
-@media (max-width: $breakpoint-mobile) {
+// Phones, upright or sideways, read the axis a step larger, as the type tokens do.
+@media (max-width: $breakpoint-mobile), (pointer: coarse) and (max-height: 500px) {
   .tick,
   .rateTick,
   .nowLabel,

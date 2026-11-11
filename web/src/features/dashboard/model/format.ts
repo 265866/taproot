@@ -83,11 +83,6 @@ export function formatClock(atMs: number, nowMs: number): string {
 }
 
 /**
- * "in about 19 h", "in about 2 h 30 min", "in about 45 min"; "now" once it has passed. It rounds
- * down as the server's attention text does (`roughly` in internal/taproot/status), so the rail
- * never says "in 20 h" beside an item saying "in about 19 h".
- */
-/**
  * A phone cell's "in 20 h": whole minutes under an hour, whole hours under two days, then days,
  * each rounded down as `formatIn` does. The clock time under it gives the exact moment.
  */
@@ -100,6 +95,11 @@ export function formatInShort(atMs: number, nowMs: number, t: TFunction): string
   return t('dashboard.time.short_in_days', { count: Math.floor(hours / 24) });
 }
 
+/**
+ * "in about 19 h", "in about 2 h 30 min", "in about 45 min"; "now" once it has passed. It rounds
+ * down as the server's attention text does (`roughly` in internal/taproot/status), so the rail
+ * never says "in 20 h" beside an item saying "in about 19 h".
+ */
 export function formatIn(atMs: number, nowMs: number, t: TFunction): string {
   const ms = atMs - nowMs;
   if (ms <= 0) return t('dashboard.time.now');

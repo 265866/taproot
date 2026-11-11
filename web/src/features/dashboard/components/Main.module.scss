@@ -68,6 +68,20 @@
   }
 }
 
+.shortLabel {
+  display: none;
+}
+
+@media (max-width: 359.98px) {
+  .fullLabel {
+    display: none;
+  }
+
+  .shortLabel {
+    display: inline;
+  }
+}
+
 .emptyRow {
   margin: 0;
   padding: var(--space-3) 14px;
@@ -325,9 +339,10 @@ button.failureRow:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 
-  // A phone or touch screen has no other way to read a cut name, so names wrap there.
+  // A phone or touch screen has no other way to read a cut name, so names wrap there, but only
+  // where a line may break (after a hyphen); a single segment wider than the column is cut.
   @media (max-width: $breakpoint-mobile), (pointer: coarse) {
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
     white-space: normal;
   }
 }
