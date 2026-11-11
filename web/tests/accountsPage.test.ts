@@ -250,8 +250,8 @@ describe('Manage sheet', () => {
     expect(html).toContain('role="dialog"');
     for (const text of [
       'Quota and resets',
-      'Resets remaining:',
-      'Reset limits',
+      'Weekly · all models',
+      'Checking reset grants…',
       'Refresh quota',
       'Health',
       'Recent requests',
@@ -266,7 +266,7 @@ describe('Manage sheet', () => {
       expect(html).toContain(text);
     }
     expect(html).toContain('aria-label="Enable an•••1@m•••.org"');
-    expect(html).toContain('aria-label="7-day limit: 61% remaining"');
+    expect(html).toContain('61% <small>left</small>');
   });
 
   test('masks the title, file name, note, status, and settings while emails are hidden', () => {

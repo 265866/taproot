@@ -3,11 +3,6 @@
  * quota and reset, the account's cooldown, and per-provider pooled sub-limits. Pure.
  */
 
-import type {
-  AnthropicResetGrant,
-  AnthropicResetGrantStatus,
-} from '@/services/api/claudeResetGrants';
-import { selectResetGrant } from '../live/providers/claude/selectResetGrant';
 import type { ProviderGroup, QuotaAccount } from './fromApi';
 import {
   activeWindows,
@@ -294,50 +289,6 @@ export function sortLedgerRows(rows: LedgerRow[], sort: LedgerSort): LedgerRow[]
     case 'priority':
       return sorted.sort((a, b) => nullsLast(a.priority, b.priority, -1) || byOrder(a, b));
   }
-}
-
-export interface GrantSummary {
-  /** Resets left across all grants. */
-  left: number;
-  total: number;
-  /** Soonest end among grants that still have resets and have not ended. */
-  soonestExpiry: number | null;
-}
-
-export function summarizeGrants(grants: readonly AnthropicResetGrant[], now: number): GrantSummary {
-  let left = 0;
-  let total = 0;
-  let soonestExpiry: number | null = null;
-  for (const grant of grants) {
-    left += grant.resetsLeft;
-    total += grant.resetsTotal;
-    const ends = grant.endsAt ? Date.parse(grant.endsAt) : NaN;
-    if (grant.resetsLeft > 0 && Number.isFinite(ends) && ends > now) {
-      soonestExpiry = soonestExpiry === null ? ends : Math.min(soonestExpiry, ends);
-    }
-  }
-  return { left, total, soonestExpiry };
-}
-
-export type ResetBlockReason =
-  'disabled' | 'unknown' | 'ineligible' | 'cooldown' | 'none_left' | 'not_limited' | 'not_usable';
-
-/** Why "Reset limits" cannot spend a grant now, or null when one is usable. */
-export function resetBlockReason(
-  status: AnthropicResetGrantStatus | null,
-  disabled: boolean,
-  now: number
-): ResetBlockReason | null {
-  if (disabled) return 'disabled';
-  if (!status) return 'unknown';
-  if (!status.eligible) return 'ineligible';
-  if (status.cooldownUntil && Date.parse(status.cooldownUntil) > now) return 'cooldown';
-  if (!status.grants.some((g) => g.resetsLeft > 0)) return 'none_left';
-  if (selectResetGrant(status, now)) return null;
-  const waitsForLimit = status.grants.some(
-    (g) => g.resetsLeft > 0 && g.usableNow && !g.paused && g.useRequiresLimit
-  );
-  return waitsForLimit && !status.atLimit ? 'not_limited' : 'not_usable';
 }
 
 /** The credential's router cooldown end from the raw `next_retry_after` field, epoch ms. */

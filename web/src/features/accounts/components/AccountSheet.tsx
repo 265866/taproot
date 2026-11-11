@@ -42,6 +42,7 @@ import { useNotificationStore } from '@/stores';
 import type { AuthFileItem } from '@/types';
 import { formatFileSize } from '@/utils/format';
 import type { StatusBarData } from '@/utils/recentRequests';
+import { ClaudeQuotaSection } from './ClaudeQuotaSection';
 import bar from './statusBar.module.scss';
 import styles from './AccountSheet.module.scss';
 
@@ -276,41 +277,50 @@ export function AccountSheet(props: AccountSheetProps) {
           )}
         </div>
 
-        <Section title={t('accounts.sheet.quota')}>
-          {columns.length > 0 ? (
-            <div
-              className={styles.windows}
-              style={{ ['--window-count' as string]: Math.min(columns.length, 3) }}
-            >
-              {columns.map((column) => (
-                <WindowCell
-                  key={column.window}
-                  column={column}
-                  cell={row.cells.get(column.window)}
-                  now={now}
-                />
-              ))}
-            </div>
-          ) : liveEntry ? null : (
-            <p className={styles.muted}>{t('taproot_quota.ledger.no_windows')}</p>
-          )}
-          {/* Without recorded quota the live read is all there is; for Codex it also holds the
-              reset credits, which taproot does not record. */}
-          {liveEntry && (columns.length === 0 || account.provider === 'codex') && (
-            <LiveQuotaGrid entries={[liveEntry]} />
-          )}
-          <QuotaActions
-            provider={account.provider}
-            disabled={account.disabled}
-            target={{ authIndex: account.authIndex, name }}
+        {account.provider === 'claude' && file ? (
+          <ClaudeQuotaSection
+            title={t('accounts.sheet.quota')}
+            account={account}
             file={file}
+            name={name}
+            row={row}
+            columns={columns}
             now={now}
-            refreshing={refresh.busy.has(account.authIndex)}
-            refreshLocked={refresh.allRunning}
-            grantToken={refresh.tokens[account.authIndex] ?? 0}
-            onRefresh={(target, options) => void refresh.refreshOne(target, options)}
+            refresh={refresh}
           />
-        </Section>
+        ) : (
+          <Section title={t('accounts.sheet.quota')}>
+            {columns.length > 0 ? (
+              <div
+                className={styles.windows}
+                style={{ ['--window-count' as string]: Math.min(columns.length, 3) }}
+              >
+                {columns.map((column) => (
+                  <WindowCell
+                    key={column.window}
+                    column={column}
+                    cell={row.cells.get(column.window)}
+                    now={now}
+                  />
+                ))}
+              </div>
+            ) : liveEntry ? null : (
+              <p className={styles.muted}>{t('taproot_quota.ledger.no_windows')}</p>
+            )}
+            {/* Without recorded quota the live read is all there is; for Codex it also holds the
+              reset credits, which taproot does not record. */}
+            {liveEntry && (columns.length === 0 || account.provider === 'codex') && (
+              <LiveQuotaGrid entries={[liveEntry]} />
+            )}
+            <QuotaActions
+              provider={account.provider}
+              target={{ authIndex: account.authIndex, name }}
+              refreshing={refresh.busy.has(account.authIndex)}
+              refreshLocked={refresh.allRunning}
+              onRefresh={(target) => void refresh.refreshOne(target)}
+            />
+          </Section>
+        )}
 
         {file && (
           <Section title={t('accounts.sheet.health')}>

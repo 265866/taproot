@@ -12,6 +12,8 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 - `/taproot/api/v1` has new admin-only endpoints: `GET /requests/summary`, `GET /requests/recent`, `GET /status`, `GET /attention`, and `GET /pools`. No existing endpoint changed.
 - The sidebar shows badges on **Accounts**, **Access**, and **Backups**, and the tab title starts with a dot while something needs you. The Accounts badge used to count accounts. It now counts problems.
 - On a touch screen, every button and link on the Dashboard and the sidebar is at least 44 pixels tall, and Usage's and Accounts' range buttons grow to match. On a phone, and on a phone held sideways, text is a step larger.
+- Claude accounts show the Fable limit. Taproot now reads the limits list in Claude's usage response, so the Fable limit is recorded and charted with the 5-hour and weekly limits. A 5-hour reading from a session that has ended no longer shows as current. Alerts call it the Fable limit.
+- On **Accounts**, a Claude account's card and Manage sheet show the 5-hour, weekly, and Fable limits, with Fable's share of the weekly limit, and one button per kind of reset the account holds (full, Fable, 5-hour, weekly) in place of the single **Reset limits** button. Each asks first and shows what it will change. A Fable reset with no Fable use this week can't be spent.
 - A successful **Send test** of the Discord alerts, or a new webhook, clears the record of failed deliveries, so the "Discord alerts are not being delivered" item leaves **Needs you**.
 
 ## [0.4.0](https://github.com/265866/taproot/compare/taproot-v0.3.0...taproot-v0.4.0) (2026-11-10)

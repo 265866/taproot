@@ -365,6 +365,8 @@ func TestCodexWindowsAreNamedByLength(t *testing.T) {
 		{"codex_bengalfox", 5 * 3600, "5-hour bengalfox"},
 		{"codex_bengalfox_primary", 0, "bengalfox primary"},
 		{"seven_day_opus", 7 * day, "weekly Opus"},
+		{"seven_day_fable", 7 * day, "Fable"},
+		{"seven_day_overage_included", 7 * day, "Fable"},
 	} {
 		if got := windowLabel(ingest.QuotaObservation{Window: tc.window, PeriodSeconds: tc.period}); got != tc.want {
 			t.Errorf("%s (%d s) = %q, want %q", tc.window, tc.period, got, tc.want)

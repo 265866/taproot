@@ -182,6 +182,14 @@
     text-overflow: clip;
     overflow-wrap: anywhere;
   }
+
+  // The plan's items, not .codexPlan: the badge block below sets its size and must stay as is.
+  .quotaModel,
+  .quotaMeta,
+  .quotaAmount,
+  .codexPlanItem {
+    font-size: 13px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

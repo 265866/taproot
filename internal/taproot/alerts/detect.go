@@ -518,8 +518,8 @@ var windowLabels = map[string]string{
 	"seven_day":                  "weekly",
 	"seven_day_opus":             "weekly Opus",
 	"seven_day_sonnet":           "weekly Sonnet",
-	"seven_day_fable":            "weekly Fable",
-	"seven_day_overage_included": "weekly overage",
+	"seven_day_fable":            "Fable",
+	"seven_day_overage_included": "Fable",
 	"codex_primary":              "5-hour",
 	"codex_secondary":            "weekly",
 }
