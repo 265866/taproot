@@ -90,11 +90,12 @@ interface ClaudeLimitsProps {
 
 /**
  * The 5-hour row, then Weekly with Fable's share hatched on its bar and Fable nested under it.
- * The sheet puts 5-hour and Weekly side by side on wide screens.
+ * The sheet puts 5-hour and Weekly side by side on wide screens. An account without a 5-hour
+ * limit gets no 5-hour row.
  */
 export function ClaudeLimits({ usage, wall, surface, now, refilledFiveHour }: ClaudeLimitsProps) {
   const { t } = useTranslation();
-  const fiveHour = usage.fiveHour;
+  const fiveHour = usage.fiveHour === 'none' ? null : usage.fiveHour;
   const session = fiveHour === 'closed' ? null : fiveHour;
   // A session whose reset passed is closed until the next request opens one.
   const closed =
@@ -206,7 +207,7 @@ export function ClaudeLimits({ usage, wall, surface, now, refilledFiveHour }: Cl
     </>
   );
 
-  if (surface === 'sheet') {
+  if (surface === 'sheet' && fiveHourRow) {
     return (
       <div className={`${styles.limits} ${styles.grid}`}>
         <div className={styles.limits}>{fiveHourRow}</div>
@@ -234,14 +235,9 @@ export function ClaudeLimitNotice({
 }) {
   const { t, i18n } = useTranslation();
   if (!wall) return null;
+  const fiveHour = typeof usage.fiveHour === 'object' ? usage.fiveHour : null;
   const reading =
-    wall === 'seven_day'
-      ? usage.weekly
-      : wall === 'five_hour'
-        ? usage.fiveHour === 'closed'
-          ? null
-          : usage.fiveHour
-        : usage.fable;
+    wall === 'seven_day' ? usage.weekly : wall === 'five_hour' ? fiveHour : usage.fable;
   const time =
     reading?.resetsAt != null
       ? formatResetClock(reading.resetsAt, now, i18n.resolvedLanguage)

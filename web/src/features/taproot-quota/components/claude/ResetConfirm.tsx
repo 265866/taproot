@@ -2,9 +2,14 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { AnthropicResetGrant } from '@/services/api/claudeResetGrants';
 import type { ClaudeUsageLimits } from '@/services/api/claudeUsageLimits';
-import { predictReset, type LimitValue, type ResetGroup } from '../../model/claudeResets';
+import {
+  clearsHeld,
+  predictReset,
+  type LimitValue,
+  type ResetGroup,
+} from '../../model/claudeResets';
 import { formatClock, formatCountdown, formatDay, formatDayTime } from '../../model/format';
-import { clearsText, fableSuffix } from './resetText';
+import { clearsText, fableSuffix, resetKey } from './resetText';
 import styles from './ClaudeLimits.module.scss';
 
 function valueText(t: TFunction, value: LimitValue) {
@@ -51,31 +56,33 @@ export function ResetConfirmBody({
   const weeklyAt = weeklyResetsAt ? Date.parse(weeklyResetsAt) : (usage?.weekly?.resetsAt ?? NaN);
   const ends = grant.endsAt ? Date.parse(grant.endsAt) : NaN;
   const leftAfter = group.left - 1;
+  const clears = clearsHeld(grant.clears, usage);
+  const rawClears = clearsHeld(grant.rawClears, usage);
 
   const leads =
     kind === 'unknown'
       ? [
-          grant.rawClears.length > 0
-            ? t('claude_reset.confirm.lead_unknown', { windows: clearsText(t, grant.rawClears) })
+          rawClears.length > 0
+            ? t('claude_reset.confirm.lead_unknown', { windows: clearsText(t, rawClears) })
             : t('claude_reset.confirm.lead_unknown_none'),
           t('claude_reset.confirm.lead_unknown_note'),
         ]
       : kind === 'fable'
         ? [
             share !== null
-              ? t(`claude_reset.confirm.lead_fable_share${fableSuffix(grant)}`, {
+              ? t(`claude_reset.confirm.lead_fable_share${fableSuffix(grant, usage)}`, {
                   share: Math.round(share),
                 })
-              : t(`claude_reset.confirm.lead_fable${fableSuffix(grant)}`),
+              : t(`claude_reset.confirm.lead_fable${fableSuffix(grant, usage)}`),
           ]
-        : (kind === 'session' || kind === 'weekly') && grant.clears.length > 0
+        : (kind === 'session' || kind === 'weekly') && clears.length > 0
           ? [
               t('claude_reset.confirm.lead_refills', {
-                count: grant.clears.length,
-                windows: clearsText(t, grant.clears),
+                count: clears.length,
+                windows: clearsText(t, clears),
               }),
             ]
-          : [t(`claude_reset.confirm.lead_${kind}`)];
+          : [t(resetKey(`confirm.lead_${kind}`, usage))];
 
   return (
     <div>

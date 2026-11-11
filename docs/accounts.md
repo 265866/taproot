@@ -13,7 +13,7 @@ Taproot sends requests through the Claude and Codex subscription accounts you ad
 
 A Claude account's quota card, and its **Manage** sheet under **Quota and resets**, show three limits:
 
-- **5-hour**: the rolling session limit. "No session open" means the next request starts one.
+- **5-hour**: the rolling session limit. "No session open" means the next request starts one. Some accounts have no 5-hour limit; they show no 5-hour row, and their resets don't mention it.
 - **Weekly · all models**: the weekly limit. The hatched part of its bar is what Fable used.
 - **Fable**: Fable models count toward the weekly limit and may use up to half of it. The row shows how much of that allowance is left and how much more of the weekly limit Fable can use. At the cap, Fable stops, or runs on usage credits if you turned them on, and the other models keep working.
 
