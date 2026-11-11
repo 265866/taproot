@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/265866/taproot/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,7 +27,8 @@ var pathKeys = map[string][][]string{
 // currentPath sets it, or removed where that file leaves it out. It returns
 // restored unchanged when the values already agree.
 func keepPathKeys(restored []byte, currentPath string, keys [][]string) ([]byte, error) {
-	current, err := os.ReadFile(currentPath)
+	// A save rewrites config.yaml in place; the locked read never sees it half written.
+	current, err := config.ReadConfigFile(currentPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("read current file: %w", err)
 	}

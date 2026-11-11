@@ -156,7 +156,7 @@ func managementSecretKeyPath(data []byte) []string {
 // If optional is true and the file is empty or invalid, it returns an empty Config.
 func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	// Read the entire configuration file into memory.
-	data, err := os.ReadFile(configFile)
+	data, err := ReadConfigFile(configFile)
 	if err != nil {
 		if optional {
 			if os.IsNotExist(err) || errors.Is(err, syscall.EISDIR) {
@@ -338,6 +338,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 
 	// Only conflicting legacy fields are removed on load. A legacy-only document
 	// stays legacy until a v8 configuration write explicitly migrates it.
+	defer LockConfigFileWrite()()
 	current, errRead := os.ReadFile(configFile)
 	if errRead != nil {
 		return nil, errRead

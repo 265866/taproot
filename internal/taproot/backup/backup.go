@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/265866/taproot/internal/taproot/access"
 	"github.com/265866/taproot/internal/taproot/store"
 	"github.com/gin-gonic/gin"
@@ -478,14 +479,17 @@ func (b *Backups) freeID(createdAt time.Time, reason Reason) (string, error) {
 // holds, made before that token was read, is in the backup too.
 func (b *Backups) collect() ([]source, error) {
 	var sources []source
-	for _, f := range []struct{ name, path string }{
-		{configEntry, b.paths.ConfigFile},
-		{taprootEntry, b.paths.TaprootFile},
+	for _, f := range []struct {
+		name, path string
+		read       func(string) ([]byte, error)
+	}{
+		{configEntry, b.paths.ConfigFile, config.ReadConfigFile},
+		{taprootEntry, b.paths.TaprootFile, os.ReadFile},
 	} {
 		if f.path == "" {
 			continue
 		}
-		data, err := readSmallFile(f.path, f.name)
+		data, err := readSmallFile(f.read, f.path, f.name)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -499,7 +503,7 @@ func (b *Backups) collect() ([]source, error) {
 		return nil, err
 	}
 	for rel, path := range auth {
-		data, err := readSmallFile(path, "auth file "+rel)
+		data, err := readSmallFile(os.ReadFile, path, "auth file "+rel)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -519,8 +523,8 @@ func (b *Backups) collect() ([]source, error) {
 
 // readSmallFile reads a config, auth, or journal file. One larger than a
 // restore reads fails the backup now, rather than making it unrestorable.
-func readSmallFile(path, what string) ([]byte, error) {
-	data, err := os.ReadFile(path)
+func readSmallFile(read func(string) ([]byte, error), path, what string) ([]byte, error) {
+	data, err := read(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, err
@@ -585,7 +589,7 @@ func (b *Backups) journalSources() ([]source, error) {
 		if !d.Type().IsRegular() || rel == "." {
 			return nil
 		}
-		data, err := readSmallFile(path, "refresh journal "+rel)
+		data, err := readSmallFile(os.ReadFile, path, "refresh journal "+rel)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}

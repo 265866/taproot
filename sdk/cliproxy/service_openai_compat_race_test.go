@@ -86,6 +86,7 @@ func TestPutOpenAICompatConcurrentWithAuthFieldsPatch_Issue6559(t *testing.T) {
 	if errWatcher != nil {
 		t.Fatalf("watcherFactory failed: %v", errWatcher)
 	}
+	t.Cleanup(func() { _ = watcherWrapper.Stop() })
 	service.watcher = watcherWrapper
 	service.ensureAuthUpdateQueue(ctx)
 	watcherWrapper.SetAuthUpdateQueue(service.authUpdates)

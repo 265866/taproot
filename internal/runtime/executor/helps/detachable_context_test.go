@@ -204,6 +204,12 @@ func TestNewDetachableContext_HTTPErrorsMatchParent(t *testing.T) {
 		}
 		if !inBody {
 			end()
+			// The detachable context follows parent from an AfterFunc goroutine.
+			select {
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
+				t.Fatal("parent cancellation did not propagate")
+			}
 			resp, errRoundTrip := transport.RoundTrip(req)
 			if errRoundTrip == nil {
 				_ = resp.Body.Close()
