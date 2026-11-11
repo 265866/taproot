@@ -72,7 +72,7 @@ The page rereads everything every 30 seconds while the tab is visible. When a re
 
 ### On a phone the page reads top to bottom
 
-The order is the verdict, **Needs you**, **Pools**, then the window and its numbers. On first run the checklist comes first. Each part sits on its own raised card. On a phone held upright or sideways, text is a step larger than on a desktop. On a touch screen, every button and link is at least 44 pixels tall. Long device and model names wrap rather than cut off. Tap a bar of the chart to read it, and tap it again to close it.
+The order is the verdict, **Needs you**, **Pools**, then the window and its numbers. On first run the checklist comes first. Each part sits on its own raised card. On a phone held upright or sideways, text is a step larger than on a desktop. On a touch screen, every button and link is at least 44 pixels tall. Long device and model names wrap rather than cut off. Tap a bar of the chart to read it, and tap it again to close it. It also closes 3 seconds after you lift your finger, when you scroll, or when you tap elsewhere. The charts on **Accounts** and **Usage** work the same way: touch or drag to read them, and the reading goes away on its own.
 
 **Needs you** is a compact list on a phone. Each row shows the severity, the title, and a short fix button, such as **Sign in** or **Back up**. Tap a title to open or close its detail in place. The first row starts open. On a screen narrower than 360 pixels, the button moves under the title. Each pool shows its next reset, its burn over the last 3 hours, and when it runs out as three cells under the bars. Tablets and desktops keep the layout above.
 

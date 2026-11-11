@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import type { UsageBucket } from '@/services/api/taproot';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useTouchReadout } from '@/hooks/useTouchReadout';
 import {
   isIsolatedPoint,
   peakOf,
@@ -170,6 +171,7 @@ export function StackedSeries({
 }: StackedSeriesProps) {
   const { t } = useTranslation();
   const animate = useAnimate();
+  const [touchRef, touchHidden] = useTouchReadout<HTMLDivElement>();
   const last = entries.length - 1;
   const summary = useMemo(() => {
     const ids = entries.map((entry) => entry.id);
@@ -200,13 +202,22 @@ export function StackedSeries({
   );
   if (rows.length > MAX_BAR_BUCKETS) {
     return (
-      <div className={`${styles.chartBox} ${className ?? ''}`} role="img" aria-label={summary}>
+      <div
+        ref={touchRef}
+        className={`${styles.chartBox} ${className ?? ''}`}
+        role="img"
+        aria-label={summary}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={rows as object[]} margin={CHART_MARGIN} accessibilityLayer={false}>
             <CartesianGrid vertical={false} stroke="var(--usage-grid)" />
             <XAxisFor axis={axis} />
             {yAxis}
-            <Tooltip cursor={{ stroke: 'var(--border-hover)' }} content={tooltipContent} />
+            <Tooltip
+              active={touchHidden ? false : undefined}
+              cursor={{ stroke: 'var(--border-hover)' }}
+              content={tooltipContent}
+            />
             {entries.map((entry) => (
               <Area
                 key={entry.id}
@@ -229,7 +240,12 @@ export function StackedSeries({
     );
   }
   return (
-    <div className={`${styles.chartBox} ${className ?? ''}`} role="img" aria-label={summary}>
+    <div
+      ref={touchRef}
+      className={`${styles.chartBox} ${className ?? ''}`}
+      role="img"
+      aria-label={summary}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={rows as object[]}
@@ -240,7 +256,11 @@ export function StackedSeries({
           <CartesianGrid vertical={false} stroke="var(--usage-grid)" />
           <XAxisFor axis={axis} />
           {yAxis}
-          <Tooltip cursor={{ fill: 'var(--bg-tertiary)', opacity: 0.6 }} content={tooltipContent} />
+          <Tooltip
+            active={touchHidden ? false : undefined}
+            cursor={{ fill: 'var(--bg-tertiary)', opacity: 0.6 }}
+            content={tooltipContent}
+          />
           {entries.map((entry, index) => (
             <Bar
               key={entry.id}
@@ -373,6 +393,7 @@ export function PercentileChart({
 }) {
   const { t } = useTranslation();
   const animate = useAnimate();
+  const [touchRef, touchHidden] = useTouchReadout<HTMLDivElement>();
   const entries = useMemo<LegendEntry[]>(
     () =>
       series.flatMap((s, index) => {
@@ -415,7 +436,7 @@ export function PercentileChart({
   }, [entries, rows, axis, ariaLabel, t]);
   return (
     <>
-      <div className={styles.chartBox} role="img" aria-label={summary}>
+      <div ref={touchRef} className={styles.chartBox} role="img" aria-label={summary}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={rows} margin={CHART_MARGIN} accessibilityLayer={false}>
             <CartesianGrid vertical={false} stroke="var(--usage-grid)" />
@@ -428,6 +449,7 @@ export function PercentileChart({
               tickFormatter={formatAxisMs}
             />
             <Tooltip
+              active={touchHidden ? false : undefined}
               cursor={{ stroke: 'var(--border-hover)' }}
               content={(props) => (
                 <TooltipBody props={props} axis={axis} entries={entries} format={formatMs} />
@@ -455,7 +477,9 @@ export function PercentileChart({
                     <g key={props.index} />
                   )
                 }
-                activeDot={{ r: 4, stroke: 'var(--bg-primary)', strokeWidth: 2 }}
+                activeDot={
+                  touchHidden ? false : { r: 4, stroke: 'var(--bg-primary)', strokeWidth: 2 }
+                }
                 connectNulls={false}
                 isAnimationActive={animate}
                 animationDuration={300}
