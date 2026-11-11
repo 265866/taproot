@@ -20,6 +20,25 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 - The image and the release binaries are built with Go 1.26.11, for an HTTP/1 server crash in Go 1.26.10's `net/http` (GO-2026-6859). Building the request-log codec from source now ends with an `objcopy` step, because Go 1.26.11 refuses to link LLVM bitcode; CONTRIBUTING has the commands.
 - A successful **Send test** of the Discord alerts, or a new webhook, clears the record of failed deliveries, so the "Discord alerts are not being delivered" item leaves **Needs you**.
 
+## [0.5.0](https://github.com/265866/taproot/compare/taproot-v0.4.0...taproot-v0.5.0) (2026-11-11)
+
+### Added
+
+* **taproot:** record client requests, with summary and recent endpoints ([#70](https://github.com/265866/taproot/pull/70)) ([e5ab222](https://github.com/265866/taproot/commit/e5ab222cdf1f549df13cc611397ce1eaeb9ad0e0))
+* **taproot:** add status, attention, and pools endpoints ([#73](https://github.com/265866/taproot/pull/73)) ([c6f8393](https://github.com/265866/taproot/commit/c6f8393f7f799268e5b6cf07e09d6e8cb59894cf))
+* **web:** denser console shell, status tokens, and shared primitives ([#72](https://github.com/265866/taproot/pull/72)) ([a6ac92d](https://github.com/265866/taproot/commit/a6ac92d7d5380f31ac477ee9a203ca796b5c6574))
+* **web:** rebuild the Dashboard around a right-now verdict and Needs you ([#74](https://github.com/265866/taproot/pull/74)) ([8487a03](https://github.com/265866/taproot/commit/8487a03cca36389e7aec38b359e3b5a2c88ad295))
+* **web:** one Show emails switch, readable sidebar, Pools links, and a Counting since caption ([#76](https://github.com/265866/taproot/pull/76)) ([13cf198](https://github.com/265866/taproot/commit/13cf198c67f89a41467baeb370397b5602bd29ef))
+* record Claude's Fable limit and show Claude limits and reset kinds on Accounts ([#77](https://github.com/265866/taproot/pull/77)) ([cecb245](https://github.com/265866/taproot/commit/cecb245583ad5829cf89444e648b1fae558b4dd7))
+* **web:** phone Dashboard Digest, and one-row controls with option sheets on Accounts and Usage ([#78](https://github.com/265866/taproot/pull/78)) ([d143c11](https://github.com/265866/taproot/commit/d143c11f1e6cae12e9c614e8586c44347e5c2f2b))
+
+### Fixed
+
+* **taproot:** keep the third-party notices independent of gopkg.in ([#81](https://github.com/265866/taproot/pull/81)) ([d0b49aa](https://github.com/265866/taproot/commit/d0b49aac97fbb4b3a04ccf793d93d6f3f9a546ff))
+* show no 5-hour limit for Claude accounts that don't have one ([#80](https://github.com/265866/taproot/pull/80)) ([a82acd6](https://github.com/265866/taproot/commit/a82acd6d223a63e15bec08b6bf6376c385600a23))
+* **web:** close chart readouts on touch screens ([#82](https://github.com/265866/taproot/pull/82)) ([1a07942](https://github.com/265866/taproot/commit/1a079429be94344f9eb05f34a7c6fa9aec2c7bbf))
+* **taproot:** keep config reloads from reading config.yaml mid-save, and fix four flaky tests ([#84](https://github.com/265866/taproot/pull/84)) ([baaebc2](https://github.com/265866/taproot/commit/baaebc2418a93f8a70eeda84b47440a13f052690))
+
 ## [0.4.0](https://github.com/265866/taproot/compare/taproot-v0.3.0...taproot-v0.4.0) (2026-11-10)
 
 ### Upgrading from 0.3
