@@ -41,11 +41,11 @@ Each item has a severity tag (**Blocking**, **At risk**, **Waiting**, or **Overd
 
 ### Pools show what each provider can serve now
 
-Each provider has one bar per account, labelled with the part of its email before the @ and the share of quota left. Cooling, signed-out, and disabled accounts are hatched. The headline counts usable accounts only, such as "1.45 of 2 accounts usable". Notes under the bars give the quota locked on signed-out and disabled accounts, and the quota on cooling accounts and when they are back; both show when both apply. Below that are the next reset, the burn over the last 3 hours as a share of the pool per hour, and when the pool runs out.
+Each provider's name opens Accounts on that provider's tab. Each provider has one bar per account, labelled with the part of its email before the @ and the share of quota left. Cooling, signed-out, and disabled accounts are hatched. The headline counts usable accounts only, such as "1.45 of 2 accounts usable". Notes under the bars give the quota locked on signed-out and disabled accounts, and the quota on cooling accounts and when they are back; both show when both apply. Below that are the next reset, the burn over the last 3 hours as a share of the pool per hour, and when the pool runs out.
 
 ### The window sets the numbers, the chart, and the lists
 
-Choose 1 hour, 24 hours, 7 days, or 30 days. The default is 24 hours, and this browser remembers your choice. The caption shows the range and your time zone. The window sets these sections:
+Choose 1 hour, 24 hours, 7 days, or 30 days. The default is 24 hours, and this browser remembers your choice. The caption shows the range and your time zone. A server upgraded from taproot 0.4 counts client requests only from the upgrade on, so when the window starts before the first one the caption says "Counting since" that time instead, and "No client requests recorded yet" until the first. The window sets these sections:
 
 - **Tiles:** client requests with upstream retries, failed requests and their share, median latency with median time to first token, and the API-equivalent cost, which names the models without a price.
 - **Traffic chart:** succeeded and failed client requests per 5 minutes, hour, or day, with the failure rate on a right axis. It marks now and hatches the bucket in progress. Hover, tap, or use the arrow keys to read a bar. **Show the data as a table** shows the same numbers as a table.

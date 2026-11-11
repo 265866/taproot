@@ -131,6 +131,24 @@ const captionWithDate = (timeZone?: string) =>
     timeZone,
   });
 
+/**
+ * How much of the window the client-request record covers. A server upgraded from 0.4 records
+ * client requests only from the upgrade on, so a window that starts earlier reads low: `since`
+ * is the first recorded request then, and `none` means nothing is recorded yet.
+ */
+export type WindowCoverage = { kind: 'full' } | { kind: 'since'; atMs: number } | { kind: 'none' };
+
+export function windowCoverage(range: WindowRange, firstRequestAt: string | null): WindowCoverage {
+  if (firstRequestAt === null) return { kind: 'none' };
+  const atMs = Date.parse(firstRequestAt);
+  if (!Number.isFinite(atMs) || atMs <= range.fromMs) return { kind: 'full' };
+  return { kind: 'since', atMs };
+}
+
+/** "Nov 10, 2:43 PM", as a window caption names a date. */
+export const formatCaptionDate = (atMs: number, timeZone?: string): string =>
+  captionWithDate(timeZone).format(new Date(atMs));
+
 /** "Mon 4:36 AM – Tue 4:36 AM"; weeks and months name the date instead of the weekday. */
 export function windowCaption(range: WindowRange, timeZone?: string): string {
   const format =

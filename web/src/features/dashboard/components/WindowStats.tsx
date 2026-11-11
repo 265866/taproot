@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { StatGroup, StatTile } from '@/components/ui/StatTile';
@@ -7,9 +8,12 @@ import { failedTone } from '../model/views';
 import {
   DASHBOARD_WINDOWS,
   browserTimeZone,
+  formatCaptionDate,
   windowCaption,
+  windowCoverage,
   zoneAbbreviation,
   type DashboardWindow,
+  type WindowRange,
 } from '../model/window';
 import styles from './Main.module.scss';
 
@@ -28,7 +32,7 @@ export function WindowControl({
   summary: Read<WindowSummary>;
 }) {
   const { t } = useTranslation();
-  const range = summary.data?.range.window === value ? summary.data.range : null;
+  const shown = summary.data?.range.window === value ? summary.data : null;
   const zone = browserTimeZone();
   return (
     <div className={styles.controls}>
@@ -44,12 +48,7 @@ export function WindowControl({
         }))}
       />
       <span className={styles.rangeCaption}>
-        {range
-          ? t('dashboard.window.caption', {
-              range: windowCaption(range, zone),
-              zone: zoneAbbreviation(range.toMs, zone),
-            })
-          : ' '}
+        {shown ? rangeCaption(shown.range, shown.summary.firstRequestAt, zone, t) : ' '}
       </span>
       {isStale(summary) ? (
         <span className={styles.stale} title={t('console.stale_hint')}>
@@ -58,6 +57,24 @@ export function WindowControl({
       ) : null}
     </div>
   );
+}
+
+function rangeCaption(
+  range: WindowRange,
+  firstRequestAt: string | null,
+  zone: string | undefined,
+  t: TFunction
+): string {
+  const coverage = windowCoverage(range, firstRequestAt);
+  if (coverage.kind === 'none') return t('dashboard.window.caption_none');
+  const zoneName = zoneAbbreviation(range.toMs, zone);
+  if (coverage.kind === 'since') {
+    return t('dashboard.window.caption_since', {
+      since: formatCaptionDate(coverage.atMs, zone),
+      zone: zoneName,
+    });
+  }
+  return t('dashboard.window.caption', { range: windowCaption(range, zone), zone: zoneName });
 }
 
 export function StatTiles({ summary }: { summary: Read<WindowSummary> }) {

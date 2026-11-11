@@ -7,7 +7,9 @@ import {
   failuresInWindow,
   readStoredWindow,
   storeWindow,
+  formatCaptionDate,
   windowCaption,
+  windowCoverage,
   windowRange,
 } from '@/features/dashboard/model/window';
 import {
@@ -101,6 +103,38 @@ describe('the window selector', () => {
     expect(t('dashboard.window.caption', { range: 'A – B', zone: 'PST' })).toBe(
       'A – B · local time (PST)'
     );
+  });
+
+  test('a window that starts before the first recorded client request says when counting began', () => {
+    const now = local(2026, 11, 12, 9, 0);
+    const upgraded = new Date(local(2026, 11, 10, 14, 43)).toISOString();
+    // 30 and 7 days reach back before the upgrade; 24 hours and 1 hour do not.
+    expect(windowCoverage(windowRange('30d', now), upgraded)).toEqual({
+      kind: 'since',
+      atMs: Date.parse(upgraded),
+    });
+    expect(windowCoverage(windowRange('7d', now), upgraded).kind).toBe('since');
+    expect(windowCoverage(windowRange('24h', now), upgraded)).toEqual({ kind: 'full' });
+    expect(windowCoverage(windowRange('1h', now), upgraded)).toEqual({ kind: 'full' });
+    expect(formatCaptionDate(Date.parse(upgraded))).toBe('Nov 10, 2:43 PM');
+    expect(t('dashboard.window.caption_since', { since: 'Nov 10, 2:43 PM', zone: 'PST' })).toBe(
+      'Counting since Nov 10, 2:43 PM · local time (PST)'
+    );
+  });
+
+  test('a record that starts exactly at the window, or earlier, covers it all', () => {
+    const range = windowRange('7d', local(2026, 11, 12, 9, 0));
+    expect(windowCoverage(range, new Date(range.fromMs).toISOString())).toEqual({ kind: 'full' });
+    expect(windowCoverage(range, new Date(range.fromMs - 1).toISOString())).toEqual({
+      kind: 'full',
+    });
+  });
+
+  test('with no client request recorded yet, the caption says so', () => {
+    expect(windowCoverage(windowRange('30d', local(2026, 11, 12, 9, 0)), null)).toEqual({
+      kind: 'none',
+    });
+    expect(t('dashboard.window.caption_none')).toBe('No client requests recorded yet');
   });
 });
 

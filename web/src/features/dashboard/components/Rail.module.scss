@@ -1,3 +1,5 @@
+@use '../../../styles/mixins' as *;
+
 // The Dashboard's rail: Needs you and Pools. The rail draws no padding of its own; `--rail-pad`
 // (set by the page) is the side padding, so rows can draw full-width hairlines.
 
@@ -347,6 +349,26 @@
   color: var(--text-primary);
   font-size: var(--fs-body);
   font-weight: 600;
+}
+
+.poolLink {
+  @include touch-target(44px);
+
+  border-radius: 2px;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-hover);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+
+  &:hover {
+    text-decoration-color: currentColor;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
 }
 
 .poolHeadline {
