@@ -17,7 +17,7 @@ import {
   type OAuthProviderCard,
 } from '@/features/oauth/providers';
 import { useAuthStore, useThemeStore } from '@/stores';
-import { moveFocusWithArrows, usePopover } from './usePopover';
+import { moveFocusWithArrows, usePopover } from '@/hooks/usePopover';
 import styles from './AddAccount.module.scss';
 
 interface AddAccountProps {

@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconEllipsis } from '@/components/ui/icons';
-import { moveFocusWithArrows, usePopover } from './usePopover';
+import { moveFocusWithArrows, usePopover } from '@/hooks/usePopover';
 import styles from './AccountsMenu.module.scss';
 
 export interface AccountsMenuItem {

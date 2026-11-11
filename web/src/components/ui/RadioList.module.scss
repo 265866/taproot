@@ -1,0 +1,65 @@
+@use '../../styles/mixins' as *;
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.option {
+  @include button-reset;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+  text-align: left;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+}
+
+.tick {
+  flex: none;
+  margin-left: auto;
+}
+
+.sheet {
+  overflow: hidden;
+  border: 1px solid var(--border-raised);
+  border-radius: 10px;
+  background: var(--surface-raised-inset);
+
+  .option {
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 14px;
+
+    & + .option {
+      border-top: 1px solid var(--border-raised);
+    }
+  }
+}
+
+.popover .option {
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: var(--fs-table);
+
+  &[aria-checked='true'] {
+    background: var(--accent-subtle);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .popover .option:hover:not([aria-checked='true']) {
+    background: var(--bg-tertiary);
+  }
+}

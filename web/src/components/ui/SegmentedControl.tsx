@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from 'react';
+import { useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { nextSegmentIndex } from './radioGroupKeys';
 import styles from './SegmentedControl.module.scss';
 
@@ -7,6 +7,8 @@ export interface SegmentOption<T extends string> {
   label: string;
   /** A longer name for screen readers, such as "Last 24 hours" for "24h". */
   ariaLabel?: string;
+  /** Drawn in place of the label, such as a provider's dot and count around its name. */
+  content?: ReactNode;
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -14,9 +16,13 @@ interface SegmentedControlProps<T extends string> {
   value: T;
   onChange: (value: T) => void;
   /** Names the group, such as "Time window". */
-  ariaLabel: string;
+  ariaLabel?: string;
+  /** Names the group by another element, such as a sheet group's label. */
+  ariaLabelledBy?: string;
   /** Stretches the segments across the row, as on phones. */
   fullWidth?: boolean;
+  /** `large`: 44 px segments in 14 px type, for phone sheets. */
+  size?: 'default' | 'large';
   className?: string;
 }
 
@@ -29,7 +35,9 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   ariaLabel,
+  ariaLabelledBy,
   fullWidth,
+  size = 'default',
   className,
 }: SegmentedControlProps<T>) {
   const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
@@ -50,7 +58,13 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={[styles.group, fullWidth ? styles.fullWidth : null, className]
+      aria-labelledby={ariaLabelledBy}
+      className={[
+        styles.group,
+        fullWidth ? styles.fullWidth : null,
+        size === 'large' ? styles.large : null,
+        className,
+      ]
         .filter(Boolean)
         .join(' ')}
       onKeyDown={handleKeyDown}
@@ -66,14 +80,14 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={checked}
-            aria-label={option.ariaLabel}
+            aria-label={option.ariaLabel ?? (option.content ? option.label : undefined)}
             tabIndex={checked ? 0 : -1}
             className={checked ? `${styles.segment} ${styles.checked}` : styles.segment}
             onClick={() => {
               if (!checked) onChange(option.value);
             }}
           >
-            {option.label}
+            {option.content ?? option.label}
           </button>
         );
       })}
