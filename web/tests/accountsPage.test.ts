@@ -85,10 +85,10 @@ describe('Accounts page', () => {
     expect(rowOf(html, 'ze•••a@m•••.com')).toContain('data-health="healthy"');
   });
 
-  test('the header has Add account, Show emails, Refresh all, and the overflow menu', () => {
+  test("the header has Add account, Refresh all, and the overflow menu; Show emails is the sidebar's", () => {
     const html = renderAccountsPage();
     expect(html).toContain('Add account');
-    expect(html).toContain('Show emails');
+    expect(html).not.toContain('Show emails');
     expect(html).toContain('Refresh all');
     expect(html).toContain('aria-label="More account actions"');
   });

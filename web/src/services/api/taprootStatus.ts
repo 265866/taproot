@@ -57,6 +57,11 @@ export interface RequestSummary {
   buckets: RequestBucket[];
   topDevices: TopDevice[];
   topModels: TopModel[];
+  /**
+   * The oldest recorded client request, or null before the first. A server upgraded from 0.4
+   * records them only from the upgrade on.
+   */
+  firstRequestAt: string | null;
 }
 
 export interface ClientRequest {
@@ -244,6 +249,7 @@ export function normalizeRequestSummary(raw: unknown): RequestSummary {
         costUSD: num(r.costUSD),
       };
     }),
+    firstRequestAt: timeOrNull(body.firstRequestAt),
   };
 }
 

@@ -19,7 +19,9 @@
       "long_24h": "Last 24 hours",
       "long_7d": "Last 7 days",
       "long_30d": "Last 30 days",
-      "caption": "{{range}} · local time ({{zone}})"
+      "caption": "{{range}} · local time ({{zone}})",
+      "caption_since": "Counting since {{since}} · local time ({{zone}})",
+      "caption_none": "No client requests recorded yet"
     },
     "stats": {
       "label": "Client requests in the window",
@@ -144,6 +146,7 @@
       "of_usable_one": "of {{count}} account usable",
       "of_usable_other": "of {{count}} accounts usable",
       "slots_label": "{{provider}} accounts",
+      "provider_link": "Open {{provider}} accounts",
       "slot_left": "{{pct}} left",
       "state_cooling": "cooling",
       "state_signed_out": "signed out",

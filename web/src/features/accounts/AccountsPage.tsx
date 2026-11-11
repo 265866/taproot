@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { readAccountsLink, withoutAccountsLink } from '@/router/deepLinks';
-import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -407,7 +406,6 @@ export function AccountsPage() {
           )}
         </div>
         <div className={`${quotaStyles.headerActions} ${styles.headerActions}`}>
-          <ShowEmailsToggle />
           <Button variant="secondary" size="sm" onClick={refreshAll} loading={refreshBusy}>
             {!refreshBusy && <IconRefreshCw size={15} />}
             {t('taproot_quota.ledger.refresh_all')}

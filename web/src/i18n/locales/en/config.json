@@ -1,8 +1,8 @@
 {
   "config_management": {
     "title": "Config",
-    "masked_emails_hint": "Addresses are masked while emails are hidden, so you can't edit them here. Show emails to edit them.",
-    "masked_email_title": "Masked. Show emails to edit it.",
+    "masked_emails_hint": "Addresses are masked while emails are hidden, so you can't edit them here. Turn on Show emails in the sidebar to edit them.",
+    "masked_email_title": "Masked. Turn on Show emails in the sidebar to edit it.",
     "meta_fields": "{{count}} settings",
     "meta_dirty": "{{count}} unsaved",
     "meta_dirty_source": "Unsaved source edits",

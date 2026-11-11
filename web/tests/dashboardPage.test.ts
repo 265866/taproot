@@ -134,6 +134,69 @@ describe('switching the window', () => {
   });
 });
 
+describe('the window caption', () => {
+  const withFirst = (firstRequestAt: string | null, timeWindow: DashboardWindow) =>
+    reads({
+      summary: {
+        data: {
+          range: windowRange(timeWindow, NOW),
+          summary: normalizeRequestSummary({ ...SUMMARY, firstRequestAt }),
+        },
+        error: null,
+      },
+    });
+
+  test('a window that starts before the first client request says when counting began', () => {
+    // Upgraded from 0.4 two days before NOW: the 30-day window reaches back past it.
+    const upgraded = new Date(NOW - 2 * 24 * 3_600_000).toISOString();
+    const html = render(withFirst(upgraded, '30d'), { timeWindow: '30d' });
+    expect(html).toContain('Counting since ');
+    expect(html).not.toContain(' – ');
+  });
+
+  test('a window inside the record shows its range', () => {
+    const longAgo = new Date(NOW - 90 * 24 * 3_600_000).toISOString();
+    const html = render(withFirst(longAgo, '30d'), { timeWindow: '30d' });
+    expect(html).not.toContain('Counting since');
+    expect(html).toContain(' – ');
+    expect(html).toContain('local time');
+  });
+
+  test('a server with no client request yet says so', () => {
+    const html = render(withFirst(null, '24h'));
+    expect(html).toContain('No client requests recorded yet');
+  });
+});
+
+describe('Pools', () => {
+  test("each provider's name opens Accounts on its tab", () => {
+    const html = render(
+      reads({
+        pools: {
+          data: normalizePools({
+            pools: [
+              { provider: 'claude', totalAccounts: 2 },
+              { provider: 'codex', totalAccounts: 1 },
+            ],
+          }),
+          error: null,
+        },
+      })
+    );
+    expect(html).toMatch(
+      /<h3[^>]*><a[^>]*href="\/accounts\?provider=claude"[^>]*>Claude<\/a><\/h3>/
+    );
+    expect(html).toMatch(/<h3[^>]*><a[^>]*href="\/accounts\?provider=codex"[^>]*>Codex<\/a><\/h3>/);
+    expect(html).toContain('aria-label="Open Claude accounts"');
+  });
+
+  test('an empty pool links to its tab too, where the account is added', () => {
+    const html = render(reads({ pools: { data: normalizePools({ pools: [] }), error: null } }));
+    expect(html).toContain('href="/accounts?provider=claude"');
+    expect(html).toContain('href="/accounts?provider=codex"');
+  });
+});
+
 describe('first run', () => {
   const fresh = reads({
     pools: { data: normalizePools({ pools: [] }), error: null },
@@ -180,6 +243,18 @@ const ruleBody = (css: string, selector: string, within?: string) => {
   const at = css.indexOf(`${selector} {`, from);
   return at < 0 ? null : css.slice(at, css.indexOf('}', at));
 };
+
+describe('the Pools provider links', () => {
+  const css = compile('features/dashboard/components/Rail.module.scss');
+
+  test('a visible 3:1 focus ring, and a 44 px target on touch that moves nothing', () => {
+    expect(ruleBody(css, '.poolLink:focus-visible')).toContain('outline: 2px solid var(--accent)');
+    const touch = ruleBody(css, '.poolLink::after', '@media (pointer: coarse)');
+    expect(touch).toContain('position: absolute');
+    expect(touch).toContain('width: max(100%, 44px)');
+    expect(touch).toContain('height: max(100%, 44px)');
+  });
+});
 
 describe('the traffic chart styles', () => {
   const css = compile('features/dashboard/components/TrafficChart.module.scss');

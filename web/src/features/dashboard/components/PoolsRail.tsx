@@ -112,12 +112,28 @@ function EmptyPool({ provider }: { provider: string }) {
           style={{ background: providerColor(provider), opacity: 0.5 }}
           aria-hidden="true"
         />
-        <h3 className={styles.poolName}>{name}</h3>
+        <ProviderName provider={provider} name={name} />
         <span className={styles.caption}>{t('dashboard.pools.no_accounts')}</span>
       </div>
       <div className={styles.emptyBar} aria-hidden="true" />
       <p className={styles.emptyHint}>{t('dashboard.pools.empty_hint', { provider: name })}</p>
     </div>
+  );
+}
+
+/** The pool's heading, which opens Accounts on the provider's tab. */
+function ProviderName({ provider, name }: { provider: string; name: string }) {
+  const { t } = useTranslation();
+  return (
+    <h3 className={styles.poolName}>
+      <Link
+        className={styles.poolLink}
+        to={accountsLink(provider)}
+        aria-label={t('dashboard.pools.provider_link', { provider: name })}
+      >
+        {name}
+      </Link>
+    </h3>
   );
 }
 
@@ -137,7 +153,7 @@ function PoolCard({ pool, nowMs }: { pool: Pool; nowMs: number }) {
     <div className={styles.pool}>
       <div className={styles.poolHead}>
         <span className={styles.poolDot} style={{ background: color }} aria-hidden="true" />
-        <h3 className={styles.poolName}>{name}</h3>
+        <ProviderName provider={pool.provider} name={name} />
         <span className={styles.caption}>
           {t('dashboard.pools.accounts', { count: pool.totalAccounts })}
         </span>

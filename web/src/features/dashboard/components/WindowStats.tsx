@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { StatGroup, StatTile } from '@/components/ui/StatTile';
@@ -7,8 +8,7 @@ import { failedTone } from '../model/views';
 import {
   DASHBOARD_WINDOWS,
   browserTimeZone,
-  windowCaption,
-  zoneAbbreviation,
+  rangeCaption,
   type DashboardWindow,
 } from '../model/window';
 import styles from './Main.module.scss';
@@ -28,7 +28,7 @@ export function WindowControl({
   summary: Read<WindowSummary>;
 }) {
   const { t } = useTranslation();
-  const range = summary.data?.range.window === value ? summary.data.range : null;
+  const shown = summary.data?.range.window === value ? summary.data : null;
   const zone = browserTimeZone();
   return (
     <div className={styles.controls}>
@@ -44,11 +44,8 @@ export function WindowControl({
         }))}
       />
       <span className={styles.rangeCaption}>
-        {range
-          ? t('dashboard.window.caption', {
-              range: windowCaption(range, zone),
-              zone: zoneAbbreviation(range.toMs, zone),
-            })
+        {shown
+          ? captionText(rangeCaption(shown.range, shown.summary.firstRequestAt, zone), t)
           : ' '}
       </span>
       {isStale(summary) ? (
@@ -59,6 +56,9 @@ export function WindowControl({
     </div>
   );
 }
+
+const captionText = ({ key, values }: ReturnType<typeof rangeCaption>, t: TFunction) =>
+  t(key, values ?? {});
 
 export function StatTiles({ summary }: { summary: Read<WindowSummary> }) {
   const { t } = useTranslation();

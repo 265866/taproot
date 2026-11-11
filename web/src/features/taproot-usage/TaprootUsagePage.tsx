@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { REFRESH_STARTED, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useShowEmails } from '@/stores';
@@ -324,7 +323,6 @@ export function TaprootUsagePage() {
             )}
           </span>
         )}
-        <ShowEmailsToggle />
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label={t('taproot_usage.tabs.label')}>

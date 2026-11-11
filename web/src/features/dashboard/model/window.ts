@@ -131,6 +131,50 @@ const captionWithDate = (timeZone?: string) =>
     timeZone,
   });
 
+/**
+ * How much of the window the client-request record covers. A server upgraded from 0.4 records
+ * client requests only from the upgrade on, so a window that starts earlier reads low: `since`
+ * is the first recorded request then, and `none` means nothing is recorded yet.
+ */
+export type WindowCoverage = { kind: 'full' } | { kind: 'since'; atMs: number } | { kind: 'none' };
+
+export function windowCoverage(range: WindowRange, firstRequestAt: string | null): WindowCoverage {
+  if (firstRequestAt === null) return { kind: 'none' };
+  const atMs = Date.parse(firstRequestAt);
+  if (!Number.isFinite(atMs) || atMs <= range.fromMs) return { kind: 'full' };
+  return { kind: 'since', atMs };
+}
+
+/** "Nov 10, 2:43 PM", as a window caption names a date. */
+export const formatCaptionDate = (atMs: number, timeZone?: string): string =>
+  captionWithDate(timeZone).format(new Date(atMs));
+
+/**
+ * The window caption's translation key and values. "Counting since" names the first request's
+ * own zone abbreviation, which can differ from the window end's across a daylight-saving change.
+ */
+export function rangeCaption(
+  range: WindowRange,
+  firstRequestAt: string | null,
+  timeZone?: string
+): { key: string; values?: Record<string, string> } {
+  const coverage = windowCoverage(range, firstRequestAt);
+  if (coverage.kind === 'none') return { key: 'dashboard.window.caption_none' };
+  if (coverage.kind === 'since') {
+    return {
+      key: 'dashboard.window.caption_since',
+      values: {
+        since: formatCaptionDate(coverage.atMs, timeZone),
+        zone: zoneAbbreviation(coverage.atMs, timeZone),
+      },
+    };
+  }
+  return {
+    key: 'dashboard.window.caption',
+    values: { range: windowCaption(range, timeZone), zone: zoneAbbreviation(range.toMs, timeZone) },
+  };
+}
+
 /** "Mon 4:36 AM – Tue 4:36 AM"; weeks and months name the date instead of the weekday. */
 export function windowCaption(range: WindowRange, timeZone?: string): string {
   const format =

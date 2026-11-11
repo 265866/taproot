@@ -1,4 +1,5 @@
 @use './variables.scss' as *;
+@use './mixins.scss' as *;
 
 .visually-hidden {
   position: absolute;
@@ -276,11 +277,16 @@
     padding-left: 6px;
 
     .sidebar-header,
-    .sidebar-brand,
-    .sidebar-footer {
+    .sidebar-brand {
       justify-content: center;
       padding-right: 0;
       padding-left: 0;
+    }
+
+    .sidebar-footer,
+    .sidebar-footer-row {
+      flex-direction: column;
+      align-items: center;
     }
 
     .nav-item {
@@ -320,14 +326,15 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 8px 6px;
+    min-height: 44px;
+    padding: 2px 6px 8px;
     flex-shrink: 0;
   }
 
   .sidebar-brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
     flex: 1;
     color: var(--text-primary);
@@ -337,26 +344,27 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border: 1px solid var(--border-primary);
-    border-radius: 5px;
+    border-radius: 7px;
     background: var(--accent-subtle);
   }
 
   .sidebar-brand-logo {
-    width: 14px;
-    height: 14px;
+    width: 20px;
+    height: 20px;
     display: block;
   }
 
   .sidebar-brand-title {
+    @include clip-line;
+
     min-width: 0;
-    overflow: hidden;
     color: var(--text-primary);
-    font-size: 13.5px;
-    font-weight: 600;
-    white-space: nowrap;
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
   }
 
   .sidebar-close {
@@ -480,14 +488,12 @@
       display: flex;
       flex-direction: column;
       min-width: 0;
-      line-height: 1.2;
     }
 
     .nav-label {
+      @include clip-line;
+
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     &:hover {
@@ -535,22 +541,125 @@
 
   .sidebar-footer {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     flex-shrink: 0;
     margin-top: 8px;
-    padding: 10px 8px 2px;
+    padding: 8px 0 2px;
     border-top: 1px solid var(--border-color);
   }
 
-  .sidebar-version {
+  .sidebar-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  // Show emails: a labelled switch in the open sidebar, an icon button in the collapsed one.
+  .sidebar-switch {
     min-width: 0;
-    overflow: hidden;
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--fs-body);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    cursor: pointer;
+    transition:
+      background $transition-fast,
+      color $transition-fast;
+
+    &:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+
+    .sidebar-switch-glyph {
+      color: var(--text-tertiary);
+    }
+
+    &[aria-checked='true'] {
+      color: var(--text-primary);
+
+      .sidebar-switch-glyph {
+        color: var(--text-primary);
+      }
+    }
+  }
+
+  .sidebar-switch-glyph {
+    display: inline-flex;
+    flex-shrink: 0;
+
+    svg {
+      display: block;
+    }
+  }
+
+  .sidebar-switch-label {
+    @include clip-line;
+
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .sidebar-switch-track {
+    position: relative;
+    flex-shrink: 0;
+    width: 28px;
+    height: 16px;
+    border-radius: $radius-full;
+    background: var(--toggle-off-bg);
+    transition: background $transition-fast;
+  }
+
+  .sidebar-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: $radius-full;
+    background: #fff;
+    box-shadow: $shadow-sm;
+    transition: transform $transition-fast;
+  }
+
+  .sidebar-switch[aria-checked='true'] .sidebar-switch-track {
+    background: var(--accent);
+
+    .sidebar-switch-thumb {
+      transform: translateX(12px);
+      background: var(--primary-contrast);
+    }
+  }
+
+  .sidebar-switch-icon-only[aria-checked='true'] {
+    border-color: var(--accent-border);
+    background: var(--accent-subtle);
+    color: var(--accent-text);
+  }
+
+  .sidebar-version {
+    @include clip-line;
+
+    min-width: 0;
+    padding: 0 8px;
     color: var(--text-tertiary);
     font-size: var(--fs-caption);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .sidebar-icon-button,
@@ -672,12 +781,11 @@
   transition: left $transition-normal;
 
   .nav-tooltip-label {
+    @include clip-line;
+
     max-width: 100%;
-    overflow: hidden;
     font-size: 13px;
     font-weight: 650;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .nav-tooltip-meta {
@@ -865,6 +973,11 @@
       height: 40px;
     }
 
+    .sidebar-switch {
+      height: 40px;
+      font-size: 14px;
+    }
+
     // The drawer ignores the desktop collapse.
     &.collapsed {
       width: var(--sidebar-panel-width);
@@ -886,8 +999,12 @@
       }
 
       .sidebar-footer {
-        justify-content: space-between;
-        padding: 10px 8px 2px;
+        align-items: stretch;
+      }
+
+      .sidebar-footer-row {
+        flex-direction: row;
+        align-items: center;
       }
 
       .nav-badge {
@@ -972,6 +1089,10 @@
 
     .sidebar-icon-button {
       width: 44px;
+      height: 44px;
+    }
+
+    .sidebar-switch {
       height: 44px;
     }
   }

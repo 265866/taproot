@@ -42,6 +42,16 @@
   white-space: nowrap;
 }
 
+// One line cut with an ellipsis at the side only. `overflow: hidden` would also cut a descender
+// that reaches below a tight line box, as fonts taller than the line height do (Segoe UI and Noto
+// Sans need about 1.35em). Browsers without `overflow: clip` keep the `hidden` line.
+@mixin clip-line {
+  overflow: hidden;
+  overflow: clip visible;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // 多行文本截断
 @mixin text-ellipsis-multiline($lines: 2) {
   display: -webkit-box;
