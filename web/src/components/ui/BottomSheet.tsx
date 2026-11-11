@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { IconChevronDown } from './icons';
 import { useTopLayer } from './layerStack';
 import { FOCUSABLE_SELECTOR, lockScroll, unlockScroll } from './scrollLock';
+import { pushSheetEntry } from './sheetHistory';
 import styles from './BottomSheet.module.scss';
 
 interface BottomSheetProps {
@@ -26,8 +27,8 @@ const EXIT_MS = 200;
 
 /**
  * A phone's options panel, rising from the bottom: a modal dialog with a title and Done. Escape,
- * Done, and a tap on the backdrop close it, Tab stays inside, and focus returns to what opened it.
- * The handle only marks it as a sheet; nothing depends on dragging it.
+ * Done, a tap on the backdrop, and the system back gesture close it, Tab stays inside, and focus
+ * returns to what opened it. The handle only marks it as a sheet; nothing depends on dragging it.
  */
 export function BottomSheet({ open, onClose, title, children }: BottomSheetProps) {
   const { t } = useTranslation();
@@ -36,6 +37,15 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
   const openerRef = useRef<HTMLElement | null>(null);
   const [mounted, setMounted] = useState(open);
   const isTop = useTopLayer(open);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    return pushSheetEntry(() => onCloseRef.current());
+  }, [open]);
 
   // Mount on open; on close, keep the sheet for its exit animation and then give focus back.
   if (open && !mounted) setMounted(true);

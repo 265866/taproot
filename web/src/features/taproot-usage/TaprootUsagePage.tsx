@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BottomSheet, SheetButton, SheetGroup } from '@/components/ui/BottomSheet';
@@ -52,7 +53,6 @@ export function TaprootUsagePage() {
   const showEmails = useShowEmails();
   // `$breakpoint-mobile`: phones choose the view from a menu and the rest from the Options sheet.
   const phone = useMediaQuery('(max-width: 768px)');
-  const [optionsOpen, setOptionsOpen] = useState(false);
   const rangeLabelId = useId();
   const groupLabelId = useId();
   const { mask: maskEmails } = useEmailMask();
@@ -344,47 +344,31 @@ export function TaprootUsagePage() {
                 label: t(`taproot_usage.tabs.${tab}`),
               }))}
             />
-            <SheetButton
-              expanded={optionsOpen}
-              className={styles.optionsButton}
-              icon={<IconSlidersHorizontal size={16} />}
-              aria-label={t('taproot_usage.options.button', {
-                summary: optionsSummary.join(', '),
-              })}
-              onClick={() => setOptionsOpen(true)}
-            >
-              <b>{optionsSummary[0]}</b>
-              {optionsSummary.slice(1).map((part) => ` · ${part}`)}
-            </SheetButton>
+            <OptionsSheet summary={optionsSummary}>
+              <SheetGroup label={t('taproot_usage.range.label')} labelId={rangeLabelId}>
+                {rangeControl(true)}
+                {customRange}
+              </SheetGroup>
+              <SheetGroup
+                label={t('taproot_usage.group.sheet_label')}
+                note={t('taproot_usage.group.overview_only')}
+                labelId={groupLabelId}
+              >
+                <SegmentedControl<UsageGroupBy>
+                  ariaLabelledBy={groupLabelId}
+                  size="large"
+                  className={styles.groupGrid}
+                  value={params.group}
+                  onChange={setGroup}
+                  options={GROUP_BYS.map((group) => ({
+                    value: group,
+                    label: t(`taproot_usage.group.${group}`),
+                  }))}
+                />
+              </SheetGroup>
+            </OptionsSheet>
           </div>
           {bucketNote}
-          <BottomSheet
-            open={optionsOpen}
-            onClose={() => setOptionsOpen(false)}
-            title={t('taproot_usage.options.title')}
-          >
-            <SheetGroup label={t('taproot_usage.range.label')} labelId={rangeLabelId}>
-              {rangeControl(true)}
-              {customRange}
-            </SheetGroup>
-            <SheetGroup
-              label={t('taproot_usage.group.sheet_label')}
-              note={t('taproot_usage.group.overview_only')}
-              labelId={groupLabelId}
-            >
-              <SegmentedControl<UsageGroupBy>
-                ariaLabelledBy={groupLabelId}
-                size="large"
-                className={styles.groupGrid}
-                value={params.group}
-                onChange={setGroup}
-                options={GROUP_BYS.map((group) => ({
-                  value: group,
-                  label: t(`taproot_usage.group.${group}`),
-                }))}
-              />
-            </SheetGroup>
-          </BottomSheet>
         </>
       ) : (
         <>
@@ -512,5 +496,35 @@ export function TaprootUsagePage() {
         {params.tab === 'pricing' ? <PricingEditor models={models} onSaved={refresh} /> : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The phone's Options button and sheet. Its open state lives here, so opening the sheet re-renders
+ * only this, not the page and its charts.
+ */
+function OptionsSheet({ summary, children }: { summary: string[]; children: ReactNode }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <SheetButton
+        expanded={open}
+        className={styles.optionsButton}
+        icon={<IconSlidersHorizontal size={16} />}
+        aria-label={t('taproot_usage.options.button', { summary: summary.join(', ') })}
+        onClick={() => setOpen(true)}
+      >
+        <b>{summary[0]}</b>
+        {summary.slice(1).map((part) => ` · ${part}`)}
+      </SheetButton>
+      <BottomSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t('taproot_usage.options.title')}
+      >
+        {children}
+      </BottomSheet>
+    </>
   );
 }

@@ -26,6 +26,14 @@ body.modal-open .content {
   overflow: hidden;
 }
 
+// Phones scroll the document, not .content. Locked, .content would keep its stable scrollbar gutter
+// and narrow the page behind every sheet and modal, which also redraws every chart on it.
+@media (max-width: $breakpoint-mobile) {
+  body.modal-open .content {
+    scrollbar-gutter: auto;
+  }
+}
+
 // 滚动条样式
 ::-webkit-scrollbar {
   width: 8px;
