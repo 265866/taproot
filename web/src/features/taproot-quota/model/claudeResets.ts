@@ -37,17 +37,33 @@ export function classifyGrant(grant: AnthropicResetGrant): ResetKind {
 
 const PERCENT_FULL = 100;
 
+/** Whether the account has a 5-hour limit, as far as the reading says. */
+export function hasFiveHourLimit(usage: ClaudeUsageLimits | null | undefined): boolean {
+  return usage?.fiveHour !== 'none';
+}
+
+/**
+ * The windows a grant clears that the account has. A grant can name `five_hour` on an account
+ * without a 5-hour limit, and that window is left out.
+ */
+export function clearsHeld<T extends string>(
+  clears: readonly T[],
+  usage: ClaudeUsageLimits | null | undefined
+): T[] {
+  return hasFiveHourLimit(usage) ? [...clears] : clears.filter((window) => window !== 'five_hour');
+}
+
 /** The limit that blocks the account, the longest first. */
 export function limitReached(
   usage: ClaudeUsageLimits | null | undefined,
   status: Pick<AnthropicResetGrantStatus, 'exhausted'> | null | undefined
 ): ResetWall | null {
-  const exhausted = new Set<AnthropicResetWindow>(status?.exhausted ?? []);
+  const exhausted = new Set<AnthropicResetWindow>(clearsHeld(status?.exhausted ?? [], usage));
   const fiveHour = usage?.fiveHour;
   if ((usage?.weekly?.usedPercent ?? 0) >= PERCENT_FULL || exhausted.has('seven_day'))
     return 'seven_day';
   if (
-    (fiveHour && fiveHour !== 'closed' && fiveHour.usedPercent >= PERCENT_FULL) ||
+    (typeof fiveHour === 'object' && fiveHour !== null && fiveHour.usedPercent >= PERCENT_FULL) ||
     exhausted.has('five_hour')
   )
     return 'five_hour';
@@ -256,7 +272,7 @@ export function predictReset(
   const fiveHour = usage.fiveHour;
   if (fiveHour === 'closed') {
     rows.push({ limit: 'five_hour', from: { unit: 'closed' }, to: { unit: 'closed' } });
-  } else if (fiveHour) {
+  } else if (fiveHour && fiveHour !== 'none') {
     const from: LimitValue = { unit: 'used', percent: round(fiveHour.usedPercent) };
     rows.push({
       limit: 'five_hour',
@@ -298,8 +314,8 @@ export const CLAUDE_LIMIT_WINDOWS: ReadonlySet<string> = new Set([
 
 /**
  * Claude's limits from taproot's recorded windows, for when no live read is at hand. The server
- * records a closed 5-hour session as an empty window with no reset. Fable's share of weekly is
- * not recorded.
+ * records a closed 5-hour session as an empty window with no reset, and reports no 5-hour window
+ * at all for an account without the limit. Fable's share of weekly is not recorded.
  */
 export function usageFromRecorded(
   windows: readonly Pick<WindowObservation, 'window' | 'utilization' | 'resetsAt'>[]

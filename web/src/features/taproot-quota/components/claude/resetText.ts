@@ -4,7 +4,12 @@ import {
   type AnthropicResetGrant,
 } from '@/services/api/claudeResetGrants';
 import type { ClaudeUsageLimits } from '@/services/api/claudeUsageLimits';
-import type { ResetGroup, ResetKind } from '../../model/claudeResets';
+import {
+  clearsHeld,
+  hasFiveHourLimit,
+  type ResetGroup,
+  type ResetKind,
+} from '../../model/claudeResets';
 
 const KNOWN: ReadonlySet<string> = new Set(ANTHROPIC_RESET_WINDOWS);
 
@@ -23,8 +28,14 @@ export function clearsText(t: TFunction, windows: readonly string[]) {
 }
 
 /** What an unknown grant clears, adding that taproot doesn't recognize some of it. */
-export function unknownClearsText(t: TFunction, grant: AnthropicResetGrant) {
-  const known = grant.clears.map((window) => t(`taproot_quota.ledger.clears.${window}`));
+export function unknownClearsText(
+  t: TFunction,
+  grant: AnthropicResetGrant,
+  usage: ClaudeUsageLimits | null | undefined
+) {
+  const known = clearsHeld(grant.clears, usage).map((window) =>
+    t(`taproot_quota.ledger.clears.${window}`)
+  );
   const unrecognized = grant.clearsUnknown || grant.rawClears.length === 0;
   if (known.length === 0) return t('claude_reset.kind.unknown.desc_none');
   const windows = joinWords(known);
@@ -36,10 +47,28 @@ export function unknownClearsText(t: TFunction, grant: AnthropicResetGrant) {
 
 /**
  * The key suffix for Fable copy: a Fable grant refills 5-hour only while it clears `five_hour`,
- * which it doesn't while no session is open.
+ * which it doesn't while no session is open, and only on an account with a 5-hour limit.
  */
-export function fableSuffix(grant: AnthropicResetGrant) {
-  return grant.clears.includes('five_hour') ? '' : '_no_session';
+export function fableSuffix(
+  grant: AnthropicResetGrant,
+  usage: ClaudeUsageLimits | null | undefined
+) {
+  return clearsHeld(grant.clears, usage).includes('five_hour') ? '' : '_no_session';
+}
+
+/** `claude_reset` keys whose fixed copy names the 5-hour limit and has a variant without it. */
+const NAMES_FIVE_HOUR: ReadonlySet<string> = new Set([
+  'kind.full.desc',
+  'kind.full.what',
+  'confirm.lead_full',
+  'confirm.lead_weekly',
+  'result.full_body',
+]);
+
+/** A `claude_reset` key, switched to its variant without 5-hour for an account without the limit. */
+export function resetKey(key: string, usage: ClaudeUsageLimits | null | undefined) {
+  const variant = !hasFiveHourLimit(usage) && NAMES_FIVE_HOUR.has(key);
+  return `claude_reset.${key}${variant ? '_no_five_hour' : ''}`;
 }
 
 /** One kind's row description. */
@@ -49,11 +78,11 @@ export function kindDescription(
   grant: AnthropicResetGrant,
   usage: ClaudeUsageLimits | null | undefined
 ) {
-  if (kind === 'unknown') return unknownClearsText(t, grant);
-  if (kind !== 'fable') return refillsText(t, kind, grant, 'desc');
+  if (kind === 'unknown') return unknownClearsText(t, grant, usage);
+  if (kind !== 'fable') return refillsText(t, kind, grant, 'desc', usage);
   const share = usage?.fable?.usedOfWeekly ?? null;
   const weekly = usage?.weekly?.usedPercent ?? null;
-  const suffix = fableSuffix(grant);
+  const suffix = fableSuffix(grant, usage);
   if (share === null || share <= 0 || weekly === null)
     return t(`claude_reset.kind.fable.desc${suffix}`);
   return t(`claude_reset.kind.fable.desc_share${suffix}`, {
@@ -71,18 +100,26 @@ function refillsText(
   t: TFunction,
   kind: ResetKind,
   grant: AnthropicResetGrant,
-  form: 'desc' | 'what'
+  form: 'desc' | 'what',
+  usage: ClaudeUsageLimits | null | undefined
 ) {
-  if (grant.clears.length === 0) return t(`claude_reset.kind.${kind}.${form}`);
-  return t(`claude_reset.refills_${form}`, { windows: clearsText(t, grant.clears) });
+  const clears = clearsHeld(grant.clears, usage);
+  if (clears.length === 0) return t(resetKey(`kind.${kind}.${form}`, usage));
+  return t(`claude_reset.refills_${form}`, { windows: clearsText(t, clears) });
 }
 
 /** What a grant does, for the details list. */
-export function grantWhat(t: TFunction, kind: ResetKind, grant: AnthropicResetGrant) {
-  if (kind === 'fable') return t(`claude_reset.kind.fable.what${fableSuffix(grant)}`);
-  if (kind !== 'unknown') return refillsText(t, kind, grant, 'what');
-  return grant.rawClears.length > 0
-    ? t('claude_reset.details.clears', { windows: clearsText(t, grant.rawClears) })
+export function grantWhat(
+  t: TFunction,
+  kind: ResetKind,
+  grant: AnthropicResetGrant,
+  usage: ClaudeUsageLimits | null | undefined
+) {
+  if (kind === 'fable') return t(`claude_reset.kind.fable.what${fableSuffix(grant, usage)}`);
+  if (kind !== 'unknown') return refillsText(t, kind, grant, 'what', usage);
+  const raw = clearsHeld(grant.rawClears, usage);
+  return raw.length > 0
+    ? t('claude_reset.details.clears', { windows: clearsText(t, raw) })
     : t('claude_reset.details.clears_unknown');
 }
 

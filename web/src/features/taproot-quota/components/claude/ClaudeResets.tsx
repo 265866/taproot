@@ -4,7 +4,12 @@ import { IconCheck, IconChevronDown, IconChevronUp, IconTimer } from '@/componen
 import type { AnthropicResetGrantStatus } from '@/services/api/claudeResetGrants';
 import type { ClaudeUsageLimits } from '@/services/api/claudeUsageLimits';
 import type { ResetResult } from '../../live/providers/claude/ClaudeResetGrants';
-import { activeCooldown, classifyGrant, type ResetGroup } from '../../model/claudeResets';
+import {
+  activeCooldown,
+  classifyGrant,
+  hasFiveHourLimit,
+  type ResetGroup,
+} from '../../model/claudeResets';
 import {
   formatClock,
   formatDay,
@@ -12,7 +17,7 @@ import {
   formatResetClock,
   timeZoneName,
 } from '../../model/format';
-import { grantWhat, kindDescription } from './resetText';
+import { grantWhat, kindDescription, resetKey } from './resetText';
 import styles from './ClaudeLimits.module.scss';
 
 interface ClaudeResetsProps {
@@ -32,10 +37,10 @@ function ResultBanner({ result, usage }: { result: ResetResult; usage: ClaudeUsa
   const { t, i18n } = useTranslation();
   const time = formatClock(result.at, i18n.resolvedLanguage);
   const after = usage?.weekly?.usedPercent;
-  let body = t(`claude_reset.result.${result.kind}_body`);
+  let body = t(resetKey(`result.${result.kind}_body`, usage));
   if (result.kind === 'fable' && result.weeklyBefore !== null && after !== undefined) {
     body = t(
-      result.refilledFiveHour
+      result.refilledFiveHour && hasFiveHourLimit(usage)
         ? 'claude_reset.result.fable_body_numbers'
         : 'claude_reset.result.fable_body_numbers_only',
       { from: Math.round(result.weeklyBefore), to: Math.round(after) }
@@ -193,7 +198,7 @@ export function ClaudeResets({
                   left: grant.resetsLeft,
                   total: grant.resetsTotal,
                 }),
-                grantWhat(t, kind, grant),
+                grantWhat(t, kind, grant, usage),
                 Number.isFinite(ends)
                   ? t(
                       ends > now ? 'claude_reset.details.expires' : 'claude_reset.details.expired',
