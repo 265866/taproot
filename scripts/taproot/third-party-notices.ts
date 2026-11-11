@@ -34,6 +34,25 @@ const README_ONLY_GO: Record<string, { license: string; url: string }> = {
   },
 };
 
+// gopkg.in modules and their source repositories. go-licenses finds a
+// gopkg.in module's source by asking gopkg.in, which is sometimes down; then
+// it writes "Unknown" and the notices check fails on every branch.
+const GOPKG_IN_SOURCES: Record<string, string> = {
+  'gopkg.in/ini.v1': 'https://github.com/go-ini/ini',
+  'gopkg.in/natefinch/lumberjack.v2': 'https://github.com/natefinch/lumberjack',
+  'gopkg.in/yaml.v3': 'https://github.com/go-yaml/yaml',
+};
+
+// goLicenseURL is the license's URL: go-licenses' answer, with the backslashes
+// it writes on Windows turned to slashes, or for a known gopkg.in module the
+// file in its source repository at the module's version.
+function goLicenseURL(name: string, version: string, url: string, licensePath: string) {
+  const source = GOPKG_IN_SOURCES[name];
+  if (!source) return url.replaceAll('\\', '/');
+  const file = licensePath.trim().replaceAll('\\', '/').split('/').pop() || 'LICENSE';
+  return `${source}/blob/${version}/${file}`;
+}
+
 type Entry = {
   name: string;
   version: string;
@@ -98,12 +117,11 @@ function goModules(): Entry[] {
       }
       if (!prev) {
         const notice = noticeIn(dirname(licensePath.trim()));
-        // On Windows, go-licenses builds the URL's path part with backslashes.
         byName.set(name, {
           name,
           version,
           license,
-          url: url.replaceAll('\\', '/'),
+          url: goLicenseURL(name, version, url, licensePath),
           text: normalize(text),
           notice,
         });
