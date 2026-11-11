@@ -32,10 +32,14 @@ export interface ResetResult {
   refilledFiveHour: boolean;
 }
 
-/** The message for a settled claim that spent nothing, using the reason it gave. */
-function refusalMessageKey(code: string, reason: string | null) {
+/**
+ * The message for a settled claim that spent nothing. A result with its own message keeps it; the
+ * reason explains only the generic refusals.
+ */
+export function refusalMessageKey(code: string, reason: string | null) {
   if (reason === 'not_next_grant') return 'claude_reset.refused_not_next';
-  return reason ? 'claude_reset.refused' : `claude_reset.${code}`;
+  const generic = code === 'unavailable' || code === 'ineligible';
+  return reason && generic ? 'claude_reset.refused' : `claude_reset.${code}`;
 }
 
 /**

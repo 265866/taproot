@@ -678,3 +678,17 @@ describe('confirmation dialogs', () => {
     expect(html).not.toContain('role="table"');
   });
 });
+
+describe('the message for a settled refusal', () => {
+  test('a result with its own message keeps it; the reason explains only generic refusals', async () => {
+    const { refusalMessageKey } =
+      await import('@/features/taproot-quota/live/providers/claude/ClaudeResetGrants');
+    expect(refusalMessageKey('cooldown', 'cooldown')).toBe('claude_reset.cooldown');
+    expect(refusalMessageKey('not_limited', 'not_limited')).toBe('claude_reset.not_limited');
+    expect(refusalMessageKey('unavailable', 'unknown')).toBe('claude_reset.refused');
+    expect(refusalMessageKey('ineligible', null)).toBe('claude_reset.ineligible');
+    expect(refusalMessageKey('unavailable', 'not_next_grant')).toBe(
+      'claude_reset.refused_not_next'
+    );
+  });
+});

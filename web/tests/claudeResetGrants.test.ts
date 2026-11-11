@@ -130,6 +130,17 @@ test('claim terminal mappings and ambiguous outcomes', async () => {
       AnthropicResetGrantUnknownOutcome
     );
   }
+  for (const statusCode of [302, 500, 503]) {
+    apiCallApi.request = async () => ({
+      statusCode,
+      body: { result: 'reset' },
+      bodyText: '',
+      header: {},
+    });
+    await expect(claimClaudeResetGrant('a', organization, grant.id, 'r')).rejects.toBeInstanceOf(
+      AnthropicResetGrantUnknownOutcome
+    );
+  }
   for (const statusCode of [200, 400, 500]) {
     apiCallApi.request = async () => ({
       statusCode,
