@@ -92,6 +92,8 @@
       "sort_soonest_reset": "Soonest reset",
       "sort_most_remaining": "Most remaining",
       "sort_least_remaining": "Least remaining",
+      "sort_name": "Name",
+      "sort_priority": "Highest priority",
       "credentials_one": "{{count}} credential",
       "credentials_other": "{{count}} credentials",
       "credentials_filtered": "{{shown}} of {{count}} credentials",

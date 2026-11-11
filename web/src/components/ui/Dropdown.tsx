@@ -7,7 +7,7 @@ type Size = 'compact' | 'large';
 type Align = 'start' | 'end';
 
 interface TriggerProps {
-  /** Muted words before the value, such as "Stack by". */
+  /** Muted words before the value, such as "Group by". */
   label?: string;
   value: ReactNode;
   icon?: ReactNode;
@@ -35,7 +35,7 @@ interface ChoiceMenuProps<T extends string> {
   options: readonly ChoiceMenuOption<T>[];
   value: T;
   onChange: (value: T) => void;
-  /** The menu's name, such as "Stack the chart by"; also the trigger's name with the value. */
+  /** The menu's name, such as "Group by"; also the trigger's name with the value. */
   ariaLabel: string;
   label?: string;
   /** A heading inside the menu, above the options. */

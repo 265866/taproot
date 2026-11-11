@@ -204,10 +204,11 @@ describe('the main column on narrow and stale screens', () => {
     expect(px(rule(main, '.colTopCost', PHONE), 'width')).not.toBeNull();
   });
 
-  test('on phones and touch screens, top-list names wrap rather than cut', () => {
+  test('on phones and touch screens, top-list names wrap at hyphens rather than cut or split', () => {
     const wrap = rule(main, '.topLabel', '@media (max-width: 768px), (pointer: coarse)');
     expect(wrap).toContain('white-space: normal');
-    expect(wrap).toContain('overflow-wrap: anywhere');
+    // `anywhere` splits "claude-sonnet" mid-word.
+    expect(wrap).toContain('overflow-wrap: normal');
   });
 
   test("a phone failure row's status keeps its height when the device and model wrap", () => {

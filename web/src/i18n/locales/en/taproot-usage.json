@@ -35,8 +35,7 @@
       "sheet_label": "Group the charts by",
       "overview_only": "Overview only",
       "by": "by {{group}}",
-      "stack_by": "Stack by",
-      "stack_menu": "Stack the chart by"
+      "group_by": "Group by"
     },
     "tabs": {
       "label": "Usage views",

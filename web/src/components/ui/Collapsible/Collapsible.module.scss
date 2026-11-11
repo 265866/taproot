@@ -44,7 +44,7 @@
 }
 
 .summaryHint {
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--muted-foreground);
   font-weight: 400;
 }

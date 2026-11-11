@@ -29,7 +29,8 @@ interface Props {
   onViewRequests?: (key: string) => void;
   /**
    * The chosen grouping, which leads the data on screen while a new one loads, and its setter: the
-   * cost chart's Stack by menu. Phones choose it in the Options sheet instead.
+   * cost chart's Group by menu, which regroups the whole Overview. Phones choose it in the Options
+   * sheet instead.
    */
   stackBy?: { value: UsageGroupBy; onChange: (group: UsageGroupBy) => void };
 }
@@ -95,9 +96,9 @@ function OverviewView({
           {stackBy ? (
             <ChoiceMenu<UsageGroupBy>
               align="end"
-              label={t('taproot_usage.group.stack_by')}
-              heading={t('taproot_usage.group.stack_by')}
-              ariaLabel={t('taproot_usage.group.stack_menu')}
+              label={t('taproot_usage.group.group_by')}
+              heading={t('taproot_usage.group.group_by')}
+              ariaLabel={t('taproot_usage.group.group_by')}
               value={stackBy.value}
               onChange={stackBy.onChange}
               options={GROUP_BYS.map((group) => ({

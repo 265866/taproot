@@ -25,7 +25,7 @@ import styles from './ViewControls.module.scss';
 interface ViewControlsProps extends ViewChoices {
   /** Below `$breakpoint-mobile`: a View button and its sheet instead of the one-row controls. */
   phone: boolean;
-  /** On a phone, Remaining / Drain rate fits beside View (360 px and up); narrower, it moves in. */
+  /** On a phone, Remaining / Drain rate fits beside View (375 px and up); narrower, it moves in. */
   metricBeside: boolean;
   onViewChange: (view: ChartView) => void;
   onBurnHoursChange: (hours: BurnWindowHours) => void;
@@ -54,6 +54,8 @@ export function ViewControls(props: ViewControlsProps) {
   const { t } = useTranslation();
   const { phone, view, burnHours, future, range, clock, locale } = props;
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Turning a phone to a wider layout drops the sheet; turning back must not reopen it.
+  if (!phone && sheetOpen) setSheetOpen(false);
   const burnLabelId = useId();
   const futureLabelId = useId();
   const metricLabelId = useId();
@@ -172,11 +174,12 @@ export function ViewControls(props: ViewControlsProps) {
             />
           </PopoverGroup>
         </PopoverButton>
-        <span className={styles.spacer} />
-        <span className={styles.rangeLabel} aria-live="polite">
-          {rangeText(range, locale, t)}
+        <span className={styles.dates}>
+          <span className={styles.rangeLabel} aria-live="polite">
+            {rangeText(range, locale, t)}
+          </span>
+          {dateControls(false)}
         </span>
-        {dateControls(false)}
       </div>
     );
   }

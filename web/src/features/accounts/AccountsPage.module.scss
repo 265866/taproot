@@ -53,3 +53,12 @@
     font-size: 13px;
   }
 }
+
+// Phones: cards (`--bg-primary`) and their hairlines (`--border-color`) take the raised surface, as
+// on the Dashboard's Digest. Tablets and desktops keep the flat page.
+@media (max-width: $breakpoint-mobile) {
+  .page {
+    --bg-primary: var(--surface-raised);
+    --border-color: var(--border-raised);
+  }
+}

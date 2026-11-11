@@ -1,6 +1,6 @@
 /**
  * The option controls of round 2: Accounts' View sheet and one-row desktop controls, Usage's Options
- * sheet and Stack by menu, and the bottom sheet's layout, checked in static markup and the
+ * sheet and Group by menu, and the bottom sheet's layout, checked in static markup and the
  * compiled styles.
  */
 import { describe, expect, test } from 'bun:test';
@@ -164,7 +164,7 @@ describe('a segment drawn with its own content', () => {
   });
 });
 
-describe("Usage's Stack by menu", () => {
+describe("Usage's Group by menu", () => {
   const zero: UsageTotals = {
     requests: 0,
     failures: 0,
@@ -201,8 +201,8 @@ describe("Usage's Stack by menu", () => {
   test('sits on the cost chart and names the chosen grouping, which may lead the data on screen', () => {
     const out = overview({ value: 'device', onChange: () => {} });
     expect(out).toContain('aria-haspopup="menu"');
-    expect(out).toContain('aria-label="Stack the chart by: Device"');
-    expect(out.indexOf('API-equivalent cost')).toBeLessThan(out.indexOf('Stack by'));
+    expect(out).toContain('aria-label="Group by: Device"');
+    expect(out.indexOf('API-equivalent cost')).toBeLessThan(out.indexOf('Group by'));
   });
 
   test('phones choose it in the Options sheet, so the chart has none', () => {
@@ -220,8 +220,15 @@ describe('the page wiring', () => {
       page.indexOf(') : (', page.indexOf('{phone ? ('))
     );
     expect(phone).toContain('<ChoiceMenu<UsageTab>');
-    expect(phone).toContain('<SheetButton');
-    expect(phone).toContain('<BottomSheet');
+    expect(phone).toContain('<OptionsSheet');
+    // The sheet's open state lives in OptionsSheet, so opening it does not re-render the page.
+    const sheet = page.slice(page.indexOf('function OptionsSheet'));
+    expect(sheet).toContain('<SheetButton');
+    expect(sheet).toContain('<BottomSheet');
+    expect(sheet).toContain('useState(false)');
+    expect(page.slice(0, page.indexOf('function OptionsSheet'))).not.toMatch(
+      /optionsOpen|<BottomSheet/
+    );
     expect(phone).not.toContain('role="tablist"');
     expect(page).toContain('stackBy={phone ? undefined : stackBy}');
     // No per-page Show emails control anywhere (R4).

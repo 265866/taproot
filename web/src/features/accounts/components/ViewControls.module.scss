@@ -12,8 +12,13 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.spacer {
-  flex: 1;
+// The range and its arrows stay together, at the row's end even when the row wraps.
+.dates {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
 }
 
 .rangeLabel {
@@ -101,10 +106,10 @@
   transform: scaleX(-1);
 }
 
-// Phone: the metric (where it fits) beside the View button.
+// Phone: the metric (where it fits) beside the View button, both the same height.
 .phoneRow {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
   min-width: 0;
 }
@@ -118,8 +123,10 @@
   padding: 0 10px;
 }
 
-.viewButton {
+.phoneRow .viewButton {
   flex: 1;
+  height: auto;
+  min-height: 44px;
 }
 
 .pager {

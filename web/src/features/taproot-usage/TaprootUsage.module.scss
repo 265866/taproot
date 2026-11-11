@@ -112,12 +112,14 @@
   white-space: nowrap;
 }
 
-// Desktop: the view tabs and, on their right, the range, over one hairline.
+// Desktop: the view tabs and, on their right, the range, over one hairline. When the row wraps,
+// the range goes above, so the tabs keep their underline on the hairline. With wrap-reverse the
+// cross axis runs bottom-up, so flex-start aligns to the bottom.
 .tabsRow {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0 16px;
+  flex-wrap: wrap-reverse;
+  align-items: flex-start;
+  gap: 8px 16px;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -413,7 +415,7 @@
 
 .kpiHint {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   line-height: 1.45;
 }
 
@@ -445,7 +447,7 @@
   align-items: center;
   gap: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 
 .swatch {
@@ -507,7 +509,7 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-secondary);
   margin-bottom: 2px;
 }
@@ -531,7 +533,7 @@
   align-items: center;
   gap: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   max-width: 260px;
 
   span:last-child {
@@ -547,7 +549,7 @@
   border-radius: 10px;
   padding: 10px 12px;
   box-shadow: var(--floating-shadow);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-primary);
   min-width: 180px;
   max-width: 320px;
@@ -667,7 +669,8 @@
 
 @media (pointer: coarse) {
   .sortButton {
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 
@@ -685,7 +688,7 @@
 
 .mono {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 
 .muted {
@@ -813,7 +816,7 @@
     flex-direction: column;
     gap: 4px;
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: var(--fs-meta);
     min-width: 0;
   }
 }
@@ -872,7 +875,7 @@
   max-width: 260px;
   white-space: normal !important;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   line-height: 1.4;
 }
 
@@ -972,7 +975,7 @@
   }
 
   code {
-    font-size: 12px;
+    font-size: var(--fs-meta);
     padding: 1px 5px;
     border-radius: 4px;
     background: var(--bg-tertiary);
@@ -1012,5 +1015,38 @@
   strong {
     color: var(--text-primary);
     font-weight: 600;
+  }
+}
+
+// Touch screens: the older controls reach 44 px too.
+@media (pointer: coarse) {
+  .ghostButton,
+  .dateInput,
+  .textInput,
+  .numberInput {
+    height: 44px;
+  }
+
+  .iconButton {
+    width: 44px;
+    height: 44px;
+  }
+
+  .linkButton,
+  .checkboxLabel {
+    min-height: 44px;
+  }
+
+  .linkButton {
+    min-width: 44px;
+  }
+}
+
+// Phones: cards (`--bg-primary`) and their hairlines (`--border-color`) take the raised surface, as
+// on the Dashboard's Digest. Tablets and desktops keep the flat page.
+@media (max-width: $breakpoint-mobile) {
+  .vizRoot {
+    --bg-primary: var(--surface-raised);
+    --border-color: var(--border-raised);
   }
 }

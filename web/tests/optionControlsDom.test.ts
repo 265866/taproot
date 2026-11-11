@@ -1,7 +1,8 @@
 /**
  * Drives the option primitives in a DOM (happy-dom): the phone bottom sheet (a modal dialog that
  * traps Tab, closes on Escape, Done, or the backdrop, and gives focus back), the desktop choice
- * menu and popover, the radio list, and the Dashboard's compact Needs-you rows.
+ * menu and popover, the radio list, and the Dashboard's compact Needs-you rows. The sheet also
+ * owns one history entry while open, so the system back gesture closes it.
  */
 import { afterAll, afterEach, describe, expect, jest, test } from 'bun:test';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -20,6 +21,14 @@ const { normalizeAttention } = await import('@/services/api/taprootStatus');
 const { NeedsYou } = await import('@/features/dashboard/components/NeedsYou');
 const { ViewControls } = await import('@/features/accounts/components/ViewControls');
 const { defaultRange } = await import('@/features/taproot-quota/model/range');
+const { installSheetHistory } = await import('@/components/ui/sheetHistory');
+const { useKeepFocus } = await import('@/features/dashboard/hooks/useKeepFocus');
+const { useUsageParams } = await import('@/features/taproot-usage/hooks/useUsageParams');
+const { Select } = await import('@/components/ui/Select');
+const { useEffect, useRef } = await import('react');
+
+// As App does before it creates the router.
+installSheetHistory(window);
 
 const actGlobal = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
 actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
@@ -408,5 +417,253 @@ describe('the compact Needs-you rows', () => {
     )!;
     expect(backUp.getAttribute('aria-label')).toBe('Back up now: Last backup was 31 h ago');
     view.unmount();
+  });
+});
+
+describe('the bottom sheet and the back gesture', () => {
+  const MARK = '__taprootSheet';
+  const base = () => {
+    window.history.replaceState({ idx: 0 }, '', '/#/accounts');
+    return window.history.length;
+  };
+  const marked = () => MARK in ((window.history.state as object | null) ?? {});
+  const opener = () => document.getElementById('opener')!;
+
+  test('opening pushes one entry on the same page, and back closes the sheet, not the page', () => {
+    jest.useFakeTimers();
+    try {
+      const length = base();
+      const url = window.location.href;
+      const view = mount(createElement(SheetHarness));
+      opener().focus();
+      click(opener());
+      expect(window.history.length).toBe(length + 1);
+      expect(window.location.href).toBe(url);
+      expect(marked()).toBe(true);
+      // The router's listener comes after the sheet's: it must not see the sheet's pop.
+      const router = jest.fn();
+      window.addEventListener('popstate', router);
+      act(() => window.history.back());
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+      window.removeEventListener('popstate', router);
+      expect(sheet()).toBeNull();
+      expect(router).not.toHaveBeenCalled();
+      expect(marked()).toBe(false);
+      expect(window.location.href).toBe(url);
+      expect(document.activeElement).toBe(opener());
+      view.unmount();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('Done, Escape, and the backdrop remove the entry, and repeated opens leave none behind', () => {
+    const length = base();
+    const view = mount(createElement(SheetHarness));
+    const router = jest.fn();
+    window.addEventListener('popstate', router);
+    const closers = [
+      () =>
+        click(
+          Array.from(sheet()!.querySelectorAll('button')).find((b) => b.textContent === 'Done')!
+        ),
+      () => key(document.activeElement ?? document.body, 'Escape'),
+      () =>
+        act(() => {
+          sheet()!.parentElement!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        }),
+    ];
+    for (let round = 0; round < 3; round++) {
+      for (const close of closers) {
+        click(opener());
+        expect(marked()).toBe(true);
+        close();
+        expect(marked()).toBe(false);
+      }
+    }
+    window.removeEventListener('popstate', router);
+    expect(router).not.toHaveBeenCalled();
+    // One forward entry at most, which the next open replaces.
+    expect(window.history.length).toBeLessThanOrEqual(length + 1);
+    view.unmount();
+  });
+
+  test('a sheet unmounted while open, as when the phone turns to a wider layout, removes its entry', () => {
+    base();
+    const view = mount(createElement(SheetHarness));
+    click(opener());
+    expect(marked()).toBe(true);
+    view.unmount();
+    expect(marked()).toBe(false);
+  });
+
+  test('the Accounts View sheet does not reopen after the phone turns away and back', () => {
+    base();
+    const control = { setPhone: (_phone: boolean) => {} };
+    function Turning() {
+      const [phone, set] = useState(true);
+      useEffect(() => {
+        control.setPhone = set;
+      }, [set]);
+      return createElement(ViewControls, {
+        phone,
+        metricBeside: true,
+        view: 'remaining',
+        burnHours: 3,
+        future: 'same',
+        range: defaultRange(Date.parse('2026-11-10T12:00:00Z')),
+        clock: Date.parse('2026-11-10T12:00:00Z'),
+        onViewChange: () => {},
+        onBurnHoursChange: () => {},
+        onFutureChange: () => {},
+        onRangeChange: () => {},
+        providers: null,
+        onProviderChange: () => {},
+      });
+    }
+    const view = mount(createElement(Turning));
+    click(view.host.querySelector('button[aria-haspopup="dialog"]'));
+    expect(sheet()).not.toBeNull();
+    act(() => control.setPhone(false));
+    expect(marked()).toBe(false);
+    act(() => control.setPhone(true));
+    expect(
+      view.host.querySelector('button[aria-haspopup="dialog"]')!.getAttribute('aria-expanded')
+    ).toBe('false');
+    expect(marked()).toBe(false);
+    view.unmount();
+  });
+});
+
+describe('the compact Needs-you rows as items come and go', () => {
+  const item = (id: string, title: string) => ({
+    id,
+    kind: 'backup_overdue',
+    severity: 'overdue',
+    title,
+    detail: `${title} detail`,
+    action: { type: 'backup_now' },
+  });
+  test('the row first shown at the top opens; when it leaves, the next does not open on its own', () => {
+    const control = { setItems: (_items: ReturnType<typeof item>[]) => {} };
+    function Changing() {
+      const [items, set] = useState([item('a', 'First'), item('b', 'Second')]);
+      useEffect(() => {
+        control.setItems = set;
+      }, [set]);
+      return createElement(NeedsYou, {
+        attention: { data: normalizeAttention({ items }), error: null },
+        firstRun: false,
+        loggingToFile: true,
+        nowMs: 0,
+        onRetry: () => {},
+        fixes: { runs: {}, run: async () => {} },
+        compact: true,
+      });
+    }
+    const view = mount(createElement(Changing));
+    const states = () =>
+      Array.from(view.host.querySelectorAll('button[aria-expanded]')).map((b) =>
+        b.getAttribute('aria-expanded')
+      );
+    expect(states()).toEqual(['true', 'false']);
+    act(() => control.setItems([item('b', 'Second')]));
+    expect(states()).toEqual(['false']);
+    view.unmount();
+  });
+});
+
+describe('keeping the keyboard on its control when the Digest layout switches', () => {
+  test('a fix button remounted in the compact row takes the focus back', () => {
+    const control = { setCompact: (_compact: boolean) => {} };
+    function Page() {
+      const [compact, set] = useState(false);
+      useEffect(() => {
+        control.setCompact = set;
+      }, [set]);
+      const page = useRef<HTMLDivElement>(null);
+      const rail = useKeepFocus(page, compact);
+      const fix = createElement(
+        'button',
+        { 'aria-label': 'Back up now: Backup' },
+        compact ? 'Back up' : 'Back up now'
+      );
+      return createElement(
+        'div',
+        { ref: page },
+        createElement(
+          'div',
+          { ref: rail },
+          compact ? createElement('span', null, fix) : createElement('p', null, fix)
+        )
+      );
+    }
+    const view = mount(createElement(Page));
+    const before = view.host.querySelector('button')!;
+    before.focus();
+    act(() => control.setCompact(true));
+    const after = view.host.querySelector('button')!;
+    expect(after).not.toBe(before);
+    expect(document.activeElement).toBe(after);
+    view.unmount();
+  });
+});
+
+describe("Usage's page state setter", () => {
+  test('stays the same function as the URL changes, so memoized views skip a re-render', () => {
+    const seen: unknown[] = [];
+    const renders = { count: 0 };
+    const control = { update: (_patch: { group: 'account' }) => {} };
+    function Probe() {
+      const [, set] = useUsageParams();
+      useEffect(() => {
+        renders.count += 1;
+      });
+      useEffect(() => {
+        seen.push(set);
+        control.update = set;
+      }, [set]);
+      return null;
+    }
+    const view = mount(createElement(Probe));
+    act(() => control.update({ group: 'account' }));
+    expect(renders.count).toBeGreaterThan(1);
+    expect(seen).toHaveLength(1);
+    view.unmount();
+  });
+});
+
+describe('the select listbox', () => {
+  test('is at least as wide as its longest option, within the viewport', () => {
+    const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.getAttribute('role') === 'option' ? 140 : 0;
+      },
+    });
+    try {
+      const view = mount(
+        createElement(Select, {
+          value: 'default',
+          onChange: () => {},
+          ariaLabel: 'Sort',
+          options: [
+            { value: 'default', label: 'Default' },
+            { value: 'least', label: 'Least remaining' },
+          ],
+        })
+      );
+      click(view.host.querySelector('button[aria-haspopup="listbox"]'));
+      const list = document.querySelector<HTMLElement>('[role="listbox"]')!;
+      expect(parseFloat(list.style.width)).toBeGreaterThanOrEqual(140);
+      expect(parseFloat(list.style.width)).toBeLessThanOrEqual(window.innerWidth - 16);
+      view.unmount();
+    } finally {
+      if (scrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', scrollWidth);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
   });
 });

@@ -357,7 +357,7 @@
 }
 
 .cellFoot {
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-tertiary);
   @include text-ellipsis;
 }
@@ -431,7 +431,7 @@
   border-radius: 8px;
   background: var(--bg-secondary);
   list-style: none;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-tertiary);
 
   li {
@@ -459,7 +459,7 @@
 .grantEmpty,
 .grantMessage {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-tertiary);
 }
 
@@ -542,6 +542,28 @@
 
   .action {
     min-height: 36px;
+  }
+}
+
+// Touch screens: 44 px boxes.
+@media (pointer: coarse) {
+  .search,
+  .action {
+    min-height: 44px;
+  }
+
+  // The field fills the box, borders included, so the whole 44 px takes the tap.
+  .search input {
+    height: calc(100% + 2px);
+    margin-block: -1px;
+  }
+
+  .showToggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

@@ -35,7 +35,7 @@
 
 .statusRate {
   font-family: $font-mono;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
@@ -116,5 +116,9 @@
   .statusRate {
     min-width: 34px;
     font-size: 11px;
+
+    @media (max-width: $breakpoint-mobile), (pointer: coarse) and (max-height: 500px) {
+      font-size: 13px;
+    }
   }
 }

@@ -81,7 +81,7 @@ export function AccountsPage() {
   const navigate = useNavigate();
   // `$breakpoint-mobile`: phones get the View sheet, and Refresh all moves into the ⋯ menu.
   const phone = useMediaQuery('(max-width: 768px)');
-  const metricBeside = useMediaQuery('(min-width: 360px)');
+  const metricBeside = useMediaQuery('(min-width: 375px)');
 
   const [range, setRange] = useState<DateRange>(() => defaultRange(Date.now()));
   const [searchParams, setSearchParams] = useSearchParams();
