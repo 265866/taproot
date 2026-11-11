@@ -32,7 +32,7 @@ You need a Linux server on your tailnet with `tailscaled` and rootless Podman 5 
      -v "$HOME/taproot/data:/taproot/config" \
      -v /var/run/tailscale:/var/run/tailscale:ro \
      -p "$(tailscale ip -4):8317:8317" \
-     ghcr.io/265866/taproot:0.4
+     ghcr.io/265866/taproot:0.5
    ```
 
    So taproot keeps recognizing devices after tailscaled restarts or updates, apply the one-time host setting in [Keep tailscaled's folder for a container](docs/install.md#keep-tailscaleds-folder-for-a-container).
