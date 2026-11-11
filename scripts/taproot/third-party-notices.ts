@@ -316,7 +316,7 @@ To build taproot with a modified copy of one of these crates:
    \`\`\`
 
 4. In \`${CODEC_DIR}\`, run \`cargo update -p ${example}\` to record the patched crate in \`Cargo.lock\`.
-5. Build the image with \`docker build -f Containerfile.taproot -t taproot .\` from the repository root. Or, on Linux with cgo, a Rust toolchain, and Bun, embed the dashboard with \`bash scripts/taproot/build-web.sh\`, build the codec library with \`(cd ${CODEC_DIR} && cargo build --release --locked)\`, and then build the server with \`go build -tags taproot_codecs -o taproot ./cmd/server\`.
+5. Build the image with \`docker build -f Containerfile.taproot -t taproot .\` from the repository root. Or, on Linux with cgo, a Rust toolchain, and Bun, embed the dashboard with \`bash scripts/taproot/build-web.sh\`, build the codec library with \`(cd ${CODEC_DIR} && cargo build --release --locked && objcopy --remove-section=.llvmbc --remove-section=.llvmcmd target/release/libtaproot_codec.a)\`, and then build the server with \`go build -tags taproot_codecs -o taproot ./cmd/server\`.
 `;
 }
 

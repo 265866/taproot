@@ -49,7 +49,10 @@ COPY internal/taproot/reqlog/codec/native/Cargo.toml internal/taproot/reqlog/cod
 COPY internal/taproot/reqlog/codec/native/patches ./patches
 RUN mkdir src && touch src/lib.rs && cargo fetch --locked
 COPY internal/taproot/reqlog/codec/native/src ./src
-RUN cargo build --release --locked --offline
+# Go 1.26.11 refuses to link an archive that carries LLVM bitcode, which the
+# precompiled compiler_builtins and zstd's assembly add; the native code stays.
+RUN cargo build --release --locked --offline \
+	&& objcopy --remove-section=.llvmbc --remove-section=.llvmcmd target/release/libtaproot_codec.a
 
 FROM docker.io/library/golang:${GO_VERSION}-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0 AS build
 ARG GO_VERSION

@@ -75,6 +75,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --release --locked --all-targets -- -D warnings
       - run: cargo build --release --locked
+      # Go 1.26.11 refuses to link LLVM bitcode sections; see Containerfile.taproot.
+      - run: objcopy --remove-section=.llvmbc --remove-section=.llvmcmd target/release/libtaproot_codec.a
       - run: go vet -tags taproot_codecs ./...
         working-directory: internal/taproot/reqlog
       - run: go test -race -tags taproot_codecs ./...

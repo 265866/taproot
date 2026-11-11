@@ -33,7 +33,12 @@ rustPlatform.buildRustPackage {
     unset ZSTD_SYS_USE_PKG_CONFIG
   '';
 
-  # cargoInstallHook copies libtaproot_codec.a to $out/lib.
+  # cargoInstallHook copies libtaproot_codec.a to $out/lib. Go 1.26.11 refuses
+  # to link LLVM bitcode sections, which the precompiled compiler_builtins and
+  # zstd's assembly add; removing them leaves the native code.
+  postInstall = ''
+    ''${OBJCOPY:-objcopy} --remove-section=.llvmbc --remove-section=.llvmcmd $out/lib/libtaproot_codec.a
+  '';
   meta = {
     description = "Taproot's request-log blob codecs (Lepton JPEG, PNG recompression, zstd) as a static library";
     # MIT, plus the LGPL-3.0-or-later cabac crate built into the library.

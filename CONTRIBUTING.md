@@ -80,7 +80,8 @@ docker build -f Containerfile.taproot .
 A plain `go build` links a stub request-log codec. A server built that way cannot read the Lepton (JPEG) and PNG blobs that the image's compactor writes. The image builds the Rust codec library and links it with the `taproot_codecs` build tag; to build the same way on Linux, with cgo and a Rust toolchain:
 
 ```sh
-(cd internal/taproot/reqlog/codec/native && cargo build --release)
+(cd internal/taproot/reqlog/codec/native && cargo build --release && \
+  objcopy --remove-section=.llvmbc --remove-section=.llvmcmd target/release/libtaproot_codec.a)
 go build -tags taproot_codecs -o taproot ./cmd/server
 ```
 
