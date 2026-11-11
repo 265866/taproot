@@ -20,11 +20,11 @@ A Claude account's quota card, and its **Manage** sheet under **Quota and resets
 Below the limits, **Resets** lists the resets Anthropic gave the account, one row per kind, each with its own button:
 
 - **Full reset** refills the 5-hour, weekly, and Fable limits.
-- **Fable reset** gives back the weekly usage Fable spent this week and refills the 5-hour limit. With no Fable use this week it has nothing to give back, so its button is off.
+- **Fable reset** gives back the weekly usage Fable spent this week and, while a 5-hour session is open, refills the 5-hour limit. With no Fable use this week it has nothing to give back, so its button is off.
 - **5-hour reset** and **Weekly reset** refill that limit.
 - **Other reset** is a kind taproot doesn't recognize. Its confirmation lists what Anthropic says it clears.
 
-No reset moves the weekly reset day. When the account is at a limit, the reset that clears it comes first. When you hold two resets of a kind, its button uses the one that expires first. Each button asks first and shows what will change. **Details** lists every grant with its expiry.
+No reset moves the weekly reset day. When the account is at a limit, the reset that clears it comes first. When you hold two resets of a kind, its button uses the one that clears the fewest limits, then the one that expires first. Each button asks first and shows what will change. Only a clear answer from Anthropic settles a reset. When the answer is lost or unclear, the reset may have been spent, so the row offers **Retry the same claim** for 10 minutes, which resends the same request rather than spending another reset. **Details** lists every grant with its expiry.
 
 ## Upload an existing credential
 

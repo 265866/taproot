@@ -89,7 +89,9 @@ export function parseClaudeUsageLimits(body: unknown): ClaudeUsageLimits | null 
   fiveHour ??= body.five_hour === null ? 'closed' : legacyReading(body.five_hour);
   weekly ??= legacyReading(body.seven_day);
   if (!fable) {
-    const legacy = legacyReading(body.seven_day_overage_included);
+    // Both legacy keys name the Fable limit; the server reads them sorted, so iguana_necktie wins.
+    const legacy =
+      legacyReading(body.iguana_necktie) ?? legacyReading(body.seven_day_overage_included);
     if (legacy) fable = { ...legacy, usedOfWeekly: null, allowanceOfWeekly: null };
   }
   if (fable && fableIndex >= 0 && Array.isArray(body.weekly_scoped_shares)) {

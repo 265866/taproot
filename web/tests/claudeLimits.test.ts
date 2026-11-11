@@ -28,7 +28,7 @@ import {
 } from '@/features/taproot-quota/components/claude/ClaudeLimits';
 import { ClaudeResets } from '@/features/taproot-quota/components/claude/ClaudeResets';
 import { ResetConfirmBody } from '@/features/taproot-quota/components/claude/ResetConfirm';
-import { resetConfirmTitle } from '@/features/taproot-quota/components/claude/resetText';
+import { grantWhat, resetConfirmTitle } from '@/features/taproot-quota/components/claude/resetText';
 import { buildClaudeQuotaWindows } from '@/features/taproot-quota/live/providers/claude/data';
 import { formatCountdown } from '@/features/taproot-quota/model/format';
 
@@ -112,6 +112,15 @@ describe('Claude usage limits', () => {
       seven_day_overage_included: { utilization: 40, resets_at: '2026-11-12T12:00:00Z' },
     });
     expect(legacy?.fable).toMatchObject({ usedPercent: 40, usedOfWeekly: null });
+    const iguana = { utilization: 11, resets_at: '2026-11-12T12:00:00Z' };
+    expect(parseClaudeUsageLimits({ iguana_necktie: iguana })?.fable?.usedPercent).toBe(11);
+    // As the server reads them: sorted keys, so iguana_necktie fills the window first.
+    expect(
+      parseClaudeUsageLimits({
+        iguana_necktie: iguana,
+        seven_day_overage_included: { utilization: 12, resets_at: '2026-11-12T12:00:00Z' },
+      })?.fable?.usedPercent
+    ).toBe(11);
     const windows = buildClaudeQuotaWindows(body as never, ((key: string) => key) as never);
     expect(windows.map((w) => w.id)).toContain('seven-day-fable');
   });
@@ -202,6 +211,48 @@ describe('one action per kind', () => {
     // Equal expiries fall back to the id, so the choice is stable.
     const same = resetGroups(status(cedar('usage-cedar-acct-A')), usageB(10), NOW);
     expect(same.find((g) => g.kind === 'fable')?.target?.id).toBe('launch-2610-fable');
+  });
+
+  test('within a kind, the grant that clears the fewest windows goes first (D9)', () => {
+    // With no session open upstream types a full grant "weekly", so it shares the Weekly row.
+    const block = cedar();
+    const [full] = grants(block);
+    block.grants = [
+      {
+        ...full,
+        id: 'full-as-weekly',
+        type: 'weekly',
+        clears: ['seven_day', 'seven_day_overage_included'],
+      },
+      {
+        ...full,
+        id: 'pure-weekly',
+        type: 'weekly',
+        clears: ['seven_day'],
+        ends_at: '2027-02-01T00:00:00Z',
+      },
+    ];
+    const [weekly] = resetGroups(status(block), usageB(32), NOW);
+    expect(weekly.kind).toBe('weekly');
+    expect(weekly.target?.id).toBe('pure-weekly');
+    expect(weekly.grants.map((g) => g.id)).toEqual(['pure-weekly', 'full-as-weekly']);
+    expect(renderResets(block, usageB(32))).toContain(
+      'Expires Jan 31 · uses the one that clears the fewest limits first'
+    );
+  });
+
+  test('a little Fable use keeps the Fable reset on when the weekly share rounds to 0 (D11)', () => {
+    const block = cedar();
+    block.grants = [grants(block)[1]];
+    const usage = (usedPercent: number, usedOfWeekly: number | null): ClaudeUsageLimits => ({
+      ...usageB(0),
+      fable: { ...usageB(0).fable!, usedPercent, usedOfWeekly },
+    });
+    expect(resetGroups(status(block), usage(0.8, 0), NOW)[0].reason).toBeNull();
+    expect(resetGroups(status(block), usage(0, 1), NOW)[0].reason).toBeNull();
+    expect(resetGroups(status(block), usage(0, 0), NOW)[0].reason).toBe('no_fable_use');
+    // Recorded windows carry no share; Fable's own 0% still decides.
+    expect(resetGroups(status(block), usage(0, null), NOW)[0].reason).toBe('no_fable_use');
   });
 
   test('a Fable reset with no Fable use this week is off, with the reason (state 2)', () => {
@@ -559,6 +610,40 @@ describe('confirmation dialogs', () => {
     ]) {
       expect(html).toContain(text);
     }
+  });
+
+  test('with no session open, Fable copy does not promise a 5-hour refill (D10)', () => {
+    const block = cedar();
+    const fableGrant = { ...grants(block)[1], clears: ['seven_day_overage_included'] };
+    block.grants = [fableGrant];
+    const parsed = status(block);
+    const usage = { ...usageB(32), fiveHour: 'closed' as const };
+    const [group] = resetGroups(parsed, usage, NOW);
+    const row = renderResets(block, usage);
+    expect(row).toContain('Gives back Fable’s 32% of weekly. Weekly goes from 63% to 31% used.');
+    expect(row).not.toContain('5-hour');
+    const dialog = (u: ClaudeUsageLimits) =>
+      renderToStaticMarkup(
+        createElement(ResetConfirmBody, {
+          group,
+          grant: group.target!,
+          usage: u,
+          weeklyResetsAt: '2026-11-12T12:00:00Z',
+          now: NOW,
+        })
+      );
+    expect(dialog(usage)).toContain(
+      'Gives back what Fable used this week (32% of weekly). Other models’ weekly usage stays.'
+    );
+    const noShare = { ...usage, fable: { ...usage.fable!, usedOfWeekly: null } };
+    expect(dialog(noShare)).toContain(
+      'Gives back what Fable used this week. Other models’ weekly usage stays.'
+    );
+    for (const html of [dialog(usage), dialog(noShare)]) expect(html).not.toContain('refills');
+    expect(grantWhat(t, 'fable', group.target!)).toBe('Gives back what Fable used this week');
+    expect(grantWhat(t, 'fable', status(cedar()).grants[1])).toBe(
+      'Gives back what Fable used this week and refills 5-hour'
+    );
   });
 
   test('an unknown reset names its windows and shows no table (R11)', () => {

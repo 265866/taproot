@@ -4,7 +4,7 @@ import type { AnthropicResetGrant } from '@/services/api/claudeResetGrants';
 import type { ClaudeUsageLimits } from '@/services/api/claudeUsageLimits';
 import { predictReset, type LimitValue, type ResetGroup } from '../../model/claudeResets';
 import { formatClock, formatCountdown, formatDay, formatDayTime } from '../../model/format';
-import { clearsText } from './resetText';
+import { clearsText, fableSuffix } from './resetText';
 import styles from './ClaudeLimits.module.scss';
 
 function valueText(t: TFunction, value: LimitValue) {
@@ -60,8 +60,14 @@ export function ResetConfirmBody({
             : t('claude_reset.confirm.lead_unknown_none'),
           t('claude_reset.confirm.lead_unknown_note'),
         ]
-      : kind === 'fable' && share !== null
-        ? [t('claude_reset.confirm.lead_fable_share', { share: Math.round(share) })]
+      : kind === 'fable'
+        ? [
+            share !== null
+              ? t(`claude_reset.confirm.lead_fable_share${fableSuffix(grant)}`, {
+                  share: Math.round(share),
+                })
+              : t(`claude_reset.confirm.lead_fable${fableSuffix(grant)}`),
+          ]
         : (kind === 'session' || kind === 'weekly') && grant.clears.length > 0
           ? [
               t('claude_reset.confirm.lead_refills', {

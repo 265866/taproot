@@ -34,6 +34,14 @@ export function unknownClearsText(t: TFunction, grant: AnthropicResetGrant) {
   );
 }
 
+/**
+ * The key suffix for Fable copy: a Fable grant refills 5-hour only while it clears `five_hour`,
+ * which it doesn't while no session is open.
+ */
+export function fableSuffix(grant: AnthropicResetGrant) {
+  return grant.clears.includes('five_hour') ? '' : '_no_session';
+}
+
 /** One kind's row description. */
 export function kindDescription(
   t: TFunction,
@@ -45,8 +53,10 @@ export function kindDescription(
   if (kind !== 'fable') return refillsText(t, kind, grant, 'desc');
   const share = usage?.fable?.usedOfWeekly ?? null;
   const weekly = usage?.weekly?.usedPercent ?? null;
-  if (share === null || share <= 0 || weekly === null) return t('claude_reset.kind.fable.desc');
-  return t('claude_reset.kind.fable.desc_share', {
+  const suffix = fableSuffix(grant);
+  if (share === null || share <= 0 || weekly === null)
+    return t(`claude_reset.kind.fable.desc${suffix}`);
+  return t(`claude_reset.kind.fable.desc_share${suffix}`, {
     share: Math.round(share),
     from: Math.round(weekly),
     to: Math.max(0, Math.round(weekly - share)),
@@ -69,7 +79,7 @@ function refillsText(
 
 /** What a grant does, for the details list. */
 export function grantWhat(t: TFunction, kind: ResetKind, grant: AnthropicResetGrant) {
-  if (kind === 'fable') return t('claude_reset.kind.fable.what');
+  if (kind === 'fable') return t(`claude_reset.kind.fable.what${fableSuffix(grant)}`);
   if (kind !== 'unknown') return refillsText(t, kind, grant, 'what');
   return grant.rawClears.length > 0
     ? t('claude_reset.details.clears', { windows: clearsText(t, grant.rawClears) })

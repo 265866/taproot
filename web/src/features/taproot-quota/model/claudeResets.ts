@@ -99,7 +99,7 @@ export interface ResetGroup {
   /** The kind, or `unknown:<grant id>`: each unknown grant is its own row. */
   key: string;
   kind: ResetKind;
-  /** Grants held, the one that expires first first. */
+  /** Grants held, in the order the button spends them: fewest windows cleared, then soonest expiry. */
   grants: AnthropicResetGrant[];
   /** Resets left across the kind's grants. */
   left: number;
@@ -113,17 +113,22 @@ export interface ResetGroup {
   keepForWeekly: boolean;
 }
 
-/** How much of the weekly limit Fable used, or its own use when the share is not reported. */
-export function fableUse(
+/**
+ * True when every reading taproot has says Fable used nothing this week. The weekly share alone
+ * can't decide: it is a rounded integer and reads 0 after a little use.
+ */
+export function noFableUse(
   usage: ClaudeUsageLimits | null | undefined,
   grant?: AnthropicResetGrant
-): number | null {
-  return (
-    usage?.fable?.usedOfWeekly ??
-    usage?.fable?.usedPercent ??
-    grant?.percentUsed.seven_day_overage_included ??
-    null
+): boolean {
+  const known = [usage?.fable?.usedPercent, usage?.fable?.usedOfWeekly].filter(
+    (value): value is number => value != null
   );
+  if (known.length === 0) {
+    const percent = grant?.percentUsed.seven_day_overage_included;
+    if (percent !== undefined) known.push(percent);
+  }
+  return known.length > 0 && known.every((value) => value === 0);
 }
 
 const KIND_ORDER: readonly ResetKind[] = ['session', 'weekly', 'fable', 'full'];
@@ -183,8 +188,11 @@ export function resetGroups(
   }
   const groups = [...byKey.values()];
   for (const group of groups) {
-    group.grants.sort((a, b) => endsAt(a) - endsAt(b) || (a.id < b.id ? -1 : 1));
-    if (group.kind === 'fable' && fableUse(usage, group.grants[0]) === 0) {
+    group.grants.sort(
+      (a, b) =>
+        a.clears.length - b.clears.length || endsAt(a) - endsAt(b) || (a.id < b.id ? -1 : 1)
+    );
+    if (group.kind === 'fable' && noFableUse(usage, group.grants[0])) {
       group.reason = 'no_fable_use';
       continue;
     }

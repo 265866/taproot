@@ -127,9 +127,14 @@ export function ClaudeResets({
                 ? shown.label || t('claude_reset.kind.unknown.name')
                 : t(`claude_reset.kind.${group.kind}.name`);
             const expiry = Number.isFinite(ends)
-              ? t(group.grants.length > 1 ? 'claude_reset.expires_first' : 'claude_reset.expires', {
-                  date: formatDay(ends, locale),
-                })
+              ? t(
+                  group.grants.length === 1
+                    ? 'claude_reset.expires'
+                    : group.grants.some((g) => g.clears.length !== shown.clears.length)
+                      ? 'claude_reset.expires_fewest'
+                      : 'claude_reset.expires_first',
+                  { date: formatDay(ends, locale) }
+                )
               : t('claude_reset.no_expiry');
             return (
               <div key={group.key} className={styles.kind}>

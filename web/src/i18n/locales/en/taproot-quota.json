@@ -378,6 +378,7 @@
     "keep_for_weekly": "Keep it for when the weekly limit runs out.",
     "expires": "Expires {{date}}",
     "expires_first": "Expires {{date}} · uses the one that expires first",
+    "expires_fewest": "Expires {{date}} · uses the one that clears the fewest limits first",
     "no_expiry": "No expiry",
     "cooldown_until": "Resets available again at {{time}}.",
     "resetting": "Resetting…",
@@ -405,6 +406,9 @@
         "desc": "Gives back what Fable used this week and refills 5-hour.",
         "desc_share": "Gives back Fable’s {{share}}% of weekly and refills 5-hour. Weekly goes from {{from}}% to {{to}}% used.",
         "what": "Gives back what Fable used this week and refills 5-hour",
+        "desc_no_session": "Gives back what Fable used this week.",
+        "desc_share_no_session": "Gives back Fable’s {{share}}% of weekly. Weekly goes from {{from}}% to {{to}}% used.",
+        "what_no_session": "Gives back what Fable used this week",
         "done": "Fable reset used · what Fable used is back in your weekly limit"
       },
       "session": {
@@ -475,6 +479,8 @@
       "lead_full": "Refills the 5-hour, weekly, and Fable limits. Every model is back to full.",
       "lead_fable": "Gives back what Fable used this week and refills your 5-hour limit. Other models’ weekly usage stays.",
       "lead_fable_share": "Gives back what Fable used this week ({{share}}% of weekly) and refills your 5-hour limit. Other models’ weekly usage stays.",
+      "lead_fable_no_session": "Gives back what Fable used this week. Other models’ weekly usage stays.",
+      "lead_fable_share_no_session": "Gives back what Fable used this week ({{share}}% of weekly). Other models’ weekly usage stays.",
       "lead_session": "Refills your 5-hour limit. The weekly and Fable limits stay as they are.",
       "lead_weekly": "Refills your weekly limit. The 5-hour limit stays as it is.",
       "lead_unknown": "Anthropic says it clears {{windows}}.",
