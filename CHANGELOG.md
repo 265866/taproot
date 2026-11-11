@@ -2,7 +2,7 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
-## Unreleased
+## [0.5.0](https://github.com/265866/taproot/compare/taproot-v0.4.0...taproot-v0.5.0) (2026-11-11)
 
 ### Upgrading from 0.4
 
@@ -19,8 +19,6 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 - On a touch screen, a chart's reading on Accounts, Usage, and the Dashboard goes away 3 seconds after the finger lifts, and at once when the page scrolls or a touch lands elsewhere. Mouse and keyboard use are unchanged.
 - The image and the release binaries are built with Go 1.26.11, for an HTTP/1 server crash in Go 1.26.10's `net/http` (GO-2026-6859). Building the request-log codec from source now ends with an `objcopy` step, because Go 1.26.11 refuses to link LLVM bitcode; CONTRIBUTING has the commands.
 - A successful **Send test** of the Discord alerts, or a new webhook, clears the record of failed deliveries, so the "Discord alerts are not being delivered" item leaves **Needs you**.
-
-## [0.5.0](https://github.com/265866/taproot/compare/taproot-v0.4.0...taproot-v0.5.0) (2026-11-11)
 
 ### Added
 
