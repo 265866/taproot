@@ -104,4 +104,6 @@ export interface QuotaBodyProps<TState> {
   planItems?: ReactNode;
   /** Host-owned content placed right after the plan row, before usage rows. */
   afterPlan?: ReactNode;
+  /** Host-owned content after the usage rows. */
+  afterWindows?: ReactNode;
 }

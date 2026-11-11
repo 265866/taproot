@@ -17,6 +17,11 @@ import type {
 import { apiCallApi, getApiCallErrorMessage } from '@/services/api';
 import { normalizeClaudeUsageSnapshot } from '@/services/api/claudeUsage';
 import {
+  isFableModelName,
+  parseClaudeUsageLimits,
+  type ClaudeUsageLimits,
+} from '@/services/api/claudeUsageLimits';
+import {
   CLAUDE_PROFILE_URL,
   CLAUDE_USAGE_URL,
   CLAUDE_REQUEST_HEADERS,
@@ -36,6 +41,7 @@ import type { QuotaProviderData } from '../types';
 
 export type ClaudeQuotaData = {
   windows: ClaudeQuotaWindow[];
+  limits: ClaudeUsageLimits | null;
   extraUsage?: ClaudeExtraUsage | null;
   planType?: string | null;
   dollarWindows: ClaudeDollarWindow[];
@@ -52,11 +58,11 @@ const findFableUsageLimit = (payload: ClaudeUsagePayload) => {
 
   const candidates = payload.limits.filter((limit) => {
     const kind = (normalizeStringValue(limit?.kind) ?? '').trim().toLowerCase();
-    const modelName = (normalizeStringValue(limit?.scope?.model?.display_name) ?? '')
-      .trim()
-      .toLowerCase();
-    const isFable = modelName === 'fable' || modelName === 'fable 5';
-    return kind === 'weekly_scoped' && isFable && normalizeNumberValue(limit?.percent) !== null;
+    return (
+      kind === 'weekly_scoped' &&
+      isFableModelName(limit?.scope?.model?.display_name) &&
+      normalizeNumberValue(limit?.percent) !== null
+    );
   });
 
   return candidates.find((limit) => limit.is_active === true) ?? candidates[0] ?? null;
@@ -264,6 +270,7 @@ const fetchClaudeQuota = async (file: AuthFileItem, t: TFunction): Promise<Claud
 
   return {
     windows,
+    limits: parseClaudeUsageLimits(payload),
     extraUsage: snapshot.extraUsage,
     dollarWindows,
     observedAt: new Date().toISOString(),
@@ -282,6 +289,7 @@ export const CLAUDE_CONFIG: QuotaProviderData<ClaudeQuotaState, ClaudeQuotaData>
   buildSuccessState: (data) => ({
     status: 'success',
     windows: data.windows,
+    limits: data.limits,
     extraUsage: data.extraUsage,
     planType: data.planType,
     dollarWindows: data.dollarWindows,

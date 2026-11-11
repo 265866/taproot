@@ -1,6 +1,7 @@
 // Upstream cedar_ember contract, following opencodex anthropic-reset-grants.
 import { apiCallApi } from './apiCall';
 import { CLAUDE_REQUEST_HEADERS } from '@/utils/quota/constants';
+import { parseClaudeUsageLimits, type ClaudeUsageLimits } from './claudeUsageLimits';
 
 export const ANTHROPIC_API_ORIGIN = 'https://api.anthropic.com';
 export const ANTHROPIC_RESET_GRANT_PROGRAM = 'cedar_ember';
@@ -14,13 +15,61 @@ export const ANTHROPIC_RESET_REQUEST_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const ORGANIZATION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Usage windows a grant can clear. Others upstream may add are dropped. */
+/** The usage windows Claude Code knows a grant can clear. `rawClears` keeps any others. */
 export const ANTHROPIC_RESET_WINDOWS = [
   'five_hour',
   'seven_day',
   'seven_day_overage_included',
+  'seven_day_opus',
+  'seven_day_sonnet',
+  'seven_day_cowork',
+  'seven_day_omelette',
+  'seven_day_oauth_apps',
 ] as const;
 export type AnthropicResetWindow = (typeof ANTHROPIC_RESET_WINDOWS)[number];
+
+export const ANTHROPIC_RESET_TYPES = ['session', 'weekly', 'full'] as const;
+export type AnthropicResetType = (typeof ANTHROPIC_RESET_TYPES)[number];
+
+/** Why upstream says a grant can't be used now (Claude Code's list). */
+export const ANTHROPIC_UNAVAILABLE_REASONS = [
+  'cooldown',
+  'blocked_five_hour',
+  'blocked_seven_day',
+  'blocked_opus',
+  'blocked_sonnet',
+  'blocked_other',
+  'cannot_clear',
+  'needs_limit',
+  'unavailable',
+] as const;
+export type AnthropicUnavailableReason = (typeof ANTHROPIC_UNAVAILABLE_REASONS)[number];
+
+/**
+ * Reasons a claim answer can carry. Every one but the two below means the server refused before
+ * spending; those two mean it may have spent.
+ */
+const CLAIM_REFUSAL_REASONS = new Set([
+  'config_off',
+  'tier',
+  'seat',
+  'mobile',
+  'surface',
+  'cli_version',
+  'no_grant',
+  'tenure',
+  'other_experiment',
+  'unavailable',
+  'unknown',
+  'paused',
+  'expired',
+  'unknown_grant',
+  'not_next_grant',
+  'grant_id_required',
+  'not_limited',
+  'cooldown',
+]);
+const CLAIM_INDETERMINATE_REASONS = new Set(['stamp_indeterminate', 'reset_unconfirmed']);
 
 /** Terminal answers the claim endpoint can give. */
 export const ANTHROPIC_RESET_RESULTS = [
@@ -32,9 +81,18 @@ export const ANTHROPIC_RESET_RESULTS = [
   'unavailable',
 ] as const;
 export type AnthropicResetUpstreamResult = (typeof ANTHROPIC_RESET_RESULTS)[number];
-/** Upstream results plus the two HTTP refusals that prove nothing was spent. */
+/**
+ * Upstream results plus the refusals that prove nothing was spent: two HTTP statuses, and an
+ * error answer that names a refusal reason such as `not_next_grant`.
+ */
 export type AnthropicResetSettledCode =
-  AnthropicResetUpstreamResult | 'rate_limited' | 'auth_error';
+  AnthropicResetUpstreamResult | 'rate_limited' | 'auth_error' | 'refused';
+
+export interface AnthropicResetClaimAnswer {
+  code: AnthropicResetSettledCode;
+  /** The server's reason, when it gave a known one. */
+  reason: string | null;
+}
 
 export interface AnthropicResetGrant {
   id: string;
@@ -43,11 +101,26 @@ export interface AnthropicResetGrant {
   resetsLeft: number;
   startsAt: string | null;
   endsAt: string | null;
+  /** The windows it clears that taproot knows. */
   clears: AnthropicResetWindow[];
+  /** Every window upstream listed, known or not, for display. */
+  rawClears: string[];
+  /** True when upstream listed a window taproot does not know. */
+  clearsUnknown: boolean;
   paused: boolean;
   usableNow: boolean;
   useRequiresLimit: boolean;
   percentUsed: Partial<Record<AnthropicResetWindow, number>>;
+  /** Upstream's `type`, which follows the account's state: a full grant reads `weekly` while no
+   * 5-hour session is open, and a Fable grant reads `full`. */
+  type: AnthropicResetType | null;
+  /** Upstream's `type` when it is not one taproot knows, for display. */
+  rawType: string | null;
+  /** True for a Fable reset, which gives back the weekly usage Fable spent. */
+  givesBackWeekly: boolean;
+  /** Limits the account is at that this grant does not refill. */
+  blocking: AnthropicResetWindow[];
+  unavailableReason: AnthropicUnavailableReason | null;
 }
 
 export interface AnthropicResetGrantStatus {
@@ -58,6 +131,12 @@ export interface AnthropicResetGrantStatus {
   nextGrantId: string | null;
   weeklyResetsAt: string | null;
   cooldownUntil: string | null;
+  /** Limits the account is at. */
+  exhausted: AnthropicResetWindow[];
+  /** The limits in the same response, when the read carried them. */
+  usage?: ClaudeUsageLimits | null;
+  /** When the response arrived, epoch ms. */
+  readAt?: number;
 }
 
 export type AnthropicResetGrantErrorCode = 'auth' | 'upstream' | 'malformed' | 'rate_limited';
@@ -132,12 +211,28 @@ function parseWindows(value: unknown): AnthropicResetWindow[] | undefined {
   return ANTHROPIC_RESET_WINDOWS.filter((window) => value.includes(window));
 }
 
+const RAW_NAME_RE = /^[a-z0-9_]{1,40}$/;
+
+/** Unknown upstream names, kept only when they look like an identifier. */
+function rawNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === 'string'))]
+    .filter((item) => RAW_NAME_RE.test(item))
+    .slice(0, 12);
+}
+
+function oneOf<T extends string>(list: readonly T[], value: unknown): T | null {
+  return typeof value === 'string' && (list as readonly string[]).includes(value)
+    ? (value as T)
+    : null;
+}
+
 function parsePercentUsed(value: unknown): Partial<Record<AnthropicResetWindow, number>> {
   const out: Partial<Record<AnthropicResetWindow, number>> = {};
   if (!isRecord(value)) return out;
   for (const window of ANTHROPIC_RESET_WINDOWS) {
     const percent = value[window];
-    if (typeof percent === 'number' && Number.isInteger(percent) && percent >= 0 && percent <= 100)
+    if (typeof percent === 'number' && Number.isFinite(percent) && percent >= 0 && percent <= 100)
       out[window] = percent;
   }
   return out;
@@ -173,10 +268,21 @@ function parseGrant(value: unknown): AnthropicResetGrant | null {
     startsAt,
     endsAt,
     clears,
+    rawClears: rawNames(value.clears),
+    clearsUnknown:
+      Array.isArray(value.clears) &&
+      value.clears.some(
+        (window) => !(ANTHROPIC_RESET_WINDOWS as readonly unknown[]).includes(window)
+      ),
     paused,
     usableNow,
     useRequiresLimit,
     percentUsed: parsePercentUsed(value.percent_used),
+    type: oneOf(ANTHROPIC_RESET_TYPES, value.type),
+    rawType: typeof value.type === 'string' && RAW_NAME_RE.test(value.type) ? value.type : null,
+    givesBackWeekly: value.gives_back_weekly === true,
+    blocking: parseWindows(value.blocking) ?? [],
+    unavailableReason: oneOf(ANTHROPIC_UNAVAILABLE_REASONS, value.unavailable_reason),
   };
 }
 
@@ -217,6 +323,7 @@ export function parseAnthropicResetGrantStatus(block: unknown): AnthropicResetGr
     nextGrantId: typeof next === 'string' && seen.has(next) ? next : null,
     weeklyResetsAt,
     cooldownUntil,
+    exhausted: parseWindows(block.exhausted) ?? [],
   };
 }
 
@@ -258,7 +365,7 @@ export async function readClaudeResetGrants(authIndex: string) {
   const body = await readAccount(authIndex, ANTHROPIC_RESET_GRANT_STATUS_PATH);
   const status = parseAnthropicResetGrantStatus(body.cedar_ember);
   if (!status) throw new AnthropicResetGrantError('malformed');
-  return status;
+  return { ...status, usage: parseClaudeUsageLimits(body), readAt: Date.now() };
 }
 
 export async function readClaudeOrganization(authIndex: string) {
@@ -270,12 +377,18 @@ export async function readClaudeOrganization(authIndex: string) {
   return uuid.toLowerCase();
 }
 
+/** A known refusal reason from a claim answer, or null. */
+function refusalReason(body: unknown): string | null {
+  const reason = isRecord(body) ? body.reason : undefined;
+  return typeof reason === 'string' && CLAIM_REFUSAL_REASONS.has(reason) ? reason : null;
+}
+
 export async function claimClaudeResetGrant(
   authIndex: string,
   organization: string,
   grantId: string,
   requestId: string
-): Promise<AnthropicResetSettledCode> {
+): Promise<AnthropicResetClaimAnswer> {
   if (
     !ORGANIZATION_UUID_RE.test(organization) ||
     !ANTHROPIC_RESET_GRANT_ID_RE.test(grantId) ||
@@ -297,18 +410,29 @@ export async function claimClaudeResetGrant(
       },
       { timeout: ANTHROPIC_RESET_GRANT_REDEEM_TIMEOUT_MS }
     );
-    if (response.statusCode === 429) return 'rate_limited';
-    if (response.statusCode === 401 || response.statusCode === 403) return 'auth_error';
-    const result = isRecord(response.body) ? response.body.result : undefined;
+    if (response.statusCode === 429) return { code: 'rate_limited', reason: null };
+    if (response.statusCode === 401 || response.statusCode === 403)
+      return { code: 'auth_error', reason: null };
+    const body = response.body;
+    const result = isRecord(body) ? body.result : undefined;
+    const rawReason = isRecord(body) ? body.reason : undefined;
+    if (typeof rawReason === 'string' && CLAIM_INDETERMINATE_REASONS.has(rawReason)) {
+      throw new AnthropicResetGrantUnknownOutcome();
+    }
+    const reason = refusalReason(body);
+    const ok = response.statusCode >= 200 && response.statusCode < 300;
     if (
-      response.statusCode >= 200 &&
-      response.statusCode < 300 &&
+      ok &&
       typeof result === 'string' &&
       (ANTHROPIC_RESET_RESULTS as readonly string[]).includes(result)
     ) {
-      return result as AnthropicResetUpstreamResult;
+      return { code: result as AnthropicResetUpstreamResult, reason };
     }
-  } catch {
+    if ((ok || (response.statusCode >= 400 && response.statusCode < 500)) && reason) {
+      return { code: 'refused', reason };
+    }
+  } catch (error) {
+    if (error instanceof AnthropicResetGrantUnknownOutcome) throw error;
     /* The proxy may have sent the claim even if the management request failed. */
   }
   throw new AnthropicResetGrantUnknownOutcome();

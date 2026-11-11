@@ -94,6 +94,8 @@ export interface CodexUsagePayload {
   rateLimitResetCredits?: CodexRateLimitResetCredits | null;
 }
 
+import type { ClaudeUsageLimits } from '@/services/api/claudeUsageLimits';
+
 // Claude API payload types
 export interface ClaudeUsageWindow {
   utilization: number | null;
@@ -211,6 +213,8 @@ export interface ClaudeQuotaWindow {
 export interface ClaudeQuotaState {
   status: 'idle' | 'loading' | 'success' | 'error';
   windows: ClaudeQuotaWindow[];
+  /** The 5-hour, weekly, and Fable limits from the same read. */
+  limits?: ClaudeUsageLimits | null;
   extraUsage?: ClaudeExtraUsage | null;
   dollarWindows?: ClaudeDollarWindow[];
   observedAt?: string | null;

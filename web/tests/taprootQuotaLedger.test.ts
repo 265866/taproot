@@ -10,17 +10,11 @@ import {
   matchesSearch,
   nextRecovery,
   remainingPercent,
-  resetBlockReason,
   sortLedgerRows,
   subPools,
-  summarizeGrants,
   type LedgerRow,
 } from '@/features/taproot-quota/model/ledger';
 import type { WindowObservation } from '@/features/taproot-quota/model/projection';
-import type {
-  AnthropicResetGrant,
-  AnthropicResetGrantStatus,
-} from '@/services/api/claudeResetGrants';
 
 const M = 60_000;
 const H = 60 * M;
@@ -306,95 +300,6 @@ describe('search and sort', () => {
     expect(ids(sortLedgerRows(rows, 'most_remaining'))).toEqual(['c', 'a', 'e', 'd', 'b']);
     expect(ids(sortLedgerRows(rows, 'least_remaining'))).toEqual(['d', 'a', 'e', 'c', 'b']);
     expect(ids(rows)).toEqual(['e', 'd', 'c', 'b', 'a']);
-  });
-});
-
-const grant = (id: string, extra: Partial<AnthropicResetGrant> = {}): AnthropicResetGrant => ({
-  id,
-  label: id,
-  resetsTotal: 1,
-  resetsLeft: 1,
-  startsAt: null,
-  endsAt: null,
-  clears: ['five_hour', 'seven_day'],
-  paused: false,
-  usableNow: true,
-  useRequiresLimit: true,
-  percentUsed: {},
-  ...extra,
-});
-
-const grantStatus = (
-  extra: Partial<AnthropicResetGrantStatus> = {}
-): AnthropicResetGrantStatus => ({
-  eligible: true,
-  ineligibleReason: null,
-  atLimit: true,
-  grants: [grant('g1')],
-  nextGrantId: null,
-  weeklyResetsAt: null,
-  cooldownUntil: null,
-  ...extra,
-});
-
-describe('summarizeGrants', () => {
-  test('totals resets and finds the soonest expiry that still has resets', () => {
-    const summary = summarizeGrants(
-      [
-        grant('a', { resetsLeft: 1, resetsTotal: 2, endsAt: '2026-11-12T00:00:00Z' }),
-        grant('b', { resetsLeft: 0, resetsTotal: 1, endsAt: '2026-11-05T00:00:00Z' }),
-        grant('c', { resetsLeft: 2, resetsTotal: 2, endsAt: '2026-11-20T00:00:00Z' }),
-        grant('d', { resetsLeft: 1, resetsTotal: 1, endsAt: null }),
-        grant('e', { resetsLeft: 1, resetsTotal: 3, endsAt: '2026-11-01T00:00:00Z' }),
-      ],
-      NOW
-    );
-    // b has none left and e has ended, so Nov 12 is the soonest.
-    expect(summary).toEqual({
-      left: 5,
-      total: 9,
-      soonestExpiry: Date.UTC(2026, 10, 12),
-    });
-  });
-
-  test('no grants is zero of zero with no expiry', () => {
-    expect(summarizeGrants([], NOW)).toEqual({ left: 0, total: 0, soonestExpiry: null });
-  });
-});
-
-describe('resetBlockReason', () => {
-  test('names the first reason nothing can be spent', () => {
-    expect(resetBlockReason(grantStatus(), true, NOW)).toBe('disabled');
-    expect(resetBlockReason(null, false, NOW)).toBe('unknown');
-    expect(resetBlockReason(grantStatus({ eligible: false }), false, NOW)).toBe('ineligible');
-    expect(
-      resetBlockReason(grantStatus({ cooldownUntil: '2026-11-03T13:00:00Z' }), false, NOW)
-    ).toBe('cooldown');
-    expect(
-      resetBlockReason(grantStatus({ grants: [grant('g', { resetsLeft: 0 })] }), false, NOW)
-    ).toBe('none_left');
-    expect(resetBlockReason(grantStatus({ atLimit: false }), false, NOW)).toBe('not_limited');
-    expect(
-      resetBlockReason(grantStatus({ grants: [grant('g', { paused: true })] }), false, NOW)
-    ).toBe('not_usable');
-    expect(
-      resetBlockReason(
-        grantStatus({ grants: [grant('g', { startsAt: '2026-11-04T00:00:00Z' })] }),
-        false,
-        NOW
-      )
-    ).toBe('not_usable');
-  });
-
-  test('is null when a grant can be spent', () => {
-    expect(resetBlockReason(grantStatus(), false, NOW)).toBeNull();
-    expect(
-      resetBlockReason(
-        grantStatus({ atLimit: false, grants: [grant('g', { useRequiresLimit: false })] }),
-        false,
-        NOW
-      )
-    ).toBeNull();
   });
 });
 

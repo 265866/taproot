@@ -18,12 +18,15 @@ import { QuotaResetLabel } from '../../components/QuotaResetLabel';
 import { collectQuotaRowInstants, pickUrgentRowId } from '../../resetSchedule';
 import type { QuotaBodyProps } from '../../types';
 
+const LIMIT_ROW_IDS: ReadonlySet<string> = new Set(['five-hour', 'seven-day', 'seven-day-fable']);
+
 export function ClaudeQuotaBody({
   quota,
   classes,
   readAt,
   planItems,
   afterPlan,
+  afterWindows,
 }: QuotaBodyProps<ClaudeQuotaState>) {
   const { t, i18n } = useTranslation();
   const now = useNow();
@@ -31,7 +34,10 @@ export function ClaudeQuotaBody({
     () => pickUrgentRowId(collectQuotaRowInstants('claude', quota), now),
     [quota, now]
   );
-  const windows = quota.windows ?? [];
+  // The limits block draws these three; the rows below keep any other window.
+  const windows = (quota.windows ?? []).filter(
+    (window) => !quota.limits || !LIMIT_ROW_IDS.has(window.id)
+  );
   const extraUsage = quota.extraUsage ?? null;
   const planType = quota.planType ?? null;
   const language = i18n.resolvedLanguage;
@@ -167,7 +173,7 @@ export function ClaudeQuotaBody({
           </div>
         );
       })}
-      {windows.length === 0 && !extraUsage && !quota.dollarWindows?.length ? (
+      {windows.length === 0 && !extraUsage && !quota.dollarWindows?.length && !quota.limits ? (
         <div className={classes.quotaMessage}>{t('claude_quota.empty_windows')}</div>
       ) : (
         windows.map((window, index) => {
@@ -207,6 +213,7 @@ export function ClaudeQuotaBody({
           );
         })
       )}
+      {afterWindows}
     </>
   );
 }

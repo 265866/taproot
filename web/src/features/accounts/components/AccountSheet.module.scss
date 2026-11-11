@@ -173,3 +173,38 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stamp {
+  font-size: 12px;
+  color: var(--text-tertiary);
+
+  @media (max-width: $breakpoint-mobile), (pointer: coarse) {
+    font-size: 13px;
+  }
+}
+
+.otherWindows {
+  margin-top: 16px;
+}
+
+.spin {
+  animation: sheet-spin 0.9s linear infinite;
+}
+
+@keyframes sheet-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}

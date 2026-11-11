@@ -49,8 +49,8 @@ type Operation = {
   code?: AnthropicResetSettledCode;
 };
 type ResetGrantResult =
-  | { code: AnthropicResetSettledCode; unresolved: boolean }
-  | { code: 'cooldown_clear_failed'; unresolved: false };
+  | { code: AnthropicResetSettledCode; reason: string | null; unresolved: boolean }
+  | { code: 'cooldown_clear_failed'; reason: null; unresolved: false };
 const defaultDependencies = {
   revision: () => apiClient.getConnectionRevision(),
   readStatus: readClaudeResetGrants,
@@ -136,7 +136,12 @@ export function createResetGrantOperations(deps = defaultDependencies) {
         if (wasRetry && deps.now() - operation.createdAt >= RETRY_WINDOW_MS) {
           throw new ResetGrantPreflightError('operation', 'expired');
         }
-        const code = await deps.claim(authIndex, organization, grantId, operation.requestId);
+        const { code, reason } = await deps.claim(
+          authIndex,
+          organization,
+          grantId,
+          operation.requestId
+        );
         assertSession();
         // A refusal on a retry cannot prove that the earlier ambiguous POST did not spend.
         if (!wasRetry || code === 'reset' || code === 'already_used') operation.code = code;
@@ -149,10 +154,10 @@ export function createResetGrantOperations(deps = defaultDependencies) {
             }
           } catch {
             assertSession();
-            return { code: 'cooldown_clear_failed', unresolved: false };
+            return { code: 'cooldown_clear_failed', reason: null, unresolved: false };
           }
         }
-        return { code, unresolved: !operation.code };
+        return { code, reason, unresolved: !operation.code };
       } finally {
         if (deps.revision() === session) busy.delete(key);
       }

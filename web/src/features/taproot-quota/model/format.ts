@@ -88,3 +88,51 @@ export function accountName(account: { label: string; authIndex: string }, show:
   const label = account.label || account.authIndex;
   return show ? label : maskLabel(label);
 }
+
+/**
+ * When a limit resets: `4:50 PM` later today, `Thu 4:00 AM` within six days, otherwise
+ * `Nov 20, 4:00 AM`.
+ */
+export function formatResetClock(t: number, now: number, locale?: string): string {
+  if (new Date(t).toDateString() === new Date(now).toDateString()) {
+    return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(t);
+  }
+  return formatMoment(t, now, locale);
+}
+
+/** Time until `t`: `in 1 d 12 h`, `in 1 h 9 m`, `in 9 m`; an instant passed reads `now`. */
+export function formatCountdown(t: number, now: number): string {
+  const minutes = Math.floor((t - now) / MINUTE_MS);
+  if (minutes <= 0) return 'now';
+  const days = Math.floor(minutes / (24 * 60));
+  const hours = Math.floor((minutes % (24 * 60)) / 60);
+  if (days > 0) return hours > 0 ? `in ${days} d ${hours} h` : `in ${days} d`;
+  if (hours > 0) return `in ${hours} h ${minutes % 60} m`;
+  return `in ${minutes} m`;
+}
+
+/** `Thu, Nov 12, 4:00 AM`, or with the year: `Thu, Dec 10, 2026, 2:00 PM`. */
+export function formatDayTime(t: number, locale?: string, withYear = false): string {
+  return new Intl.DateTimeFormat(locale, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(withYear ? { year: 'numeric' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(t);
+}
+
+/** `3:39 PM`. */
+export function formatClock(t: number, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(t);
+}
+
+/** The browser's short time zone name at `t`, such as `PST`. */
+export function timeZoneName(t: number, locale?: string): string {
+  return (
+    new Intl.DateTimeFormat(locale, { timeZoneName: 'short' })
+      .formatToParts(t)
+      .find((part) => part.type === 'timeZoneName')?.value ?? ''
+  );
+}
