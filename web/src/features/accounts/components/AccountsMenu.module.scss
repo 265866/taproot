@@ -29,6 +29,11 @@
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
+
+  @media (max-width: $breakpoint-mobile), (pointer: coarse) {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -92,6 +97,10 @@
   &:disabled {
     color: var(--text-quaternary);
     cursor: not-allowed;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
   }
 
   &:focus-visible {

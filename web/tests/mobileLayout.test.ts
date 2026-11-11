@@ -13,7 +13,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compileString } from 'sass';
-import { focusFirstItem } from '@/features/accounts/components/usePopover';
+import { focusFirstItem } from '@/hooks/usePopover';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 

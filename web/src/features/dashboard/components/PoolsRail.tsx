@@ -15,7 +15,13 @@ import { useEmailMask } from '@/hooks/useEmailMask';
 import { useReservedHeight } from '../hooks/useReservedHeight';
 import type { Pool, PoolAccount, Pools } from '@/services/api/taprootStatus';
 import type { Read } from '../hooks/useDashboardData';
-import { formatAccounts, formatClock, formatIn, formatPercent } from '../model/format';
+import {
+  formatAccounts,
+  formatClock,
+  formatIn,
+  formatInShort,
+  formatPercent,
+} from '../model/format';
 import { accountsLink } from '../model/links';
 import { runsOutView, waitingText } from '../model/views';
 import { providerColor, providerLabel } from '../model/providers';
@@ -28,10 +34,12 @@ interface PoolsRailProps {
   pools: Read<Pools>;
   nowMs: number;
   onRetry: () => void;
+  /** Phones: the reset, burn, and run-out facts as three cells under the bars. */
+  compact?: boolean;
 }
 
 /** The rail's second section: each provider's pool right now, from `GET /pools`. */
-export function PoolsRail({ pools, nowMs, onRetry }: PoolsRailProps) {
+export function PoolsRail({ pools, nowMs, onRetry, compact = false }: PoolsRailProps) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
   const headingId = useId();
@@ -61,7 +69,9 @@ export function PoolsRail({ pools, nowMs, onRetry }: PoolsRailProps) {
   } else if (shown.length === 0) {
     body = EMPTY_PROVIDERS.map((provider) => <EmptyPool key={provider} provider={provider} />);
   } else {
-    body = shown.map((pool) => <PoolCard key={pool.provider} pool={pool} nowMs={nowMs} />);
+    body = shown.map((pool) => (
+      <PoolCard key={pool.provider} pool={pool} nowMs={nowMs} compact={compact} />
+    ));
   }
 
   return (
@@ -69,6 +79,7 @@ export function PoolsRail({ pools, nowMs, onRetry }: PoolsRailProps) {
       ref={sectionRef}
       style={reservedStyle}
       className={styles.block}
+      data-compact={compact || undefined}
       aria-labelledby={headingId}
       aria-busy={!data && !error}
     >
@@ -76,7 +87,9 @@ export function PoolsRail({ pools, nowMs, onRetry }: PoolsRailProps) {
         <h2 id={headingId} className={styles.title}>
           {t('dashboard.pools.title')}
         </h2>
-        <span className={styles.caption}>{t('dashboard.pools.caption')}</span>
+        <span className={styles.caption}>
+          {t(compact ? 'dashboard.pools.caption_short' : 'dashboard.pools.caption')}
+        </span>
         {data && error ? (
           <span className={styles.stale} title={t('console.stale_hint')}>
             {t('console.stale')}
@@ -143,7 +156,7 @@ const STATE_KEYS: Record<Exclude<PoolAccount['state'], 'serving'>, string> = {
   disabled: 'dashboard.pools.state_disabled',
 };
 
-function PoolCard({ pool, nowMs }: { pool: Pool; nowMs: number }) {
+function PoolCard({ pool, nowMs, compact }: { pool: Pool; nowMs: number; compact: boolean }) {
   const { t } = useTranslation();
   const name = providerLabel(pool.provider);
   const color = providerColor(pool.provider);
@@ -193,30 +206,72 @@ function PoolCard({ pool, nowMs }: { pool: Pool; nowMs: number }) {
           <span>{waitingText(pool.waitingAccounts, nowMs, t)}</span>
         </p>
       ) : null}
-      <dl className={styles.facts}>
+      {compact ? (
+        <PoolFactCells pool={pool} nowMs={nowMs} />
+      ) : (
+        <dl className={styles.facts}>
+          <dt>{t('dashboard.pools.next_reset')}</dt>
+          <dd>
+            {pool.nextReset ? (
+              <>
+                {formatClock(Date.parse(pool.nextReset.at), nowMs)}
+                <span className={styles.faint}>
+                  {formatIn(Date.parse(pool.nextReset.at), nowMs, t)}
+                </span>
+              </>
+            ) : (
+              <span className={styles.faint}>{t('dashboard.pools.no_reset')}</span>
+            )}
+          </dd>
+          <dt>{t('dashboard.pools.burn')}</dt>
+          <dd>
+            {pool.burnPctPerHour > 0
+              ? t('dashboard.pools.burn_value', { pct: formatPercent(pool.burnPctPerHour) })
+              : t('dashboard.pools.burn_idle')}
+          </dd>
+          <dt>{t('dashboard.pools.runs_out')}</dt>
+          <RunsOut pool={pool} nowMs={nowMs} />
+        </dl>
+      )}
+    </div>
+  );
+}
+
+/** A phone's facts: Next reset, Burn, and Runs out as three cells with short values. */
+function PoolFactCells({ pool, nowMs }: { pool: Pool; nowMs: number }) {
+  const { t } = useTranslation();
+  const view = runsOutView(pool, nowMs);
+  const resetMs = pool.nextReset ? Date.parse(pool.nextReset.at) : null;
+  return (
+    <dl className={styles.factCells}>
+      <div>
         <dt>{t('dashboard.pools.next_reset')}</dt>
         <dd>
-          {pool.nextReset ? (
+          {resetMs !== null ? (
             <>
-              {formatClock(Date.parse(pool.nextReset.at), nowMs)}
-              <span className={styles.faint}>
-                {formatIn(Date.parse(pool.nextReset.at), nowMs, t)}
-              </span>
+              {formatInShort(resetMs, nowMs, t)}
+              <small>{formatClock(resetMs, nowMs)}</small>
             </>
           ) : (
-            <span className={styles.faint}>{t('dashboard.pools.no_reset')}</span>
+            t('dashboard.pools.no_reset')
           )}
         </dd>
-        <dt>{t('dashboard.pools.burn')}</dt>
+      </div>
+      <div>
+        <dt>{t('dashboard.pools.burn_cell')}</dt>
         <dd>
           {pool.burnPctPerHour > 0
-            ? t('dashboard.pools.burn_value', { pct: formatPercent(pool.burnPctPerHour) })
+            ? t('dashboard.pools.burn_cell_value', { pct: formatPercent(pool.burnPctPerHour) })
             : t('dashboard.pools.burn_idle')}
         </dd>
+      </div>
+      <div>
         <dt>{t('dashboard.pools.runs_out')}</dt>
-        <RunsOut pool={pool} nowMs={nowMs} />
-      </dl>
-    </div>
+        <dd data-tone={view.tone}>
+          {t(`${view.key}_short`, { time: view.atMs ? formatClock(view.atMs, nowMs) : '' })}
+        </dd>
+      </div>
+    </dl>
   );
 }
 

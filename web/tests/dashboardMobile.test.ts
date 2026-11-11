@@ -82,9 +82,8 @@ describe('touch targets are 44 px on a touch screen of any width', () => {
   });
 
   test('compact buttons, the window selector, and the header and sidebar buttons', () => {
-    expect(px(rule(compile('styles/components.scss'), '.btn.btn-sm', COARSE), 'min-height')).toBe(
-      44
-    );
+    // Every .btn, compact ones included.
+    expect(px(rule(compile('styles/components.scss'), '.btn', COARSE), 'min-height')).toBe(44);
     const segment = rule(compile('components/ui/SegmentedControl.module.scss'), '.segment', COARSE);
     expect(px(segment, 'height')).toBe(44);
     expect(px(segment, 'min-width')).toBe(44);
@@ -119,16 +118,15 @@ describe('touch targets are 44 px on a touch screen of any width', () => {
     expect(px(rule(main, '.unpriced summary', COARSE), 'line-height')).toBe(44);
   });
 
-  test("the Usage page's segments, where Usage by device and by model land", () => {
-    const usage = compile('features/taproot-usage/TaprootUsage.module.scss');
-    const touch = rule(usage, '.segment', COARSE);
-    expect(px(touch, 'min-height')).toBe(44);
+  test("the Usage page's range, where Usage by device and by model land", () => {
+    const touch = rule(compile('components/ui/SegmentedControl.module.scss'), '.segment', COARSE);
+    expect(px(touch, 'height')).toBe(44);
     expect(px(touch, 'min-width')).toBe(44);
   });
 
-  test("the Accounts page's quota range segments", () => {
-    const quota = rule(compile('features/taproot-quota/quota.module.scss'), '.segment', COARSE);
-    expect(px(quota, 'height')).toBe(44);
+  test("the Accounts page's date buttons", () => {
+    const view = compile('features/accounts/components/ViewControls.module.scss');
+    expect(px(rule(view, '.today', COARSE), 'height')).toBe(44);
   });
 });
 
@@ -205,10 +203,11 @@ describe('the main column on narrow and stale screens', () => {
     expect(px(rule(main, '.colTopCost', PHONE), 'width')).not.toBeNull();
   });
 
-  test('on phones and touch screens, top-list names wrap rather than cut', () => {
+  test('on phones and touch screens, top-list names wrap at hyphens rather than cut or split', () => {
     const wrap = rule(main, '.topLabel', '@media (max-width: 768px), (pointer: coarse)');
     expect(wrap).toContain('white-space: normal');
-    expect(wrap).toContain('overflow-wrap: anywhere');
+    // `anywhere` splits "claude-sonnet" mid-word.
+    expect(wrap).toContain('overflow-wrap: normal');
   });
 
   test("a phone failure row's status keeps its height when the device and model wrap", () => {

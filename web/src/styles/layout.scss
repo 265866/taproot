@@ -26,6 +26,12 @@
   text-decoration: none;
   transform: translateY(calc(-100% - 16px));
 
+  @media (pointer: coarse) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
   &:focus-visible {
     transform: none;
     outline: 2px solid var(--accent);

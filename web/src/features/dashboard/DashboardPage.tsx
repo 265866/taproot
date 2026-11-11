@@ -64,6 +64,8 @@ export function DashboardPage() {
   );
   // `$breakpoint-page-aside`.
   const railBeside = useMediaQuery('(min-width: 1192px)');
+  // `$breakpoint-mobile`: phones get the Digest's compact Needs you and pool facts.
+  const digest = useMediaQuery('(max-width: 768px)');
 
   return (
     <DashboardView
@@ -73,6 +75,7 @@ export function DashboardPage() {
       attention={attention}
       loggingToFile={loggingToFile}
       railBeside={railBeside}
+      digest={digest}
       baseUrl={baseUrl}
       hint={hint}
       onRetry={() => void load()}
@@ -89,6 +92,8 @@ export interface DashboardViewProps {
   loggingToFile: boolean | null;
   /** The window is at least `$breakpoint-page-aside` wide, where the rail sits beside the page. */
   railBeside: boolean;
+  /** Below `$breakpoint-mobile`: the phone Digest, with compact Needs you rows and pool facts. */
+  digest?: boolean;
   baseUrl: string;
   hint: ReturnType<typeof addressHint>;
   onRetry: () => void;
@@ -114,6 +119,7 @@ export function DashboardView({
   attention: givenAttention,
   loggingToFile,
   railBeside,
+  digest = false,
   baseUrl,
   hint,
   onRetry: retry,
@@ -159,7 +165,7 @@ export function DashboardView({
 
   const fixes = useFixRuns(onChanged);
   const pageRef = useRef<HTMLDivElement>(null);
-  const railRef = useKeepFocus(pageRef);
+  const railRef = useKeepFocus(pageRef, digest);
 
   const verdict = (className: string) => (
     <Verdict status={reads.status} onRetry={retry} className={className} />
@@ -175,8 +181,9 @@ export function DashboardView({
         nowMs={Math.max(attention.loadedAt ?? 0, nowMs)}
         onRetry={retryAttention}
         fixes={fixes}
+        compact={digest}
       />
-      <PoolsRail pools={reads.pools} nowMs={nowMs} onRetry={retry} />
+      <PoolsRail pools={reads.pools} nowMs={nowMs} onRetry={retry} compact={digest} />
     </div>
   );
   const railInline = (

@@ -60,119 +60,6 @@
   min-width: 0;
 }
 
-/* ---------- controls ---------- */
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  min-width: 0;
-}
-
-.segmentedGroup {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 3px 3px 0;
-  border-radius: 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-}
-
-.segmentedGroup > .segmented:first-child {
-  margin-left: 3px;
-}
-
-.controlLabel {
-  padding: 0 6px 0 12px;
-  font-size: 14px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.segmented {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.segment,
-.toggle,
-.iconButton {
-  @include button-reset;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  transition:
-    background var(--dur-hover, 120ms) var(--ease-out-strong, ease),
-    color var(--dur-hover, 120ms) var(--ease-out-strong, ease);
-
-  &:hover:not(:disabled) {
-    color: var(--text-primary);
-    background: var(--bg-tertiary);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.55;
-  }
-}
-
-.toggle {
-  height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-primary);
-}
-
-.segmentActive,
-.segmentActive:hover:not(:disabled) {
-  color: var(--accent-text);
-  background: var(--accent-subtle);
-}
-
-.selectWrap {
-  min-width: 132px;
-}
-
-.rangeNav {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.rangeLabel {
-  margin-right: 6px;
-  font-size: 14px;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.iconButton {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-}
-
-.flip {
-  transform: scaleX(-1);
-}
-
 .error {
   padding: 12px 16px;
   border-radius: 10px;
@@ -583,10 +470,6 @@
     height: 240px;
   }
 
-  .rangeNav {
-    margin-left: 0;
-  }
-
   .accountHead {
     display: none;
   }
@@ -597,21 +480,5 @@
 
   .accountRow {
     grid-template-columns: 1fr 1fr;
-  }
-}
-
-// 44 px targets on a touch screen; a mouse keeps the compact segments.
-@media (pointer: coarse) {
-  .segment {
-    min-width: 44px;
-    height: 44px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .segment,
-  .toggle,
-  .iconButton {
-    transition: none;
   }
 }

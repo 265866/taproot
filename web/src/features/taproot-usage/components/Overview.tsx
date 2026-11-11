@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChoiceMenu } from '@/components/ui/Dropdown';
 import type { UsageGroupBy, UsageSummary } from '@/services/api/taproot';
 import {
   OTHER_GROUP,
@@ -12,6 +13,7 @@ import {
   tokenRows,
 } from '../logic/summary';
 import { groupColors } from '../logic/viz';
+import { GROUP_BYS } from '../hooks/useUsageParams';
 import { KpiTiles } from './KpiTiles';
 import { BreakdownTable } from './BreakdownTable';
 import { CostChart, PercentileChart, RequestsChart, TokenMultiples, type TimeAxis } from './Charts';
@@ -25,6 +27,12 @@ interface Props {
   accountOrder: readonly string[];
   labelFor: (key: string) => string;
   onViewRequests?: (key: string) => void;
+  /**
+   * The chosen grouping, which leads the data on screen while a new one loads, and its setter: the
+   * cost chart's Group by menu, which regroups the whole Overview. Phones choose it in the Options
+   * sheet instead.
+   */
+  stackBy?: { value: UsageGroupBy; onChange: (group: UsageGroupBy) => void };
 }
 
 function OverviewView({
@@ -35,6 +43,7 @@ function OverviewView({
   accountOrder,
   labelFor,
   onViewRequests,
+  stackBy,
 }: Props) {
   const { t } = useTranslation();
   const ranked = useMemo(() => rankGroups(summary), [summary]);
@@ -84,6 +93,20 @@ function OverviewView({
               })}
             </p>
           </div>
+          {stackBy ? (
+            <ChoiceMenu<UsageGroupBy>
+              align="end"
+              label={t('taproot_usage.group.group_by')}
+              heading={t('taproot_usage.group.group_by')}
+              ariaLabel={t('taproot_usage.group.group_by')}
+              value={stackBy.value}
+              onChange={stackBy.onChange}
+              options={GROUP_BYS.map((group) => ({
+                value: group,
+                label: t(`taproot_usage.group.${group}`),
+              }))}
+            />
+          ) : null}
         </div>
         {empty ? (
           <div className={styles.empty}>{t('taproot_usage.charts.no_data')}</div>

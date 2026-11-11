@@ -47,13 +47,14 @@
 .triggerSm {
   height: 28px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   box-shadow: none;
 }
 
 @media (pointer: coarse) {
+  .trigger,
   .triggerSm {
-    height: 40px;
+    height: 44px;
   }
 }
 
@@ -95,6 +96,7 @@
 }
 
 .option {
+  overflow: hidden;
   padding: 8px 12px;
   border-radius: $radius-md;
   border: 1px solid transparent;
@@ -104,10 +106,16 @@
   text-align: left;
   font-size: 13px;
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease;
   flex-shrink: 0;
+
+  @media (pointer: coarse) {
+    min-height: 44px;
+  }
 
   &:hover {
     background: color-mix(in srgb, var(--text-primary) 8%, transparent);

@@ -27,7 +27,7 @@ export function KpiTiles({ totals }: { totals: UsageTotals }) {
 
   return (
     <section className={styles.kpiGrid} aria-label={t('taproot_usage.kpi.label')}>
-      <article className={styles.kpi}>
+      <article className={`${styles.kpi} ${styles.kpiPhoneWide}`}>
         <span className={styles.kpiLabel}>{t('taproot_usage.kpi.cost')}</span>
         <strong className={styles.kpiValue}>{formatUSD(totals.costUSD)}</strong>
         <span className={styles.kpiHint}>
@@ -54,7 +54,7 @@ export function KpiTiles({ totals }: { totals: UsageTotals }) {
         </span>
       </article>
 
-      <article className={styles.kpi}>
+      <article className={`${styles.kpi} ${styles.kpiPhoneWide}`}>
         <span className={styles.kpiLabel}>{t('taproot_usage.kpi.cache_hit')}</span>
         <strong className={styles.kpiValue}>{formatRatio(cacheHitRatio(totals))}</strong>
         <span className={styles.kpiHint}>{t('taproot_usage.kpi.cache_hit_hint')}</span>

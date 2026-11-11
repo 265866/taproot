@@ -1,0 +1,184 @@
+@use '../../styles/mixins' as *;
+
+.root {
+  position: relative;
+  min-width: 0;
+}
+
+.trigger {
+  @include button-reset;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+  white-space: nowrap;
+
+  &[aria-expanded='true'] {
+    box-shadow: 0 0 0 2px var(--border-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.trigger.compact {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 5px;
+  font-size: var(--fs-table);
+
+  @media (pointer: coarse) {
+    height: 44px;
+  }
+}
+
+// A phone's control row: a full-height button that names what it holds.
+.trigger.large {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-raised);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  font-size: 14px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .trigger:hover {
+    background: var(--bg-tertiary);
+  }
+}
+
+.triggerText {
+  @include clip-line;
+  min-width: 0;
+}
+
+.triggerLabel {
+  margin-right: 8px;
+  color: var(--text-tertiary);
+}
+
+.large .triggerValue {
+  font-weight: 650;
+}
+
+.chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: $z-dropdown;
+  border: 1px solid var(--border-hover);
+  border-radius: 8px;
+  background: var(--floating-surface);
+  box-shadow: var(--floating-shadow);
+  animation: dropdown-in var(--dur-hover) var(--ease-out-strong);
+
+  &[data-align='start'] {
+    left: 0;
+    transform-origin: top left;
+  }
+
+  &[data-align='end'] {
+    right: 0;
+    transform-origin: top right;
+  }
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 4px;
+}
+
+.popover {
+  width: min(300px, calc(100vw - 32px));
+  padding: 12px;
+}
+
+.heading,
+.groupLabel {
+  padding: 8px 8px 4px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+}
+
+.groupLabel {
+  padding: 2px 0 6px;
+}
+
+.group + .group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.item {
+  @include button-reset;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: var(--fs-table);
+  text-align: left;
+  white-space: nowrap;
+
+  &[aria-checked='true'] {
+    background: var(--accent-subtle);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .large & {
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 14px;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .item:hover:not([aria-checked='true']) {
+    background: var(--bg-tertiary);
+  }
+}
+
+.tick {
+  flex: none;
+  margin-left: auto;
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}

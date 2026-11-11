@@ -17,7 +17,7 @@ import {
   type OAuthProviderCard,
 } from '@/features/oauth/providers';
 import { useAuthStore, useThemeStore } from '@/stores';
-import { moveFocusWithArrows, usePopover } from './usePopover';
+import { moveFocusWithArrows, usePopover } from '@/hooks/usePopover';
 import styles from './AddAccount.module.scss';
 
 interface AddAccountProps {
@@ -37,6 +37,8 @@ interface AddAccountProps {
    */
   startProvider?: string | null;
   onStartHandled?: () => void;
+  /** Phones: the button reads "Add"; its name stays "Add account". */
+  compact?: boolean;
 }
 
 /**
@@ -53,6 +55,7 @@ export function AddAccount({
   onUpload,
   startProvider,
   onStartHandled,
+  compact = false,
 }: AddAccountProps) {
   const { t } = useTranslation();
   const apiBase = useAuthStore((state) => state.apiBase);
@@ -158,10 +161,11 @@ export function AddAccount({
         className={`btn btn-primary btn-sm ${styles.trigger}`}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
+        aria-label={compact ? t('accounts.add.button') : undefined}
         onClick={() => setOpen(!open)}
       >
         <IconPlus size={15} />
-        {t('accounts.add.button')}
+        {t(compact ? 'accounts.add.button_short' : 'accounts.add.button')}
         {waiting > 0 && (
           <span className={styles.badge} aria-label={t('accounts.add.waiting', { count: waiting })}>
             {waiting}

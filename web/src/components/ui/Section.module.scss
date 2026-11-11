@@ -13,11 +13,12 @@
   min-height: 20px;
 }
 
+// A page can set `--section-title-size` and `--section-title-weight`, as the phone Dashboard does.
 .title {
   margin: 0;
   color: var(--text-primary);
-  font-size: var(--fs-body);
-  font-weight: 600;
+  font-size: var(--section-title-size, var(--fs-body));
+  font-weight: var(--section-title-weight, 600);
   letter-spacing: -0.005em;
 }
 

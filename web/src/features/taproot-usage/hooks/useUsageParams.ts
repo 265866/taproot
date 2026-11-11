@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { UsageGroupBy } from '@/services/api/taproot';
 import { decodeUrlValue, encodeUrlValue } from '@/utils/urlValue';
@@ -69,10 +69,15 @@ export function writeUsageParams(
 export function useUsageParams(): [UsageParams, (patch: Partial<UsageParams>) => void] {
   const [search, setSearch] = useSearchParams();
   const params = useMemo(() => readUsageParams(search), [search]);
+  // The router's setter changes with every URL; a stable one spares memoized views a re-render.
+  const setSearchRef = useRef(setSearch);
+  useEffect(() => {
+    setSearchRef.current = setSearch;
+  });
   const update = useCallback(
     (patch: Partial<UsageParams>) =>
-      setSearch((prev) => writeUsageParams(prev, patch), { replace: true }),
-    [setSearch]
+      setSearchRef.current((prev) => writeUsageParams(prev, patch), { replace: true }),
+    []
   );
   return [params, update];
 }

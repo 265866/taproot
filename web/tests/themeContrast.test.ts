@@ -17,6 +17,8 @@ const OPAQUE_SURFACES = [
   'bg-hover',
   'floating-surface',
   'input-bg',
+  'surface-raised',
+  'surface-raised-inset',
 ];
 const TEXT = ['text-primary', 'text-secondary', 'text-tertiary', 'accent-text'];
 const PILL_TEXT = ['text-primary', 'text-secondary', 'accent-text'];

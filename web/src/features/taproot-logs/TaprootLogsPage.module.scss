@@ -99,6 +99,12 @@
   scroll-margin-top: 80px;
 }
 
+@media (pointer: coarse) {
+  .tab {
+    min-height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tab {
     transition: none;

@@ -23,3 +23,42 @@
   justify-content: center;
   gap: 8px;
 }
+
+/* Phones: the title with ⋯ and Add on its right, and the counts under them. */
+@media (max-width: $breakpoint-mobile) {
+  .header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 12px;
+  }
+
+  .titleBlock {
+    display: contents;
+  }
+
+  .title {
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .headerActions {
+    grid-row: 1;
+    grid-column: 2;
+    flex-wrap: nowrap;
+  }
+
+  .meta {
+    grid-column: 1 / -1;
+    font-size: 13px;
+  }
+}
+
+// Phones: cards (`--bg-primary`) and their hairlines (`--border-color`) take the raised surface, as
+// on the Dashboard's Digest. Tablets and desktops keep the flat page.
+@media (max-width: $breakpoint-mobile) {
+  .page {
+    --bg-primary: var(--surface-raised);
+    --border-color: var(--border-raised);
+  }
+}

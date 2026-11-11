@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { IconChevronDown } from './icons';
 import styles from './Select.module.scss';
-import { resolveDropdownStyle } from './selectPosition';
+import { listContentWidth, resolveDropdownStyle } from './selectPosition';
 
 export interface SelectOption {
   value: string;
@@ -38,6 +38,11 @@ interface SelectProps {
   size?: 'sm' | 'md';
   id?: string;
 }
+
+const sameStyle = (a: CSSProperties, b: CSSProperties) => {
+  const keys = Object.keys(a) as (keyof CSSProperties)[];
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+};
 
 export function Select({
   value,
@@ -82,15 +87,21 @@ export function Select({
 
   const updateDropdownStyle = useCallback(() => {
     if (!wrapRef.current) return;
-    setDropdownStyle(
-      resolveDropdownStyle(
-        wrapRef.current.getBoundingClientRect(),
-        window.innerWidth,
-        window.innerHeight,
-        dropdownMinWidth
-      )
+    const contentWidth = dropdownRef.current ? listContentWidth(dropdownRef.current) : 0;
+    const next = resolveDropdownStyle(
+      wrapRef.current.getBoundingClientRect(),
+      window.innerWidth,
+      window.innerHeight,
+      Math.max(dropdownMinWidth ?? 0, contentWidth)
     );
+    setDropdownStyle((prev) => (prev && sameStyle(prev, next) ? prev : next));
   }, [dropdownMinWidth]);
+
+  // The listbox mounts a render after its first position; measure its options once it has.
+  const listMounted = isOpen && dropdownStyle !== null;
+  useLayoutEffect(() => {
+    if (listMounted) updateDropdownStyle();
+  }, [listMounted, updateDropdownStyle]);
 
   const scheduleDropdownStyleUpdate = useCallback(() => {
     if (typeof window === 'undefined') return;

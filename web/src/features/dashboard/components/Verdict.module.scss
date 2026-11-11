@@ -104,13 +104,44 @@
   font-size: var(--fs-meta);
 }
 
+// The phone Digest: a raised card, tinted by the state. The page sets the padding.
 @media (max-width: $breakpoint-mobile) {
+  .verdict {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-primary);
+
+    // Holds a loaded card's height while loading only; a loaded card that wraps to fewer lines on a
+    // wide phone or tablet must not show a blank band.
+    &[aria-busy='true'] {
+      min-height: 96px;
+    }
+
+    &[data-state='normal'] {
+      border-color: color-mix(in srgb, var(--status-ok) 30%, var(--border-color));
+      background: color-mix(in srgb, var(--status-ok) 7%, var(--bg-primary));
+    }
+
+    &[data-state='degraded'] {
+      border-color: color-mix(in srgb, var(--status-warning) 38%, var(--border-color));
+      background: color-mix(in srgb, var(--status-warning) 9%, var(--bg-primary));
+    }
+
+    &[data-state='down'] {
+      border-color: color-mix(in srgb, var(--status-danger) 38%, var(--border-color));
+      background: color-mix(in srgb, var(--status-danger) 9%, var(--bg-primary));
+    }
+  }
+
   .headline {
-    font-size: 17px;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
   }
 
   .detail {
-    font-size: var(--fs-table);
+    font-size: 13px;
   }
 }
 

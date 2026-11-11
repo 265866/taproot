@@ -14,10 +14,18 @@ import { modelProvider, providerColor } from '../model/providers';
 import { failureKeys, failuresInWindow, type DashboardWindow } from '../model/window';
 import styles from './Main.module.scss';
 
-function ArrowLink({ to, children }: { to: string; children: string }) {
+/** `short`: the words shown on a screen under 360 px; the full ones stay the link's name. */
+function ArrowLink({ to, children, short }: { to: string; children: string; short?: string }) {
   return (
-    <Link className={styles.arrowLink} to={to}>
-      {children}
+    <Link className={styles.arrowLink} to={to} aria-label={short ? children : undefined}>
+      {short ? (
+        <>
+          <span className={styles.fullLabel}>{children}</span>
+          <span className={styles.shortLabel}>{short}</span>
+        </>
+      ) : (
+        children
+      )}
       <IconArrowRight size={12} />
     </Link>
   );
@@ -228,7 +236,9 @@ export function RecentFailures({
           : undefined
       }
       action={
-        <ArrowLink to={failedLogsLink(timeWindow)}>{t('dashboard.failures.open_logs')}</ArrowLink>
+        <ArrowLink to={failedLogsLink(timeWindow)} short={t('dashboard.failures.open_logs_short')}>
+          {t('dashboard.failures.open_logs')}
+        </ArrowLink>
       }
       {...sectionState(failures, !rows)}
       onRetry={onRetry}

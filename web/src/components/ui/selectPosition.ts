@@ -50,3 +50,29 @@ export const resolveDropdownStyle = (
         zIndex: DROPDOWN_Z_INDEX,
       };
 };
+
+/** The listbox and option boxes the width needs; a real element satisfies it. */
+type OptionBox = Pick<HTMLElement, 'scrollWidth' | 'offsetWidth' | 'clientWidth'>;
+
+export interface ListBoxBox {
+  /** The options; an element's `children` are its HTMLElement options. */
+  children: ArrayLike<unknown>;
+  offsetWidth: number;
+  clientWidth: number;
+}
+
+/** The listbox's width with its longest option on one line, from the options' own overflow. */
+export const listContentWidth = (
+  list: ListBoxBox,
+  style: Pick<CSSStyleDeclaration, 'paddingLeft' | 'paddingRight'> = getComputedStyle(
+    list as unknown as Element
+  )
+) => {
+  let widest = 0;
+  for (const option of Array.from(list.children) as OptionBox[]) {
+    widest = Math.max(widest, option.scrollWidth + option.offsetWidth - option.clientWidth);
+  }
+  const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  // offsetWidth - clientWidth: the borders and the scrollbar gutter.
+  return widest + padding + list.offsetWidth - list.clientWidth;
+};

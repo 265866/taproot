@@ -41,6 +41,7 @@
     },
     "add": {
       "button": "Add account",
+      "button_short": "Add",
       "title": "Add an account",
       "oauth": "Sign in with a provider",
       "file": "Or add a credential file",

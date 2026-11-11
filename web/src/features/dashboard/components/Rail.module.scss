@@ -537,3 +537,215 @@
   color: var(--text-secondary);
   font-size: var(--fs-meta);
 }
+
+// The phone Digest: Needs you and Pools as raised cards inside the gutter, under 16 px headings.
+@media (max-width: $breakpoint-mobile) {
+  .head {
+    align-items: center;
+    padding: 0 0 var(--space-2);
+  }
+
+  .title {
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .headLink {
+    font-size: 14px;
+  }
+
+  .needs,
+  .pools,
+  .unavailable,
+  .skeleton {
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-primary);
+  }
+
+  .error {
+    margin-inline: 0;
+  }
+
+  .pool,
+  .skeletonPool {
+    padding: 14px 16px;
+  }
+
+  .pool:first-child,
+  .skeletonPool:first-child {
+    border-top: 0;
+  }
+
+  .poolName {
+    font-size: 15px;
+    font-weight: 650;
+  }
+
+  .poolHeadline b {
+    font-size: 26px;
+  }
+}
+
+// A phone's Needs-you row: icon, the tag and title (a button that opens the detail), and the short
+// fix; the detail opens under the title.
+.compactItem {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: center;
+  padding: 10px 12px 10px 14px;
+
+  .compactItem + &,
+  .resolved + & {
+    border-top: 1px solid var(--border-color);
+  }
+
+  > .itemIcon {
+    align-self: start;
+    margin-top: 0;
+    padding-top: 3px;
+  }
+
+  .itemMeta {
+    font-size: 13px;
+  }
+
+  .itemTitle {
+    display: block;
+    margin-top: 2px;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  &:not([data-open]) .itemTitle {
+    @include text-ellipsis-multiline(2);
+  }
+
+  .fix {
+    justify-content: center;
+    min-width: 88px;
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 550;
+    text-decoration: none;
+  }
+}
+
+.compactItem + .resolved {
+  border-top: 1px solid var(--border-color);
+}
+
+.expander {
+  @include button-reset;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  color: inherit;
+  text-align: left;
+
+  &:focus-visible {
+    border-radius: 4px;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.chevron {
+  margin-left: 4px;
+  color: var(--text-tertiary);
+  vertical-align: -2px;
+  transition: transform var(--dur-hover) var(--ease-out-strong);
+
+  .compactItem[data-open] & {
+    transform: rotate(180deg);
+  }
+}
+
+.more {
+  grid-column: 2 / -1;
+  padding-bottom: 2px;
+
+  .itemDetail {
+    margin: 0;
+    font-size: 13px;
+  }
+}
+
+// Narrower than 360 px the fix moves under the text.
+@media (max-width: 359px) {
+  .compactItem {
+    grid-template-columns: 20px minmax(0, 1fr);
+
+    .fix {
+      grid-column: 2;
+      grid-row: 3;
+      justify-self: start;
+      margin-top: 6px;
+    }
+
+    .more {
+      grid-row: 2;
+    }
+  }
+}
+
+// A phone pool's facts: three cells in an inset box.
+.factCells {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 12px 0 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface-raised-inset);
+
+  > div {
+    min-width: 0;
+    padding: 8px 10px;
+
+    & + div {
+      border-left: 1px solid var(--border-color);
+    }
+  }
+
+  dt {
+    color: var(--text-tertiary);
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  dd {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+
+    small {
+      display: block;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    &[data-tone='warning'] {
+      color: var(--status-warning-text);
+    }
+
+    &[data-tone='danger'] {
+      color: var(--status-danger-text);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

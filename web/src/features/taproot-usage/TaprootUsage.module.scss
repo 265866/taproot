@@ -106,85 +106,61 @@
   }
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px 16px;
-  flex-wrap: wrap;
-}
-
-.toolbarGroup {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.toolbarLabel {
-  color: var(--text-tertiary);
-  font-size: 13px;
-}
-
 .bucketNote {
   color: var(--text-tertiary);
   font-size: 13px;
-  margin-left: auto;
-}
-
-.segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
-  max-width: 100%;
-  padding: 3px;
-  gap: 2px;
-  border-radius: 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-}
-
-.segment {
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 14px;
-  padding: 6px 12px;
-  border-radius: 7px;
-  cursor: pointer;
   white-space: nowrap;
-  transition:
-    background-color var(--dur-hover) var(--ease-out-strong),
-    color var(--dur-hover) var(--ease-out-strong);
-
-  &:hover {
-    color: var(--text-primary);
-  }
-
-  &[aria-pressed='true'],
-  &[aria-selected='true'] {
-    background: var(--accent-subtle);
-    color: var(--accent-text);
-    font-weight: 500;
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-  }
 }
 
-// Five group-by segments fit one row on a 360px phone with narrower padding; wider ones wrap.
-@media (max-width: 480px) {
-  .segment {
-    padding: 8px 7px;
-  }
+// Desktop: the view tabs and, on their right, the range, over one hairline. When the row wraps,
+// the range goes above, so the tabs keep their underline on the hairline. With wrap-reverse the
+// cross axis runs bottom-up, so flex-start aligns to the bottom.
+.tabsRow {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-items: flex-start;
+  gap: 8px 16px;
+  border-bottom: 1px solid var(--border-color);
 }
 
-// 44 px targets on a touch screen; a mouse keeps the compact segments.
-@media (pointer: coarse) {
-  .segment {
-    min-width: 44px;
-    min-height: 44px;
+.tabsAside {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  padding-bottom: 6px;
+}
+
+// Phone: the view menu beside the Options button.
+.phoneControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.viewMenu {
+  flex: 0 0 46%;
+}
+
+.optionsButton {
+  flex: 1;
+}
+
+// Outranks SegmentedControl's own frame, whichever sheet loads last.
+.groupGrid[role='radiogroup'] {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+
+  > button {
+    border: 1px solid var(--border-raised);
+    border-radius: 7px;
+    background: var(--surface-raised-inset);
   }
 }
 
@@ -237,8 +213,9 @@
 
 .tabs {
   display: flex;
+  flex: 1 1 auto;
   gap: 4px;
-  border-bottom: 1px solid var(--border-color);
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
   // Scroll shadows: a shade marks each edge that has tabs past it, and page-colored covers that
@@ -280,6 +257,10 @@
     color: var(--text-primary);
     border-bottom-color: var(--accent);
     font-weight: 500;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
   }
 
   &:focus-visible {
@@ -403,6 +384,14 @@
   grid-column: span 2;
 }
 
+// Phones: the cost tile's long hint gets the full width rather than stretching the tile beside it,
+// and the cache-hit tile spans too, so the two-column grid keeps its order with no empty cell.
+.kpiPhoneWide {
+  @media (max-width: $breakpoint-mobile) {
+    grid-column: span 2;
+  }
+}
+
 .kpiLabel {
   color: var(--text-secondary);
   font-size: 13px;
@@ -436,7 +425,7 @@
 
 .kpiHint {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   line-height: 1.45;
 }
 
@@ -468,7 +457,7 @@
   align-items: center;
   gap: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 
 .swatch {
@@ -530,7 +519,7 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-secondary);
   margin-bottom: 2px;
 }
@@ -554,7 +543,7 @@
   align-items: center;
   gap: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   max-width: 260px;
 
   span:last-child {
@@ -570,7 +559,7 @@
   border-radius: 10px;
   padding: 10px 12px;
   box-shadow: var(--floating-shadow);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-primary);
   min-width: 180px;
   max-width: 320px;
@@ -690,7 +679,8 @@
 
 @media (pointer: coarse) {
   .sortButton {
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 
@@ -708,7 +698,7 @@
 
 .mono {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 
 .muted {
@@ -836,7 +826,7 @@
     flex-direction: column;
     gap: 4px;
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: var(--fs-meta);
     min-width: 0;
   }
 }
@@ -895,7 +885,7 @@
   max-width: 260px;
   white-space: normal !important;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   line-height: 1.4;
 }
 
@@ -995,7 +985,7 @@
   }
 
   code {
-    font-size: 12px;
+    font-size: var(--fs-meta);
     padding: 1px 5px;
     border-radius: 4px;
     background: var(--bg-tertiary);
@@ -1035,5 +1025,38 @@
   strong {
     color: var(--text-primary);
     font-weight: 600;
+  }
+}
+
+// Touch screens: the older controls reach 44 px too.
+@media (pointer: coarse) {
+  .ghostButton,
+  .dateInput,
+  .textInput,
+  .numberInput {
+    height: 44px;
+  }
+
+  .iconButton {
+    width: 44px;
+    height: 44px;
+  }
+
+  .linkButton,
+  .checkboxLabel {
+    min-height: 44px;
+  }
+
+  .linkButton {
+    min-width: 44px;
+  }
+}
+
+// Phones: cards (`--bg-primary`) and their hairlines (`--border-color`) take the raised surface, as
+// on the Dashboard's Digest. Tablets and desktops keep the flat page.
+@media (max-width: $breakpoint-mobile) {
+  .vizRoot {
+    --bg-primary: var(--surface-raised);
+    --border-color: var(--border-raised);
   }
 }

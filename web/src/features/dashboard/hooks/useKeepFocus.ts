@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 
 /** A control's identity across copies and remounts: its element and accessible name. */
 const focusKey = (element: Element) =>
@@ -14,9 +14,10 @@ const shown = (element: Element) => element.isConnected && element.getClientRect
  * while the other shows, so the focused control either goes or hides, and the browser drops the
  * focus to the page. When the rail mounts in its new place (in the shell's rail, a render after
  * the layout changes), the same control in a visible copy takes the focus back. A control the user
- * left on purpose, which stays shown, is not refocused. Returns the rail's ref.
+ * left on purpose, which stays shown, is not refocused. The same happens when `layout` changes,
+ * such as the phone Digest's compact rows replacing the full ones. Returns the rail's ref.
  */
-export function useKeepFocus(page: RefObject<HTMLElement | null>) {
+export function useKeepFocus(page: RefObject<HTMLElement | null>, layout?: unknown) {
   const rail = useRef<HTMLElement | null>(null);
   const last = useRef<{ element: HTMLElement; key: string } | null>(null);
 
@@ -30,6 +31,8 @@ export function useKeepFocus(page: RefObject<HTMLElement | null>) {
       .find((element) => focusKey(element) === left.key && shown(element));
     target?.focus({ preventScroll: true });
   }, [page]);
+
+  useLayoutEffect(restore, [layout, restore]);
 
   useEffect(() => {
     const inside = (target: EventTarget | null): target is HTMLElement =>
