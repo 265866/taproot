@@ -23,7 +23,6 @@ const { ViewControls } = await import('@/features/accounts/components/ViewContro
 const { defaultRange } = await import('@/features/taproot-quota/model/range');
 const { useKeepFocus } = await import('@/features/dashboard/hooks/useKeepFocus');
 const { useUsageParams } = await import('@/features/taproot-usage/hooks/useUsageParams');
-const { Select } = await import('@/components/ui/Select');
 const { useEffect, useRef } = await import('react');
 
 const actGlobal = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -601,38 +600,5 @@ describe("Usage's page state setter", () => {
     expect(renders.count).toBeGreaterThan(1);
     expect(seen).toHaveLength(1);
     view.unmount();
-  });
-});
-
-describe('the select listbox', () => {
-  test('is at least as wide as its longest option, within the viewport', () => {
-    const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
-    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
-      configurable: true,
-      get(this: HTMLElement) {
-        return this.getAttribute('role') === 'option' ? 140 : 0;
-      },
-    });
-    try {
-      const view = mount(
-        createElement(Select, {
-          value: 'default',
-          onChange: () => {},
-          ariaLabel: 'Sort',
-          options: [
-            { value: 'default', label: 'Default' },
-            { value: 'least', label: 'Least remaining' },
-          ],
-        })
-      );
-      click(view.host.querySelector('button[aria-haspopup="listbox"]'));
-      const list = document.querySelector<HTMLElement>('[role="listbox"]')!;
-      expect(parseFloat(list.style.width)).toBeGreaterThanOrEqual(140);
-      expect(parseFloat(list.style.width)).toBeLessThanOrEqual(window.innerWidth - 16);
-      view.unmount();
-    } finally {
-      if (scrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', scrollWidth);
-      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
-    }
   });
 });

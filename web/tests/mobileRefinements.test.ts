@@ -378,3 +378,19 @@ describe('the app log toolbar on a touch screen', () => {
     expect(css.slice(coarse)).toContain('--log-control-height: 44px');
   });
 });
+
+describe('the select listbox width', () => {
+  test('fits its longest option on one line, and stays within the viewport', async () => {
+    const { listContentWidth, resolveDropdownStyle } =
+      await import('@/components/ui/selectPosition');
+    const option = (scrollWidth: number) => ({ scrollWidth, offsetWidth: 90, clientWidth: 90 });
+    const list = { children: [option(70), option(140)], offsetWidth: 100, clientWidth: 98 };
+    const width = listContentWidth(list, { paddingLeft: '4px', paddingRight: '4px' });
+    expect(width).toBe(140 + 8 + 2);
+    const rect = { left: 20, right: 102, top: 100, bottom: 144, width: 82, height: 44 } as DOMRect;
+    const wide = resolveDropdownStyle(rect, 390, 844, width);
+    expect(parseFloat(String(wide.width ?? wide.minWidth))).toBeGreaterThanOrEqual(150);
+    const narrow = resolveDropdownStyle(rect, 120, 844, width);
+    expect(parseFloat(String(narrow.width ?? narrow.minWidth))).toBeLessThanOrEqual(120 - 16);
+  });
+});

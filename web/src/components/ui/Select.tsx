@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { IconChevronDown } from './icons';
 import styles from './Select.module.scss';
-import { resolveDropdownStyle } from './selectPosition';
+import { listContentWidth, resolveDropdownStyle } from './selectPosition';
 
 export interface SelectOption {
   value: string;
@@ -38,18 +38,6 @@ interface SelectProps {
   size?: 'sm' | 'md';
   id?: string;
 }
-
-/** The listbox's width with its longest option on one line, from the options' own overflow. */
-const listContentWidth = (list: HTMLElement) => {
-  let widest = 0;
-  for (const option of Array.from(list.children) as HTMLElement[]) {
-    widest = Math.max(widest, option.scrollWidth + option.offsetWidth - option.clientWidth);
-  }
-  const style = getComputedStyle(list);
-  const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-  // offsetWidth - clientWidth: the borders and the scrollbar gutter.
-  return widest + padding + list.offsetWidth - list.clientWidth;
-};
 
 const sameStyle = (a: CSSProperties, b: CSSProperties) => {
   const keys = Object.keys(a) as (keyof CSSProperties)[];
