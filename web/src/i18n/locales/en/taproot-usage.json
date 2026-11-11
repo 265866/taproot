@@ -27,12 +27,16 @@
       "bucket_5m": "5 minutes"
     },
     "group": {
-      "label": "Group by",
       "model": "Model",
       "account": "Account",
       "provider": "Provider",
       "session": "Session",
-      "device": "Device"
+      "device": "Device",
+      "sheet_label": "Group the charts by",
+      "overview_only": "Overview only",
+      "by": "by {{group}}",
+      "stack_by": "Stack by",
+      "stack_menu": "Stack the chart by"
     },
     "tabs": {
       "label": "Usage views",
@@ -40,7 +44,8 @@
       "sessions": "Sessions",
       "requests": "Requests",
       "devices": "Devices",
-      "pricing": "Pricing"
+      "pricing": "Pricing",
+      "view": "View"
     },
     "kpi": {
       "label": "Totals for the range",
@@ -275,6 +280,10 @@
       "estimate_none": "No cache write followed a 5 to 60 minute pause in this range. Writing at the one-hour rate would add about {{premium}}.",
       "estimate_net_saving": "Net: about {{amount}} saved at API prices.",
       "estimate_net_cost": "Net: about {{amount}} more at API prices."
+    },
+    "options": {
+      "title": "Options",
+      "button": "Options: {{summary}}"
     }
   }
 }

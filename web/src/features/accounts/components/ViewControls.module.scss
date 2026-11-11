@@ -1,0 +1,138 @@
+@use '../../../styles/mixins' as *;
+
+// Desktop: one row between hairlines; it wraps rather than scroll on a narrow window.
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.rangeLabel {
+  color: var(--text-secondary);
+  font-size: var(--fs-table);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.count {
+  color: var(--text-tertiary);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.iconButton,
+.today {
+  @include button-reset;
+  display: inline-grid;
+  place-items: center;
+  height: 32px;
+  border: 1px solid var(--border-primary);
+  border-radius: 5px;
+  color: var(--text-primary);
+
+  &:disabled {
+    color: var(--text-quaternary);
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (pointer: coarse) {
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+.iconButton {
+  width: 32px;
+}
+
+.today {
+  padding: 0 10px;
+  font-size: var(--fs-table);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .iconButton:hover:not(:disabled),
+  .today:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+  }
+}
+
+.iconButton.large,
+.today.large {
+  flex: none;
+  height: 44px;
+  border-color: var(--border-raised);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  font-size: 14px;
+}
+
+.iconButton.large {
+  width: 44px;
+}
+
+.today.large {
+  padding: 0 14px;
+}
+
+.flip {
+  transform: scaleX(-1);
+}
+
+// Phone: the metric (where it fits) beside the View button.
+.phoneRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.metric {
+  flex: none;
+}
+
+// Narrower segments leave the View button room to sum up its choices.
+.phoneRow .metric > button {
+  padding: 0 10px;
+}
+
+.viewButton {
+  flex: 1;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pagerLabel {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

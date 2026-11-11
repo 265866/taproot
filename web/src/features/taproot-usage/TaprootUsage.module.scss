@@ -106,85 +106,57 @@
   }
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px 16px;
-  flex-wrap: wrap;
-}
-
-.toolbarGroup {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.toolbarLabel {
-  color: var(--text-tertiary);
-  font-size: 13px;
-}
-
 .bucketNote {
   color: var(--text-tertiary);
   font-size: 13px;
-  margin-left: auto;
-}
-
-.segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
-  max-width: 100%;
-  padding: 3px;
-  gap: 2px;
-  border-radius: 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-}
-
-.segment {
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 14px;
-  padding: 6px 12px;
-  border-radius: 7px;
-  cursor: pointer;
   white-space: nowrap;
-  transition:
-    background-color var(--dur-hover) var(--ease-out-strong),
-    color var(--dur-hover) var(--ease-out-strong);
-
-  &:hover {
-    color: var(--text-primary);
-  }
-
-  &[aria-pressed='true'],
-  &[aria-selected='true'] {
-    background: var(--accent-subtle);
-    color: var(--accent-text);
-    font-weight: 500;
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-  }
 }
 
-// Five group-by segments fit one row on a 360px phone with narrower padding; wider ones wrap.
-@media (max-width: 480px) {
-  .segment {
-    padding: 8px 7px;
-  }
+// Desktop: the view tabs and, on their right, the range, over one hairline.
+.tabsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0 16px;
+  border-bottom: 1px solid var(--border-color);
 }
 
-// 44 px targets on a touch screen; a mouse keeps the compact segments.
-@media (pointer: coarse) {
-  .segment {
-    min-width: 44px;
-    min-height: 44px;
+.tabsAside {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  padding-bottom: 6px;
+}
+
+// Phone: the view menu beside the Options button.
+.phoneControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.viewMenu {
+  flex: 0 0 46%;
+}
+
+.optionsButton {
+  flex: 1;
+}
+
+// Outranks SegmentedControl's own frame, whichever sheet loads last.
+.groupGrid[role='radiogroup'] {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+
+  > button {
+    border: 1px solid var(--border-raised);
+    background: var(--surface-raised-inset);
   }
 }
 
@@ -237,8 +209,9 @@
 
 .tabs {
   display: flex;
+  flex: 1 1 auto;
   gap: 4px;
-  border-bottom: 1px solid var(--border-color);
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
   // Scroll shadows: a shade marks each edge that has tabs past it, and page-colored covers that
@@ -280,6 +253,10 @@
     color: var(--text-primary);
     border-bottom-color: var(--accent);
     font-weight: 500;
+  }
+
+  @media (pointer: coarse) {
+    min-height: 44px;
   }
 
   &:focus-visible {

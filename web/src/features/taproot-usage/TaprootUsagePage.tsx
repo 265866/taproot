@@ -1,6 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
+import { BottomSheet, SheetButton, SheetGroup } from '@/components/ui/BottomSheet';
+import { ChoiceMenu } from '@/components/ui/Dropdown';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { IconSlidersHorizontal } from '@/components/ui/icons';
 import { useEmailMask } from '@/hooks/useEmailMask';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { REFRESH_STARTED, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useShowEmails } from '@/stores';
 import { taprootApi, type UsageGroupBy } from '@/services/api/taproot';
@@ -8,6 +21,7 @@ import { useTaprootQuery } from './hooks/useTaprootQuery';
 import { GROUP_BYS, USAGE_TABS, useUsageParams, type UsageTab } from './hooks/useUsageParams';
 import {
   RANGE_PRESETS,
+  type RangePreset,
   chooseBucket,
   dailyBucketZone,
   presetWindow,
@@ -36,6 +50,11 @@ export function TaprootUsagePage() {
   const [anchorMs, setAnchorMs] = useState(() => Date.now());
   const [refreshKey, setRefreshKey] = useState(0);
   const showEmails = useShowEmails();
+  // `$breakpoint-mobile`: phones choose the view from a menu and the rest from the Options sheet.
+  const phone = useMediaQuery('(max-width: 768px)');
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const rangeLabelId = useId();
+  const groupLabelId = useId();
   const { mask: maskEmails } = useEmailMask();
   const [customDraft, setCustomDraft] = useState(() => ({
     from: params.from || toLocalDateInput(Date.now() - 6 * 86_400_000),
@@ -105,9 +124,8 @@ export function TaprootUsagePage() {
   );
   const needsModels = params.tab === 'requests' || params.tab === 'pricing';
   // Only the model names are read, so UTC days serve.
-  const modelSummary = useTaprootQuery(
-    needsModels && rangeKey ? `models|${rangeKey}` : null,
-    () => taprootApi.usageSummary({ ...range, bucket: '1d', groupBy: 'model' })
+  const modelSummary = useTaprootQuery(needsModels && rangeKey ? `models|${rangeKey}` : null, () =>
+    taprootApi.usageSummary({ ...range, bucket: '1d', groupBy: 'model' })
   );
   const models = useMemo(() => {
     if (!modelSummary.data) return [];
@@ -208,10 +226,99 @@ export function TaprootUsagePage() {
     selectTab(USAGE_TABS[target], true);
   };
 
+  const selectRange = (preset: RangePreset) => {
+    setAnchorMs(Date.now());
+    setParams(
+      preset === 'custom'
+        ? { range: preset, from: customDraft.from, to: customDraft.to }
+        : { range: preset, from: '', to: '' }
+    );
+  };
+  const setGroup = useCallback((group: UsageGroupBy) => setParams({ group }), [setParams]);
+  const stackBy = useMemo(
+    () => ({ value: params.group, onChange: setGroup }),
+    [params.group, setGroup]
+  );
+
   const showGroup = params.tab === 'overview';
   // On the Overview the note describes the charts on screen, which change only when data lands.
   const shownBucket = (showGroup ? overview.data?.axis.bucket : undefined) ?? bucket;
   const rangeErrorText = rangeError ? t(`taproot_usage.range.error_${rangeError}`) : null;
+  const bucketNote = rangeError ? null : (
+    <span className={styles.bucketNote}>
+      {t(
+        shownBucket === '1d' && overview.data?.axis.dayZone === 'utc'
+          ? 'taproot_usage.range.bucket_1d_utc'
+          : `taproot_usage.range.bucket_${shownBucket}`
+      )}
+    </span>
+  );
+  const rangeControl = (large: boolean) => (
+    <SegmentedControl<RangePreset>
+      ariaLabel={large ? undefined : t('taproot_usage.range.label')}
+      ariaLabelledBy={large ? rangeLabelId : undefined}
+      size={large ? 'large' : 'default'}
+      fullWidth={large}
+      value={params.range}
+      onChange={selectRange}
+      options={RANGE_PRESETS.map((preset) => ({
+        value: preset,
+        label: t(`taproot_usage.range.${preset}`),
+      }))}
+    />
+  );
+  const customRange =
+    params.range === 'custom' ? (
+      <form
+        className={styles.customRange}
+        onSubmit={(e) => {
+          e.preventDefault();
+          setAnchorMs(Date.now());
+          setParams({ from: customDraft.from, to: customDraft.to });
+        }}
+      >
+        <label>
+          {t('taproot_usage.range.from')}
+          <input
+            type="date"
+            className={styles.dateInput}
+            value={customDraft.from}
+            max={toLocalDateInput(anchorMs)}
+            aria-invalid={rangeError !== null}
+            onChange={(e) => setCustomDraft((d) => ({ ...d, from: e.target.value }))}
+          />
+        </label>
+        <label>
+          {t('taproot_usage.range.to')}
+          <input
+            type="date"
+            className={styles.dateInput}
+            value={customDraft.to}
+            max={toLocalDateInput(anchorMs)}
+            aria-invalid={rangeError !== null}
+            onChange={(e) => setCustomDraft((d) => ({ ...d, to: e.target.value }))}
+          />
+        </label>
+        <button type="submit" className={styles.ghostButton}>
+          {t('taproot_usage.range.apply')}
+        </button>
+        {rangeErrorText ? (
+          <span className={styles.fieldError} role="alert">
+            {rangeErrorText}
+          </span>
+        ) : null}
+      </form>
+    ) : null;
+  const optionsSummary = [
+    t(`taproot_usage.range.${params.range}`),
+    ...(showGroup
+      ? [
+          t('taproot_usage.group.by', {
+            group: t(`taproot_usage.group.${params.group}`).toLowerCase(),
+          }),
+        ]
+      : []),
+  ];
 
   return (
     <div className={`${styles.page} ${styles.vizRoot}`}>
@@ -222,135 +329,101 @@ export function TaprootUsagePage() {
         </div>
       </header>
 
-      <div className={styles.toolbar}>
-        <div
-          className={styles.toolbarGroup}
-          role="group"
-          aria-label={t('taproot_usage.range.label')}
-        >
-          <div className={styles.segmented}>
-            {RANGE_PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className={styles.segment}
-                aria-pressed={params.range === preset}
-                onClick={() => {
-                  setAnchorMs(Date.now());
-                  setParams(
-                    preset === 'custom'
-                      ? { range: preset, from: customDraft.from, to: customDraft.to }
-                      : { range: preset, from: '', to: '' }
-                  );
-                }}
-              >
-                {t(`taproot_usage.range.${preset}`)}
-              </button>
-            ))}
-          </div>
-          {params.range === 'custom' ? (
-            <form
-              className={styles.customRange}
-              onSubmit={(e) => {
-                e.preventDefault();
-                setAnchorMs(Date.now());
-                setParams({ from: customDraft.from, to: customDraft.to });
-              }}
+      {phone ? (
+        <>
+          <div className={styles.phoneControls}>
+            <ChoiceMenu<UsageTab>
+              size="large"
+              className={styles.viewMenu}
+              ariaLabel={t('taproot_usage.tabs.label')}
+              heading={t('taproot_usage.tabs.view')}
+              value={params.tab}
+              onChange={(tab) => selectTab(tab)}
+              options={USAGE_TABS.map((tab) => ({
+                value: tab,
+                label: t(`taproot_usage.tabs.${tab}`),
+              }))}
+            />
+            <SheetButton
+              expanded={optionsOpen}
+              className={styles.optionsButton}
+              icon={<IconSlidersHorizontal size={16} />}
+              aria-label={t('taproot_usage.options.button', {
+                summary: optionsSummary.join(', '),
+              })}
+              onClick={() => setOptionsOpen(true)}
             >
-              <label>
-                {t('taproot_usage.range.from')}
-                <input
-                  type="date"
-                  className={styles.dateInput}
-                  value={customDraft.from}
-                  max={toLocalDateInput(anchorMs)}
-                  aria-invalid={rangeError !== null}
-                  onChange={(e) => setCustomDraft((d) => ({ ...d, from: e.target.value }))}
-                />
-              </label>
-              <label>
-                {t('taproot_usage.range.to')}
-                <input
-                  type="date"
-                  className={styles.dateInput}
-                  value={customDraft.to}
-                  max={toLocalDateInput(anchorMs)}
-                  aria-invalid={rangeError !== null}
-                  onChange={(e) => setCustomDraft((d) => ({ ...d, to: e.target.value }))}
-                />
-              </label>
-              <button type="submit" className={styles.ghostButton}>
-                {t('taproot_usage.range.apply')}
-              </button>
-              {rangeErrorText ? (
-                <span className={styles.fieldError} role="alert">
-                  {rangeErrorText}
-                </span>
-              ) : null}
-            </form>
-          ) : null}
-        </div>
-        {showGroup ? (
-          <div
-            className={styles.toolbarGroup}
-            role="group"
-            aria-label={t('taproot_usage.group.label')}
+              <b>{optionsSummary[0]}</b>
+              {optionsSummary.slice(1).map((part) => ` · ${part}`)}
+            </SheetButton>
+          </div>
+          {bucketNote}
+          <BottomSheet
+            open={optionsOpen}
+            onClose={() => setOptionsOpen(false)}
+            title={t('taproot_usage.options.title')}
           >
-            <span className={styles.toolbarLabel} aria-hidden="true">
-              {t('taproot_usage.group.label')}
-            </span>
-            <div className={styles.segmented}>
-              {GROUP_BYS.map((group) => (
+            <SheetGroup label={t('taproot_usage.range.label')} labelId={rangeLabelId}>
+              {rangeControl(true)}
+              {customRange}
+            </SheetGroup>
+            <SheetGroup
+              label={t('taproot_usage.group.sheet_label')}
+              note={t('taproot_usage.group.overview_only')}
+              labelId={groupLabelId}
+            >
+              <SegmentedControl<UsageGroupBy>
+                ariaLabelledBy={groupLabelId}
+                size="large"
+                className={styles.groupGrid}
+                value={params.group}
+                onChange={setGroup}
+                options={GROUP_BYS.map((group) => ({
+                  value: group,
+                  label: t(`taproot_usage.group.${group}`),
+                }))}
+              />
+            </SheetGroup>
+          </BottomSheet>
+        </>
+      ) : (
+        <>
+          <div className={styles.tabsRow}>
+            <div className={styles.tabs} role="tablist" aria-label={t('taproot_usage.tabs.label')}>
+              {USAGE_TABS.map((tab, index) => (
                 <button
-                  key={group}
+                  key={tab}
+                  ref={(el) => {
+                    tabRefs.current[tab] = el;
+                  }}
+                  id={`usage-tab-${tab}`}
                   type="button"
-                  className={styles.segment}
-                  aria-pressed={params.group === group}
-                  onClick={() => setParams({ group })}
+                  role="tab"
+                  className={styles.tab}
+                  aria-selected={params.tab === tab}
+                  aria-controls={`usage-panel-${tab}`}
+                  tabIndex={params.tab === tab ? 0 : -1}
+                  onClick={() => selectTab(tab)}
+                  onKeyDown={(e) => onTabKey(e, index)}
                 >
-                  {t(`taproot_usage.group.${group}`)}
+                  {t(`taproot_usage.tabs.${tab}`)}
                 </button>
               ))}
             </div>
+            <div className={styles.tabsAside}>
+              {bucketNote}
+              {rangeControl(false)}
+            </div>
           </div>
-        ) : null}
-        {rangeError ? null : (
-          <span className={styles.bucketNote}>
-            {t(
-              shownBucket === '1d' && overview.data?.axis.dayZone === 'utc'
-                ? 'taproot_usage.range.bucket_1d_utc'
-                : `taproot_usage.range.bucket_${shownBucket}`
-            )}
-          </span>
-        )}
-      </div>
-
-      <div className={styles.tabs} role="tablist" aria-label={t('taproot_usage.tabs.label')}>
-        {USAGE_TABS.map((tab, index) => (
-          <button
-            key={tab}
-            ref={(el) => {
-              tabRefs.current[tab] = el;
-            }}
-            id={`usage-tab-${tab}`}
-            type="button"
-            role="tab"
-            className={styles.tab}
-            aria-selected={params.tab === tab}
-            aria-controls={`usage-panel-${tab}`}
-            tabIndex={params.tab === tab ? 0 : -1}
-            onClick={() => selectTab(tab)}
-            onKeyDown={(e) => onTabKey(e, index)}
-          >
-            {t(`taproot_usage.tabs.${tab}`)}
-          </button>
-        ))}
-      </div>
+          {customRange}
+        </>
+      )}
 
       <div
         id={`usage-panel-${params.tab}`}
-        role="tabpanel"
-        aria-labelledby={`usage-tab-${params.tab}`}
+        role={phone ? 'region' : 'tabpanel'}
+        aria-labelledby={phone ? undefined : `usage-tab-${params.tab}`}
+        aria-label={phone ? t(`taproot_usage.tabs.${params.tab}`) : undefined}
         className={styles.page}
         aria-busy={params.tab === 'overview' && overview.loading}
       >
@@ -374,6 +447,7 @@ export function TaprootUsagePage() {
                   accountOrder={accountOrder}
                   labelFor={labelFor}
                   onViewRequests={viewRequests}
+                  stackBy={phone ? undefined : stackBy}
                 />
               </div>
             ) : null}

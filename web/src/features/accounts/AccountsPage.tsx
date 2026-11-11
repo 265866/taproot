@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { IconChevronLeft, IconRefreshCw } from '@/components/ui/icons';
+import { IconRefreshCw } from '@/components/ui/icons';
 import { invalidateAuthFileDerivedCaches } from '@/features/authFiles/cacheInvalidation';
 import { AuthFileRefreshResults } from '@/features/authFiles/components/AuthFileRefreshResults';
 import { BatchActionBar } from '@/features/authFiles/components/BatchActionBar';
@@ -26,29 +26,18 @@ import { useAuthFilesStatusBarCache } from '@/features/authFiles/hooks/useAuthFi
 import { getAuthFileRefreshKey } from '@/features/authFiles/manualRefresh';
 import { Ledger } from '@/features/taproot-quota/components/Ledger';
 import { ProviderCard } from '@/features/taproot-quota/components/ProviderCard';
-import { Segmented } from '@/features/taproot-quota/components/Segmented';
 import type { ChartView } from '@/features/taproot-quota/model/chart';
-import { accountName, formatDay } from '@/features/taproot-quota/model/format';
+import { accountName } from '@/features/taproot-quota/model/format';
 import { liveEntriesByAuthIndex, liveEntriesByProvider } from '@/features/taproot-quota/model/live';
-import {
-  BURN_WINDOWS_HOURS,
-  FUTURE_USAGE,
-  type BurnWindowHours,
-  type FutureUsage,
-} from '@/features/taproot-quota/model/poolView';
-import {
-  defaultRange,
-  isDefaultRange,
-  lastDay,
-  shiftRange,
-  type DateRange,
-} from '@/features/taproot-quota/model/range';
+import type { BurnWindowHours, FutureUsage } from '@/features/taproot-quota/model/poolView';
+import { defaultRange, type DateRange } from '@/features/taproot-quota/model/range';
 import { useQuotaData } from '@/features/taproot-quota/useQuotaData';
 import { REFRESHABLE_PROVIDERS, useQuotaRefresh } from '@/features/taproot-quota/useQuotaRefresh';
 import quotaStyles from '@/features/taproot-quota/quota.module.scss';
 import { useEmailMask } from '@/hooks/useEmailMask';
 import { outcomeFromError, useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useInterval } from '@/hooks/useInterval';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useNow } from '@/hooks/useNow';
 import { ROUTES } from '@/router/routes';
 import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
@@ -59,6 +48,7 @@ import { AccountControls } from './components/AccountControls';
 import { AccountSheet } from './components/AccountSheet';
 import { AccountsMenu, type AccountsMenuItem } from './components/AccountsMenu';
 import { AddAccount } from './components/AddAccount';
+import { ViewControls } from './components/ViewControls';
 import {
   STATUS_FILTERS,
   accountHealth,
@@ -89,6 +79,9 @@ export function AccountsPage() {
   const isCurrentLayer = pageTransitionLayer ? pageTransitionLayer.status === 'current' : true;
   const clock = useNow();
   const navigate = useNavigate();
+  // `$breakpoint-mobile`: phones get the View sheet, and Refresh all moves into the ⋯ menu.
+  const phone = useMediaQuery('(max-width: 768px)');
+  const metricBeside = useMediaQuery('(min-width: 360px)');
 
   const [range, setRange] = useState<DateRange>(() => defaultRange(Date.now()));
   const [searchParams, setSearchParams] = useSearchParams();
@@ -306,6 +299,16 @@ export function AccountsPage() {
   };
   const bulkDisabled = disableControls || filesLoading || deletingAll || files.length === 0;
   const menuItems: AccountsMenuItem[] = [
+    ...(phone
+      ? [
+          {
+            key: 'refresh-quota',
+            label: t('taproot_quota.ledger.refresh_all'),
+            disabled: refreshBusy,
+            onSelect: refreshAll,
+          },
+        ]
+      : []),
     {
       key: 'refresh-credentials',
       label: t('auth_files.refresh_all_button'),
@@ -373,10 +376,6 @@ export function AccountsPage() {
     titleRef.current?.focus();
   }, [closeModels, closePrefixProxyEditor, managedGone]);
 
-  const futureOptions = (Object.keys(FUTURE_USAGE) as FutureUsage[]).map((value) => ({
-    value,
-    label: t(`taproot_quota.controls.future_${value}`),
-  }));
   const statusOptions = STATUS_FILTERS.map((value) => ({
     value,
     label: t(`accounts.status.${value}`),
@@ -388,13 +387,13 @@ export function AccountsPage() {
 
   return (
     <div className={`${quotaStyles.page} ${styles.page}`}>
-      <header className={quotaStyles.header}>
-        <div className={quotaStyles.titleBlock}>
+      <header className={`${quotaStyles.header} ${styles.header}`}>
+        <div className={`${quotaStyles.titleBlock} ${styles.titleBlock}`}>
           <h1 ref={titleRef} tabIndex={-1} className={`${quotaStyles.title} ${styles.title}`}>
             {t('accounts.title')}
           </h1>
           {!firstLoad && (
-            <span className={quotaStyles.meta}>
+            <span className={`${quotaStyles.meta} ${styles.meta}`}>
               {t('accounts.meta', { count: counts.all, reporting })}
               {problems > 0 && (
                 <span className={styles.metaProblem}>
@@ -406,10 +405,12 @@ export function AccountsPage() {
           )}
         </div>
         <div className={`${quotaStyles.headerActions} ${styles.headerActions}`}>
-          <Button variant="secondary" size="sm" onClick={refreshAll} loading={refreshBusy}>
-            {!refreshBusy && <IconRefreshCw size={15} />}
-            {t('taproot_quota.ledger.refresh_all')}
-          </Button>
+          {phone ? null : (
+            <Button variant="secondary" size="sm" onClick={refreshAll} loading={refreshBusy}>
+              {!refreshBusy && <IconRefreshCw size={15} />}
+              {t('taproot_quota.ledger.refresh_all')}
+            </Button>
+          )}
           <AccountsMenu items={menuItems} />
           <AddAccount
             open={addOpen}
@@ -420,6 +421,7 @@ export function AccountsPage() {
             onAdded={reloadAfterSignIn}
             startProvider={readAccountsLink(searchParams).signIn}
             onStartHandled={clearDeepLink}
+            compact={phone}
           />
         </div>
       </header>
@@ -434,7 +436,7 @@ export function AccountsPage() {
         onChange={handleFileChange}
       />
 
-      {groups.length > 0 && (
+      {phone && groups.length > 0 && (
         <div className={quotaStyles.tabsRow}>
           <ProviderTabs
             types={tabTypes}
@@ -446,74 +448,22 @@ export function AccountsPage() {
         </div>
       )}
 
-      <div className={quotaStyles.toolbar}>
-        <Segmented<ChartView>
-          label={t('taproot_quota.controls.view')}
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'remaining', label: t('taproot_quota.controls.remaining') },
-            { value: 'drain', label: t('taproot_quota.controls.drain') },
-          ]}
-        />
-        <Segmented<`${BurnWindowHours}`>
-          label={t('taproot_quota.controls.burn_rate')}
-          showLabel
-          value={`${burnHours}`}
-          onChange={(value) => setBurnHours(Number(value) as BurnWindowHours)}
-          options={BURN_WINDOWS_HOURS.map((h) => ({
-            value: `${h}` as `${BurnWindowHours}`,
-            label: t('taproot_quota.controls.hours', { count: h }),
-          }))}
-        />
-        <div className={quotaStyles.segmentedGroup}>
-          <span className={quotaStyles.controlLabel} id="accounts-future">
-            {t('taproot_quota.controls.future')}
-          </span>
-          <div className={quotaStyles.selectWrap}>
-            <Select
-              value={future}
-              options={futureOptions}
-              onChange={(value) => setFuture(value as FutureUsage)}
-              ariaLabelledBy="accounts-future"
-              size="sm"
-              fullWidth={false}
-            />
-          </div>
-        </div>
-        <div className={quotaStyles.rangeNav}>
-          <span className={quotaStyles.rangeLabel} aria-live="polite">
-            {t('taproot_quota.controls.range', {
-              from: formatDay(range.from, locale),
-              to: formatDay(lastDay(range), locale),
-            })}
-          </span>
-          <button
-            type="button"
-            className={quotaStyles.iconButton}
-            aria-label={t('taproot_quota.controls.previous')}
-            onClick={() => setRange((r) => shiftRange(r, -1))}
-          >
-            <IconChevronLeft size={16} />
-          </button>
-          <button
-            type="button"
-            className={quotaStyles.toggle}
-            disabled={isDefaultRange(range, clock)}
-            onClick={() => setRange(defaultRange(clock))}
-          >
-            {t('taproot_quota.controls.today')}
-          </button>
-          <button
-            type="button"
-            className={quotaStyles.iconButton}
-            aria-label={t('taproot_quota.controls.next')}
-            onClick={() => setRange((r) => shiftRange(r, 1))}
-          >
-            <IconChevronLeft size={16} className={quotaStyles.flip} />
-          </button>
-        </div>
-      </div>
+      <ViewControls
+        phone={phone}
+        metricBeside={metricBeside}
+        view={view}
+        burnHours={burnHours}
+        future={future}
+        range={range}
+        onViewChange={setView}
+        onBurnHoursChange={setBurnHours}
+        onFutureChange={setFuture}
+        onRangeChange={setRange}
+        clock={clock}
+        locale={locale}
+        providers={groups.length > 0 ? { types: tabTypes, counts, active: activeTab } : null}
+        onProviderChange={setTab}
+      />
 
       {loadError && (
         <div className={quotaStyles.error} role="alert">

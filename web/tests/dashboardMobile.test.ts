@@ -119,16 +119,15 @@ describe('touch targets are 44 px on a touch screen of any width', () => {
     expect(px(rule(main, '.unpriced summary', COARSE), 'line-height')).toBe(44);
   });
 
-  test("the Usage page's segments, where Usage by device and by model land", () => {
-    const usage = compile('features/taproot-usage/TaprootUsage.module.scss');
-    const touch = rule(usage, '.segment', COARSE);
-    expect(px(touch, 'min-height')).toBe(44);
+  test("the Usage page's range, where Usage by device and by model land", () => {
+    const touch = rule(compile('components/ui/SegmentedControl.module.scss'), '.segment', COARSE);
+    expect(px(touch, 'height')).toBe(44);
     expect(px(touch, 'min-width')).toBe(44);
   });
 
-  test("the Accounts page's quota range segments", () => {
-    const quota = rule(compile('features/taproot-quota/quota.module.scss'), '.segment', COARSE);
-    expect(px(quota, 'height')).toBe(44);
+  test("the Accounts page's date buttons", () => {
+    const view = compile('features/accounts/components/ViewControls.module.scss');
+    expect(px(rule(view, '.today', COARSE), 'height')).toBe(44);
   });
 });
 

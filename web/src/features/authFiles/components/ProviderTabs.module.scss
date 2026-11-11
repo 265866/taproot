@@ -58,6 +58,17 @@
   }
 }
 
+// Phones: the tabs share the row and each is a 44 px target.
+@media (max-width: $breakpoint-mobile) {
+  .tab {
+    flex: 1 0 auto;
+    justify-content: center;
+    min-height: 44px;
+    padding-block: 0;
+    font-size: 14px;
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .tab:hover {
     color: var(--text-primary);

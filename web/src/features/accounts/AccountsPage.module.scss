@@ -23,3 +23,33 @@
   justify-content: center;
   gap: 8px;
 }
+
+/* Phones: the title with ⋯ and Add on its right, and the counts under them. */
+@media (max-width: $breakpoint-mobile) {
+  .header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 12px;
+  }
+
+  .titleBlock {
+    display: contents;
+  }
+
+  .title {
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .headerActions {
+    grid-row: 1;
+    grid-column: 2;
+    flex-wrap: nowrap;
+  }
+
+  .meta {
+    grid-column: 1 / -1;
+    font-size: 13px;
+  }
+}
