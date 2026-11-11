@@ -76,6 +76,11 @@ export function itemAction(item: AttentionItem, loggingToFile: boolean | null): 
   }
 }
 
+/** The fix's short label for a phone row, such as "Sign in" for "Sign in again"; the full one stays its name. */
+export function shortLabelKey(labelKey: string): string {
+  return labelKey.replace('.action_', '.short_');
+}
+
 /** The muted word before an item's age: what it is about. */
 export function itemCategoryKey(item: AttentionItem): string {
   switch (item.subject.type) {

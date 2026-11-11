@@ -19,11 +19,20 @@
     align-items: stretch;
   }
 
-  .segments {
+  // The Digest's window selector: 44 px segments in a raised frame. The ancestor outranks
+  // SegmentedControl's own frame, whichever sheet loads last.
+  .controls .segments {
     width: 100%;
+    padding: 2px;
+    border-color: var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-primary);
 
     > * {
       flex: 1;
+      height: 44px;
+      border-radius: 7px;
+      font-size: 14px;
     }
   }
 }
@@ -52,6 +61,10 @@
   @media (pointer: coarse) {
     min-height: 44px;
     margin-block: -10px;
+  }
+
+  @media (max-width: $breakpoint-mobile) {
+    font-size: 14px;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import {
   IconAlertTriangle,
   IconCheckCircle2,
+  IconChevronDown,
   IconCircleAlert,
   IconExternalLink,
   IconSmartphone,
@@ -20,6 +21,7 @@ import {
   itemAction,
   itemCategoryKey,
   resolvedResults,
+  shortLabelKey,
   type FixRun,
   type ItemAction,
 } from '../model/attentionActions';
@@ -37,6 +39,11 @@ interface NeedsYouProps {
   nowMs: number;
   onRetry: () => void;
   fixes: FixRuns;
+  /**
+   * Phones: compact rows, each with its fix's short label beside the title and its detail opening
+   * in place; the first opens on its own.
+   */
+  compact?: boolean;
 }
 
 const SEVERITY_ICON: Record<AttentionItem['severity'], ReactNode> = {
@@ -54,6 +61,7 @@ export function NeedsYou({
   nowMs,
   onRetry,
   fixes: { runs, run },
+  compact = false,
 }: NeedsYouProps) {
   const { t } = useTranslation();
   const { mask } = useEmailMask();
@@ -62,6 +70,8 @@ export function NeedsYou({
   const items = data?.items ?? [];
   const resolved = resolvedResults(runs, items, nowMs);
   const blocking = items.some((item) => item.severity === 'blocking');
+  // Rows the user opened or closed; the rest follow the default, the first open.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const [sectionRef, reservedStyle] = useReservedHeight('needs', {
     loading: !data && !error,
     loaded: data !== null,
@@ -124,16 +134,25 @@ export function NeedsYou({
     body = (
       <ul className={styles.items}>
         {resolvedRows}
-        {items.map((item) => (
-          <NeedItem
-            key={item.id}
-            item={item}
-            action={itemAction(item, loggingToFile)}
-            age={item.since ? formatAge(Date.parse(item.since), nowMs, t) : ''}
-            run={runs[item.id] ?? IDLE}
-            onRun={(task) => void run(item, task)}
-          />
-        ))}
+        {items.map((item, index) => {
+          const props = {
+            item,
+            action: itemAction(item, loggingToFile),
+            age: item.since ? formatAge(Date.parse(item.since), nowMs, t) : '',
+            run: runs[item.id] ?? IDLE,
+            onRun: (task: () => Promise<string>) => void run(item, task),
+          };
+          if (!compact) return <NeedItem key={item.id} {...props} />;
+          const open = toggled[item.id] ?? index === 0;
+          return (
+            <CompactNeedItem
+              key={item.id}
+              {...props}
+              open={open}
+              onToggle={() => setToggled((prev) => ({ ...prev, [item.id]: !open }))}
+            />
+          );
+        })}
       </ul>
     );
   }
@@ -143,6 +162,7 @@ export function NeedsYou({
       ref={sectionRef}
       style={reservedStyle}
       className={styles.block}
+      data-compact={compact || undefined}
       aria-labelledby={headingId}
       aria-busy={!data && !error}
     >
@@ -241,41 +261,150 @@ function NeedItem({
   );
 }
 
+/**
+ * A phone's row: the tag, title, and short fix on one line, and the detail (with a fix's result or
+ * note) opening in place under them. Without a detail, the title is not a button.
+ */
+function CompactNeedItem({
+  item,
+  action,
+  age,
+  run,
+  onRun,
+  open,
+  onToggle,
+}: {
+  item: AttentionItem;
+  action: ItemAction;
+  age: string;
+  run: RunState;
+  onRun: (task: () => Promise<string>) => void;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation();
+  const { mask } = useEmailMask();
+  const detailId = useId();
+  const title = mask(item.title);
+  const note = action.kind === 'note' ? t(action.textKey) : null;
+  const expandable = Boolean(item.detail || note);
+  const summary = (
+    <>
+      <span className={styles.itemMeta}>
+        <SeverityTag severity={item.severity} />
+        <span>
+          {t(itemCategoryKey(item))}
+          {age ? ` · ${age}` : ''}
+        </span>
+      </span>
+      <span className={styles.itemTitle}>
+        {title}
+        {expandable ? <IconChevronDown size={14} className={styles.chevron} /> : null}
+      </span>
+    </>
+  );
+  return (
+    <li className={styles.compactItem} data-severity={item.severity} data-open={open || undefined}>
+      <span className={styles.itemIcon} data-severity={item.severity}>
+        {SEVERITY_ICON[item.severity]}
+      </span>
+      {expandable ? (
+        <button
+          type="button"
+          className={styles.expander}
+          aria-expanded={open}
+          aria-controls={detailId}
+          onClick={onToggle}
+        >
+          {summary}
+        </button>
+      ) : (
+        <div className={styles.expander}>{summary}</div>
+      )}
+      <FixControl
+        action={action}
+        primary={item.severity === 'blocking'}
+        title={title}
+        run={run}
+        onRun={onRun}
+        short
+      />
+      <div id={detailId} className={styles.more} hidden={!open || !expandable}>
+        {item.detail ? <p className={styles.itemDetail}>{mask(item.detail)}</p> : null}
+        {note ? <p className={styles.itemDetail}>{note}</p> : null}
+      </div>
+      {run.kind === 'done' || run.kind === 'failed' ? (
+        <div className={styles.more}>
+          <FixResult run={run} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 type RunState = { kind: 'idle' } | FixRun;
 
 const IDLE: RunState = { kind: 'idle' };
 
-/** One item's fix: a link to the page that fixes it, or a fix that runs here and says how it went. */
-function ItemFix({
-  action,
-  primary,
-  title,
-  run,
-  onRun,
-}: {
+interface FixProps {
   action: ItemAction;
   primary: boolean;
   /** The item's title, so a screen reader hears which item a repeated button acts on. */
   title: string;
   run: RunState;
   onRun: (task: () => Promise<string>) => void;
-}) {
+  /** Shows the short label; the full one stays in the accessible name. */
+  short?: boolean;
+}
+
+/** One item's fix: a link to the page that fixes it, or a fix that runs here and says how it went. */
+function ItemFix(props: FixProps) {
   const { t } = useTranslation();
+  if (props.action.kind === 'note') return <p className={styles.note}>{t(props.action.textKey)}</p>;
+  if (props.action.kind === 'none') return null;
+  return (
+    <div className={styles.fixRow}>
+      <FixControl {...props} />
+      <FixResult run={props.run} />
+    </div>
+  );
+}
+
+/** How an inline fix went, beside or under its button. */
+function FixResult({ run }: { run: RunState }) {
   const { mask } = useEmailMask();
+  if (run.kind === 'done') {
+    return (
+      <span className={styles.fixDone} role="status">
+        {run.message}
+      </span>
+    );
+  }
+  if (run.kind === 'failed') {
+    return (
+      <span className={styles.fixFailed} role="alert">
+        {mask(run.message)}
+      </span>
+    );
+  }
+  return null;
+}
+
+function FixControl({ action, primary, title, run, onRun, short = false }: FixProps) {
+  const { t } = useTranslation();
   const buttonClass = `btn ${primary ? 'btn-primary' : 'btn-secondary'} btn-sm ${styles.fix}`;
   const running = run.kind === 'running';
+  const label = (key: string) => t(short ? shortLabelKey(key) : key);
 
-  let control: ReactNode = null;
   switch (action.kind) {
     case 'link':
-      control = (
+      return (
         <Link className={buttonClass} to={action.to} aria-label={`${t(action.labelKey)}: ${title}`}>
-          {t(action.labelKey)}
+          {label(action.labelKey)}
         </Link>
       );
-      break;
     case 'external':
-      control = (
+      return (
         <a
           className={buttonClass}
           href={action.href}
@@ -283,14 +412,13 @@ function ItemFix({
           rel="noopener noreferrer"
           aria-label={`${t(action.labelKey)}: ${title} ${t('dashboard.needs.opens_new_tab')}`}
         >
-          {t(action.labelKey)}
+          {label(action.labelKey)}
           <IconExternalLink size={12} />
         </a>
       );
-      break;
     case 'enable': {
       const authIndex = action.authIndex;
-      control = (
+      return (
         <Button
           variant={primary ? 'primary' : 'secondary'}
           size="sm"
@@ -305,13 +433,12 @@ function ItemFix({
             })
           }
         >
-          {t(action.labelKey)}
+          {label(action.labelKey)}
         </Button>
       );
-      break;
     }
     case 'backup':
-      control = (
+      return (
         <Button
           variant={primary ? 'primary' : 'secondary'}
           size="sm"
@@ -326,29 +453,11 @@ function ItemFix({
             })
           }
         >
-          {t(action.labelKey)}
+          {label(action.labelKey)}
         </Button>
       );
-      break;
     case 'note':
-      return <p className={styles.note}>{t(action.textKey)}</p>;
     case 'none':
       return null;
   }
-
-  return (
-    <div className={styles.fixRow}>
-      {control}
-      {run.kind === 'done' ? (
-        <span className={styles.fixDone} role="status">
-          {run.message}
-        </span>
-      ) : null}
-      {run.kind === 'failed' ? (
-        <span className={styles.fixFailed} role="alert">
-          {mask(run.message)}
-        </span>
-      ) : null}
-    </div>
-  );
 }
