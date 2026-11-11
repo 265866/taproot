@@ -1,0 +1,114 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+/** How long a chart's readout stays after the finger lifts. */
+export const TOUCH_READOUT_HOLD_MS = 3000;
+
+/**
+ * Lets a chart's readout go away on a touch screen, where no pointer ever leaves the chart: it
+ * hides `holdMs` after the last touch on the chart ends, and at once when the page scrolls or a
+ * touch or click lands outside the chart. Mouse hover and keyboard focus are left alone.
+ *
+ * `hidden` stays true until the chart's own `touchmove` or `mousemove` (a tap's emulated one
+ * included), which is when a Recharts chart moves its readout, so a new touch never shows the
+ * old one first. After a hide, moves of the same touch keep it hidden: a drag that scrolls the
+ * page goes on sending them. `onHide` runs on each hide, for a chart that keeps its readout in
+ * its own state.
+ */
+export function useTouchReadout<T extends HTMLElement>(
+  onHide?: () => void,
+  holdMs = TOUCH_READOUT_HOLD_MS
+) {
+  const [element, setElement] = useState<T | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const onHideRef = useRef(onHide);
+  useEffect(() => {
+    onHideRef.current = onHide;
+  }, [onHide]);
+
+  useEffect(() => {
+    if (!element) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let touched = false;
+    let suppressed = false;
+    // A chart redraws as the readout moves and may drop the node a touch began on; the browser
+    // still sends that touch's end to the dropped node, which no longer bubbles to the chart.
+    const startTargets = new Set<EventTarget>();
+    const clearTimer = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    };
+    const hide = () => {
+      clearTimer();
+      if (!touched) return;
+      touched = false;
+      suppressed = true;
+      setHidden(true);
+      onHideRef.current?.();
+    };
+    const onTouchStart = (event: TouchEvent) => {
+      touched = true;
+      suppressed = false;
+      clearTimer();
+      const target = event.target;
+      if (target && target !== element && !startTargets.has(target)) {
+        startTargets.add(target);
+        target.addEventListener('touchend', onTargetEnd);
+        target.addEventListener('touchcancel', onTargetEnd);
+      }
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      // Another finger is still down: the readout stays while it drags.
+      if ((event.touches?.length ?? 0) > 0) return;
+      clearTimer();
+      if (touched) timer = setTimeout(hide, holdMs);
+    };
+    const onTargetEnd = (event: Event) => {
+      const target = event.currentTarget;
+      if (target) {
+        target.removeEventListener('touchend', onTargetEnd);
+        target.removeEventListener('touchcancel', onTargetEnd);
+        startTargets.delete(target);
+      }
+      // A node still in the chart passes the end on to the chart's own listener.
+      if (!(target instanceof Node) || !element.contains(target)) onTouchEnd(event as TouchEvent);
+    };
+    const onMove = () => {
+      if (!suppressed) setHidden(false);
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') suppressed = false;
+    };
+    const onOutside = (event: Event) => {
+      if (!(event.target instanceof Node) || !element.contains(event.target)) hide();
+    };
+    element.addEventListener('touchstart', onTouchStart, { passive: true });
+    element.addEventListener('touchend', onTouchEnd);
+    element.addEventListener('touchcancel', onTouchEnd);
+    element.addEventListener('pointermove', onPointerMove);
+    element.addEventListener('touchmove', onMove, { passive: true });
+    element.addEventListener('mousemove', onMove);
+    // Capture, so a scroll of any container counts, and a handler that stops propagation can't
+    // keep the readout up.
+    document.addEventListener('scroll', hide, { capture: true, passive: true });
+    document.addEventListener('pointerdown', onOutside, true);
+    return () => {
+      clearTimer();
+      for (const target of startTargets) {
+        target.removeEventListener('touchend', onTargetEnd);
+        target.removeEventListener('touchcancel', onTargetEnd);
+      }
+      startTargets.clear();
+      element.removeEventListener('touchstart', onTouchStart);
+      element.removeEventListener('touchend', onTouchEnd);
+      element.removeEventListener('touchcancel', onTouchEnd);
+      element.removeEventListener('pointermove', onPointerMove);
+      element.removeEventListener('touchmove', onMove);
+      element.removeEventListener('mousemove', onMove);
+      document.removeEventListener('scroll', hide, true);
+      document.removeEventListener('pointerdown', onOutside, true);
+    };
+  }, [element, holdMs]);
+
+  const ref = useCallback((node: T | null) => setElement(node), []);
+  return [ref, hidden] as const;
+}

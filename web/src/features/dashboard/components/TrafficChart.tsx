@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { IconChevronDown } from '@/components/ui/icons';
 import { Section } from '@/components/ui/Section';
+import { useTouchReadout } from '@/hooks/useTouchReadout';
 import type { UsageBucket } from '@/services/api/taproot';
 import { sectionState, type Read, type WindowSummary } from '../hooks/useDashboardData';
 import {
@@ -69,6 +70,7 @@ export function TrafficChart({ summary, onRetry }: TrafficChartProps) {
   const setActive = (index: number | null) =>
     setPick(index === null || !data ? null : { window: data.range.window, index });
   const tooltipId = useId();
+  const [touchRef] = useTouchReadout<HTMLDivElement>(() => setActive(null));
   const bucket = data?.range.bucket ?? '1h';
   const compact = width > 0 && width < COMPACT_WIDTH;
 
@@ -99,7 +101,7 @@ export function TrafficChart({ summary, onRetry }: TrafficChartProps) {
       className={styles.section}
     >
       {model && data ? (
-        <div className={styles.body}>
+        <div ref={touchRef} className={styles.body}>
           <div
             ref={plotRef}
             className={styles.plot}

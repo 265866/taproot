@@ -12,6 +12,7 @@ import {
   type TooltipContentProps,
 } from 'recharts';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useTouchReadout } from '@/hooks/useTouchReadout';
 import type { ChartRow, ChartView } from '../model/chart';
 import { formatChartMoment, formatWeekdayDay } from '../model/format';
 import { dayTicks } from '../model/range';
@@ -41,6 +42,7 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
   const xTicks = compact ? ticks.filter((_, i) => i % 3 === 0) : ticks;
   const yTicks = [0, yMax / 2, yMax];
   const nowInRange = now >= from && now <= to;
+  const [touchRef, touchHidden] = useTouchReadout<HTMLDivElement>();
 
   const renderTooltip = ({ active, payload }: TooltipContentProps) => {
     const row = payload?.[0]?.payload as ChartRow | undefined;
@@ -62,6 +64,7 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
 
   return (
     <div
+      ref={touchRef}
       className={styles.chart}
       style={{ ['--chart-accent' as string]: accent }}
       role="img"
@@ -103,6 +106,7 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
             allowDataOverflow
           />
           <Tooltip
+            active={touchHidden ? false : undefined}
             content={renderTooltip}
             cursor={{ className: styles.cursor }}
             isAnimationActive={false}
@@ -114,7 +118,7 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
             fill={`url(#${gradientId})`}
             isAnimationActive={false}
             dot={false}
-            activeDot={{ r: 4, className: styles.activeDot }}
+            activeDot={touchHidden ? false : { r: 4, className: styles.activeDot }}
           />
           <Area
             type="linear"
@@ -123,7 +127,7 @@ export function PoolChart({ rows, view, from, to, now, yMax, accent, ariaLabel }
             fill={`url(#${gradientId})`}
             isAnimationActive={false}
             dot={false}
-            activeDot={{ r: 4, className: styles.activeDot }}
+            activeDot={touchHidden ? false : { r: 4, className: styles.activeDot }}
           />
           {nowInRange && (
             <ReferenceLine
