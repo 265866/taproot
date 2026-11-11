@@ -241,6 +241,19 @@ func TestResponsesWebsocketIdleUpstreamEOFIsSilent(t *testing.T) {
 		read()
 		_ = c.WriteMessage(websocket.TextMessage, []byte(lossCompleted))
 		if index == 1 {
+			// Send EOF, then wait for the proxy to drop its end. A continuation sent before the
+			// proxy reads the EOF goes to the dying socket and is reported lost, not refused.
+			tcp, ok := c.NetConn().(*net.TCPConn)
+			if !ok {
+				t.Errorf("upstream conn is %T, want *net.TCPConn", c.NetConn())
+				return
+			}
+			if errShutdown := tcp.CloseWrite(); errShutdown != nil {
+				t.Errorf("half-close upstream websocket: %v", errShutdown)
+				return
+			}
+			for read() != nil {
+			}
 			close(closed)
 			return
 		}
