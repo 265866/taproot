@@ -72,7 +72,9 @@ The page rereads everything every 30 seconds while the tab is visible. When a re
 
 ### On a phone the page reads top to bottom
 
-The order is the verdict, **Needs you**, **Pools**, then the window and its numbers. On first run the checklist comes first. On a phone held upright or sideways, text is a step larger than on a desktop. On a touch screen, every button and link is at least 44 pixels tall. Long device and model names wrap rather than cut off. Tap a bar of the chart to read it, and tap it again to close it.
+The order is the verdict, **Needs you**, **Pools**, then the window and its numbers. On first run the checklist comes first. Each part sits on its own raised card. On a phone held upright or sideways, text is a step larger than on a desktop. On a touch screen, every button and link is at least 44 pixels tall. Long device and model names wrap rather than cut off. Tap a bar of the chart to read it, and tap it again to close it.
+
+**Needs you** is a compact list on a phone. Each row shows the severity, the title, and a short fix button, such as **Sign in** or **Back up**. Tap a title to open or close its detail in place. The first row starts open. On a screen narrower than 360 pixels, the button moves under the title. Each pool shows its next reset, its burn over the last 3 hours, and when it runs out as three cells under the bars. Tablets and desktops keep the layout above.
 
 ### Badges show what needs you on every page
 
@@ -80,8 +82,8 @@ The items in **Needs you** also put badges on **Accounts**, **Access**, and **Ba
 
 ## Other pages
 
-- **Accounts:** pool charts, the quota ledger, credentials, and sign-in. See [Accounts](accounts.md).
-- **Usage:** cost, tokens, latency, and failures, by account, model, session, and device.
+- **Accounts:** pool charts, the quota ledger, credentials, and sign-in. See [Accounts](accounts.md). One row above the charts holds the provider, what the chart shows (**Remaining** or **Drain rate**), **Projection** (the burn window of 1, 3, or 6 hours and the future usage it assumes), and the dates. On a phone, the provider tabs stay, and **View** opens a sheet with the burn window, future usage, and dates. Its label sums up your choices. **Remaining** and **Drain rate** stay beside **View**, except on a screen narrower than 360 pixels, where they move into the sheet. **Refresh all** is in the **⋯** menu on a phone.
+- **Usage:** cost, tokens, latency, and failures, by account, model, session, and device. The views and the range share one row. **Stack by** on the cost chart groups the Overview by model, account, provider, session, or device. On a phone, a menu chooses the view, and **Options** opens a sheet with the range and the grouping.
 - **Request Logs:** search and view stored requests. The application log is a tab here.
 - **Backups:** create, download, and restore backups.
 - **Access:** device requests, every tailnet device with its Proxy and Admin switches, and the addresses that reach the proxy without Tailscale.

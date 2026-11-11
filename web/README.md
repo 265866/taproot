@@ -96,6 +96,15 @@ Charts use Recharts. Reuse the components in `src/components/ui/` before adding 
 - `DataTable`, `DataTableHead`, `DataTableCell` (`numeric`, `mono`, `truncate`, `muted`), and `StatusPill` for a status code. Compact rows, scoped headers, tabular numbers; wide tables scroll inside their box.
 - `SegmentedControl`: one choice among a few, as an ARIA radio group with one Tab stop; the arrows, Home, and End move and select.
 - `UpdatedAgo`: "updated 8 s ago · refreshes every 30 s", ticking on the shared one-second clock (`SECOND_CLOCK`), or "8 s ago" with `compact`.
+- `SegmentedControl` takes `size="large"` (44 px segments in 14 px type, for sheets) and an option's `content` (drawn in place of its label, which stays its accessible name).
+
+Option controls (`src/components/ui/`):
+
+- `BottomSheet` (`BottomSheet.tsx`): a phone's options panel rising from the bottom, with a title and Done centered between the handle and the rule under them. It is a modal dialog: it joins the layer stack, traps Tab, closes on Escape, Done, or a tap on the backdrop, and returns focus to what opened it. The handle is decoration; nothing needs a drag. It keeps clear of the safe areas and scrolls its body when it is taller than the screen. `SheetButton` opens it: a 44 px button whose text sums up the sheet's choices, such as "Remaining · 3h burn · same pace", with the full summary in its name. `SheetGroup` labels one group of choices.
+- `ChoiceMenu` (`Dropdown.tsx`): a button that opens a menu of `menuitemradio` choices, the chosen one ticked; used for Usage's Stack by and its phone view menu. `PopoverButton` opens a small non-modal panel of related controls, such as Accounts' Projection; `PopoverGroup` labels its groups. Both close on Escape (focus returns to the button), on a press outside, and when focus leaves; both open on the chosen option. Their logic is `src/hooks/usePopover.ts`.
+- `RadioList`: one choice as a stacked list with a tick, as an ARIA radio group with one Tab stop; `variant="sheet"` for boxed 44 px rows, `"popover"` for compact ones.
+- Raised surfaces: `--surface-raised`, `--surface-raised-inset`, and `--border-raised` are the phone cards, sheets, and the insets inside them. `tests/themeContrast.test.ts` checks text and status colors on them.
+- Pages choose the phone controls with `useMediaQuery('(max-width: 768px)')` (`$breakpoint-mobile`), which answers before the first paint. Sheets and menus carry no Show emails control; the sidebar switch is the only one.
 
 Sheets and modals join the layer stack in `src/components/ui/layerStack.ts`, so only the top dialog handles Escape and traps Tab; a new dialog primitive must join it too. Keep keyboard interaction, accessible names, focus behavior, and reduced-motion handling. For motion, reuse `--ease-out-strong`, `--dur-press`, `--dur-hover`, and the helpers in `src/hooks/motion.ts`.
 
