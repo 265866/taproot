@@ -327,7 +327,23 @@ func (i *Ingest) handleRequestsSummary(c *gin.Context) {
 		n := b.models[m]
 		models = append(models, topModel{Model: m, Requests: n.requests, Failed: n.failed, CostUSD: modelCost[m]})
 	}
-	c.JSON(http.StatusOK, gin.H{"totals": totals, "buckets": buckets, "topDevices": devices, "topModels": models})
+	first, err := firstClientRequest(ctx, tx)
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"totals": totals, "buckets": buckets, "topDevices": devices, "topModels": models, "firstRequestAt": first})
+}
+
+// firstClientRequest is the start of the oldest recorded client request, or
+// nil when there is none. A server upgraded from 0.4 records client requests
+// only from the upgrade on, so a window that starts earlier undercounts.
+func firstClientRequest(ctx context.Context, q querier) (*string, error) {
+	var first *int64
+	if err := q.QueryRowContext(ctx, `SELECT MIN(ts) FROM client_requests`).Scan(&first); err != nil {
+		return nil, fmt.Errorf("read first client request: %w", err)
+	}
+	return formatNullableMs(first), nil
 }
 
 // topKeys returns up to n keys with the most requests, then the most

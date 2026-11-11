@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -280,6 +281,8 @@ type requestsSummary struct {
 	Buckets    []requestBucket `json:"buckets"`
 	TopDevices []topDevice     `json:"topDevices"`
 	TopModels  []topModel      `json:"topModels"`
+	// FirstRequestAt is a pointer so a test can tell null from a missing field.
+	FirstRequestAt *string `json:"firstRequestAt"`
 }
 
 func randomClientRequests(rng *rand.Rand, from, to time.Time, n int) []ClientRequest {
@@ -431,6 +434,41 @@ func TestRequestsSummaryMediansTopListsAndCost(t *testing.T) {
 	}
 	for _, bad := range []string{q("bucket", "2h"), q("top", "0"), q("top", "51"), q("tz", "Mars/Base"), q("from", "yesterday")} {
 		expectBadRequest(t, r, http.MethodGet, "/api/requests/summary"+bad, nil)
+	}
+}
+
+// TestRequestsSummaryFirstRequest checks firstRequestAt: null while no client
+// request is recorded, as on a server just upgraded from 0.4, then the oldest
+// one, even when it is outside the window asked for.
+func TestRequestsSummaryFirstRequest(t *testing.T) {
+	i, r, clock := newAPI(t)
+	base := time.Date(2026, 11, 10, 22, 43, 0, 0, time.UTC)
+	clock.t = base.Add(time.Hour)
+	path := "/api/requests/summary" + q("from", rfc(base.Add(-7*24*time.Hour)), "to", rfc(base.Add(time.Hour)), "bucket", "1d", "tz", "America/Los_Angeles")
+
+	var raw map[string]json.RawMessage
+	if code := call(t, r, http.MethodGet, path, nil, &raw); code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	if got := string(raw["firstRequestAt"]); got != "null" {
+		t.Fatalf("firstRequestAt with no requests = %q, want null", got)
+	}
+
+	one := 1
+	seedClientRows(t, i, []ClientRequest{
+		{Start: base.Add(10 * time.Minute), Device: laptopDevice, Model: "claude-opus-5-5", Status: 200, Attempts: &one},
+		{Start: base, Device: laptopDevice, Model: "claude-opus-5-5", Status: 200, Attempts: &one},
+		{Start: base.Add(-30 * 24 * time.Hour), Device: laptopDevice, Model: "claude-opus-5-5", Status: 200, Attempts: &one},
+	})
+	var got requestsSummary
+	if code := call(t, r, http.MethodGet, path, nil, &got); code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	if want := formatTime(base.Add(-30 * 24 * time.Hour)); got.FirstRequestAt == nil || *got.FirstRequestAt != want {
+		t.Fatalf("firstRequestAt = %v, want %s", got.FirstRequestAt, want)
+	}
+	if got.Totals.Requests != 2 {
+		t.Fatalf("window requests = %d, want 2", got.Totals.Requests)
 	}
 }
 
