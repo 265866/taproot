@@ -232,21 +232,109 @@ func parseUnixSeconds(raw string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// parseClaudeUsagePayload reads api.anthropic.com/api/oauth/usage. Window
-// utilization there is a percentage (0..100).
+// claudeLegacyWindow names the window a top-level oauth/usage key reports.
+// Anthropic calls the Fable limit seven_day_overage_included (header claim
+// 7d_oi); iguana_necktie carried it before the limits array existed.
+func claudeLegacyWindow(key string) string {
+	switch key {
+	case "iguana_necktie", "seven_day_overage_included":
+		return "seven_day_fable"
+	}
+	return key
+}
+
+// isFableModel matches the Fable family by display name ("Fable", "Fable 5",
+// "Fable 5.1"), the way Claude Code's model allowlist does.
+func isFableModel(displayName string) bool {
+	name := strings.ToLower(strings.TrimSpace(displayName))
+	return name == "fable" || strings.HasPrefix(name, "fable ")
+}
+
+type claudeUsageLimit struct {
+	Kind     string   `json:"kind"`
+	Percent  *float64 `json:"percent"`
+	ResetsAt *string  `json:"resets_at"`
+	Scope    *struct {
+		Model *struct {
+			DisplayName string `json:"display_name"`
+		} `json:"model"`
+	} `json:"scope"`
+}
+
+// claudeLimitWindow names the window of one limits[] item, or "" for a kind
+// taproot does not record.
+func claudeLimitWindow(l claudeUsageLimit) string {
+	switch l.Kind {
+	case "session":
+		return "five_hour"
+	case "weekly_all":
+		return "seven_day"
+	case "weekly_scoped":
+		if l.Scope == nil || l.Scope.Model == nil {
+			return ""
+		}
+		if isFableModel(l.Scope.Model.DisplayName) {
+			return "seven_day_fable"
+		}
+		if slug := normalizeWindowName(l.Scope.Model.DisplayName); slug != "" {
+			return "seven_day_" + slug
+		}
+	}
+	return ""
+}
+
+func claudePollObservation(window string, percent float64, resetsAt *string, observedAt time.Time) observation {
+	o := observation{
+		Provider:      "claude",
+		Window:        window,
+		Utilization:   percent / 100,
+		PeriodSeconds: windowPeriodSeconds(window),
+		ObservedAt:    observedAt,
+		Source:        "poll",
+		Status:        "allowed",
+	}
+	if resetsAt != nil {
+		if t, err := time.Parse(time.RFC3339, *resetsAt); err == nil {
+			o.ResetsAt = t.UTC()
+		}
+	}
+	if o.Utilization >= 1 {
+		o.Status = "rejected"
+	}
+	return o
+}
+
+// parseClaudeUsagePayload reads api.anthropic.com/api/oauth/usage. The
+// limits array comes first; a top-level window key adds only windows the
+// array did not report. Utilization there is a percentage (0..100).
+//
+// five_hour is null while no 5-hour session is open. That is recorded as an
+// empty window with no reset, so an older reading stops counting as current.
 func parseClaudeUsagePayload(body []byte, observedAt time.Time) []observation {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil
 	}
-	type window struct {
+	var out []observation
+	seen := map[string]bool{}
+	var limits []claudeUsageLimit
+	if raw, ok := payload["limits"]; ok && json.Unmarshal(raw, &limits) == nil {
+		for _, l := range limits {
+			window := claudeLimitWindow(l)
+			if window == "" || seen[window] || l.Percent == nil {
+				continue
+			}
+			seen[window] = true
+			out = append(out, claudePollObservation(window, *l.Percent, l.ResetsAt, observedAt))
+		}
+	}
+	type legacyWindow struct {
 		Utilization     *float64 `json:"utilization"`
 		ResetsAt        *string  `json:"resets_at"`
 		LimitDollars    *float64 `json:"limit_dollars"`
 		UsedDollars     *float64 `json:"used_dollars"`
 		RemainingDollar *float64 `json:"remaining_dollars"`
 	}
-	var out []observation
 	keys := make([]string, 0, len(payload))
 	for k := range payload {
 		keys = append(keys, k)
@@ -256,36 +344,24 @@ func parseClaudeUsagePayload(body []byte, observedAt time.Time) []observation {
 		if key == "extra_usage" || key == "limits" {
 			continue
 		}
-		var w window
+		var w legacyWindow
 		if err := json.Unmarshal(payload[key], &w); err != nil || w.Utilization == nil {
 			continue
 		}
 		if w.LimitDollars != nil || w.UsedDollars != nil || w.RemainingDollar != nil {
 			continue
 		}
-		name := key
-		if key == "iguana_necktie" {
-			name = "seven_day_fable"
+		window := claudeLegacyWindow(key)
+		if seen[window] {
+			continue
 		}
-		o := observation{
-			Provider:      "claude",
-			Window:        name,
-			Utilization:   *w.Utilization / 100,
-			PeriodSeconds: windowPeriodSeconds(name),
-			ObservedAt:    observedAt,
-			Source:        "poll",
-		}
-		if w.ResetsAt != nil {
-			if t, err := time.Parse(time.RFC3339, *w.ResetsAt); err == nil {
-				o.ResetsAt = t.UTC()
-			}
-		}
-		o.Status = "allowed"
-		if o.Utilization >= 1 {
-			o.Status = "rejected"
-		}
-		out = append(out, o)
+		seen[window] = true
+		out = append(out, claudePollObservation(window, *w.Utilization, w.ResetsAt, observedAt))
 	}
+	if raw, ok := payload["five_hour"]; ok && !seen["five_hour"] && string(raw) == "null" {
+		out = append(out, claudePollObservation("five_hour", 0, nil, observedAt))
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].Window < out[b].Window })
 	return out
 }
 
