@@ -407,7 +407,9 @@
         "nouns": "full resets",
         "use": "Use full reset",
         "desc": "Refills 5-hour, weekly, and Fable.",
+        "desc_no_five_hour": "Refills weekly and Fable.",
         "what": "Refills 5-hour, weekly, and Fable",
+        "what_no_five_hour": "Refills weekly and Fable",
         "done": "Limits reset."
       },
       "fable": {
@@ -491,12 +493,14 @@
       "title": "Use {{kind}} on {{name}}?",
       "title_unknown": "Use “{{label}}” on {{name}}?",
       "lead_full": "Refills the 5-hour, weekly, and Fable limits. Every model is back to full.",
+      "lead_full_no_five_hour": "Refills the weekly and Fable limits. Every model is back to full.",
       "lead_fable": "Gives back what Fable used this week and refills your 5-hour limit. Other models’ weekly usage stays.",
       "lead_fable_share": "Gives back what Fable used this week ({{share}}% of weekly) and refills your 5-hour limit. Other models’ weekly usage stays.",
       "lead_fable_no_session": "Gives back what Fable used this week. Other models’ weekly usage stays.",
       "lead_fable_share_no_session": "Gives back what Fable used this week ({{share}}% of weekly). Other models’ weekly usage stays.",
       "lead_session": "Refills your 5-hour limit. The weekly and Fable limits stay as they are.",
       "lead_weekly": "Refills your weekly limit. The 5-hour limit stays as it is.",
+      "lead_weekly_no_five_hour": "Refills your weekly limit.",
       "lead_unknown": "Anthropic says it clears {{windows}}.",
       "lead_unknown_none": "Anthropic doesn't say which limits it clears.",
       "lead_unknown_note": "Taproot doesn't recognize this kind of reset, so it can't show what will change.",
@@ -525,6 +529,7 @@
     "result": {
       "full_title": "Full reset used at {{time}}.",
       "full_body": "Your 5-hour, weekly, and Fable limits are full.",
+      "full_body_no_five_hour": "Your weekly and Fable limits are full.",
       "fable_title": "Fable reset used at {{time}}.",
       "fable_body": "What Fable used is back in your weekly limit.",
       "fable_body_numbers": "What Fable used is back in your weekly limit: weekly went from {{from}}% to {{to}}% used, and the 5-hour limit is full.",

@@ -1,6 +1,7 @@
 /**
  * The 5-hour, weekly, and Fable limits from a Claude OAuth usage body, read the way taproot's
- * server poller reads them: `limits[]` first, then the legacy top-level keys.
+ * server poller reads them: `limits[]` first, then the legacy top-level keys. A `limits[]`
+ * without a `session` item means the account has no 5-hour limit, whatever `five_hour` says.
  */
 import { isRecord } from '@/utils/helpers';
 
@@ -19,8 +20,11 @@ export interface ClaudeFableReading extends ClaudeLimitReading {
 }
 
 export interface ClaudeUsageLimits {
-  /** `closed` when the response says no 5-hour session is open. */
-  fiveHour: ClaudeLimitReading | 'closed' | null;
+  /**
+   * `closed` when the response says no 5-hour session is open, and `none` when the account has
+   * no 5-hour limit: `limits[]` lists no `session` item.
+   */
+  fiveHour: ClaudeLimitReading | 'closed' | 'none' | null;
   weekly: ClaudeLimitReading | null;
   /** `usedPercent` is a share of Fable's own allowance; 100 means capped. */
   fable: ClaudeFableReading | null;
@@ -86,7 +90,9 @@ export function parseClaudeUsageLimits(body: unknown): ClaudeUsageLimits | null 
       }
     }
   }
-  fiveHour ??= body.five_hour === null ? 'closed' : legacyReading(body.five_hour);
+  const hasSession = limits.some((item) => isRecord(item) && item.kind === 'session');
+  if (limits.length > 0 && !hasSession) fiveHour = 'none';
+  else fiveHour ??= body.five_hour === null ? 'closed' : legacyReading(body.five_hour);
   weekly ??= legacyReading(body.seven_day);
   if (!fable) {
     // Both legacy keys name the Fable limit; the server reads them sorted, so iguana_necktie wins.

@@ -304,12 +304,19 @@ func claudePollObservation(window string, percent float64, resetsAt *string, obs
 	return o
 }
 
+// statusNoLimit marks a window the account does not have. The row replaces an
+// older reading as the window's latest, and latestObservations leaves such a
+// window out.
+const statusNoLimit = "no_limit"
+
 // parseClaudeUsagePayload reads api.anthropic.com/api/oauth/usage. The
 // limits array comes first; a top-level window key adds only windows the
 // array did not report. Utilization there is a percentage (0..100).
 //
-// five_hour is null while no 5-hour session is open. That is recorded as an
-// empty window with no reset, so an older reading stops counting as current.
+// A limits array without a session item means the account has no 5-hour
+// limit, which is recorded as a statusNoLimit row. Without the array, a null
+// five_hour means no session is open, which is recorded as an empty window
+// with no reset. Either way an older reading stops counting as current.
 func parseClaudeUsagePayload(body []byte, observedAt time.Time) []observation {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -318,8 +325,11 @@ func parseClaudeUsagePayload(body []byte, observedAt time.Time) []observation {
 	var out []observation
 	seen := map[string]bool{}
 	var limits []claudeUsageLimit
-	if raw, ok := payload["limits"]; ok && json.Unmarshal(raw, &limits) == nil {
+	hasLimits, hasSession := false, false
+	if raw, ok := payload["limits"]; ok && json.Unmarshal(raw, &limits) == nil && len(limits) > 0 {
+		hasLimits = true
 		for _, l := range limits {
+			hasSession = hasSession || l.Kind == "session"
 			window := claudeLimitWindow(l)
 			if window == "" || seen[window] || l.Percent == nil {
 				continue
@@ -352,13 +362,17 @@ func parseClaudeUsagePayload(body []byte, observedAt time.Time) []observation {
 			continue
 		}
 		window := claudeLegacyWindow(key)
-		if seen[window] {
+		if seen[window] || (window == "five_hour" && hasLimits && !hasSession) {
 			continue
 		}
 		seen[window] = true
 		out = append(out, claudePollObservation(window, *w.Utilization, w.ResetsAt, observedAt))
 	}
-	if raw, ok := payload["five_hour"]; ok && !seen["five_hour"] && string(raw) == "null" {
+	if hasLimits && !hasSession {
+		o := claudePollObservation("five_hour", 0, nil, observedAt)
+		o.Status = statusNoLimit
+		out = append(out, o)
+	} else if raw, ok := payload["five_hour"]; ok && !seen["five_hour"] && string(raw) == "null" {
 		out = append(out, claudePollObservation("five_hour", 0, nil, observedAt))
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].Window < out[b].Window })

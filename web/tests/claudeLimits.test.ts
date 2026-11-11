@@ -28,8 +28,16 @@ import {
 } from '@/features/taproot-quota/components/claude/ClaudeLimits';
 import { ClaudeResets } from '@/features/taproot-quota/components/claude/ClaudeResets';
 import { ResetConfirmBody } from '@/features/taproot-quota/components/claude/ResetConfirm';
-import { grantWhat, resetConfirmTitle } from '@/features/taproot-quota/components/claude/resetText';
-import { buildClaudeQuotaWindows } from '@/features/taproot-quota/live/providers/claude/data';
+import {
+  grantWhat,
+  kindDescription,
+  resetConfirmTitle,
+  unknownClearsText,
+} from '@/features/taproot-quota/components/claude/resetText';
+import {
+  buildClaudeQuotaWindows,
+  CLAUDE_CONFIG,
+} from '@/features/taproot-quota/live/providers/claude/data';
 import { formatCountdown } from '@/features/taproot-quota/model/format';
 
 type Json = Record<string, unknown>;
@@ -93,15 +101,35 @@ describe('Claude usage limits', () => {
     });
   });
 
-  test('a null five_hour is a closed session, and the grant read says whether credits are on', () => {
+  test('no session item in limits[] means no 5-hour limit, and the grant read says whether credits are on', () => {
     const limits = parseClaudeUsageLimits(fixture('usage-cedar-acct-A'));
-    expect(limits?.fiveHour).toBe('closed');
+    expect(limits?.fiveHour).toBe('none');
+    expect(parseClaudeUsageLimits(fixture('usage-acct-A'))?.fiveHour).toBe('none');
+    // limits[] decides even when a legacy five_hour key disagrees.
+    expect(
+      parseClaudeUsageLimits({
+        five_hour: { utilization: 30, resets_at: '2026-11-11T00:50:00Z' },
+        limits: [{ kind: 'weekly_all', percent: 5, resets_at: '2026-11-12T12:00:00Z' }],
+      })?.fiveHour
+    ).toBe('none');
     expect(limits?.fable?.usedOfWeekly).toBe(0);
     // The grant read skips spend; its event props say extra usage is disabled.
     expect(limits?.extraUsageEnabled).toBe(false);
     const enabled = fixture('usage-cedar-acct-A');
     (enabled.cedar_ember as Json).event_props = { extra_usage_state: 'enabled' };
     expect(parseClaudeUsageLimits(enabled)?.extraUsageEnabled).toBe(true);
+  });
+
+  test('without limits[], a null five_hour is a closed session', () => {
+    const weekly = { utilization: 5, resets_at: '2026-11-12T12:00:00Z' };
+    expect(parseClaudeUsageLimits({ five_hour: null, seven_day: weekly })?.fiveHour).toBe('closed');
+    expect(
+      parseClaudeUsageLimits({ five_hour: null, seven_day: weekly, limits: [] })?.fiveHour
+    ).toBe('closed');
+    // A session item whose reset passed is still a 5-hour limit; the display reads it as closed.
+    expect(parseClaudeUsageLimits(fixture('usage-acct-B'))?.fiveHour).toMatchObject({
+      usedPercent: 7,
+    });
   });
 
   test('matches Fable 5.1, and falls back to the legacy Fable key', () => {
@@ -640,8 +668,10 @@ describe('confirmation dialogs', () => {
       'Gives back what Fable used this week. Other models’ weekly usage stays.'
     );
     for (const html of [dialog(usage), dialog(noShare)]) expect(html).not.toContain('refills');
-    expect(grantWhat(t, 'fable', group.target!)).toBe('Gives back what Fable used this week');
-    expect(grantWhat(t, 'fable', status(cedar()).grants[1])).toBe(
+    expect(grantWhat(t, 'fable', group.target!, usage)).toBe(
+      'Gives back what Fable used this week'
+    );
+    expect(grantWhat(t, 'fable', status(cedar()).grants[1], usageB(32))).toBe(
       'Gives back what Fable used this week and refills 5-hour'
     );
   });
@@ -690,5 +720,153 @@ describe('the message for a settled refusal', () => {
     expect(refusalMessageKey('unavailable', 'not_next_grant')).toBe(
       'claude_reset.refused_not_next'
     );
+  });
+});
+
+describe('an account without a 5-hour limit', () => {
+  const t = i18n.t.bind(i18n);
+  const usageA = parseClaudeUsageLimits(fixture('usage-acct-A'))!;
+  const strip = (html: string) => html.replace(/<[^>]+>/g, '|');
+
+  test('the live read gives the card no 5-hour row', async () => {
+    const file = { name: 'claude-a.json', type: 'claude', authIndex: 'a' } as never;
+    for (const [name, fiveHour] of [
+      ['usage-acct-A', 'none'],
+      ['usage-acct-B', 'reading'],
+    ] as const) {
+      apiCallApi.request = async (request) => ({
+        statusCode: 200,
+        body: request.url.includes('/usage') ? fixture(name) : {},
+        bodyText: '',
+        header: {},
+      });
+      const data = await CLAUDE_CONFIG.fetchQuota(file, t);
+      const html = renderToStaticMarkup(
+        createElement(ClaudeLimits, { usage: data.limits!, wall: null, surface: 'card', now: NOW })
+      );
+      if (fiveHour === 'none') {
+        expect(data.limits?.fiveHour).toBe('none');
+        expect(data.windows.map((w) => w.id)).not.toContain('five-hour');
+        expect(html).not.toContain('5-hour');
+        expect(html).not.toContain('No session open');
+        expect(html).toContain('Weekly · all models');
+      } else {
+        expect(html).toContain('5-hour');
+      }
+    }
+  });
+
+  test('the sheet shows Weekly and Fable alone, without the two-column grid', () => {
+    const html = renderToStaticMarkup(
+      createElement(ClaudeLimits, { usage: usageA, wall: null, surface: 'sheet', now: NOW })
+    );
+    expect(html).not.toContain('5-hour');
+    expect(html).not.toContain('No session open');
+    expect(html).toContain('Weekly · all models');
+    expect(html).toContain('Fable');
+    // No empty 5-hour column: the sheet lays the rows out as the card does.
+    expect(html).toBe(
+      renderToStaticMarkup(
+        createElement(ClaudeLimits, { usage: usageA, wall: null, surface: 'card', now: NOW })
+      )
+    );
+    const b = renderToStaticMarkup(
+      createElement(ClaudeLimits, { usage: usageB(32), wall: null, surface: 'sheet', now: NOW })
+    );
+    expect(b).toContain('5-hour');
+  });
+
+  test('a five_hour Anthropic calls exhausted is no limit for the account', () => {
+    expect(limitReached(usageA, { exhausted: ['five_hour'] })).toBeNull();
+    expect(limitReached(usageB(32), { exhausted: ['five_hour'] })).toBe('five_hour');
+    expect(
+      renderToStaticMarkup(
+        createElement(ClaudeLimitNotice, { usage: usageA, wall: null, now: NOW })
+      )
+    ).toBe('');
+  });
+
+  test('reset rows, details, dialogs, and banners name no 5-hour limit', () => {
+    // Account B's grants clear five_hour; shown on an account without the limit.
+    const usage: ClaudeUsageLimits = { ...usageB(32), fiveHour: 'none' };
+    const block = cedar();
+    const parsed = status(block);
+    const rows = renderResets(block, usage);
+    expect(rows).toContain('Refills weekly and Fable.');
+    expect(rows).toContain('Gives back Fable’s 32% of weekly. Weekly goes from 63% to 31% used.');
+    expect(rows).not.toContain('5-hour');
+    for (const grant of parsed.grants) {
+      expect(grantWhat(t, classifyGrant(grant), grant, usage)).not.toContain('5-hour');
+    }
+    for (const group of resetGroups(parsed, usage, NOW)) {
+      const html = strip(
+        renderToStaticMarkup(
+          createElement(ResetConfirmBody, {
+            group,
+            grant: group.target!,
+            usage,
+            weeklyResetsAt: '2026-11-12T12:00:00Z',
+            now: NOW,
+          })
+        )
+      );
+      expect(html).not.toContain('5-hour');
+      expect(predictReset(group.kind, group.target!, usage).map((row) => row.limit)).not.toContain(
+        'five_hour'
+      );
+      if (group.kind === 'full') {
+        expect(html).toContain('Refills the weekly and Fable limits. Every model is back to full.');
+      }
+    }
+    // Fixed copy, for grants that list nothing they clear.
+    const bare = { ...parsed.grants[0], clears: [] };
+    expect(kindDescription(t, 'full', bare, usage)).toBe('Refills weekly and Fable.');
+    expect(kindDescription(t, 'full', bare, usageB(32))).toBe('Refills 5-hour, weekly, and Fable.');
+    const weekly = resetGroups(parsed, usage, NOW).find((g) => g.kind === 'full')!;
+    const lead = (u: ClaudeUsageLimits) =>
+      renderToStaticMarkup(
+        createElement(ResetConfirmBody, {
+          group: { ...weekly, kind: 'weekly' },
+          grant: bare,
+          usage: u,
+          weeklyResetsAt: null,
+          now: NOW,
+        })
+      );
+    expect(lead(usage)).toContain('Refills your weekly limit.');
+    expect(lead(usage)).not.toContain('5-hour');
+    expect(lead(usageB(32))).toContain('The 5-hour limit stays as it is.');
+    const unknown = {
+      ...parsed.grants[0],
+      clears: ['five_hour', 'seven_day'],
+      rawClears: ['five_hour', 'seven_day', 'x'],
+    } as typeof bare;
+    expect(unknownClearsText(t, unknown, usage)).toBe('Clears weekly.');
+    expect(grantWhat(t, 'unknown', unknown, usage)).toBe('Clears weekly and x');
+    const banner = (u: ClaudeUsageLimits, kind: 'full' | 'fable') =>
+      renderToStaticMarkup(
+        createElement(ClaudeResets, {
+          status: parsed,
+          groups: [],
+          usage: u,
+          now: NOW,
+          blocked: false,
+          busyKey: null,
+          pendingGrantId: null,
+          // The claim sets refilledFiveHour from what the grant clears.
+          result: { key: 'a', kind, at: NOW, weeklyBefore: 63, refilledFiveHour: true },
+          onUse: () => {},
+        })
+      );
+    expect(banner(usage, 'full')).toContain('Your weekly and Fable limits are full.');
+    expect(banner(usageB(32), 'full')).toContain('Your 5-hour, weekly, and Fable limits are full.');
+    expect(banner(usage, 'fable')).not.toContain('5-hour');
+    expect(banner(usageB(32), 'fable')).toContain('the 5-hour limit is full');
+  });
+
+  test('account A’s own grants read without 5-hour', () => {
+    const block = cedar('usage-cedar-acct-A');
+    const usage = parseClaudeUsageLimits(fixture('usage-cedar-acct-A'))!;
+    expect(strip(renderResets(block, usage))).not.toContain('5-hour');
   });
 });
