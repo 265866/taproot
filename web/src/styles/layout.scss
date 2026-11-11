@@ -1,4 +1,5 @@
 @use './variables.scss' as *;
+@use './mixins.scss' as *;
 
 .visually-hidden {
   position: absolute;
@@ -320,14 +321,15 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 8px 6px;
+    min-height: 44px;
+    padding: 2px 6px 8px;
     flex-shrink: 0;
   }
 
   .sidebar-brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
     flex: 1;
     color: var(--text-primary);
@@ -337,26 +339,27 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border: 1px solid var(--border-primary);
-    border-radius: 5px;
+    border-radius: 7px;
     background: var(--accent-subtle);
   }
 
   .sidebar-brand-logo {
-    width: 14px;
-    height: 14px;
+    width: 20px;
+    height: 20px;
     display: block;
   }
 
   .sidebar-brand-title {
+    @include clip-line;
+
     min-width: 0;
-    overflow: hidden;
     color: var(--text-primary);
-    font-size: 13.5px;
-    font-weight: 600;
-    white-space: nowrap;
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
   }
 
   .sidebar-close {
@@ -480,14 +483,12 @@
       display: flex;
       flex-direction: column;
       min-width: 0;
-      line-height: 1.2;
     }
 
     .nav-label {
+      @include clip-line;
+
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     &:hover {
@@ -545,12 +546,11 @@
   }
 
   .sidebar-version {
+    @include clip-line;
+
     min-width: 0;
-    overflow: hidden;
     color: var(--text-tertiary);
     font-size: var(--fs-caption);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .sidebar-icon-button,
@@ -672,12 +672,11 @@
   transition: left $transition-normal;
 
   .nav-tooltip-label {
+    @include clip-line;
+
     max-width: 100%;
-    overflow: hidden;
     font-size: 13px;
     font-weight: 650;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .nav-tooltip-meta {
