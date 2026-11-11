@@ -385,6 +385,14 @@ textarea {
   max-height: 65vh;
 }
 
+// The confirmation dialog's buttons sit in its body rather than a footer, without a rule above.
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
 .modal-footer {
   padding: $spacing-md $spacing-lg;
   border-top: 1px solid var(--border-color);
@@ -434,6 +442,25 @@ textarea {
 
   .modal-footer .btn {
     width: 100%;
+  }
+
+  // Stacked full width, the primary button on top, and stuck to the bottom of the scrolling body
+  // (over its bottom padding) so a long message can't push them out of view.
+  .confirmation-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: $spacing-sm;
+    position: sticky;
+    bottom: -$spacing-md;
+    margin: $spacing-lg 0 (-$spacing-md);
+    padding: $spacing-sm 0 $spacing-md;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-primary);
+  }
+
+  .confirmation-actions .btn {
+    width: 100%;
+    min-height: 44px;
   }
 }
 
@@ -703,6 +730,18 @@ textarea {
 @media (pointer: coarse) {
   .btn.btn-sm {
     min-height: 44px;
+  }
+
+  // Same center as the 32 px button, so the close animation's origin still matches.
+  .modal-close-floating {
+    top: 6px;
+    right: 6px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .modal-header {
+    padding-right: 58px;
   }
 }
 

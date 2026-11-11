@@ -278,6 +278,14 @@
   }
 }
 
+@media (pointer: coarse) {
+  .actionPill {
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .actionPill:hover:not(:disabled) {
     border-color: var(--border-hover);
