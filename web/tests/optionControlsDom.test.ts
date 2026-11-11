@@ -1,8 +1,8 @@
 /**
  * Drives the option primitives in a DOM (happy-dom): the phone bottom sheet (a modal dialog that
  * traps Tab, closes on Escape, Done, or the backdrop, and gives focus back), the desktop choice
- * menu and popover, the radio list, and the Dashboard's compact Needs-you rows. The sheet also
- * owns one history entry while open, so the system back gesture closes it.
+ * menu and popover, the radio list, and the Dashboard's compact Needs-you rows. The sheet leaves
+ * history alone, so the system back gesture leaves the page as with every other modal.
  */
 import { afterAll, afterEach, describe, expect, jest, test } from 'bun:test';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -21,14 +21,10 @@ const { normalizeAttention } = await import('@/services/api/taprootStatus');
 const { NeedsYou } = await import('@/features/dashboard/components/NeedsYou');
 const { ViewControls } = await import('@/features/accounts/components/ViewControls');
 const { defaultRange } = await import('@/features/taproot-quota/model/range');
-const { installSheetHistory } = await import('@/components/ui/sheetHistory');
 const { useKeepFocus } = await import('@/features/dashboard/hooks/useKeepFocus');
 const { useUsageParams } = await import('@/features/taproot-usage/hooks/useUsageParams');
 const { Select } = await import('@/components/ui/Select');
 const { useEffect, useRef } = await import('react');
-
-// As App does before it creates the router.
-installSheetHistory(window);
 
 const actGlobal = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
 actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
@@ -420,87 +416,62 @@ describe('the compact Needs-you rows', () => {
   });
 });
 
-describe('the bottom sheet and the back gesture', () => {
-  const MARK = '__taprootSheet';
-  const base = () => {
-    window.history.replaceState({ idx: 0 }, '', '/#/accounts');
-    return window.history.length;
-  };
-  const marked = () => MARK in ((window.history.state as object | null) ?? {});
+describe('the bottom sheet and history', () => {
   const opener = () => document.getElementById('opener')!;
-
-  test('opening pushes one entry on the same page, and back closes the sheet, not the page', () => {
-    jest.useFakeTimers();
-    try {
-      const length = base();
-      const url = window.location.href;
-      const view = mount(createElement(SheetHarness));
-      opener().focus();
-      click(opener());
-      expect(window.history.length).toBe(length + 1);
-      expect(window.location.href).toBe(url);
-      expect(marked()).toBe(true);
-      // The router's listener comes after the sheet's: it must not see the sheet's pop.
-      const router = jest.fn();
-      window.addEventListener('popstate', router);
-      act(() => window.history.back());
+  const closers = [
+    () =>
+      click(Array.from(sheet()!.querySelectorAll('button')).find((b) => b.textContent === 'Done')!),
+    () => key(document.activeElement ?? document.body, 'Escape'),
+    () =>
       act(() => {
-        jest.advanceTimersByTime(250);
-      });
-      window.removeEventListener('popstate', router);
-      expect(sheet()).toBeNull();
-      expect(router).not.toHaveBeenCalled();
-      expect(marked()).toBe(false);
-      expect(window.location.href).toBe(url);
-      expect(document.activeElement).toBe(opener());
-      view.unmount();
-    } finally {
-      jest.useRealTimers();
-    }
-  });
+        sheet()!.parentElement!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      }),
+  ];
 
-  test('Done, Escape, and the backdrop remove the entry, and repeated opens leave none behind', () => {
-    const length = base();
-    const view = mount(createElement(SheetHarness));
-    const router = jest.fn();
-    window.addEventListener('popstate', router);
-    const closers = [
-      () =>
-        click(
-          Array.from(sheet()!.querySelectorAll('button')).find((b) => b.textContent === 'Done')!
-        ),
-      () => key(document.activeElement ?? document.body, 'Escape'),
-      () =>
-        act(() => {
-          sheet()!.parentElement!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-        }),
-    ];
-    for (let round = 0; round < 3; round++) {
+  test('opening and closing it adds no history entry and no popstate listener', () => {
+    window.history.replaceState({ idx: 0 }, '', '/#/accounts');
+    const length = window.history.length;
+    const state = window.history.state;
+    const addListener = jest.spyOn(window, 'addEventListener');
+    const push = jest.spyOn(window.history, 'pushState');
+    const replace = jest.spyOn(window.history, 'replaceState');
+    const back = jest.spyOn(window.history, 'back');
+    try {
+      const view = mount(createElement(SheetHarness));
       for (const close of closers) {
         click(opener());
-        expect(marked()).toBe(true);
+        expect(sheet()).not.toBeNull();
+        expect(window.history.length).toBe(length);
         close();
-        expect(marked()).toBe(false);
       }
+      view.unmount();
+      expect(addListener.mock.calls.filter(([type]) => type === 'popstate')).toEqual([]);
+      expect(push).not.toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+      expect(back).not.toHaveBeenCalled();
+      expect(window.history.length).toBe(length);
+      expect(window.history.state).toEqual(state);
+    } finally {
+      addListener.mockRestore();
+      push.mockRestore();
+      replace.mockRestore();
+      back.mockRestore();
     }
-    window.removeEventListener('popstate', router);
-    expect(router).not.toHaveBeenCalled();
-    // One forward entry at most, which the next open replaces.
-    expect(window.history.length).toBeLessThanOrEqual(length + 1);
-    view.unmount();
   });
 
-  test('a sheet unmounted while open, as when the phone turns to a wider layout, removes its entry', () => {
-    base();
+  test('a sheet that unmounts while open, as when back leaves its page, releases the scroll lock', () => {
     const view = mount(createElement(SheetHarness));
     click(opener());
-    expect(marked()).toBe(true);
+    expect(document.body.style.position).toBe('fixed');
+    expect(document.body.classList.contains('modal-open')).toBe(true);
     view.unmount();
-    expect(marked()).toBe(false);
+    expect(document.body.style.position).toBe('');
+    expect(document.body.style.overflow).toBe('');
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+    expect(sheet()).toBeNull();
   });
 
   test('the Accounts View sheet does not reopen after the phone turns away and back', () => {
-    base();
     const control = { setPhone: (_phone: boolean) => {} };
     function Turning() {
       const [phone, set] = useState(true);
@@ -527,12 +498,10 @@ describe('the bottom sheet and the back gesture', () => {
     click(view.host.querySelector('button[aria-haspopup="dialog"]'));
     expect(sheet()).not.toBeNull();
     act(() => control.setPhone(false));
-    expect(marked()).toBe(false);
     act(() => control.setPhone(true));
     expect(
       view.host.querySelector('button[aria-haspopup="dialog"]')!.getAttribute('aria-expanded')
     ).toBe('false');
-    expect(marked()).toBe(false);
     view.unmount();
   });
 });

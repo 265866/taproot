@@ -5,7 +5,6 @@ import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AppErrorScreen } from '@/components/common/PageErrorBoundary';
 import { ConnectionGate } from '@/router/ConnectionGate';
-import { installSheetHistory } from '@/components/ui/sheetHistory';
 import { installEditedHashGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useThemeStore } from '@/stores';
 
@@ -20,7 +19,6 @@ function RootShell() {
 }
 
 installEditedHashGuard(window);
-installSheetHistory(window);
 
 const router = createHashRouter([
   {
