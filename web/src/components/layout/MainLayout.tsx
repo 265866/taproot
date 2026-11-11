@@ -38,7 +38,14 @@ import {
   IconX,
 } from '@/components/ui/icons';
 import { TaprootMark } from '@/components/common/TaprootMark';
-import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
+import { ShowEmailsSwitch } from '@/components/layout/ShowEmailsSwitch';
+import {
+  useAuthStore,
+  useConfigStore,
+  useNotificationStore,
+  useShowEmails,
+  useThemeStore,
+} from '@/stores';
 import {
   applyDocumentTitle,
   navLinkLabel,
@@ -104,6 +111,7 @@ const NAV_TOOLTIP_ID = 'sidebar-nav-tooltip';
 const SIDEBAR_ID = 'main-navigation';
 const MAIN_CONTENT_ID = 'main-content';
 const THEME_MENU_ID = 'theme-menu';
+const SHOW_EMAILS_TOOLTIP_TARGET = 'show-emails';
 // $breakpoint-mobile in variables.scss: at and below it the sidebar is an off-canvas drawer.
 const MOBILE_BREAKPOINT_PX = 768;
 const NAV_TOOLTIP_VIEWPORT_MARGIN = 8;
@@ -308,6 +316,7 @@ export function MainLayout() {
   const invalidateConfig = useConfigStore((state) => state.invalidate);
 
   const theme = useThemeStore((state) => state.theme);
+  const showEmails = useShowEmails();
   const setTheme = useThemeStore((state) => state.setTheme);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -910,6 +919,14 @@ export function MainLayout() {
       ? t('sidebar.open_navigation_attention', { count: attentionCount })
       : t('sidebar.open_navigation');
   const versionLabel = t('sidebar.version', { version: displayVersion(__APP_VERSION__) });
+  const showEmailsTooltip = [
+    SHOW_EMAILS_TOOLTIP_TARGET,
+    t('sidebar.show_emails'),
+    t(showEmails ? 'sidebar.show_emails_on' : 'sidebar.show_emails_off'),
+  ] as const;
+  // The switch's state can change under its open tooltip.
+  const railTooltipMeta =
+    railTooltip?.targetID === SHOW_EMAILS_TOOLTIP_TARGET ? showEmailsTooltip[2] : railTooltip?.meta;
 
   const themeIcon =
     theme === 'auto'
@@ -1009,78 +1026,102 @@ export function MainLayout() {
           </nav>
 
           <div className="sidebar-footer">
-            {showSidebarLabels && (
-              <span className="sidebar-version" title={versionLabel}>
-                {versionLabel}
-              </span>
-            )}
-            <div className={`theme-menu ${themeMenuOpen ? 'open' : ''}`} ref={themeMenuRef}>
-              <button
-                ref={themeButtonRef}
-                type="button"
-                className="sidebar-icon-button"
-                onClick={toggleThemeMenu}
-                title={t('theme.switch')}
-                aria-label={t('theme.switch')}
-                aria-expanded={themeMenuOpen}
-                aria-controls={themeMenuOpen ? THEME_MENU_ID : undefined}
-              >
-                {themeIcon}
-              </button>
-              {themeMenuOpen && (
-                <div
-                  id={THEME_MENU_ID}
-                  className="notification entering theme-menu-popover"
-                  role="group"
+            <ShowEmailsSwitch
+              iconOnly={!showSidebarLabels}
+              describedBy={
+                !showSidebarLabels && railTooltip?.targetID === SHOW_EMAILS_TOOLTIP_TARGET
+                  ? NAV_TOOLTIP_ID
+                  : undefined
+              }
+              {...(showSidebarLabels
+                ? {}
+                : {
+                    onMouseEnter: (event: ReactMouseEvent<HTMLElement>) =>
+                      handleRailTooltipMouseEnter(event, ...showEmailsTooltip),
+                    onMouseLeave: handleRailTooltipMouseLeave,
+                    onFocus: (event: SyntheticEvent<HTMLElement>) =>
+                      handleRailTooltipFocus(event, ...showEmailsTooltip),
+                    onBlur: (event: SyntheticEvent<HTMLElement>) =>
+                      handleRailTooltipBlur(event, ...showEmailsTooltip),
+                  })}
+            />
+            <div className="sidebar-footer-row">
+              {showSidebarLabels && (
+                <span className="sidebar-version" title={versionLabel}>
+                  {versionLabel}
+                </span>
+              )}
+              <div className={`theme-menu ${themeMenuOpen ? 'open' : ''}`} ref={themeMenuRef}>
+                <button
+                  ref={themeButtonRef}
+                  type="button"
+                  className="sidebar-icon-button"
+                  onClick={toggleThemeMenu}
+                  title={t('theme.switch')}
                   aria-label={t('theme.switch')}
+                  aria-expanded={themeMenuOpen}
+                  aria-controls={themeMenuOpen ? THEME_MENU_ID : undefined}
                 >
-                  {THEME_CARDS.map((tc) => (
-                    <button
-                      key={tc.key}
-                      type="button"
-                      className={`theme-card ${theme === tc.key ? 'active' : ''}`}
-                      onClick={() => handleThemeSelect(tc.key)}
-                      aria-pressed={theme === tc.key}
-                    >
-                      <div
-                        className="theme-card-preview"
-                        style={{
-                          background: tc.colors.bg,
-                          border: `1px solid ${tc.colors.border}`,
-                        }}
+                  {themeIcon}
+                </button>
+                {themeMenuOpen && (
+                  <div
+                    id={THEME_MENU_ID}
+                    className="notification entering theme-menu-popover"
+                    role="group"
+                    aria-label={t('theme.switch')}
+                  >
+                    {THEME_CARDS.map((tc) => (
+                      <button
+                        key={tc.key}
+                        type="button"
+                        className={`theme-card ${theme === tc.key ? 'active' : ''}`}
+                        onClick={() => handleThemeSelect(tc.key)}
+                        aria-pressed={theme === tc.key}
                       >
                         <div
-                          className="theme-card-header"
+                          className="theme-card-preview"
                           style={{
-                            background: tc.colors.card,
-                            borderBottom: `1px solid ${tc.colors.border}`,
+                            background: tc.colors.bg,
+                            border: `1px solid ${tc.colors.border}`,
                           }}
-                        />
-                        <div className="theme-card-body">
+                        >
                           <div
-                            className="theme-card-sidebar"
+                            className="theme-card-header"
                             style={{
                               background: tc.colors.card,
-                              borderRight: `1px solid ${tc.colors.border}`,
+                              borderBottom: `1px solid ${tc.colors.border}`,
                             }}
                           />
-                          <div className="theme-card-content" style={{ background: tc.colors.bg }}>
+                          <div className="theme-card-body">
                             <div
-                              className="theme-card-line"
-                              style={{ background: tc.colors.textMuted }}
+                              className="theme-card-sidebar"
+                              style={{
+                                background: tc.colors.card,
+                                borderRight: `1px solid ${tc.colors.border}`,
+                              }}
                             />
                             <div
-                              className="theme-card-line short"
-                              style={{ background: tc.colors.textMuted }}
-                            />
+                              className="theme-card-content"
+                              style={{ background: tc.colors.bg }}
+                            >
+                              <div
+                                className="theme-card-line"
+                                style={{ background: tc.colors.textMuted }}
+                              />
+                              <div
+                                className="theme-card-line short"
+                                style={{ background: tc.colors.textMuted }}
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <span className="theme-card-label">{t(tc.labelKey)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+                        <span className="theme-card-label">{t(tc.labelKey)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1096,7 +1137,7 @@ export function MainLayout() {
             <span className="nav-tooltip-label" aria-hidden="true">
               {railTooltip.label}
             </span>
-            {railTooltip.meta ? <span className="nav-tooltip-meta">{railTooltip.meta}</span> : null}
+            {railTooltipMeta ? <span className="nav-tooltip-meta">{railTooltipMeta}</span> : null}
           </div>
         )}
 

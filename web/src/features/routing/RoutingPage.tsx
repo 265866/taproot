@@ -9,7 +9,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useEmailMask } from '@/hooks/useEmailMask';
-import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -407,9 +406,6 @@ export function RoutingPage() {
         <h1 className={styles.title} data-reveal>
           {t('routing.title')}
         </h1>
-        <div data-reveal>
-          <ShowEmailsToggle />
-        </div>
       </header>
 
       {renderBody()}

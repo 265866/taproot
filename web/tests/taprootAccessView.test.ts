@@ -114,7 +114,8 @@ describe('the device table', () => {
     expect(html).toContain('6 other devices can reach this server and have no access');
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('bob-phone');
-    expect(html).toContain('alice@example.org');
+    // The owner's login is an email, hidden until Show emails is on.
+    expect(html).toContain('a•••e@e•••.org');
     expect(html).toContain('other tailnet');
   });
 
@@ -153,7 +154,7 @@ describe('the device table', () => {
   test('requests show who, which client, when, and how often, with Allow and Deny', () => {
     const html = render();
     expect(html).toContain('Dana&#x27;s PC');
-    expect(text(html)).toContain('dana@example.com · Claude Code · 14 minutes ago · 7 times');
+    expect(text(html)).toContain('d•••a@e•••.com · Claude Code · 14 minutes ago · 7 times');
     // Each item stays on one line on a phone.
     expect(html).toContain('<span class="metaItem"> · 7 times</span>');
     expect(html).toContain('aria-label="Allow Dana&#x27;s PC"');

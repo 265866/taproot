@@ -29,7 +29,10 @@
     "open_navigation": "Open navigation",
     "open_navigation_attention_one": "Open navigation, {{count}} item needs you",
     "open_navigation_attention_other": "Open navigation, {{count}} items need you",
-    "close_navigation": "Close navigation"
+    "close_navigation": "Close navigation",
+    "show_emails": "Show emails",
+    "show_emails_on": "On: account emails show in full",
+    "show_emails_off": "Off: account emails are masked"
   },
   "header": {
     "refresh_all": "Refresh All"

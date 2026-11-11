@@ -25,8 +25,8 @@ const render = (value: string) =>
 
 test('the YAML editor says how to edit masked addresses while emails are hidden', () => {
   const yaml = 'proxy-url: socks5://user:pass@proxy.example.com:1080\n';
-  expect(render(yaml)).toContain('Show emails to edit them');
-  expect(render('port: 8317\n')).not.toContain('Show emails to edit them');
+  expect(render(yaml)).toContain('Turn on Show emails in the sidebar to edit them');
+  expect(render('port: 8317\n')).not.toContain('Turn on Show emails in the sidebar to edit them');
   usePrivacyStore.getState().toggleShowEmails();
-  expect(render(yaml)).not.toContain('Show emails to edit them');
+  expect(render(yaml)).not.toContain('Turn on Show emails in the sidebar to edit them');
 });

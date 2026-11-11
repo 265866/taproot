@@ -454,20 +454,22 @@ function RequestRow({
   const [error, setError] = useState('');
   const rowRef = useRef<HTMLDivElement>(null);
   useFocusOnArrival(rowRef, focused);
-  const name = nameText(
-    deviceName({
-      label: device?.label ?? '',
-      name: request.name,
-      ownerName: request.ownerName,
-      login: request.login,
-      id: request.nodeId,
-      // The device entry from the same read; none when the read did not list it.
-      addresses: device?.addresses ?? [],
-    }),
-    t
+  const name = mask(
+    nameText(
+      deviceName({
+        label: device?.label ?? '',
+        name: request.name,
+        ownerName: request.ownerName,
+        login: request.login,
+        id: request.nodeId,
+        // The device entry from the same read; none when the read did not list it.
+        addresses: device?.addresses ?? [],
+      }),
+      t
+    )
   );
   const meta = [
-    request.login,
+    mask(request.login),
     request.client,
     relativeTime(request.lastSeen, now),
     t('taproot_access.request_count', { count: request.count }),
@@ -618,13 +620,14 @@ interface RowProps {
 
 function Section({ section, ...rowProps }: RowProps & { section: DeviceSection }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   let header: ReactNode;
   if (section.kind === 'person') {
     const named = section.ownerName && section.ownerName !== section.login;
     header = (
       <GroupHeader
-        title={named ? section.ownerName : section.login}
-        hint={named ? section.login : undefined}
+        title={mask(named ? section.ownerName : section.login)}
+        hint={named ? mask(section.login) : undefined}
         badge={section.outside ? t('taproot_access.other_tailnet') : undefined}
       />
     );
@@ -738,10 +741,11 @@ function nameTitle(device: AccessDevice): string {
 
 function DeviceRow({ device, draft, setDraft, me, now }: RowProps & { device: AccessDevice }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const fresh = isNew(device, now);
   const own = device.id === ownDeviceId(me);
   const label = draftLabel(device, draft);
-  const name = nameText(deviceName({ ...device, label }), t);
+  const name = mask(nameText(deviceName({ ...device, label }), t));
   const p = draftPermissions(device, draft);
   const set = (key: 'proxy' | 'admin', value: boolean) =>
     setDraft((d) => d && { ...d, devices: { ...d.devices, [device.id]: { ...p, [key]: value } } });
@@ -906,8 +910,9 @@ function NameEditor({
 
 function GoneRow({ device, draft, setDraft, now }: RowProps & { device: AccessDevice }) {
   const { t } = useTranslation();
+  const { mask } = useEmailMask();
   const forgetting = draft.forget.includes(device.id);
-  const name = device.label || device.name || device.id;
+  const name = mask(device.label || device.name || device.id);
   const since = device.missingSince
     ? t('taproot_access.gone_since', { when: relativeTime(device.missingSince, now) })
     : t('taproot_access.gone_unknown');

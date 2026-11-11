@@ -534,7 +534,7 @@ The Dashboard's right rail and verdict answer "is everything OK, and what needs 
 - **Style:** a quiet, dense, dark ops console.
   - Near-black background and hairline borders, with a 13px body and compact rows.
   - Provider accents mark identity only: Claude orange, Codex blue. State uses the status tokens (ok, warning, danger, and a neutral info), whose text meets WCAG AA in every theme.
-  - A collapsible left nav, with the version and the theme menu in its footer, and a drawer on phones.
+  - A collapsible left nav, with the Show emails switch, the version, and the theme menu in its footer, and a drawer on phones. Show emails is the dashboard's one email switch: every page follows it, it starts off on every page load, and it is never stored in the browser.
   - A page header on every page: the page's name, when its data loaded, and Refresh All. A page can add a full-height right rail beside it; in windows under 1192 px and on phones the rail follows the header.
   - Phones and touch screens: below 768 px, and on a touch screen no taller than 500 px (a phone held sideways), the console's text is 13 px or more and its tags and small labels 11 px or more; other windows, tablets included, keep the dense scale. On a coarse pointer every target on the shell and the Dashboard is at least 44 px, whatever the width; text links reach it with a negative margin, so nothing moves. Notifications open below the sticky header on phones, and the open drawer is a modal dialog. The sidebar is one element whose role switches between the drawer's dialog and the complementary landmark, so rotating a tablet across 768 px keeps it mounted.
   - Sidebar badges and a dot in the tab title for what needs the user, from the attention endpoint (see Dashboard, above).

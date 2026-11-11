@@ -1,6 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { IconRefreshCw } from '@/components/ui/icons';
 import type { HeaderMetaSegment } from '../uiState';
 import styles from './ConfigHeader.module.scss';
@@ -62,7 +61,6 @@ export function ConfigHeader({
       </div>
       <div className={styles.actions} data-reveal>
         {extraActions}
-        <ShowEmailsToggle />
         <button
           type="button"
           className={styles.ghostAction}

@@ -88,7 +88,7 @@ The items in **Needs you** also put badges on **Accounts**, **Access**, and **Ba
 - **Settings:** request logs and their limits, the backup schedule, quota polling, and Discord alerts.
 - **Routing, Config, Plugins, Plugin Store, and System:** CLIProxyAPI's settings and plugins. System also counts the models the proxy serves.
 
-Account emails stay hidden until you select **Show emails**.
+Account emails stay hidden on every page until you turn on **Show emails** at the bottom of the sidebar (an eye button when the sidebar is collapsed). The switch covers every page, including the owners' logins on Access, and turns itself off again whenever you reload or open the dashboard.
 
 ## Screenshots
 

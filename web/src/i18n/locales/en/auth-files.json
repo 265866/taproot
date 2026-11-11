@@ -127,7 +127,7 @@
     "prefix_proxy_loading": "Loading auth file...",
     "prefix_proxy_info_label": "Auth file info (info)",
     "prefix_proxy_source_label": "Auth file JSON (preview)",
-    "secrets_hidden_hint": "Tokens and secrets are hidden while emails are hidden. Show emails to see them. Copy and download keep the real values.",
+    "secrets_hidden_hint": "Tokens and secrets are hidden while emails are hidden. Turn on Show emails in the sidebar to see them. Copy and download keep the real values.",
     "prefix_proxy_invalid_content_label": "Downloaded content (truncated)",
     "prefix_label": "Prefix (prefix)",
     "proxy_url_label": "Proxy URL (proxy_url)",

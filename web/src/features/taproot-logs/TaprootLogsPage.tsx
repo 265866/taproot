@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ShowEmailsToggle } from '@/components/common/ShowEmailsToggle';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useEmailMask } from '@/hooks/useEmailMask';
@@ -49,7 +48,6 @@ export function TaprootLogsPage() {
           <h1 className={styles.title}>{t('taproot_logs.title')}</h1>
           <p className={styles.description}>{t('taproot_logs.description')}</p>
         </div>
-        <ShowEmailsToggle />
         <div className={styles.tabs} role="tablist" aria-label={t('taproot_logs.title')}>
           {(['requests', 'app'] as const).map((value) => (
             <button

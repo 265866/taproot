@@ -42,6 +42,7 @@ describe('sidebar labels', () => {
       '.nav-label',
       '.sidebar-version',
       '.sidebar-brand-title',
+      '.sidebar-switch-label',
       '.nav-tooltip-label',
     ]) {
       expect(selectors).toContain(label);
