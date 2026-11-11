@@ -83,7 +83,7 @@ The items in **Needs you** also put badges on **Accounts**, **Access**, and **Ba
 ## Other pages
 
 - **Accounts:** pool charts, the quota ledger, credentials, and sign-in. See [Accounts](accounts.md). One row above the charts holds the provider, what the chart shows (**Remaining** or **Drain rate**), **Projection** (the burn window of 1, 3, or 6 hours and the future usage it assumes), and the dates. On a phone, the provider tabs stay, and **View** opens a sheet with the burn window, future usage, and dates. Its label sums up your choices. **Remaining** and **Drain rate** stay beside **View**, except on a screen narrower than 375 pixels, where they move into the sheet. **Refresh all** is in the **⋯** menu on a phone.
-- **Usage:** cost, tokens, latency, and failures, by account, model, session, and device. The views and the range share one row. **Group by** on the cost chart groups the Overview by model, account, provider, session, or device. On a phone, a menu chooses the view, and **Options** opens a sheet with the range and the grouping. The phone's back gesture closes an open sheet and leaves you on the page.
+- **Usage:** cost, tokens, latency, and failures, by account, model, session, and device. The views and the range share one row. **Group by** on the cost chart groups the Overview by model, account, provider, session, or device. On a phone, a menu chooses the view, and **Options** opens a sheet with the range and the grouping.
 - **Request Logs:** search and view stored requests. The application log is a tab here.
 - **Backups:** create, download, and restore backups.
 - **Access:** device requests, every tailnet device with its Proxy and Admin switches, and the addresses that reach the proxy without Tailscale.
