@@ -149,6 +149,32 @@ export function windowCoverage(range: WindowRange, firstRequestAt: string | null
 export const formatCaptionDate = (atMs: number, timeZone?: string): string =>
   captionWithDate(timeZone).format(new Date(atMs));
 
+/**
+ * The window caption's translation key and values. "Counting since" names the first request's
+ * own zone abbreviation, which can differ from the window end's across a daylight-saving change.
+ */
+export function rangeCaption(
+  range: WindowRange,
+  firstRequestAt: string | null,
+  timeZone?: string
+): { key: string; values?: Record<string, string> } {
+  const coverage = windowCoverage(range, firstRequestAt);
+  if (coverage.kind === 'none') return { key: 'dashboard.window.caption_none' };
+  if (coverage.kind === 'since') {
+    return {
+      key: 'dashboard.window.caption_since',
+      values: {
+        since: formatCaptionDate(coverage.atMs, timeZone),
+        zone: zoneAbbreviation(coverage.atMs, timeZone),
+      },
+    };
+  }
+  return {
+    key: 'dashboard.window.caption',
+    values: { range: windowCaption(range, timeZone), zone: zoneAbbreviation(range.toMs, timeZone) },
+  };
+}
+
 /** "Mon 4:36 AM – Tue 4:36 AM"; weeks and months name the date instead of the weekday. */
 export function windowCaption(range: WindowRange, timeZone?: string): string {
   const format =

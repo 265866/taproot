@@ -146,7 +146,7 @@
       "of_usable_one": "of {{count}} account usable",
       "of_usable_other": "of {{count}} accounts usable",
       "slots_label": "{{provider}} accounts",
-      "provider_link": "{{provider}} accounts",
+      "provider_link": "Open {{provider}} accounts",
       "slot_left": "{{pct}} left",
       "state_cooling": "cooling",
       "state_signed_out": "signed out",

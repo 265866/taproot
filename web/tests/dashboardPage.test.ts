@@ -187,7 +187,7 @@ describe('Pools', () => {
       /<h3[^>]*><a[^>]*href="\/accounts\?provider=claude"[^>]*>Claude<\/a><\/h3>/
     );
     expect(html).toMatch(/<h3[^>]*><a[^>]*href="\/accounts\?provider=codex"[^>]*>Codex<\/a><\/h3>/);
-    expect(html).toContain('aria-label="Claude accounts"');
+    expect(html).toContain('aria-label="Open Claude accounts"');
   });
 
   test('an empty pool links to its tab too, where the account is added', () => {

@@ -8,12 +8,8 @@ import { failedTone } from '../model/views';
 import {
   DASHBOARD_WINDOWS,
   browserTimeZone,
-  formatCaptionDate,
-  windowCaption,
-  windowCoverage,
-  zoneAbbreviation,
+  rangeCaption,
   type DashboardWindow,
-  type WindowRange,
 } from '../model/window';
 import styles from './Main.module.scss';
 
@@ -48,7 +44,9 @@ export function WindowControl({
         }))}
       />
       <span className={styles.rangeCaption}>
-        {shown ? rangeCaption(shown.range, shown.summary.firstRequestAt, zone, t) : ' '}
+        {shown
+          ? captionText(rangeCaption(shown.range, shown.summary.firstRequestAt, zone), t)
+          : ' '}
       </span>
       {isStale(summary) ? (
         <span className={styles.stale} title={t('console.stale_hint')}>
@@ -59,23 +57,8 @@ export function WindowControl({
   );
 }
 
-function rangeCaption(
-  range: WindowRange,
-  firstRequestAt: string | null,
-  zone: string | undefined,
-  t: TFunction
-): string {
-  const coverage = windowCoverage(range, firstRequestAt);
-  if (coverage.kind === 'none') return t('dashboard.window.caption_none');
-  const zoneName = zoneAbbreviation(range.toMs, zone);
-  if (coverage.kind === 'since') {
-    return t('dashboard.window.caption_since', {
-      since: formatCaptionDate(coverage.atMs, zone),
-      zone: zoneName,
-    });
-  }
-  return t('dashboard.window.caption', { range: windowCaption(range, zone), zone: zoneName });
-}
+const captionText = ({ key, values }: ReturnType<typeof rangeCaption>, t: TFunction) =>
+  t(key, values ?? {});
 
 export function StatTiles({ summary }: { summary: Read<WindowSummary> }) {
   const { t } = useTranslation();

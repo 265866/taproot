@@ -9,6 +9,7 @@ import {
   storeWindow,
   formatCaptionDate,
   windowCaption,
+  rangeCaption,
   windowCoverage,
   windowRange,
 } from '@/features/dashboard/model/window';
@@ -120,6 +121,20 @@ describe('the window selector', () => {
     expect(t('dashboard.window.caption_since', { since: 'Nov 10, 2:43 PM', zone: 'PST' })).toBe(
       'Counting since Nov 10, 2:43 PM · local time (PST)'
     );
+  });
+
+  test('"Counting since" names the first request\'s own zone across a daylight-saving change', () => {
+    const zone = 'America/Los_Angeles';
+    const firstRequestAt = '2026-10-30T06:16:00Z'; // Oct 29, 11:16 PM PDT
+    const range = windowRange('30d', Date.parse('2026-11-10T22:00:00Z')); // ends in PST
+    expect(rangeCaption(range, firstRequestAt, zone)).toEqual({
+      key: 'dashboard.window.caption_since',
+      values: { since: 'Oct 29, 11:16 PM', zone: 'PDT' },
+    });
+    expect(
+      rangeCaption(windowRange('24h', Date.parse('2026-11-10T22:00:00Z')), firstRequestAt, zone)
+    ).toMatchObject({ key: 'dashboard.window.caption', values: { zone: 'PST' } });
+    expect(rangeCaption(range, null, zone)).toEqual({ key: 'dashboard.window.caption_none' });
   });
 
   test('a record that starts exactly at the window, or earlier, covers it all', () => {
