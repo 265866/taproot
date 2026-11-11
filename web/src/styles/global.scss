@@ -26,10 +26,12 @@ body.modal-open .content {
   overflow: hidden;
 }
 
-// Phones scroll the document, not .content. Locked, .content would keep its stable scrollbar gutter
-// and narrow the page behind every sheet and modal, which also redraws every chart on it.
+// Phones scroll the document, not .content, so the lock leaves .content as it is. Hidden overflow
+// would make it the sticky header's scroller and carry the header off under the backdrop, and its
+// stable scrollbar gutter would narrow the page, which also redraws every chart on it.
 @media (max-width: $breakpoint-mobile) {
   body.modal-open .content {
+    overflow: visible;
     scrollbar-gutter: auto;
   }
 }

@@ -12,6 +12,7 @@ const snapshot = {
   bodyTop: '',
   bodyLeft: '',
   bodyRight: '',
+  bodyBottom: '',
   bodyWidth: '',
   bodyOverflow: '',
   htmlOverflow: '',
@@ -37,6 +38,7 @@ export function lockScroll(): void {
     snapshot.bodyTop = body.style.top;
     snapshot.bodyLeft = body.style.left;
     snapshot.bodyRight = body.style.right;
+    snapshot.bodyBottom = body.style.bottom;
     snapshot.bodyWidth = body.style.width;
     snapshot.bodyOverflow = body.style.overflow;
     snapshot.htmlOverflow = html.style.overflow;
@@ -44,13 +46,17 @@ export function lockScroll(): void {
     body.classList.add(MODAL_LOCK_CLASS);
     html.classList.add(MODAL_LOCK_CLASS);
 
+    // The body fills the viewport and keeps the page's offset as its own scroll, rather than moving
+    // up by it: a sticky header inside then stays stuck instead of sliding off under the backdrop.
     body.style.position = 'fixed';
-    body.style.top = `-${snapshot.scrollY}px`;
+    body.style.top = '0';
+    body.style.bottom = '0';
     body.style.left = '0';
     body.style.right = '0';
     body.style.width = '100%';
     body.style.overflow = 'hidden';
     html.style.overflow = 'hidden';
+    body.scrollTop = snapshot.scrollY;
   }
   activeLockCount += 1;
 }
@@ -74,6 +80,7 @@ export function unlockScroll({ restore = true }: { restore?: boolean } = {}): vo
     body.style.top = snapshot.bodyTop;
     body.style.left = snapshot.bodyLeft;
     body.style.right = snapshot.bodyRight;
+    body.style.bottom = snapshot.bodyBottom;
     body.style.width = snapshot.bodyWidth;
     body.style.overflow = snapshot.bodyOverflow;
     html.style.overflow = snapshot.htmlOverflow;

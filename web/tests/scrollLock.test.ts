@@ -4,6 +4,7 @@ import { lockScroll, unlockScroll } from '@/components/ui/scrollLock';
 const element = () => ({
   classList: { add() {}, remove() {} },
   style: {} as Record<string, string>,
+  scrollTop: 0,
 });
 
 describe('scroll lock restore', () => {
@@ -33,6 +34,22 @@ describe('scroll lock restore', () => {
 
   afterEach(() => {
     Object.assign(globalThis, saved);
+  });
+
+  test('locked, the body fills the viewport and keeps the offset as its own scroll', () => {
+    // Moving the body up by the offset (top: -150px) would carry a sticky header off the screen.
+    lockScroll();
+    const body = document.body as unknown as ReturnType<typeof element>;
+    const locked = { ...body.style, scrollTop: body.scrollTop };
+    unlockScroll();
+    expect(locked.position).toBe('fixed');
+    expect(locked.top).toBe('0');
+    expect(locked.bottom).toBe('0');
+    expect(locked.scrollTop).toBe(150);
+    // The mock body starts with no inline styles, so unlocking gives them back as unset.
+    expect(body.style.top).toBeUndefined();
+    expect(body.style.bottom).toBeUndefined();
+    expect(scrolls).toEqual([150]);
   });
 
   test('the last unlock restores the saved scroll', () => {

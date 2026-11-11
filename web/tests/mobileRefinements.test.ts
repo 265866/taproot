@@ -290,6 +290,12 @@ describe('a phone sheet or modal over the page', () => {
     expect(rule(outside(css, PHONE), 'body.modal-open .content')).not.toContain('scrollbar-gutter');
   });
 
+  test("keeps the sticky header in place: on phones the lock leaves .content's overflow alone", () => {
+    const css = compile('styles/global.scss');
+    expect(rule(block(css, PHONE), 'body.modal-open .content')).toContain('overflow: visible');
+    // Desktops scroll .content itself, so the lock still stops it there.
+    expect(rule(outside(css, PHONE), 'body.modal-open .content')).toContain('overflow: hidden');
+  });
 });
 
 describe('round 2: one height for the phone rows, the cost tile, and touch forms', () => {
