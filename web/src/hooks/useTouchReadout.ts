@@ -30,6 +30,9 @@ export function useTouchReadout<T extends HTMLElement>(
     let timer: ReturnType<typeof setTimeout> | null = null;
     let touched = false;
     let suppressed = false;
+    // A chart redraws as the readout moves and may drop the node a touch began on; the browser
+    // still sends that touch's end to the dropped node, which no longer bubbles to the chart.
+    const startTargets = new Set<EventTarget>();
     const clearTimer = () => {
       if (timer !== null) clearTimeout(timer);
       timer = null;
@@ -42,20 +45,38 @@ export function useTouchReadout<T extends HTMLElement>(
       setHidden(true);
       onHideRef.current?.();
     };
-    const onTouchStart = () => {
+    const onTouchStart = (event: TouchEvent) => {
       touched = true;
       suppressed = false;
       clearTimer();
+      const target = event.target;
+      if (target && target !== element && !startTargets.has(target)) {
+        startTargets.add(target);
+        target.addEventListener('touchend', onTargetEnd);
+        target.addEventListener('touchcancel', onTargetEnd);
+      }
     };
-    const onTouchEnd = () => {
+    const onTouchEnd = (event: TouchEvent) => {
+      // Another finger is still down: the readout stays while it drags.
+      if ((event.touches?.length ?? 0) > 0) return;
       clearTimer();
       if (touched) timer = setTimeout(hide, holdMs);
+    };
+    const onTargetEnd = (event: Event) => {
+      const target = event.currentTarget;
+      if (target) {
+        target.removeEventListener('touchend', onTargetEnd);
+        target.removeEventListener('touchcancel', onTargetEnd);
+        startTargets.delete(target);
+      }
+      // A node still in the chart passes the end on to the chart's own listener.
+      if (!(target instanceof Node) || !element.contains(target)) onTouchEnd(event as TouchEvent);
     };
     const onMove = () => {
       if (!suppressed) setHidden(false);
     };
     const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerType === 'mouse') suppressed = false;
+      if (event.pointerType !== 'touch') suppressed = false;
     };
     const onOutside = (event: Event) => {
       if (!(event.target instanceof Node) || !element.contains(event.target)) hide();
@@ -72,6 +93,11 @@ export function useTouchReadout<T extends HTMLElement>(
     document.addEventListener('pointerdown', onOutside, true);
     return () => {
       clearTimer();
+      for (const target of startTargets) {
+        target.removeEventListener('touchend', onTargetEnd);
+        target.removeEventListener('touchcancel', onTargetEnd);
+      }
+      startTargets.clear();
       element.removeEventListener('touchstart', onTouchStart);
       element.removeEventListener('touchend', onTouchEnd);
       element.removeEventListener('touchcancel', onTouchEnd);

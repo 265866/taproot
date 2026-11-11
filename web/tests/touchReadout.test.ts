@@ -63,6 +63,7 @@ beforeEach(() => {
   const root = createRoot(host);
   act(() => root.render(createElement(Harness)));
   unmount = () => {
+    unmount = () => {};
     act(() => root.unmount());
     host.remove();
   };
@@ -154,6 +155,55 @@ describe('mouse use', () => {
     fire(chart(), 'mousemove');
     expect(hidden()).toBe(true);
     fire(chart(), 'pointermove', { pointerType: 'mouse' });
+    fire(chart(), 'mousemove');
+    expect(hidden()).toBe(false);
+  });
+
+  test('hides when the chart drops the node the touch began on', () => {
+    const bar = document.getElementById('bar')!;
+    fire(bar, 'touchstart');
+    fire(bar, 'touchmove');
+    act(() => bar.remove());
+    fire(bar, 'touchend');
+    tick(TOUCH_READOUT_HOLD_MS);
+    expect(hidden()).toBe(true);
+    expect(hides).toBe(1);
+  });
+
+  test('a cancelled touch starts the hold too', () => {
+    fire(chart(), 'touchstart');
+    fire(chart(), 'touchmove');
+    fire(chart(), 'touchcancel');
+    tick(TOUCH_READOUT_HOLD_MS);
+    expect(hidden()).toBe(true);
+  });
+
+  test('lifting one of two fingers keeps it while the other drags', () => {
+    fire(chart(), 'touchstart');
+    fire(chart(), 'touchstart');
+    fire(chart(), 'touchend', { touches: [{}] });
+    for (let i = 0; i < 7; i += 1) {
+      tick(500);
+      fire(chart(), 'touchmove');
+    }
+    expect(hidden()).toBe(false);
+    fire(chart(), 'touchend', { touches: [] });
+    tick(TOUCH_READOUT_HOLD_MS);
+    expect(hidden()).toBe(true);
+  });
+
+  test('nothing fires after the chart unmounts', () => {
+    touch();
+    unmount();
+    tick(TOUCH_READOUT_HOLD_MS * 2);
+    expect(hides).toBe(0);
+  });
+
+  test('a pen brings it back after a touch hid it', () => {
+    touch();
+    tick(TOUCH_READOUT_HOLD_MS);
+    expect(hidden()).toBe(true);
+    fire(chart(), 'pointermove', { pointerType: 'pen' });
     fire(chart(), 'mousemove');
     expect(hidden()).toBe(false);
   });
