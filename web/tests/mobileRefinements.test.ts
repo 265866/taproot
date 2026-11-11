@@ -368,3 +368,13 @@ describe('round 2: one height for the phone rows, the cost tile, and touch forms
     expect(px(rule(logs, '.tab'), 'min-height')).toBe(44);
   });
 });
+
+describe('the app log toolbar on a touch screen', () => {
+  test('its buttons are 44 px, after the phone and short-screen rules', () => {
+    const css = compile('features/taproot-logs/appLogs/AppLogsPanel.module.scss');
+    const coarse = css.lastIndexOf('@media (pointer: coarse)');
+    expect(coarse).toBeGreaterThan(css.lastIndexOf('@media (max-width: 768px)'));
+    expect(coarse).toBeGreaterThan(css.lastIndexOf('@media (max-height: 480px)'));
+    expect(css.slice(coarse)).toContain('--log-control-height: 44px');
+  });
+});

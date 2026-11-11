@@ -712,3 +712,10 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+// A touch screen gets full-size toolbar targets at any width; this comes last so it wins.
+@media (pointer: coarse) {
+  .container {
+    --log-control-height: 44px;
+  }
+}
