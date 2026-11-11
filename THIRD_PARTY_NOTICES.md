@@ -26,7 +26,7 @@ To build taproot with a modified copy of one of these crates:
    ```
 
 4. In `internal/taproot/reqlog/codec/native`, run `cargo update -p cabac` to record the patched crate in `Cargo.lock`.
-5. Build the image with `docker build -f Containerfile.taproot -t taproot .` from the repository root. Or, on Linux with cgo, a Rust toolchain, and Bun, embed the dashboard with `bash scripts/taproot/build-web.sh`, build the codec library with `(cd internal/taproot/reqlog/codec/native && cargo build --release --locked)`, and then build the server with `go build -tags taproot_codecs -o taproot ./cmd/server`.
+5. Build the image with `docker build -f Containerfile.taproot -t taproot .` from the repository root. Or, on Linux with cgo, a Rust toolchain, and Bun, embed the dashboard with `bash scripts/taproot/build-web.sh`, build the codec library with `(cd internal/taproot/reqlog/codec/native && cargo build --release --locked && objcopy --remove-section=.llvmbc --remove-section=.llvmcmd target/release/libtaproot_codec.a)`, and then build the server with `go build -tags taproot_codecs -o taproot ./cmd/server`.
 
 ## Go modules
 

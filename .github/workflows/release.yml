@@ -125,6 +125,9 @@ jobs:
           rustup default "$rust_version"
       - run: cargo build --release --locked
         working-directory: internal/taproot/reqlog/codec/native
+      # Go 1.26.11 refuses to link LLVM bitcode sections; see Containerfile.taproot.
+      - run: objcopy --remove-section=.llvmbc --remove-section=.llvmcmd target/release/libtaproot_codec.a
+        working-directory: internal/taproot/reqlog/codec/native
       - run: go test -tags taproot_codecs ./...
         working-directory: internal/taproot/reqlog
       - name: Store the test images on ${{ matrix.arch }}

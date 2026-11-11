@@ -2,6 +2,8 @@ module github.com/265866/taproot
 
 go 1.26.10
 
+toolchain go1.26.11
+
 require (
 	github.com/MoeForge/moego v0.1.0-alpha.1
 	github.com/andybalholm/brotli v1.2.8
