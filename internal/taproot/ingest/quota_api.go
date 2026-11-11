@@ -111,7 +111,8 @@ const clockSlack = time.Minute
 // latestObservations reads the newest observation of every window, for one
 // account or, with an empty authIndex, for every account not removed. A row
 // stamped more than clockSlack in the future yields to the window's newest
-// row before it, so a clock stepped back does not freeze the reading.
+// row before it, so a clock stepped back does not freeze the reading. A
+// window whose newest row says the account lacks it is left out.
 func (i *Ingest) latestObservations(ctx context.Context, authIndex string) ([]observation, error) {
 	// A loose index scan: each account, then each of its windows, then the
 	// window's latest row are one seek each on quota_observations_key, so the
@@ -149,6 +150,9 @@ func (i *Ingest) latestObservations(ctx context.Context, authIndex string) ([]ob
 		)
 		if err := rows.Scan(&o.AuthIndex, &o.Provider, &o.Window, &o.Utilization, &resetsAt, &o.Status, &o.PeriodSeconds, &observed); err != nil {
 			return nil, fmt.Errorf("latest quota: %w", err)
+		}
+		if o.Status == statusNoLimit {
+			continue
 		}
 		if resetsAt.Valid {
 			o.ResetsAt = time.UnixMilli(resetsAt.Int64).UTC()
