@@ -82,9 +82,8 @@ describe('touch targets are 44 px on a touch screen of any width', () => {
   });
 
   test('compact buttons, the window selector, and the header and sidebar buttons', () => {
-    expect(px(rule(compile('styles/components.scss'), '.btn.btn-sm', COARSE), 'min-height')).toBe(
-      44
-    );
+    // Every .btn, compact ones included.
+    expect(px(rule(compile('styles/components.scss'), '.btn', COARSE), 'min-height')).toBe(44);
     const segment = rule(compile('components/ui/SegmentedControl.module.scss'), '.segment', COARSE);
     expect(px(segment, 'height')).toBe(44);
     expect(px(segment, 'min-width')).toBe(44);

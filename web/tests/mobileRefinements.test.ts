@@ -289,4 +289,76 @@ describe('a phone sheet or modal over the page', () => {
     expect(rule(block(css, PHONE), 'body.modal-open .content')).toContain('scrollbar-gutter: auto');
     expect(rule(outside(css, PHONE), 'body.modal-open .content')).not.toContain('scrollbar-gutter');
   });
+
+});
+
+describe('round 2: one height for the phone rows, the cost tile, and touch forms', () => {
+  /** The vertical part of a `padding` or `border-width` shorthand, or of `border: 0`. */
+  const vertical = (decls: string, property: string) => {
+    const m = decls.match(new RegExp(`(?:^|[;\\s])${property}:\\s*([^;]+)`));
+    return m ? Number.parseFloat(m[1].trim().split(/\s+/)[0]) : null;
+  };
+
+  test('the large segmented control is 44 px in all, with each segment a 44 px target', () => {
+    const css = compile('components/ui/SegmentedControl.module.scss');
+    const group = rule(css, '.large');
+    const segment = rule(css, '.large .segment');
+    const pad = vertical(group, 'padding') ?? vertical(rule(css, '.group'), 'padding') ?? 0;
+    const rim = /(?:^|[;\s])border:\s*0\s*(;|$)/.test(group) ? 0 : 1;
+    expect(px(segment, 'height')).toBe(44);
+    expect(px(segment, 'height')! + 2 * pad + 2 * rim).toBe(44);
+    // The pill sits inside the target: its border is transparent and the background stops there.
+    expect(segment).toContain('background-clip: padding-box');
+    expect(segment).toMatch(/border:\s*solid transparent/);
+  });
+
+  test('so the Accounts metric matches View, and Usage keeps 44 px buttons', () => {
+    const accounts = compile('features/accounts/components/ViewControls.module.scss');
+    expect(px(rule(accounts, '.phoneRow .viewButton'), 'min-height')).toBe(44);
+    expect(read('features/accounts/components/ViewControls.tsx')).toMatch(
+      /className=\{styles\.metric\}[\s\S]{0,80}size="large"|size="large"[\s\S]{0,80}className=\{styles\.metric\}/
+    );
+    const sheet = compile('components/ui/BottomSheet.module.scss');
+    expect(
+      px(rule(sheet, '.sheetButton'), 'height') ?? px(rule(sheet, '.sheetButton'), 'min-height')
+    ).toBe(44);
+  });
+
+  test('on phones the cost tile spans the grid, and cache hit too, so no cell is left empty', () => {
+    const css = compile('features/taproot-usage/TaprootUsage.module.scss');
+    expect(rule(block(css, PHONE), '.kpiPhoneWide')).toContain('grid-column: span 2');
+    expect(rule(outside(css, PHONE), '.kpiPhoneWide')).toBe('');
+    const tiles = read('features/taproot-usage/components/KpiTiles.tsx');
+    for (const label of ['kpi.cost', 'kpi.cache_hit']) {
+      const at = tiles.indexOf(`t('taproot_usage.${label}')`);
+      const article = tiles.lastIndexOf('<article', at);
+      expect({ label, wide: tiles.slice(article, at).includes('styles.kpiPhoneWide') }).toEqual({
+        label,
+        wide: true,
+      });
+    }
+  });
+
+  test('on a touch screen text fields and native selects are 44 px; a mouse keeps them compact', () => {
+    const css = compile('styles/components.scss');
+    const coarse = block(css, COARSE);
+    expect(rule(coarse, 'select:not([multiple]):not([size])')).toContain('min-height: 44px');
+    const input = coarse.match(/input:not\(\[type=checkbox\]\)[^{]*\{([^}]*)\}/);
+    expect(input?.[1]).toContain('min-height: 44px');
+    expect(input?.[0]).toContain(':not([type=radio])');
+    expect(outside(css, COARSE)).not.toMatch(
+      /input:not\(\[type=checkbox\]\)[^{]*\{[^}]*min-height/
+    );
+  });
+
+  test('every button, switch, and Request Logs tab is a 44 px target on a touch screen', () => {
+    expect(rule(block(compile('styles/components.scss'), COARSE), '.btn')).toContain(
+      'min-height: 44px'
+    );
+    const toggle = block(compile('components/ui/ToggleSwitch.module.scss'), COARSE);
+    expect(rule(toggle, '.root::after')).toContain('height: max(100%, 44px)');
+    expect(rule(toggle, '.root::after')).toContain('width: max(100%, 44px)');
+    const logs = block(compile('features/taproot-logs/TaprootLogsPage.module.scss'), COARSE);
+    expect(px(rule(logs, '.tab'), 'min-height')).toBe(44);
+  });
 });

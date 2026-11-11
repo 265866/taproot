@@ -1,4 +1,8 @@
+@use '../../styles/mixins' as *;
+
 .root {
+  @include touch-target(44px);
+
   position: relative;
   display: inline-flex;
   align-items: center;

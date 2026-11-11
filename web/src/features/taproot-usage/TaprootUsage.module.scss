@@ -155,9 +155,11 @@
   padding: 0;
   border: 0;
   background: none;
+  box-shadow: none;
 
   > button {
     border: 1px solid var(--border-raised);
+    border-radius: 7px;
     background: var(--surface-raised-inset);
   }
 }
@@ -380,6 +382,14 @@
 
 .kpiWide {
   grid-column: span 2;
+}
+
+// Phones: the cost tile's long hint gets the full width rather than stretching the tile beside it,
+// and the cache-hit tile spans too, so the two-column grid keeps its order with no empty cell.
+.kpiPhoneWide {
+  @media (max-width: $breakpoint-mobile) {
+    grid-column: span 2;
+  }
 }
 
 .kpiLabel {

@@ -60,16 +60,23 @@
   box-shadow: inset 0 0 0 1px var(--border-hover);
 }
 
+// 44 px in all, the height of the phone rows' buttons, with every segment a full 44 px target: the
+// group's rim is an inset shadow, and each segment's transparent border is the space around its pill.
 .large {
-  padding: 2px;
-  border-color: var(--border-raised);
+  gap: 0;
+  padding: 0 2px;
+  border: 0;
   border-radius: 10px;
   background: var(--surface-raised-inset);
+  box-shadow: inset 0 0 0 1px var(--border-raised);
 
   .segment {
     height: 44px;
-    padding: 0 12px;
-    border-radius: 7px;
+    padding: 0 11px;
+    border: solid transparent;
+    border-width: 3px 1px;
+    border-radius: 10px;
+    background-clip: padding-box;
     font-size: 14px;
   }
 }

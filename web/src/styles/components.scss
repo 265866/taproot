@@ -726,9 +726,15 @@ textarea {
   }
 }
 
-// 44 px touch targets on a touch screen; a mouse keeps the compact sizes.
+// 44 px touch targets on a touch screen; a mouse keeps the compact sizes. Text fields and native
+// selects match the 44 px Select, so a touch form's controls line up.
 @media (pointer: coarse) {
-  .btn.btn-sm {
+  .btn {
+    min-height: 44px;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  select:not([multiple]):not([size]) {
     min-height: 44px;
   }
 
