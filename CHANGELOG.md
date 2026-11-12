@@ -8,6 +8,7 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 
 - Claude Fable 5.2 (`claude-fable-5-2`) comes from upstream CLIProxyAPI. Claude accounts list it in `/v1/models` and serve it.
 - At its first start, the server adds price rows for `claude-fable-5-2*` and `claude-mythos-5-2*` (8 USD per million input tokens, 40 output, 0.20 cache read, 10 and 16 cache writes). Before, the Fable 5 row priced 5.2, so cost estimates for 5.2 traffic were too high, and the existing 5.2 history is repriced now. A row you already added with either pattern stays as it is.
+- Cloaked Claude requests no longer get Anthropic's server-side refusal fallbacks added on their own, such as `claude-opus-5-5` falling back to `claude-opus-4-8`. Set `upstream.claude.server-side-fallback: true` in `config.yaml` to add them again. A request that names its own `fallbacks` keeps them either way.
 - Claude accounts signed in with OAuth now open a new connection for each request instead of reusing idle ones. Upstream made this change because NATs and transparent proxies drop idle connections without notice. Under many concurrent requests, the time to first token can rise by the length of a TLS handshake.
 
 ## [0.5.0](https://github.com/265866/taproot/compare/taproot-v0.4.0...taproot-v0.5.0) (2026-11-11)
