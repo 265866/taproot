@@ -256,11 +256,6 @@ func claudeCodeTLSClientHelloSpec() *tls.ClientHelloSpec {
 
 const claudeCodeRoundTripperCacheCapacity = 64
 
-// claudeCodeMaxIdleConnsPerHost keeps one idle connection per concurrent stream.
-// The transport speaks HTTP/1.1 and every OAuth account shares it, so net/http's
-// default of 2 made each burst redo TCP and TLS handshakes for the rest.
-const claudeCodeMaxIdleConnsPerHost = 64
-
 var claudeCodeRoundTripperCache = internalcache.NewBoundedLRU[string, http.RoundTripper](
 	claudeCodeRoundTripperCacheCapacity,
 	func(_ string, roundTripper http.RoundTripper) {
@@ -379,9 +374,15 @@ func newClaudeCodeRoundTripperForDialerAndRoots(dialer proxy.Dialer, roots *x509
 	// so resumption never crosses proxy boundaries.
 	sessionCache := tls.NewLRUClientSessionCache(claudeCodeSessionCacheCapacity)
 
+	// Default to short-lived connections (MaxIdleConnsPerHost < 0) so OAuth and
+	// unpooled API keys never park idle connections that intermediate NATs or
+	// transparent proxies may silently drop, while keeping DisableKeepAlives false
+	// so net/http does not overwrite the native Connection: keep-alive wire header.
+	// Credentials that explicitly opt into connection-pool override MaxIdleConnsPerHost
+	// and IdleConnTimeout in pooledTransport.
 	transport := &http.Transport{
 		ForceAttemptHTTP2:   false,
-		MaxIdleConnsPerHost: claudeCodeMaxIdleConnsPerHost,
+		MaxIdleConnsPerHost: -1,
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			var (
 				conn net.Conn
