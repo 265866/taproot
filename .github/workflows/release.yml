@@ -2,7 +2,8 @@ name: release
 
 # Builds a release tag and publishes it: the multi-arch image on GHCR with an
 # SBOM, build provenance, a GitHub attestation, and a cosign signature, and a
-# GitHub release with binary tarballs, SHA256SUMS, and their attestation.
+# GitHub release with binary tarballs, SHA256SUMS, and their attestation. It
+# also pushes the flake's taproot package to the Nix binary cache.
 # release-please.yml starts it with workflow_dispatch on the tags it creates.
 # A tag pushed by a person, such as a release candidate (taproot-v0.2.0-rc.1),
 # starts it directly, and it can be run by hand for an existing tag. Re-running
@@ -392,3 +393,52 @@ jobs:
             gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "taproot $VERSION" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
           fi
+
+  # The flake's taproot package for each Linux system, pushed to the Cachix
+  # cache that docs/install.md names, so a NixOS host whose taproot input is a
+  # release tag substitutes it instead of building it. Prereleases are not
+  # pushed. The job cannot request an OIDC token, so it cannot obtain the
+  # identity that the signatures name, and its build substitutes from
+  # cache.nixos.org only, so what it pushes was built here.
+  nix-cache:
+    name: Nix cache (${{ matrix.system }})
+    needs: meta
+    if: needs.meta.outputs.prerelease == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-latest
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CACHIX_CACHE: '265866'
+      # github:<repo>/<commit> gives the store path of the release tag's
+      # github: reference, which docs/install.md uses: the flake reads the same
+      # files, revision, and commit date.
+      FLAKE: github:${{ github.repository }}/${{ needs.meta.outputs.commit }}
+      SYSTEM: ${{ matrix.system }}
+    steps:
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - name: Build
+        run: nix build --print-build-logs --out-link result "$FLAKE#packages.$SYSTEM.taproot"
+      # The cachix client comes from the flake's nixpkgs. Cachix skips the paths
+      # that cache.nixos.org holds, and the pin keeps the builds of the last
+      # three releases out of its garbage collection.
+      - name: Push and pin
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          if [[ -z "$CACHIX_AUTH_TOKEN" ]]; then
+            echo "::error::The CACHIX_AUTH_TOKEN secret is not set. See \"Nix cache\" in CONTRIBUTING.md."
+            exit 1
+          fi
+          cachix="$(nix build --no-link --print-out-paths --inputs-from "$FLAKE" nixpkgs#cachix)/bin/cachix"
+          path="$(readlink result)"
+          "$cachix" push "$CACHIX_CACHE" "$path"
+          "$cachix" pin "$CACHIX_CACHE" "taproot-$SYSTEM" "$path" --keep-revisions 3

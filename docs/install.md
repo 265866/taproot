@@ -87,7 +87,6 @@ The flake's NixOS module, `services.taproot`, builds taproot from source and run
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   # A release tag. Without one, the input follows unreleased commits on main.
   inputs.taproot.url = "github:265866/taproot/taproot-v<version>";
-  inputs.taproot.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = { nixpkgs, taproot, ... }: {
     nixosConfigurations.server = nixpkgs.lib.nixosSystem {
@@ -116,11 +115,26 @@ The flake's NixOS module, `services.taproot`, builds taproot from source and run
 
 The module keeps loopback callers out and requires `taprootSettings`, so give Admin there to the device you manage taproot from. Its stable ID is the `ID` that `tailscale status --json` prints under `Self` on that device. Taproot listens only on a literal Tailscale address. An IPv6 `tailscale.address`, from `tailscale ip -6`, also works; the module puts it in brackets.
 
-With `follows`, taproot builds with your nixpkgs, which must have at least the Go version on the `go` line of taproot's `go.mod`. An older one stops the evaluation with a message that names both versions. Update your nixpkgs input, or remove the `follows` line so that taproot uses its own locked nixpkgs.
-
 Everything in `services.taproot.settings` and `taprootSettings` goes into the Nix store, which every local user can read. Keep secrets out of them: set the Discord webhook for alerts with `services.taproot.discordWebhookFile`, a file outside the store such as `/run/secrets/taproot-discord-webhook`, or in the dashboard. Like `taprootSettings`, the file seeds `taproot.yaml` only when that file is created. Put secret `config.yaml` settings, such as upstream API keys under `api-keys`, in YAML files outside the store and list them in `services.taproot.settingsFiles`; Nix merges them over `settings` on every start. Put secret environment variables, such as `MANAGEMENT_PASSWORD`, in `services.taproot.environmentFile`.
 
 Nix owns `config.yaml` and writes it from `services.taproot.settings` and `settingsFiles` on every start, so a dashboard change to it lasts until the next restart. Nix seeds `taproot.yaml` from `taprootSettings` only while the file does not exist. After that the dashboard owns `taproot.yaml`, and later changes to `taprootSettings` do not apply. The data directory is `/var/lib/taproot`. [`nix/module.nix`](../nix/module.nix) documents every option.
+
+### Use the binary cache
+
+Each release's `taproot` package, for `x86_64-linux` and `aarch64-linux`, is in the Cachix binary cache at `https://265866.cachix.org`, built from the release tag with taproot's own locked nixpkgs. With the cache in your Nix settings, a rebuild downloads the release instead of compiling the Go server, the Rust codec, and the dashboard, which takes a few minutes. The settings apply from the switch that adds them:
+
+```nix
+nix.settings = {
+  extra-substituters = [ "https://265866.cachix.org" ];
+  extra-trusted-public-keys = [ "265866.cachix.org-1:KeHQ4qkDufShpWve8YcDhFsmWLEzMDrDoinVpahhBEc=" ];
+};
+```
+
+The cache matches a `github:265866/taproot/taproot-v<version>` input that keeps taproot's nixpkgs, as in the example above, and keeps the builds of the last three releases. Prereleases, commits between releases, and builds with your own nixpkgs are not in it, and build from source.
+
+### Build with your own nixpkgs
+
+To build taproot with your system's nixpkgs, add `inputs.taproot.inputs.nixpkgs.follows = "nixpkgs";`. Taproot then always builds from source, and your nixpkgs must have at least the Go version on the `go` line of taproot's `go.mod`. An older one stops the evaluation with a message that names both versions; update your nixpkgs input, or remove the `follows` line.
 
 ## Plain binary with systemd
 
