@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/265866/taproot/internal/config"
+	sdkaccess "github.com/265866/taproot/sdk/access"
+	"github.com/265866/taproot/sdk/pluginabi"
+	"github.com/265866/taproot/sdk/pluginapi"
 	"github.com/klauspost/compress/zstd"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
 
 // Decoding runs before authentication, so what it allocates, produces and runs at once is bounded.

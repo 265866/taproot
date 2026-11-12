@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	homekv "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
+	"github.com/265866/taproot/internal/config"
+	homekv "github.com/265866/taproot/internal/home"
 )
 
 func TestSetCodexCacheRequiredHomeUnavailableReturnsError(t *testing.T) {

@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/thinking"
+	"github.com/265866/taproot/internal/util"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 const codexResponsesLiteHeaderName = "X-OpenAI-Internal-Codex-Responses-Lite"

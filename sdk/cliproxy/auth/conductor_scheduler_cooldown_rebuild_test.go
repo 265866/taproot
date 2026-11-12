@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/265866/taproot/internal/registry"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 )
 
 // TestScheduler_ModelCooldown_DoesNotTriggerRebuild verifies that when credentials

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 

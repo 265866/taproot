@@ -11,15 +11,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/cache"
+	"github.com/265866/taproot/internal/config"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/cliproxy/session"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
+	_ "github.com/265866/taproot/sdk/translator/builtin"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator/builtin"
 )
 
 const issue6825FirstRequest = `{"model":"gemini-3-flash","tool_choice":"auto","messages":[{"role":"user","content":"What time is it?"}],"tools":[{"type":"function","function":{"name":"get_time","parameters":{"type":"object","properties":{"tz":{"type":"string"}}}}}]}`

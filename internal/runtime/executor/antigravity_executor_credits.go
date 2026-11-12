@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	homekv "github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	homekv "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
 )

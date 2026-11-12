@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/auth/claude"
+	"github.com/265866/taproot/internal/config"
 	"github.com/MoeForge/moego/base64"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 type claudeAuthorizationProbe struct {

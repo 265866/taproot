@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/cliproxy/executionregistry"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 type apiKeyFirstSelector struct{}

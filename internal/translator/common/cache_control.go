@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // isValidCacheControl checks if the cache_control object has an exact valid "type" of "ephemeral".

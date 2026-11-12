@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/265866/taproot/internal/clienterror"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 // A turn that only holds a file the target cannot receive is refused with a named

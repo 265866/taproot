@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/265866/taproot/internal/registry"
 )
 
 func TestCodexClientModelsResponse_InputModalitiesFromRegistry(t *testing.T) {

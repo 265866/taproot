@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 const (

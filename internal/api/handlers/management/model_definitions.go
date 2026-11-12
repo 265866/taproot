@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/internal/registry"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
 // RefreshModelDefinitions triggers an immediate on-demand refresh of the model catalogs.

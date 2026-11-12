@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/265866/taproot/internal/clienterror"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	log "github.com/sirupsen/logrus"
 )
 

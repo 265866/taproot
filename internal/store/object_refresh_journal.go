@@ -10,8 +10,8 @@ import (
 	"path"
 	"time"
 
+	"github.com/265866/taproot/internal/auth/codex"
 	"github.com/minio/minio-go/v7"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
 	log "github.com/sirupsen/logrus"
 )
 

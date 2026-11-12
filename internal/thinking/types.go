@@ -5,8 +5,8 @@
 package thinking
 
 import (
+	"github.com/265866/taproot/internal/registry"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
 // ThinkingMode represents the type of thinking configuration mode.

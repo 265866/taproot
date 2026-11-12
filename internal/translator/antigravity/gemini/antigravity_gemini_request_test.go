@@ -5,8 +5,8 @@ import (
 	"github.com/MoeForge/moego/base64"
 	"testing"
 
+	"github.com/265866/taproot/internal/signature"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

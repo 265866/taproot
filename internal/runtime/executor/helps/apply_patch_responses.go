@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
+	applypatch "github.com/265866/taproot/internal/client/codex/apply-patch"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 // NormalizeApplyPatchResponsesRequest opts a non-Codex executor into the patch contract.

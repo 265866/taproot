@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 // thinkingSignatureFixtures are signature shapes that survive a JSON round trip

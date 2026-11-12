@@ -10,16 +10,16 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/registry"
+	runtimeexecutor "github.com/265866/taproot/internal/runtime/executor"
+	_ "github.com/265866/taproot/internal/translator"
+	"github.com/265866/taproot/sdk/api/handlers"
+	openaihandlers "github.com/265866/taproot/sdk/api/handlers/openai"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	runtimeexecutor "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	openaihandlers "github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/openai"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 // TestCodexStreamDisconnectAfterHeadersFailsOver reproduces issue #6247:

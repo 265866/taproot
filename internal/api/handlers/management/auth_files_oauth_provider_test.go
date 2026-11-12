@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/pluginhost"
+	"github.com/265866/taproot/internal/watcher/synthesizer"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/pluginapi"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
 
 func TestAuthFilesList_ReportsOAuthProvider(t *testing.T) {

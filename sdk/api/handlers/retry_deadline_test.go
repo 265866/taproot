@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	coreexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	"github.com/gin-gonic/gin"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 func TestLocalRecoveryHintsSurviveDefaultHeaderPolicyAndEnrichment(t *testing.T) {

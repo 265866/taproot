@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	homekv "github.com/265866/taproot/internal/home"
 	"github.com/google/uuid"
-	homekv "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
 )
 
 func TestClaudeDiagnosticsTracksCompletedMessagePerCredentialSession(t *testing.T) {

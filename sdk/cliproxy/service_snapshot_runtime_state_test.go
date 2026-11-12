@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
-	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	internalconfig "github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/watcher"
+	"github.com/265866/taproot/internal/watcher/synthesizer"
+	sdkauth "github.com/265866/taproot/sdk/auth"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/config"
 )
 
 // Service-level repro on dev: a file snapshot applied through handleAuthUpdates (the

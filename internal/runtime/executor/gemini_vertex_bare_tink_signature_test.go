@@ -9,12 +9,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	internalsignature "github.com/265866/taproot/internal/signature"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	internalsignature "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 // testVertexBareTinkSignature mirrors the Vertex AI serve-path shape: a TINK

@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
-	xaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/xai"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
+	claudeauth "github.com/265866/taproot/internal/auth/claude"
+	xaiauth "github.com/265866/taproot/internal/auth/xai"
+	"github.com/265866/taproot/internal/config"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	"github.com/265866/taproot/sdk/proxyutil"
 )
 
 // Manager aggregates authenticators and coordinates persistence via a token store.

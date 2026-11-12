@@ -12,8 +12,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
 	"github.com/redis/go-redis/v9"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 func TestManagedSubscriberOrdinaryTrafficDoesNotRenewHeartbeat(t *testing.T) {

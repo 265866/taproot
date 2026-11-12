@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/265866/taproot/internal/registry"
 	log "github.com/sirupsen/logrus"
 )
 

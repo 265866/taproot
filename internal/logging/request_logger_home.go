@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
+	"github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/internal/interfaces"
 )
 
 type homeRequestLogClient interface {

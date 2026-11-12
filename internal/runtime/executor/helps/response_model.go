@@ -3,8 +3,8 @@ package helps
 import (
 	"strings"
 
+	"github.com/265866/taproot/internal/thinking"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 )
 
 const (

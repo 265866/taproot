@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/buildinfo"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/util"
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/buildinfo"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 

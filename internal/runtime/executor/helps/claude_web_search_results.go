@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/cache"
+	responsesclaude "github.com/265866/taproot/internal/translator/claude/openai/responses"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/registry"
+	runtimeexecutor "github.com/265866/taproot/internal/runtime/executor"
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	"github.com/265866/taproot/sdk/api/handlers"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	runtimeexecutor "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 // Exercise the actual downstream handler, auth manager and Codex executor.

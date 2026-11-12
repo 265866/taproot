@@ -9,14 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/logging"
+	_ "github.com/265866/taproot/internal/translator"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 func TestCodexExecutorExecutePublishesMainUsageBeforeImageUsage(t *testing.T) {

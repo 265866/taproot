@@ -3,9 +3,9 @@ package helps
 import (
 	"strings"
 
+	"github.com/265866/taproot/internal/thinking"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 // ApplyThinkingWithSourcePayload preserves summary visibility from the original

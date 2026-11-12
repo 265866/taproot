@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	internalhome "github.com/router-for-me/CLIProxyAPI/v8/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	internalconfig "github.com/265866/taproot/internal/config"
+	internalhome "github.com/265866/taproot/internal/home"
+	"github.com/265866/taproot/sdk/cliproxy/executionregistry"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 )
 
 func TestHomeForceMappingAliasResult(t *testing.T) {

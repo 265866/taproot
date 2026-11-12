@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 func TestBuildClaudeToolNames_RoundTripAndStability(t *testing.T) {

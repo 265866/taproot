@@ -3,7 +3,7 @@ package thinking_test
 import (
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
+	"github.com/265866/taproot/internal/thinking"
 )
 
 func TestClaudeEffortDirective(t *testing.T) {

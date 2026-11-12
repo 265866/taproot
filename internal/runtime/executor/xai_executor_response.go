@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/runtime/executor/helps"
+	"github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 

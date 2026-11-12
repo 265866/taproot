@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/base64"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 func TestConvertClaudeRequestToCodex_MaxOutputTokens(t *testing.T) {

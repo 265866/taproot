@@ -3,9 +3,9 @@ package common
 import (
 	"strings"
 
+	sigcompat "github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/thinking"
 	"github.com/MoeForge/moego/ojson"
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 )
 
 // ResolveCodexReplayTargetModel returns the model name to use for reasoning

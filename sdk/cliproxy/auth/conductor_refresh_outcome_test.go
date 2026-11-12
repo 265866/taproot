@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
+	"github.com/265866/taproot/internal/auth/codex"
 )
 
 func TestUnknownRefreshOutcomeRequiresRecoveryWithoutDiscardingAccess(t *testing.T) {

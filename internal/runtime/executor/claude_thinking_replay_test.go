@@ -9,12 +9,12 @@ import (
 	"sync"
 	"testing"
 
+	internalcache "github.com/265866/taproot/internal/cache"
+	"github.com/265866/taproot/internal/registry"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	internalcache "github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 const claudeReplayResolvedModelInfoKey = "cliproxy.resolved_api_key_model_info"
@@ -33,17 +33,17 @@ func claudeReplayTestAuth(baseURL string) *cliproxyauth.Auth {
 
 func claudeReplayTestRequest(payload []byte, sessionID string, isCompat bool, source sdktranslator.Format) (cliproxyexecutor.Request, cliproxyexecutor.Options) {
 	return cliproxyexecutor.Request{
-		Model:   "claude-synthetic-4772",
-		Payload: payload,
-		Metadata: map[string]any{
-			claudeReplayResolvedModelInfoKey: &registry.ModelInfo{IsCompat: isCompat},
-		},
-	}, cliproxyexecutor.Options{
-		SourceFormat: source,
-		Metadata: map[string]any{
-			cliproxyexecutor.ExecutionSessionMetadataKey: sessionID,
-		},
-	}
+			Model:   "claude-synthetic-4772",
+			Payload: payload,
+			Metadata: map[string]any{
+				claudeReplayResolvedModelInfoKey: &registry.ModelInfo{IsCompat: isCompat},
+			},
+		}, cliproxyexecutor.Options{
+			SourceFormat: source,
+			Metadata: map[string]any{
+				cliproxyexecutor.ExecutionSessionMetadataKey: sessionID,
+			},
+		}
 }
 
 func TestClaudeThinkingReplayEnabledRequiresCompatClaudeAPIKey(t *testing.T) {

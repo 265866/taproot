@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/265866/taproot/internal/config"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 func TestCompatibilityTranslationPreservesExplicitClaudeVisibility(t *testing.T) {

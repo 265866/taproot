@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	antigravityclaude "github.com/265866/taproot/internal/translator/antigravity/claude"
+	antigravitychat "github.com/265866/taproot/internal/translator/antigravity/openai/chat-completions"
+	"github.com/265866/taproot/internal/util"
 	"github.com/MoeForge/moego/ojson"
-	antigravityclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/antigravity/claude"
-	antigravitychat "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/antigravity/openai/chat-completions"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 const sanitizeTestPayload = `{

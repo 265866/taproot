@@ -18,10 +18,10 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/265866/taproot/internal/cache"
+	translatorcommon "github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
 	"github.com/google/uuid"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
-	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

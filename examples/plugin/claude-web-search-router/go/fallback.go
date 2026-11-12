@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/265866/taproot/sdk/pluginapi"
 )
 
 // defaultWebSearchFallbackChain is the ordered backend try list when route=fallback.

@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/util"
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 func init() {

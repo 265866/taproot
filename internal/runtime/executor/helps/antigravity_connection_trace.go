@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"net/http/httptrace"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/logging"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 

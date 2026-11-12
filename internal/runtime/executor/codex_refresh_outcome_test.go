@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	codexauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	codexauth "github.com/265866/taproot/internal/auth/codex"
+	"github.com/265866/taproot/internal/config"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 func TestCodexUnknownRefreshSurvivesForcedRefreshAndFileAlias(t *testing.T) {

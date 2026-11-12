@@ -15,13 +15,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	cliproxysession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	"github.com/265866/taproot/internal/logging"
+	"github.com/265866/taproot/internal/registry"
+	"github.com/265866/taproot/internal/util"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	cliproxysession "github.com/265866/taproot/sdk/cliproxy/session"
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	log "github.com/sirupsen/logrus"
 )
 

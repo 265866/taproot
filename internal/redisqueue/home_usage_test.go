@@ -3,8 +3,8 @@ package redisqueue
 import (
 	"testing"
 
+	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
 	"github.com/MoeForge/moego/ojson"
-	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 func TestUsageQueueCarriesHomeSelection(t *testing.T) {

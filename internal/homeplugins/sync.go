@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginstore"
+	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/util"
+	sdkconfig "github.com/265866/taproot/sdk/config"
+	sdkpluginstore "github.com/265866/taproot/sdk/pluginstore"
 	"gopkg.in/yaml.v3"
 )
 

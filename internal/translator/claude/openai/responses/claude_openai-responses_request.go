@@ -8,14 +8,14 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	applypatch "github.com/265866/taproot/internal/client/codex/apply-patch"
+	"github.com/265866/taproot/internal/registry"
+	sigcompat "github.com/265866/taproot/internal/signature"
+	"github.com/265866/taproot/internal/thinking"
+	"github.com/265866/taproot/internal/translator/common"
+	"github.com/265866/taproot/internal/util"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
-	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 const (

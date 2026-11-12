@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/265866/taproot/internal/interfaces"
+	"github.com/265866/taproot/internal/registry"
+	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
+	sdkconfig "github.com/265866/taproot/sdk/config"
 )
 
 const speechOnlyRouteHint = "/v1/audio/speech"

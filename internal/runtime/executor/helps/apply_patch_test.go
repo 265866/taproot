@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	_ "github.com/265866/taproot/internal/translator"
+	"github.com/265866/taproot/internal/translator/common"
+	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
+	"github.com/265866/taproot/sdk/cliproxy/usage"
+	sdktranslator "github.com/265866/taproot/sdk/translator"
 )
 
 func TestApplyPatchTranslationError(t *testing.T) {

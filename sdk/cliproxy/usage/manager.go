@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	internallogging "github.com/265866/taproot/internal/logging"
 	"github.com/google/uuid"
-	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	log "github.com/sirupsen/logrus"
 )
 

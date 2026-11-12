@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/discovery"
+	"github.com/265866/taproot/internal/discovery"
 )
 
 type fakeBrowser struct {

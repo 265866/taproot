@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/265866/taproot/internal/config"
+	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
 
 func TestDetectClaudeCodeRequestAcceptsUserAgentFields(t *testing.T) {

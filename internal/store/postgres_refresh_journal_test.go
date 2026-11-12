@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
+	"github.com/265866/taproot/internal/auth/codex"
 )
 
 var refreshSQLDriverID atomic.Int64
