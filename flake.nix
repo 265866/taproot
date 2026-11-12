@@ -41,7 +41,7 @@
       packagesFor =
         pkgs:
         let
-          taproot-codec = pkgs.callPackage ./nix/codec.nix { inherit (buildInfo) version; };
+          taproot-codec = pkgs.callPackage ./nix/codec.nix { };
           taproot-web = pkgs.callPackage ./nix/web.nix {
             inherit (buildInfo) version;
             bun2nix = bun2nix.packages.${pkgs.stdenv.hostPlatform.system}.default;

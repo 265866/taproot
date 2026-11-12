@@ -3,14 +3,15 @@
 {
   lib,
   rustPlatform,
-  version,
 }:
 let
   root = ../internal/taproot/reqlog/codec/native;
 in
 rustPlatform.buildRustPackage {
   pname = "taproot-codec";
-  inherit version;
+  # The crate's own version, not the release's, so a release that leaves the
+  # codec's sources alone reuses the codec it built before.
+  inherit ((lib.importTOML (root + "/Cargo.toml")).package) version;
 
   src = lib.fileset.toSource {
     inherit root;
