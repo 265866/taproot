@@ -1,7 +1,8 @@
 # services.taproot: taproot as a hardened systemd service beside tailscaled.
 #
-# Nix owns config.yaml and writes it on every start, so the dashboard's edits
-# to it last until the next restart. taproot.yaml is copied from
+# Nix owns config.yaml and writes it on every start, from settings and the
+# settingsFiles merged over them, so the dashboard's edits to it last until
+# the next restart. taproot.yaml is copied from
 # taprootSettings only when the file does not exist: the dashboard owns it
 # afterwards (it saves access, backup, and alert changes by renaming a new
 # file over it), so later changes to taprootSettings do not reach a running
@@ -18,6 +19,13 @@ let
   yaml = pkgs.formats.yaml { };
   configFile = yaml.generate "taproot-config.yaml" cfg.settings;
   taprootFile = yaml.generate "taproot.yaml" cfg.taprootSettings;
+  yq = lib.getExe pkgs.yq-go;
+
+  # One LoadCredential name per settings file, in merge order.
+  settingsCredentials = lib.imap0 (i: file: {
+    name = "settings-${toString i}";
+    path = toString file;
+  }) cfg.settingsFiles;
 
   # Outside a container every local process can connect from loopback, and
   # taproot treats loopback callers as admins. The resolver (netdns=cgo) also
@@ -94,7 +102,9 @@ in
         start. config.example.yaml in the repository documents every key.
         The defaults match examples/taproot/config.yaml. The values pass
         through the Nix store, which every local user can read, so put no
-        secrets here; use `environmentFile` for those.
+        secrets here; put secret settings, such as upstream API keys, in
+        `settingsFiles`, and secret environment variables in
+        `environmentFile`.
       '';
       default = { };
       type = lib.types.submodule {
@@ -129,6 +139,31 @@ in
           routing.strategy = "soonest-reset-first";
           observability.logs.request-log = false;
         }
+      '';
+    };
+
+    settingsFiles = lib.mkOption {
+      type = lib.types.listOf lib.types.path;
+      default = [ ];
+      example = [ "/run/secrets/taproot-settings.yaml" ];
+      description = ''
+        YAML files merged over `settings`, in order, when `config.yaml` is
+        written on every start. They hold the settings that must stay out
+        of the Nix store, such as upstream API keys:
+
+        ```yaml
+        api-keys:
+          gemini:
+            - name: gemini
+              keys:
+                - api-key: "..."
+        ```
+
+        The unit reads them through systemd's LoadCredential, so they can
+        be readable by root only. Mappings merge key by key, and any other
+        value, a list included, replaces the one before it.
+        `server.host` and `server.port` always come from `settings`, which
+        the listen-address check and `openFirewall` read.
       '';
     };
 
@@ -224,10 +259,15 @@ in
       }
     ];
 
-    warnings = lib.optional ((cfg.taprootSettings.alerts.discord-webhook or null) != null) ''
-      services.taproot.taprootSettings.alerts.discord-webhook puts the webhook URL, a secret, in the Nix
-      store, which every local user can read. Use services.taproot.discordWebhookFile instead.
-    '';
+    warnings =
+      lib.optional ((cfg.taprootSettings.alerts.discord-webhook or null) != null) ''
+        services.taproot.taprootSettings.alerts.discord-webhook puts the webhook URL, a secret, in the Nix
+        store, which every local user can read. Use services.taproot.discordWebhookFile instead.
+      ''
+      ++ map (file: ''
+        services.taproot.settingsFiles lists ${file}, which is in the Nix store, where every local user
+        can read it. Keep secret settings in a file outside the store, such as one under /run/secrets.
+      '') (lib.filter (file: lib.hasPrefix "${builtins.storeDir}/" file) (map toString cfg.settingsFiles));
 
     services.taproot.settings = {
       config-version = lib.mkDefault 8;
@@ -296,13 +336,30 @@ in
       // lib.optionalAttrs (cfg.timeZone != null) { TZ = cfg.timeZone; };
 
       preStart = ''
-        install -m 0600 ${configFile} ${cfg.dataDir}/config.yaml
+        ${
+          if cfg.settingsFiles == [ ] then
+            ''
+              install -m 0600 ${configFile} ${cfg.dataDir}/config.yaml
+            ''
+          else
+            ''
+              # Each file merges over the ones before it; host and port stay
+              # settings'. The merge goes to a new file, renamed over config.yaml,
+              # so a file that does not parse leaves the previous config.yaml.
+              HOST=${lib.escapeShellArg cfg.settings.server.host} ${yq} eval-all \
+                '. as $item ireduce ({}; . * ($item // {})) | .server.host = strenv(HOST) | .server.port = ${toString cfg.settings.server.port}' \
+                ${configFile} ${
+                  lib.concatMapStringsSep " " (c: ''"$CREDENTIALS_DIRECTORY/${c.name}"'') settingsCredentials
+                } >${cfg.dataDir}/config.yaml.new
+              mv ${cfg.dataDir}/config.yaml.new ${cfg.dataDir}/config.yaml
+            ''
+        }
         if [ ! -e ${cfg.dataDir}/taproot.yaml ]; then
           install -m 0600 ${taprootFile} ${cfg.dataDir}/taproot.yaml.new
         ${lib.optionalString (cfg.discordWebhookFile != null) ''
           # Not yq -i: it chowns its temporary file, which SystemCallFilter kills.
           webhook=$(cat "$CREDENTIALS_DIRECTORY/discord-webhook")
-          WEBHOOK=$webhook ${lib.getExe pkgs.yq-go} '.alerts["discord-webhook"] = strenv(WEBHOOK)' ${taprootFile} >${cfg.dataDir}/taproot.yaml.new
+          WEBHOOK=$webhook ${yq} '.alerts["discord-webhook"] = strenv(WEBHOOK)' ${taprootFile} >${cfg.dataDir}/taproot.yaml.new
         ''}
           mv ${cfg.dataDir}/taproot.yaml.new ${cfg.dataDir}/taproot.yaml
         fi
@@ -315,9 +372,9 @@ in
         Group = cfg.group;
         WorkingDirectory = cfg.dataDir;
         EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
-        LoadCredential = lib.optional (
-          cfg.discordWebhookFile != null
-        ) "discord-webhook:${toString cfg.discordWebhookFile}";
+        LoadCredential =
+          lib.optional (cfg.discordWebhookFile != null) "discord-webhook:${toString cfg.discordWebhookFile}"
+          ++ map (c: "${c.name}:${c.path}") settingsCredentials;
         # Restarts also cover a start before tailscaled has assigned the address.
         Restart = "always";
         RestartSec = 5;

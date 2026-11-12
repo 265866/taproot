@@ -1,7 +1,8 @@
 # Evaluation-only check: the module accepts only a literal Tailscale listen
 # address, brackets an IPv6 tailscale.address, refuses empty taprootSettings,
-# warns about a webhook in taprootSettings, and loads discordWebhookFile as a
-# credential.
+# warns about a webhook in taprootSettings, loads discordWebhookFile and each
+# of settingsFiles as a credential, and warns about a settings file in the
+# store.
 {
   lib,
   pkgs,
@@ -128,10 +129,47 @@ let
       !lib.any (lib.hasInfix "taprootSettings.alerts.discord-webhook") webhookInStore.warnings
     ) "a webhook in taprootSettings";
 
+  # Settings files reach the unit as credentials, merged in order, never by
+  # their content; a file in the store gets a warning.
+  noSettingsFiles = configFor { tailscale.address = "100.64.0.1"; };
+  settingsFiles = configFor {
+    tailscale.address = "100.64.0.1";
+    settingsFiles = [
+      "/run/secrets/taproot-keys.yaml"
+      "/run/secrets/taproot-routing.yaml"
+    ];
+  };
+  settingsFileInStore = configFor {
+    tailscale.address = "100.64.0.1";
+    settingsFiles = [ (pkgs.writeText "taproot-settings.yaml" "{}") ];
+  };
+  taprootWarnings = config: lib.filter (lib.hasInfix "services.taproot.") config.warnings;
+  wrongSettingsFiles =
+    lib.optional (
+      settingsFiles.systemd.services.taproot.serviceConfig.LoadCredential != [
+        "settings-0:/run/secrets/taproot-keys.yaml"
+        "settings-1:/run/secrets/taproot-routing.yaml"
+      ]
+      || !lib.hasInfix ''"$CREDENTIALS_DIRECTORY/settings-0" "$CREDENTIALS_DIRECTORY/settings-1"'' settingsFiles.systemd.services.taproot.preStart
+      || taprootWarnings settingsFiles != [ ]
+    ) "settingsFiles"
+    ++ lib.optional (
+      noSettingsFiles.systemd.services.taproot.serviceConfig.LoadCredential != [ ]
+      || lib.hasInfix "eval-all" noSettingsFiles.systemd.services.taproot.preStart
+    ) "no settingsFiles"
+    ++ lib.optional (
+      !lib.any (lib.hasInfix "services.taproot.settingsFiles lists") (taprootWarnings settingsFileInStore)
+    ) "a settings file in the store";
+
   wrongSettings =
     lib.optional (!settingsRefused "empty taprootSettings" { }) "empty taprootSettings"
     ++ lib.optional (settingsRefused "an admin device" adminSettings) "taprootSettings with an admin device";
-  wrong = map (h: ''host "${h}"'') wrongHosts ++ wrongSettings ++ wrongDefault ++ wrongWebhook;
+  wrong =
+    map (h: ''host "${h}"'') wrongHosts
+    ++ wrongSettings
+    ++ wrongDefault
+    ++ wrongWebhook
+    ++ wrongSettingsFiles;
 in
 if wrong == [ ] then
   pkgs.runCommand "taproot-module-assertions" { } "touch $out"

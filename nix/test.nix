@@ -104,6 +104,32 @@ let
     inherit address;
     prefixLength = 24;
   };
+
+  # settingsFiles for the test, written at boot outside the store as a secret
+  # manager would. The first adds an upstream API key and tries to move the
+  # listener; the second overrides a value the first set.
+  secretSettings = [
+    {
+      path = "/run/secrets/taproot-keys.yaml";
+      value = {
+        api-keys.gemini = [
+          {
+            name = "example";
+            keys = [ { api-key = "example-gemini-key"; } ];
+          }
+        ];
+        routing.strategy = "fill-first";
+        server = {
+          host = "0.0.0.0";
+          port = 9999;
+        };
+      };
+    }
+    {
+      path = "/run/secrets/taproot-routing.yaml";
+      value.routing.strategy = "round-robin";
+    }
+  ];
 in
 {
   name = "taproot";
@@ -124,6 +150,19 @@ in
         };
       };
 
+      systemd.services.taproot-secrets = {
+        wantedBy = [ "taproot.service" ];
+        before = [ "taproot.service" ];
+        serviceConfig.Type = "oneshot";
+        script = ''
+          install -d -m 0700 /run/secrets
+        ''
+        + pkgs.lib.concatMapStrings (file: ''
+          install -m 0400 ${pkgs.writeText "settings.yaml" (builtins.toJSON file.value)} ${file.path}
+        '') secretSettings;
+      };
+      environment.systemPackages = [ pkgs.yq-go ];
+
       services.taproot = {
         enable = true;
         tailscale.address = "100.64.0.1";
@@ -131,6 +170,7 @@ in
         localModel = true;
         timeZone = "Etc/UTC";
         inherit taprootSettings;
+        settingsFiles = map (file: file.path) secretSettings;
         # A real deployment keeps this file out of the store; the test only
         # needs a file that the unit reads as a credential.
         discordWebhookFile = pkgs.writeText "discord-webhook" "https://discord.com/api/webhooks/0/example-token\n";
@@ -191,6 +231,25 @@ in
         alerts = json.loads(body)["alerts"]
         assert alerts["webhookSet"] is True and alerts["webhookInvalid"] is False, alerts
         assert alerts["webhookHint"] == "…-token", alerts
+
+    with subtest("settingsFiles merge into config.yaml and stay out of the store"):
+        merged = json.loads(server.succeed("yq -o json . /var/lib/taproot/config.yaml"))
+        assert merged["api-keys"]["gemini"][0]["keys"][0]["api-key"] == "example-gemini-key", merged
+        # The second file wins over the first, and the other keys of settings stay.
+        assert merged["routing"]["strategy"] == "round-robin", merged["routing"]
+        assert merged["routing"]["session-affinity"] is True, merged["routing"]
+        # The listener stays settings', which the assertion and the firewall read.
+        assert merged["server"] == {"host": "100.64.0.1", "port": 8317}, merged["server"]
+        pre_start = server.succeed(
+            "systemctl show -p ExecStartPre --value taproot.service | grep -o '/nix/store/[^ ;]*-pre-start' | head -1"
+        ).strip()
+        generated = server.succeed(f"grep -o '/nix/store/[^ ]*-taproot-config.yaml' {pre_start} | head -1").strip()
+        server.fail(f"grep -F example-gemini-key {pre_start} {generated}")
+        # The server loaded the key: it is the only credential, and its models are served.
+        status, body = get(client, "100.64.0.3", "/v1/models")
+        assert status == 200, (status, body)
+        owners = {model["owned_by"] for model in json.loads(body)["data"]}
+        assert owners == {"google"}, owners
 
     with subtest("a device with Proxy but not Admin reaches the proxy only"):
         status, body = get(client, "100.64.0.3", "/v1/models")
