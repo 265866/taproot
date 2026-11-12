@@ -2,7 +2,7 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
-## Unreleased
+## [0.6.0](https://github.com/265866/taproot/compare/taproot-v0.5.0...taproot-v0.6.0) (2026-11-12)
 
 ### Upgrading from 0.5
 
@@ -10,6 +10,18 @@ Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on
 - At its first start, the server adds price rows for `claude-fable-5-2*` and `claude-mythos-5-2*` (8 USD per million input tokens, 40 output, 0.20 cache read, 10 and 16 cache writes). Before, the Fable 5 row priced 5.2, so cost estimates for 5.2 traffic were too high, and the existing 5.2 history is repriced now. A row you already added with either pattern stays as it is.
 - Cloaked Claude requests no longer get Anthropic's server-side refusal fallbacks added on their own, such as `claude-opus-5-5` falling back to `claude-opus-4-8`. Set `upstream.claude.server-side-fallback: true` in `config.yaml` to add them again. A request that names its own `fallbacks` keeps them either way.
 - Claude accounts signed in with OAuth now open a new connection for each request instead of reusing idle ones. Upstream made this change because NATs and transparent proxies drop idle connections without notice. Under many concurrent requests, the time to first token can rise by the length of a TLS handshake.
+
+### Added
+
+* **taproot:** price Claude Fable 5.2 and Mythos 5.2 ([fa72c32](https://github.com/265866/taproot/commit/fa72c32f845a01015befc30f93cc8ea8cd726846))
+
+### Fixed
+
+* **taproot:** keep request-logs.keep-unrouted-404 working after the upstream sync ([b8529ac](https://github.com/265866/taproot/commit/b8529ac7917019a87777f879ac6fefe7a96a2468))
+
+### Upstream
+
+* Merges [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) up to [8bba7a77c](https://github.com/router-for-me/CLIProxyAPI/commit/8bba7a77c6bcbfd993516d26606bfecaa4ff49d0).
 
 ## [0.5.0](https://github.com/265866/taproot/compare/taproot-v0.4.0...taproot-v0.5.0) (2026-11-11)
 
