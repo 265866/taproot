@@ -102,6 +102,15 @@ func TestParseClaudeUsagePayloadNamesWindows(t *testing.T) {
 			},
 		},
 		{
+			name: "Fable 5.2",
+			body: `{"limits":[{"kind":"session","percent":5,"resets_at":"2026-11-12T12:00:00Z"},
+				{"kind":"weekly_scoped","percent":30,"resets_at":"2026-11-12T12:00:00Z","scope":{"model":{"display_name":"Fable 5.2"}}}]}`,
+			want: []wantObs{
+				{"five_hour", 0.05, reset, "allowed", 18000},
+				{"seven_day_fable", 0.3, reset, "allowed", 604800},
+			},
+		},
+		{
 			name: "legacy aliases of the Fable window",
 			body: `{"seven_day_overage_included":{"utilization":25,"resets_at":"2026-11-12T12:00:00Z"}}`,
 			want: []wantObs{{"seven_day_fable", 0.25, reset, "allowed", 604800}},
