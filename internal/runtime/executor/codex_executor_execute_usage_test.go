@@ -6,14 +6,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/265866/taproot/internal/config"
+	"github.com/265866/taproot/internal/logging"
 	_ "github.com/265866/taproot/internal/translator"
 	cliproxyexecutor "github.com/265866/taproot/sdk/cliproxy/executor"
 	coreusage "github.com/265866/taproot/sdk/cliproxy/usage"
 	sdktranslator "github.com/265866/taproot/sdk/translator"
 	"github.com/MoeForge/moego/ojson"
+	"github.com/gin-gonic/gin"
 )
 
 func TestCodexExecutorExecutePublishesMainUsageBeforeImageUsage(t *testing.T) {
@@ -263,5 +266,63 @@ func TestCodexExecutorExecuteCompactRecordsFinalizedPayloadOverrideReasoningEffo
 	record := capture.await(t)
 	if record.ReasoningEffort != "high" {
 		t.Fatalf("usage record ReasoningEffort = %q, want %q", record.ReasoningEffort, "high")
+	}
+}
+
+func TestCodexExecutorPreservesPartialNon2xxBodyAndReadErrorWhenRequestLogDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, alt := range []string{"", "responses/compact"} {
+		name := "responses"
+		if alt != "" {
+			name = "compact"
+		}
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hijacker, ok := w.(http.Hijacker)
+				if !ok {
+					t.Error("response writer does not support hijacking")
+					return
+				}
+				conn, buf, errHijack := hijacker.Hijack()
+				if errHijack != nil {
+					t.Errorf("hijack: %v", errHijack)
+					return
+				}
+				_, _ = buf.WriteString("HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nContent-Length: 4096\r\n\r\n{\"error\":{\"message\":\"partial codex 502")
+				_ = buf.Flush()
+				_ = conn.Close()
+			}))
+			defer server.Close()
+
+			ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx := context.WithValue(context.Background(), "gin", ginCtx)
+			executor := NewCodexExecutor(&config.Config{})
+			_, errExec := executor.Execute(ctx, codexOAuthTestAuth(server.URL), cliproxyexecutor.Request{
+				Model:   "gpt-5.5",
+				Payload: []byte(`{"model":"gpt-5.5","input":[{"type":"message","role":"user","content":"hi"}]}`),
+			}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, Alt: alt})
+			if errExec == nil {
+				t.Fatal("expected Execute to fail on 502")
+			}
+
+			value, exists := ginCtx.Get(logging.DeferredAPIResponseContextKey)
+			if !exists {
+				t.Fatal("deferred API response was not recorded")
+			}
+			deferred, ok := value.(logging.DeferredAPIResponse)
+			if !ok || deferred == nil {
+				t.Fatalf("deferred API response = %#v, want logging.DeferredAPIResponse", value)
+			}
+			rendered := string(deferred.RenderAPIResponse())
+			for _, want := range []string{
+				"Status: 502",
+				`{"error":{"message":"partial codex 502`,
+				"Error: unexpected EOF",
+			} {
+				if !strings.Contains(rendered, want) {
+					t.Fatalf("deferred API response missing %q:\n%s", want, rendered)
+				}
+			}
+		})
 	}
 }

@@ -188,32 +188,37 @@ func TestPriceSeedUpgradeFromVersion1(t *testing.T) {
 	}
 }
 
-// A database from version 2 gets the gpt-image rows added in version 3,
-// unless its user already added a row with that pattern.
-func TestPriceSeedUpgradeFromVersion2(t *testing.T) {
-	const added = "gpt-image-2.6*"
+// A database from version 2 gets the gpt-image rows added in version 3, and
+// one from version 3 the Fable and Mythos 5.2 rows added in version 4, unless
+// its user already added a row with that pattern.
+func TestPriceSeedUpgradeAddsNewRows(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		own  *Price
+		name    string
+		version int
+		added   string
+		own     bool
 	}{
-		{"new row", nil},
-		{"user row kept", &Price{ModelPattern: added, Input: 1, Output: 2, Source: "edited in dashboard"}},
+		{"v2 new row", 2, "gpt-image-2.6*", false},
+		{"v2 user row kept", 2, "gpt-image-2.6*", true},
+		{"v3 new row", 3, "claude-fable-5-2*", false},
+		{"v3 user row kept", 3, "claude-fable-5-2*", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			own := Price{ModelPattern: tc.added, Input: 1, Output: 2, Source: "edited in dashboard"}
 			dir := t.TempDir()
 			db := openStore(t, dir)
 			exec(t, db, `DELETE FROM prices`)
-			for _, p := range priceSeedV2 {
+			for _, p := range priceSeeds[tc.version-1] {
 				if err := insertPrice(context.Background(), db, `INSERT`, p, "2026-11-05T00:00:00Z"); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if tc.own != nil {
-				if err := insertPrice(context.Background(), db, `INSERT`, *tc.own, "2026-11-06T00:00:00Z"); err != nil {
+			if tc.own {
+				if err := insertPrice(context.Background(), db, `INSERT`, own, "2026-11-06T00:00:00Z"); err != nil {
 					t.Fatal(err)
 				}
 			}
-			exec(t, db, `UPDATE price_seed SET version = 2`)
+			exec(t, db, `UPDATE price_seed SET version = ?`, tc.version)
 			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -226,8 +231,8 @@ func TestPriceSeedUpgradeFromVersion2(t *testing.T) {
 			}
 			for _, want := range seedPrices {
 				got := prices[want.ModelPattern]
-				if want.ModelPattern == added && tc.own != nil {
-					want = *tc.own
+				if want.ModelPattern == tc.added && tc.own {
+					want = own
 				}
 				got.UpdatedAt = ""
 				if got != want {
@@ -289,6 +294,7 @@ var shippedPriceDigests = []string{
 	"932ba1541edc9fc7925ec77a68de64a838bddff4a8d8ee691c81e0f8410abae0",
 	"a0321398a83e41292cd14ce1bc63df6ba9eeac8f7574047ffead28896ef9c4d5",
 	"570e6237d44a9b6c9d7e31a6bc12c15ed19f20d14923375a7fb38aca8d6eabb5",
+	"7098c6d64347203b0fd6488fc610eb399c04466aa9c37c74bf1d6ec5ffd9ef55",
 }
 
 func TestShippedPriceVersionsAreFrozen(t *testing.T) {

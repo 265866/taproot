@@ -28,8 +28,9 @@ type Price struct {
 }
 
 const (
-	anthropicSource = "Anthropic list price, platform.claude.com/docs/en/about-claude/pricing read 2026-11-08"
-	openAISource    = "OpenAI standard tier, developers.openai.com/api/docs/pricing read 2026-11-08 (5m/1h columns = 30m/12h writes; short-context tier)"
+	anthropicSource        = "Anthropic list price, platform.claude.com/docs/en/about-claude/pricing read 2026-11-08"
+	anthropicSourceFable52 = "Anthropic list price, platform.claude.com/docs/en/about-claude/pricing read 2026-11-11"
+	openAISource           = "OpenAI standard tier, developers.openai.com/api/docs/pricing read 2026-11-08 (5m/1h columns = 30m/12h writes; short-context tier)"
 	// The pricing page lists GPT-5.6 Sol's promotional rate until 2026-11-30.
 	// The standard rate is from the same page before the promotion, which had
 	// one cache-write column.
@@ -45,11 +46,53 @@ const (
 // A release that changes seedPrices after a version shipped first freezes
 // that version as a new priceSeedV<N> and appends it here; a shipped
 // version never changes. TestShippedPriceVersionsAreFrozen enforces this.
-var priceSeeds = [][]Price{priceSeedV1, priceSeedV2, seedPrices}
+var priceSeeds = [][]Price{priceSeedV1, priceSeedV2, priceSeedV3, seedPrices}
 
 var priceSeedVersion = len(priceSeeds)
 
 var seedPrices = []Price{
+	{"claude-fable-5-2*", 8, 40, 0.2, 10, 16, anthropicSourceFable52, ""},
+	{"claude-mythos-5-2*", 8, 40, 0.2, 10, 16, anthropicSourceFable52, ""},
+	{"claude-fable-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSource, ""},
+	{"claude-mythos-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSource, ""},
+	{"claude-fable-5*", 10, 50, 1, 12.5, 20, anthropicSource, ""},
+	{"claude-mythos-5*", 10, 50, 1, 12.5, 20, anthropicSource, ""},
+	{"claude-opus-5-5*", 4, 20, 0.2, 5, 8, anthropicSource, ""},
+	{"claude-opus-5*", 5, 25, 0.5, 6.25, 10, anthropicSource, ""},
+	{"claude-opus-4-8*", 5, 25, 0.5, 6.25, 10, anthropicSource, ""},
+	{"claude-opus-4-7*", 5, 25, 0.5, 6.25, 10, anthropicSource, ""},
+	{"claude-opus-4-6*", 5, 25, 0.5, 6.25, 10, anthropicSource, ""},
+	{"claude-opus-4-5*", 5, 25, 0.5, 6.25, 10, anthropicSource, ""},
+	{"claude-sonnet-5-5*", 2, 10, 0.1, 2.5, 4, anthropicSource, ""},
+	{"claude-sonnet-5*", 2, 10, 0.2, 2.5, 4, anthropicSource, ""},
+	{"claude-sonnet-4-6*", 3, 15, 0.3, 3.75, 6, anthropicSource, ""},
+	{"claude-sonnet-4-5*", 3, 15, 0.3, 3.75, 6, anthropicSource, ""},
+	{"claude-haiku-5-5*", 0.1, 0.5, 0.01, 0.125, 0.2, anthropicSource + "; prompts <=100K tokens", ""},
+	{"claude-haiku-4-5*", 1, 5, 0.1, 1.25, 2, anthropicSource, ""},
+	{"gpt-6-astra", 10, 50, 1, 12.5, 25, openAISource, ""},
+	{"gpt-6-sol", 2, 10, 0.2, 2.5, 5, openAISource, ""},
+	{"gpt-6-luna", 0.1, 0.5, 0.01, 0.125, 0.25, openAISource, ""},
+	{"gpt-6.1-sol", 2, 10, 0.1, 2.5, 5, openAISource, ""},
+	{"gpt-6.1-terra", 1, 5, 0.05, 1.25, 2.5, openAISource, ""},
+	{"gpt-5.6-sol", 5, 30, 0.5, 6.25, 12.5, gpt56SolSource, ""},
+	{"gpt-5.6-terra", 2, 12, 0.2, 2.5, 5, openAISource, ""},
+	{"gpt-5.6-luna", 0.2, 1.2, 0.02, 0.25, 0.5, openAISource, ""},
+	{"gpt-5.5", 5, 30, 0.5, 0, 0, openAISource, ""},
+	{"gpt-5.4", 2.5, 15, 0.25, 0, 0, openAISource, ""},
+	{"gpt-5.4-mini", 0.75, 4.5, 0.075, 0, 0, openAISource, ""},
+	{"gpt-5.3-codex", 1.75, 14, 0.175, 0, 0, openAISource, ""},
+	{"gpt-5.2", 1.75, 14, 0.175, 0, 0, openAISource, ""},
+	{"gpt-5.1", 1.25, 10, 0.125, 0, 0, openAISource, ""},
+	{"gpt-5", 1.25, 10, 0.125, 0, 0, openAISource, ""},
+	{"gpt-5-mini", 0.25, 2, 0.025, 0, 0, openAISource, ""},
+	{"gpt-image-2", 8, 30, 2, 0, 0, gptImageSource, ""},
+	{"gpt-image-2.5*", 8, 30, 2, 0, 0, gptImageSource, ""},
+	{"gpt-image-2.6*", 8, 30, 2, 0, 0, gptImageSource, ""},
+}
+
+// priceSeedV3 is the table seed version 3 shipped, in taproot-v0.2.0-rc.5
+// through taproot-v0.5.0.
+var priceSeedV3 = []Price{
 	{"claude-fable-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSource, ""},
 	{"claude-mythos-5-1*", 10, 50, 0.25, 12.5, 20, anthropicSource, ""},
 	{"claude-fable-5*", 10, 50, 1, 12.5, 20, anthropicSource, ""},

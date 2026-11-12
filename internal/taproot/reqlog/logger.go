@@ -58,6 +58,11 @@ var (
 
 func (l *requestLogger) IsEnabled() bool { return l.enabled.Load() }
 
+// KeepsUnrouted404 reports request-logs.keep-unrouted-404. Upstream's
+// middleware drops 404s for routes the server does not serve unless the
+// logger keeps them.
+func (l *requestLogger) KeepsUnrouted404() bool { return l.excluder.Load().keepUnrouted404 }
+
 // SetEnabled follows request-log on config reload. Turning it off abandons
 // in-flight streaming records, because their Close may never come.
 func (l *requestLogger) SetEnabled(enabled bool) {
@@ -445,6 +450,13 @@ func (w *streamWriter) Close() error {
 	w.chunks = bytes.Buffer{}
 	c.finishedAt = l.now()
 	l.submitHeld(&c, reserved+held, fits)
+	return nil
+}
+
+// Discard drops the record without storing it. Upstream's middleware calls
+// it instead of Close for an unrouted 404 that reached no provider.
+func (w *streamWriter) Discard() error {
+	w.abandon()
 	return nil
 }
 

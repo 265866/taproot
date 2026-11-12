@@ -158,6 +158,42 @@ func TestStreamBudgetReleasedWhenLoggingTurnsOff(t *testing.T) {
 	}
 }
 
+// TestStreamDiscardStoresNothing covers upstream's middleware, which discards
+// the writer of an unrouted 404 instead of closing it.
+func TestStreamDiscardStoresNothing(t *testing.T) {
+	h := newHarness(t, Config{})
+	lg := h.logs.logger
+	w, err := lg.LogStreamingRequest("/no/such/route", "GET", nil, nil, "discarded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.WriteStatus(404, map[string][]string{"Content-Type": {"text/plain"}})
+	w.WriteChunkAsync([]byte("404 page not found"))
+	discarder, ok := w.(interface{ Discard() error })
+	if !ok {
+		t.Fatal("stream writer has no Discard")
+	}
+	if err := discarder.Discard(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.flush()
+	if _, err := h.logs.Get(context.Background(), "discarded", true); !errors.Is(err, errNotFound) {
+		t.Fatalf("discarded stream stored: %v", err)
+	}
+	if used := h.logs.engine.budget.used.Load(); used != 0 {
+		t.Fatalf("budget held after discard: %d bytes", used)
+	}
+	lg.streamsMu.Lock()
+	live := len(lg.streams)
+	lg.streamsMu.Unlock()
+	if live != 0 {
+		t.Fatalf("%d stream writers still tracked", live)
+	}
+}
+
 // TestStreamKeepsAPIResponseErrors covers WriteAPIResponseErrors, which
 // upstream's Finalize calls after a stream whose upstream failed.
 func TestStreamKeepsAPIResponseErrors(t *testing.T) {

@@ -10,6 +10,8 @@ func TestPriceBookLookup(t *testing.T) {
 	cases := map[string]string{
 		"claude-opus-5-5":           "claude-opus-5-5*",
 		"claude-opus-5":             "claude-opus-5*",
+		"claude-fable-5-2":          "claude-fable-5-2*",
+		"claude-mythos-5-2":         "claude-mythos-5-2*",
 		"claude-fable-5-1":          "claude-fable-5-1*",
 		"claude-fable-5":            "claude-fable-5*",
 		"claude-haiku-4-5-20251001": "claude-haiku-4-5*",

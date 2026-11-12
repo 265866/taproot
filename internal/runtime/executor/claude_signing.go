@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	claudeauth "github.com/265866/taproot/internal/auth/claude"
 	"github.com/265866/taproot/internal/config"
 	"github.com/265866/taproot/internal/util"
 	cliproxyauth "github.com/265866/taproot/sdk/cliproxy/auth"
@@ -650,6 +651,17 @@ func resolveClaudeKeyConfig(cfg *config.Config, auth *cliproxyauth.Auth) *config
 
 // resolveClaudeKeyCloakConfig finds the matching ClaudeKey config and returns its CloakConfig.
 func resolveClaudeKeyCloakConfig(cfg *config.Config, auth *cliproxyauth.Auth) *config.CloakConfig {
+	if cfg != nil && cfg.Home.Enabled && auth != nil {
+		if mode, strictMode, words, replacements, cacheUserID, ok := claudeauth.ReadMetadataHomeCloak(&auth.Metadata); ok {
+			return config.NormalizeCloakConfig(&config.CloakConfig{
+				Mode:                  mode,
+				StrictMode:            strictMode,
+				SensitiveWords:        words,
+				SensitiveWordsReplace: replacements,
+				CacheUserID:           cacheUserID,
+			})
+		}
+	}
 	entry := resolveClaudeKeyConfig(cfg, auth)
 	if entry == nil {
 		return nil

@@ -3,15 +3,14 @@ package cache
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/MoeForge/moego/base64"
 	"sync"
 	"testing"
 	"time"
 
 	homekv "github.com/265866/taproot/internal/home"
+	"github.com/MoeForge/moego/base64"
 	"github.com/MoeForge/moego/ojson"
 )
 
@@ -130,7 +129,7 @@ func validCodexReasoningReplayItemForTest(seed byte) []byte {
 
 func mustCodexReasoningReplayJSON(t *testing.T, items [][]byte) []byte {
 	t.Helper()
-	raw, errMarshal := json.Marshal(items)
+	raw, errMarshal := marshalReasoningReplayRawJSONArray(items)
 	if errMarshal != nil {
 		t.Fatalf("marshal replay items: %v", errMarshal)
 	}
