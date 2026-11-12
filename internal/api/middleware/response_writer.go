@@ -973,7 +973,7 @@ func isUnroutedNotFound(c *gin.Context, statusCode int, apiErrors []*interfaces.
 	if hasActionableAPIResponseErrors(apiErrors) {
 		return false
 	}
-	if c == nil || c.FullPath() != "" {
+	if c == nil || c.FullPath() != "" || c.GetBool(taprootKeepUnrouted404Key) {
 		return false
 	}
 	if hasRecordedUpstreamActivity(c) {

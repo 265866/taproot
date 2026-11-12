@@ -51,7 +51,7 @@ func RequestLoggingMiddleware(logger logging.RequestLogger) gin.HandlerFunc {
 		}
 
 		loggerEnabled := logger.IsEnabled()
-		hasMatchedRoute := c.FullPath() != ""
+		hasMatchedRoute := c.FullPath() != "" || taprootMarkUnrouted404Kept(c, logger)
 		captureBody := hasMatchedRoute && shouldCaptureRequestBody(loggerEnabled, c.Request)
 
 		// Capture request metadata before authentication without reading the request body.

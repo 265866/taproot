@@ -174,3 +174,72 @@ func TestThroughUpstreamMiddleware(t *testing.T) {
 		t.Fatalf("error-only record: %+v", failed.Meta)
 	}
 }
+
+// Upstream's middleware drops a 404 for a route the server does not serve
+// before it reaches the logger. With keep-unrouted-404 on, taproot's logger
+// asks to keep it, and it is stored as before the drop.
+func TestUnrouted404ThroughUpstreamMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, keep := range []bool{false, true} {
+		t.Run(map[bool]string{false: "dropped by default", true: "kept when configured"}[keep], func(t *testing.T) {
+			h := newHarness(t, Config{KeepUnrouted404: keep})
+			lg := h.logs.logger
+			lg.SetEnabled(true)
+
+			engine := gin.New()
+			engine.Use(func(c *gin.Context) {
+				logging.SetGinRequestID(c, c.GetHeader("X-Test-Id"))
+				c.Next()
+			})
+			engine.Use(middleware.RequestLoggingMiddleware(lg))
+			engine.NoRoute(func(c *gin.Context) {
+				if c.Request.URL.Path == "/v1/stream-probe" {
+					c.Header("Content-Type", "text/event-stream")
+					c.Status(http.StatusNotFound)
+					_, _ = c.Writer.WriteString("event: error\ndata: {}\n\n")
+					return
+				}
+				c.AbortWithStatus(http.StatusNotFound)
+			})
+			srv := httptest.NewServer(engine)
+			defer srv.Close()
+
+			for _, path := range []string{"/v1/files", "/v1/stream-probe"} {
+				req, err := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader(`{"purpose":"probe"}`))
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("X-Test-Id", path)
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusNotFound {
+					t.Fatalf("%s = %d", path, resp.StatusCode)
+				}
+			}
+			h.flush()
+			for _, path := range []string{"/v1/files", "/v1/stream-probe"} {
+				d, err := h.logs.Get(context.Background(), path, true)
+				if !keep {
+					if err == nil {
+						t.Errorf("%s was stored", path)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatalf("%s should be stored: %v", path, err)
+				}
+				if d.Response.Status != http.StatusNotFound {
+					t.Errorf("%s stored status %d", path, d.Response.Status)
+				}
+			}
+			if used := h.logs.engine.budget.used.Load(); used != 0 {
+				t.Errorf("budget held after the probes: %d bytes", used)
+			}
+		})
+	}
+}
