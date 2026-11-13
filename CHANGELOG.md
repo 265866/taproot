@@ -2,6 +2,17 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## [0.7.0](https://github.com/265866/taproot/compare/taproot-v0.6.0...taproot-v0.7.0) (2026-11-12)
+
+### Added
+
+* **nix:** merge settingsFiles into config.yaml ([469f34e](https://github.com/265866/taproot/commit/469f34e40180567becf42df035bb57a2173a8390))
+* **nix:** push release builds to a Cachix cache ([9fa0371](https://github.com/265866/taproot/commit/9fa0371eec3a2f5e80c2257525702048a6817c44))
+
+### Performance
+
+* **nix:** reuse the codec build across releases ([c6bebd2](https://github.com/265866/taproot/commit/c6bebd2eae4003a5f550ae7dd34eeec9c0615213))
+
 ## [0.6.0](https://github.com/265866/taproot/compare/taproot-v0.5.0...taproot-v0.6.0) (2026-11-12)
 
 ### Upgrading from 0.5
