@@ -8461,7 +8461,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-- axios 1.21.0, MIT (https://github.com/axios/axios)
+- axios 1.21.1, MIT (https://github.com/axios/axios)
 
 ~~~~text
 # Copyright (c) 2014-present Matt Zabriskie & Collaborators
@@ -8945,7 +8945,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-- follow-redirects 1.16.0, MIT (https://github.com/follow-redirects/follow-redirects)
+- follow-redirects 1.16.3, MIT (https://github.com/follow-redirects/follow-redirects)
 
 ~~~~text
 Copyright 2014–present Olivier Lalonde <olalonde@gmail.com>, James Talmage <james@talmage.io>, Ruben Verborgh
