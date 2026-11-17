@@ -2,6 +2,12 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## [0.7.1](https://github.com/265866/taproot/compare/taproot-v0.7.0...taproot-v0.7.1) (2026-11-17)
+
+### Fixed
+
+* **taproot:** stop rounded Claude usage polls from reporting a limit ([#91](https://github.com/265866/taproot/pull/91)) ([f952f02](https://github.com/265866/taproot/commit/f952f023391190f05b6fd3e13d4705a20c3f045d))
+
 ## [0.7.0](https://github.com/265866/taproot/compare/taproot-v0.6.0...taproot-v0.7.0) (2026-11-12)
 
 ### Added
