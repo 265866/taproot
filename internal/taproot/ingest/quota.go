@@ -304,6 +304,36 @@ func claudePollObservation(window string, percent float64, resetsAt *string, obs
 	return o
 }
 
+// sameResetSlack absorbs the usage endpoint's sub-second jitter on a reset
+// that the headers give in whole seconds; distinct resets are hours apart.
+const sameResetSlack = time.Minute
+
+// withoutRoundedClaudeLimits drops a Claude usage reading at 100% when the
+// window's latest stored reading is a header that, for the same reset, puts
+// the account at 99% and still allowed. The usage endpoint gives whole
+// percents and no status, so 99.5% reads as 100, while the header carries
+// Anthropic's own status. Kept, the rounded reading raised a limit alert and
+// made routing treat the account as spent until the next request's header.
+// A lower header cannot round to 100%, so that poll shows use outside taproot.
+func withoutRoundedClaudeLimits(obs, latest []observation) []observation {
+	allowed := map[string]time.Time{}
+	for _, o := range latest {
+		if o.Provider == "claude" && o.Source == "header" && o.Status != "rejected" &&
+			o.Utilization >= 0.99 && o.Utilization < 1 && !o.ResetsAt.IsZero() {
+			allowed[o.Window] = o.ResetsAt
+		}
+	}
+	out := obs[:0]
+	for _, o := range obs {
+		if reset, ok := allowed[o.Window]; ok && o.Provider == "claude" && o.Utilization >= 1 &&
+			o.ResetsAt.Sub(reset).Abs() < sameResetSlack {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
 // statusNoLimit marks a window the account does not have. The row replaces an
 // older reading as the window's latest, and latestObservations leaves such a
 // window out.
