@@ -132,7 +132,7 @@ func (i *Ingest) latestObservations(ctx context.Context, authIndex string) ([]ob
 			UNION ALL
 			SELECT a, (SELECT MIN(window_name) FROM quota_observations WHERE auth_index = a AND window_name > w) FROM windows WHERE w IS NOT NULL),
 		horizon(h) AS (SELECT ?)
-		SELECT q.auth_index, q.provider, q.window_name, q.utilization, q.resets_at, q.status, q.period_seconds, q.observed_at
+		SELECT q.auth_index, q.provider, q.window_name, q.utilization, q.resets_at, q.status, q.period_seconds, q.observed_at, q.source
 		FROM windows, horizon JOIN quota_observations q ON q.id = COALESCE(
 			(SELECT id FROM quota_observations WHERE auth_index = a AND window_name = w AND observed_at <= h ORDER BY observed_at DESC LIMIT 1),
 			(SELECT id FROM quota_observations WHERE auth_index = a AND window_name = w ORDER BY observed_at DESC LIMIT 1))
@@ -148,7 +148,7 @@ func (i *Ingest) latestObservations(ctx context.Context, authIndex string) ([]ob
 			resetsAt sql.NullInt64
 			observed int64
 		)
-		if err := rows.Scan(&o.AuthIndex, &o.Provider, &o.Window, &o.Utilization, &resetsAt, &o.Status, &o.PeriodSeconds, &observed); err != nil {
+		if err := rows.Scan(&o.AuthIndex, &o.Provider, &o.Window, &o.Utilization, &resetsAt, &o.Status, &o.PeriodSeconds, &observed, &o.Source); err != nil {
 			return nil, fmt.Errorf("latest quota: %w", err)
 		}
 		if o.Status == statusNoLimit {

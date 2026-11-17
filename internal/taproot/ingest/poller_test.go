@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -273,5 +274,78 @@ func TestPollUsesTheGlobalProxyAndRefusesAnInvalidOne(t *testing.T) {
 	}
 	if len(directSeen()) != 0 || len(proxiedSeen()) != 1 {
 		t.Fatalf("direct %v, proxy %v; an invalid proxy must send nothing", directSeen(), proxiedSeen())
+	}
+}
+
+// The usage endpoint gives whole percents, so an account at 99.5% polls as
+// 100%. On 2026-11-16 that raised a weekly-limit alert three times in an hour
+// while every response header in between said 99% allowed_warning and the
+// account kept serving. A poll at 100% must not override a header that, for
+// the same reset, says the account is below its limit.
+func TestPollAtRoundedLimitKeepsAllowedHeader(t *testing.T) {
+	reset := time.Date(2026, 11, 2, 17, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name        string
+		headerUtil  string
+		status      string
+		headerReset time.Time
+		wantPoll    bool
+	}{
+		{"header allowed for the same reset", "0.99", "allowed_warning", reset, false},
+		{"header rejected for the same reset", "1.0", "rejected", reset, true},
+		{"header from the previous reset", "0.99", "allowed_warning", reset.Add(-7 * 24 * time.Hour), true},
+		{"header too low to round up", "0.5", "allowed", reset, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			i, clock := newTestIngest(t, Config{})
+			// The endpoint's reset carries milliseconds; the header's is whole seconds.
+			srv, _ := usageServer(t, http.StatusOK,
+				`{"five_hour":{"utilization":20.0,"resets_at":"2026-11-02T15:00:00+00:00"},"seven_day":{"utilization":100.0,"resets_at":"2026-11-02T17:00:00.303+00:00"}}`)
+			i.claudeUsageURL = srv.URL
+			m := coreauth.NewManager(nil, nil, nil)
+			idx := registerAuth(t, m, &coreauth.Auth{ID: "claude.json", FileName: "claude.json", Provider: "claude",
+				Metadata: map[string]any{"access_token": "tok"}})
+			i.AttachAuthManager(m)
+			var published []QuotaObservation
+			i.OnQuota(func(obs []QuotaObservation) { published = append(published, obs...) })
+
+			r := claudeRecord("before", clock.t.Add(-20*time.Minute), hdr(
+				"Anthropic-Ratelimit-Unified-7d-Utilization", tc.headerUtil,
+				"Anthropic-Ratelimit-Unified-7d-Status", tc.status,
+				"Anthropic-Ratelimit-Unified-7d-Reset", strconv.FormatInt(tc.headerReset.Unix(), 10)))
+			r.AuthIndex, r.Latency = idx, 0
+			i.HandleUsage(context.Background(), r)
+			mustFlush(t, i)
+			published = nil
+
+			i.pollIdle(context.Background())
+			mustFlush(t, i)
+
+			if n := queryInt(t, i, `SELECT COUNT(*) FROM quota_observations WHERE auth_index=? AND source='poll' AND window_name='five_hour'`, idx); n != 1 {
+				t.Fatalf("five_hour poll rows = %d, want 1: the poll's other windows are stored", n)
+			}
+			polled := queryInt(t, i, `SELECT COUNT(*) FROM quota_observations WHERE auth_index=? AND source='poll' AND window_name='seven_day'`, idx)
+			if got := polled == 1; got != tc.wantPoll {
+				t.Fatalf("seven_day poll rows = %d, want stored=%v", polled, tc.wantPoll)
+			}
+			latest, err := i.LatestQuota(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, o := range latest {
+				if o.Window != "seven_day" {
+					continue
+				}
+				if atLimit := o.Utilization >= 1 || o.Status == "rejected"; atLimit != (tc.wantPoll || tc.status == "rejected") {
+					t.Errorf("latest seven_day %+v", o)
+				}
+			}
+			for _, o := range published {
+				if o.Window == "seven_day" && o.Utilization >= 1 && !tc.wantPoll {
+					t.Errorf("subscribers received the rounded reading %+v", o)
+				}
+			}
+		})
 	}
 }

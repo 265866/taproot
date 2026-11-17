@@ -139,7 +139,12 @@ func (i *Ingest) handleQuotaRefresh(c *gin.Context) {
 		obs[k].AuthIndex = authIndex
 		obs[k].Source = sourceRefresh
 	}
-	i.enqueueObservations(obs)
+	latest, err := i.latestObservations(ctx, authIndex)
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	i.enqueueObservations(withoutRoundedClaudeLimits(obs, latest))
 	if err := i.flush(ctx); err != nil {
 		internalError(c, err)
 		return

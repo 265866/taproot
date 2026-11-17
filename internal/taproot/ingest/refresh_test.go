@@ -2,9 +2,11 @@ package ingest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -201,5 +203,27 @@ func decode(t *testing.T, w *httptest.ResponseRecorder, out any) {
 	t.Helper()
 	if err := json.Unmarshal(w.Body.Bytes(), out); err != nil {
 		t.Fatalf("decode %q: %v", w.Body.String(), err)
+	}
+}
+
+func TestQuotaRefreshAtRoundedLimitKeepsAllowedHeader(t *testing.T) {
+	f := newRefreshFixture(t, http.StatusOK, claudeUsageBody)
+	r := claudeRecord("before", f.clock.t.Add(-time.Minute), hdr(
+		"Anthropic-Ratelimit-Unified-7d-Utilization", "0.99",
+		"Anthropic-Ratelimit-Unified-7d-Status", "allowed_warning",
+		"Anthropic-Ratelimit-Unified-7d-Reset", strconv.FormatInt(time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC).Unix(), 10)))
+	r.AuthIndex, r.Latency = f.claude, 0
+	f.i.HandleUsage(context.Background(), r)
+	mustFlush(t, f.i)
+
+	var got quotaAccountJSON
+	if code := refresh(t, f, f.claude, &got); code != http.StatusOK {
+		t.Fatalf("status %d, want 200", code)
+	}
+	if len(got.Windows) != 2 {
+		t.Fatalf("windows %+v, want five_hour and seven_day", got.Windows)
+	}
+	if seven := got.Windows[1]; seven.Window != "seven_day" || seven.Utilization != 0.99 || seven.Status != "allowed_warning" {
+		t.Errorf("seven_day %+v, want the header's 99%% allowed_warning", seven)
 	}
 }

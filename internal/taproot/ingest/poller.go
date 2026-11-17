@@ -142,10 +142,16 @@ func (i *Ingest) pollIdle(ctx context.Context) {
 		if idx == "" || now.Sub(i.lastPoll[idx]) < i.pollInterval {
 			continue
 		}
-		last, err := i.lastObservation(ctx, idx)
+		latest, err := i.latestObservations(ctx, idx)
 		if err != nil {
 			log.WithError(err).Warn("taproot ingest: read last quota observation")
 			continue
+		}
+		var last time.Time
+		for _, o := range latest {
+			if o.ObservedAt.After(last) {
+				last = o.ObservedAt
+			}
 		}
 		if !last.IsZero() && now.Sub(last) < i.pollInterval {
 			continue
@@ -159,19 +165,8 @@ func (i *Ingest) pollIdle(ctx context.Context) {
 		for k := range obs {
 			obs[k].AuthIndex = idx
 		}
-		i.enqueueObservations(obs)
+		i.enqueueObservations(withoutRoundedClaudeLimits(obs, latest))
 	}
-}
-
-func (i *Ingest) lastObservation(ctx context.Context, authIndex string) (time.Time, error) {
-	latest, err := i.latestObservations(ctx, authIndex)
-	var last time.Time
-	for _, o := range latest {
-		if o.ObservedAt.After(last) {
-			last = o.ObservedAt
-		}
-	}
-	return last, err
 }
 
 // pollAccount stamps the readings when the response arrives.
