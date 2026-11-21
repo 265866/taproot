@@ -591,3 +591,74 @@ func TestLoginReasonInPlainEnglish(t *testing.T) {
 		t.Errorf("unknown text not redacted: %q", got)
 	}
 }
+
+// claudeRefreshExpired is a Claude credential as upstream leaves it after
+// Anthropic refused its refresh token failures times in a row: upstream
+// treats invalid_grant as terminal for Codex only, so it never sets
+// RequiresSignIn and keeps retrying.
+func claudeRefreshExpired(failures int) func(*coreauth.Auth) {
+	return func(a *coreauth.Auth) {
+		a.RefreshFailures = failures
+		a.RefreshError = &coreauth.Error{
+			Code:       "invalid_grant",
+			Message:    `token refresh failed with status 400: {"error": "invalid_grant", "error_description": "Refresh token expired"}`,
+			HTTPStatus: 400, Retryable: true,
+		}
+	}
+}
+
+func tokenExpired(a *coreauth.Auth) {
+	a.Metadata["expired"] = t0.Add(-time.Hour).Format(time.RFC3339)
+	a.Unavailable, a.Status, a.StatusMessage = true, coreauth.StatusError, "invalid grant (retrying)"
+}
+
+// The production state of 2026-11-20: one Claude account waited out its
+// weekly limit while the other's refresh token had expired days before. No
+// account could serve, yet the verdict said one could and Needs you was
+// empty.
+func TestRetryingRefreshFailureSignsOut(t *testing.T) {
+	limited := auth("claude", "alice@example.com")
+	dead := auth("claude", "bob@example.org", claudeRefreshExpired(12), tokenExpired)
+	st, att, _ := scene{
+		auths:  []*coreauth.Auth{limited, dead},
+		latest: []ingest.QuotaObservation{weekly(limited, 1, 56*time.Hour)},
+		recent: map[string]int64{"claude": 30},
+	}.eval()
+	if st.State != verdictDown || st.Headline != "Down: no account can serve Claude" {
+		t.Errorf("verdict = %q %q, want down", st.State, st.Headline)
+	}
+	it, ok := findItem(att, "account_signed_out")
+	if !ok || it.Severity != SeverityBlocking || it.Title != "Claude: bob@example.org is signed out" || !strings.HasPrefix(it.Detail, "The login expired. ") {
+		t.Errorf("signed-out item = %+v (found %t) in %+v", it, ok, att.Items)
+	}
+}
+
+func TestRefreshRefusalWithAValidToken(t *testing.T) {
+	cases := []struct {
+		name string
+		opts []func(*coreauth.Auth)
+		want string
+	}{
+		{"refused once, a rotation race the next attempt can settle", []func(*coreauth.Auth){claudeRefreshExpired(1)}, ""},
+		{"refused twice", []func(*coreauth.Auth){claudeRefreshExpired(2)}, "account_refresh_failing"},
+		{"a network failure while the token serves", []func(*coreauth.Auth){func(a *coreauth.Auth) {
+			a.RefreshError = &coreauth.Error{Code: "refresh_failed", Message: "dial tcp: i/o timeout", Retryable: true}
+		}}, ""},
+		// Upstream retries it in minutes; a new sign-in would not help.
+		{"a network failure after the token expired", []func(*coreauth.Auth){func(a *coreauth.Auth) {
+			a.RefreshError = &coreauth.Error{Code: "refresh_failed", Message: "dial tcp: i/o timeout", Retryable: true}
+		}, tokenExpired}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, att, _ := scene{auths: []*coreauth.Auth{auth("claude", "alice@example.com"), auth("claude", "bob@example.org", c.opts...)}}.eval()
+			var kinds []string
+			for _, it := range att.Items {
+				kinds = append(kinds, it.Kind)
+			}
+			if got := strings.Join(kinds, ","); got != c.want {
+				t.Errorf("items = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
