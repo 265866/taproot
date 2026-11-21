@@ -42,9 +42,11 @@ type Backups interface {
 	NextRun() (time.Time, bool)
 }
 
-// Alerts reports Discord delivery health.
+// Alerts reports Discord delivery health and receives each evaluation's
+// judgment of the whole server.
 type Alerts interface {
 	DeliveryHealth() alerts.DeliveryHealth
+	Report(alerts.ServerReport)
 }
 
 type authLister interface {
@@ -234,7 +236,25 @@ func (s *Service) evaluate(ctx context.Context) (evaluation, error) {
 			delete(s.seen, id)
 		}
 	}
+	s.deps.Alerts.Report(serverReport(st, att))
 	return evaluation{status: st, attention: att, pools: pools}, nil
+}
+
+// serverReport is what the alerts module needs from an evaluation: whether
+// most requests fail, and the backup item.
+func serverReport(st Status, att Attention) alerts.ServerReport {
+	r := alerts.ServerReport{RequestsJudged: st.Window.Requests >= minSample, Requests: st.Window.Requests, Failed: st.Window.Failed}
+	for _, reason := range st.Reasons {
+		if reason.Code == "failure_rate" && reason.State == verdictDown {
+			r.RequestsFailing = true
+		}
+	}
+	for _, it := range att.Items {
+		if it.Kind == "backup_overdue" || (it.Kind == "source_unreadable" && it.Subject.Type == "backups") {
+			r.Backup = &alerts.BackupProblem{Title: it.Title, Detail: it.Detail}
+		}
+	}
+	return r
 }
 
 // noteUnreadable logs each source that newly fails, or fails differently,

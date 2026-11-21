@@ -69,6 +69,8 @@ type Snapshot struct {
 	Quota []ingest.QuotaObservation
 	// Grants maps a Claude auth index to its last read grants.
 	Grants map[string][]Grant
+	// Server is the status module's latest judgment of the whole server.
+	Server ServerReport
 }
 
 // Condition is a problem that holds right now. Recovery, when set, is posted
@@ -83,6 +85,9 @@ type Condition struct {
 	// while the condition is not seen, for a condition that cannot recover
 	// before it ends, such as a grant's expiry.
 	Until time.Time
+	// Hold keeps the key's open track as it is, neither posting nor
+	// recovering, while the data cannot judge it.
+	Hold bool
 }
 
 const grantWarnWithin = 24 * time.Hour
@@ -154,6 +159,7 @@ func Conditions(s Snapshot) map[string]Condition {
 			out[key] = grantCondition(key, a, g)
 		}
 	}
+	serverConditions(s.Server, out)
 	return out
 }
 
@@ -378,6 +384,9 @@ func NewDetector(cooldown, settle time.Duration) *Detector {
 // memory changed and should be saved.
 func (d *Detector) Step(now time.Time, active map[string]Condition) (out []Message, changed bool) {
 	for key, c := range active {
+		if c.Hold {
+			continue
+		}
 		t := d.tracks[key]
 		if t == nil {
 			t = &track{}
@@ -480,13 +489,17 @@ func (d *Detector) Rearm() (changed bool) {
 
 // Forget drops, without a recovery, the tracks of accounts and providers no
 // longer in accounts: an account the user removed or disabled did not
-// recover. Pool keys name a provider; every other key names an auth index.
+// recover. Pool keys name a provider, the requests and backup keys concern
+// the whole server, and every other key names an auth index.
 func (d *Detector) Forget(accounts []Account) (changed bool) {
 	indexes, providers := map[string]bool{}, map[string]bool{}
 	for _, a := range accounts {
 		indexes[a.AuthIndex], providers[a.Provider] = true, true
 	}
 	for key := range d.tracks {
+		if key == keyRequests || key == keyBackup {
+			continue
+		}
 		kind, subject, _ := strings.Cut(key, ":")
 		if kind == "pool" {
 			if providers[subject] {
