@@ -92,7 +92,10 @@ type Ingest struct {
 	claudeUsageURL string
 	codexUsageURL  string
 	lastPoll       map[string]time.Time
-	proxy          *egress.Proxy
+	// pollFailing marks accounts whose last poll failed, so the first
+	// failure warns and the repeats do not.
+	pollFailing map[string]bool
+	proxy       *egress.Proxy
 
 	refreshMu   sync.Mutex
 	lastRefresh map[string]time.Time
@@ -126,6 +129,7 @@ func New(cfg Config, db *store.DB) (*Ingest, error) {
 		claudeUsageURL: devUsageURL(devClaudeUsageURLEnv, claudeUsageURL),
 		codexUsageURL:  devUsageURL(devCodexUsageURLEnv, codexUsageURL),
 		lastPoll:       map[string]time.Time{},
+		pollFailing:    map[string]bool{},
 		lastRefresh:    map[string]time.Time{},
 	}
 	usage.RegisterNamedPlugin("taproot", i)

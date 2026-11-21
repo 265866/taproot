@@ -27,6 +27,11 @@ const (
 	// proxied traffic.
 	pollTimeout = 30 * time.Second
 	maxPollBody = 1 << 20
+	// busyPollInterval is the longest a busy account goes without a poll.
+	// Response headers name only the windows an account has, so only the
+	// usage endpoint shows that a window went away, such as a 5-hour limit
+	// the provider dropped.
+	busyPollInterval = time.Hour
 )
 
 // refreshAccounts copies labels, emails, plans, and disabled flags from the
@@ -122,9 +127,10 @@ func accessToken(a *coreauth.Auth) string {
 }
 
 // pollIdle reads the usage endpoint for every enabled Claude or Codex account
-// that has no quota observation, and no poll attempt, within the interval.
-// It only reads the current access token; refreshing stays with the auth
-// manager.
+// that has no quota observation, and no poll attempt, within the interval,
+// and for every busy one not polled within busyPollInterval (or the interval,
+// when that is longer). It only reads the current access token; refreshing
+// stays with the auth manager.
 func (i *Ingest) pollIdle(ctx context.Context) {
 	for _, a := range i.authList() {
 		if ctx.Err() != nil {
@@ -154,13 +160,31 @@ func (i *Ingest) pollIdle(ctx context.Context) {
 			}
 		}
 		if !last.IsZero() && now.Sub(last) < i.pollInterval {
-			continue
+			// A busy account seen for the first time counts as polled now,
+			// so a restart does not poll every account at once.
+			polled, ok := i.lastPoll[idx]
+			if !ok {
+				i.lastPoll[idx] = now
+			}
+			if !ok || now.Sub(polled) < max(i.pollInterval, busyPollInterval) {
+				continue
+			}
 		}
 		i.lastPoll[idx] = now
 		obs, err := i.pollAccount(ctx, a, provider)
 		if err != nil {
-			log.WithError(err).WithField("auth_index", idx).Debug("taproot ingest: quota poll failed")
+			entry := log.WithError(err).WithField("auth_index", idx)
+			if !i.pollFailing[idx] {
+				entry.Warn("taproot ingest: quota poll failed; its quota readings stay as they were until a poll succeeds")
+			} else {
+				entry.Debug("taproot ingest: quota poll failed")
+			}
+			i.pollFailing[idx] = true
 			continue
+		}
+		if i.pollFailing[idx] {
+			log.WithField("auth_index", idx).Info("taproot ingest: quota poll works again")
+			delete(i.pollFailing, idx)
 		}
 		for k := range obs {
 			obs[k].AuthIndex = idx
