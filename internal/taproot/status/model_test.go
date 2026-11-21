@@ -153,15 +153,14 @@ func TestVerdictUsableAccounts(t *testing.T) {
 		state, headline string
 	}{
 		{"two usable", claude, map[string]int64{"claude": 30}, verdictNormal, "Serving normally"},
-		{"down to one with traffic",
+		// One account left is not degraded: the other used up its quota, or
+		// is signed out and has its own Needs-you item.
+		{"one of two cooling",
+			[]*coreauth.Auth{claude[0], auth("claude", "bob@example.org", coolingFor(time.Hour))}, map[string]int64{"claude": 30},
+			verdictNormal, "Serving normally"},
+		{"one of two signed out",
 			[]*coreauth.Auth{claude[0], auth("claude", "bob@example.org", signedOut)}, map[string]int64{"claude": 30},
-			verdictDegrade, "Degraded: Claude is down to one usable account"},
-		{"down to one without traffic in the last hour",
-			[]*coreauth.Auth{claude[0], auth("claude", "bob@example.org", signedOut)}, nil, verdictNormal, "Serving normally"},
-		{"a provider with one account is not down to one",
-			[]*coreauth.Auth{claude[0]}, map[string]int64{"claude": 30}, verdictNormal, "Serving normally"},
-		{"one enabled and one disabled is not down to one",
-			[]*coreauth.Auth{claude[0], auth("claude", "bob@example.org", disabled)}, map[string]int64{"claude": 30}, verdictNormal, "Serving normally"},
+			verdictNormal, "Serving normally"},
 		{"none usable with traffic",
 			[]*coreauth.Auth{auth("claude", "alice@example.com", signedOut), auth("claude", "bob@example.org", coolingFor(time.Hour)), auth("codex", "alice@example.com")},
 			map[string]int64{"claude": 3, "codex": 1}, verdictDown, "Down: no account can serve Claude"},

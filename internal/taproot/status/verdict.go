@@ -37,7 +37,7 @@ type Status struct {
 
 // Reason is one condition behind a degraded or down verdict.
 type Reason struct {
-	// Code is failure_rate, no_usable_account, or one_usable_account.
+	// Code is failure_rate or no_usable_account.
 	Code string `json:"code"`
 	// State is the verdict this reason alone gives.
 	State    string `json:"state"`
@@ -97,24 +97,18 @@ func verdict(pools []Pool, accounts []Account, window RequestWindow, recent map[
 		st.Providers = append(st.Providers, *byProvider[p.Provider])
 	}
 
-	// Provider reasons come first: they name what to fix.
+	// Provider reasons come first: they name what to fix. Fewer usable
+	// accounts than enabled ones is not a reason: accounts that used up their
+	// quota are expected, and a signed-out one or a low pool has its own
+	// Needs-you item.
 	var empty []string
 	for _, pa := range st.Providers {
-		if pa.RecentRequests == 0 {
+		if pa.RecentRequests == 0 || pa.Usable > 0 {
 			continue
 		}
 		name := providerName(pa.Provider)
-		switch pa.Usable {
-		case 0:
-			empty = append(empty, name)
-			st.Reasons = append(st.Reasons, Reason{Code: "no_usable_account", State: verdictDown, Provider: pa.Provider, Message: "No account can serve " + name})
-		case 1:
-			// A provider with one enabled account always has one; that is
-			// its normal, not a loss.
-			if pa.Accounts-pa.Disabled > 1 {
-				st.Reasons = append(st.Reasons, Reason{Code: "one_usable_account", State: verdictDegrade, Provider: pa.Provider, Message: name + " is down to one usable account"})
-			}
-		}
+		empty = append(empty, name)
+		st.Reasons = append(st.Reasons, Reason{Code: "no_usable_account", State: verdictDown, Provider: pa.Provider, Message: "No account can serve " + name})
 	}
 	if window.Requests >= minSample {
 		rate := float64(window.Failed) / float64(window.Requests)
