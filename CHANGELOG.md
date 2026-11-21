@@ -2,6 +2,14 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## [0.7.2](https://github.com/265866/taproot/compare/taproot-v0.7.1...taproot-v0.7.2) (2026-11-21)
+
+### Fixed
+
+* **taproot:** stop calling one exhausted account a degraded server ([515d383](https://github.com/265866/taproot/commit/515d383127888dea59a816d76eb95a4abd45741c))
+* **taproot:** flag Claude logins whose refresh keeps failing ([bcf9423](https://github.com/265866/taproot/commit/bcf9423f6592c066d3565813b19d9477824de2f6))
+* **taproot:** poll busy accounts hourly so dropped quota windows clear ([f726d3d](https://github.com/265866/taproot/commit/f726d3dc4985accf6e64ed93b492702c07df9816))
+
 ## [0.7.1](https://github.com/265866/taproot/compare/taproot-v0.7.0...taproot-v0.7.1) (2026-11-17)
 
 ### Fixed
