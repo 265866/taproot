@@ -49,7 +49,7 @@ Every key is optional. Sizes accept a number of bytes or a value such as `512MiB
 | `access.tailscale-socket` | `/var/run/tailscale/tailscaled.sock` | The `tailscaled` LocalAPI socket. |
 | `access.cache-ttl` | `1m` | How long taproot caches which device an address belongs to, at most `10m`. A device that takes over another's tailnet address keeps the other device's access for up to this long. |
 | `access.enabled` | `true` | Keep it `true`. `false` opens the proxy to every caller and limits the dashboard and APIs to loopback. |
-| `ingest.poll-interval` | `15m` | How often taproot polls the quota of idle accounts. `0` turns polling off. |
+| `ingest.poll-interval` | `15m` | How often taproot polls the quota of idle accounts. Busy accounts are polled at least hourly, or at this interval when it is longer. `0` turns polling off. |
 | `request-logs.max-days` | `14` | Delete request logs older than this many days. A negative value keeps them forever. |
 | `request-logs.max-bytes` | `20GiB` | Delete the oldest request logs when they pass this size. It counts compressed segments, open segments at the ratio sealed ones compress to, stored images and other payloads, and dictionaries. Payload pack files can hold up to a third more than that until taproot rewrites them. A negative value removes the limit. |
 | `request-logs.exclude-paths` | empty | Paths never stored, such as `/v1/models` or `HEAD /api/*`. |

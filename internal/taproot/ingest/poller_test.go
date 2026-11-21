@@ -349,3 +349,87 @@ func TestPollAtRoundedLimitKeepsAllowedHeader(t *testing.T) {
 		})
 	}
 }
+
+// Headers name only the windows an account has, so a busy account whose
+// 5-hour limit went away kept showing its last 5-hour reading. A poll at least
+// every busyPollInterval records the window's absence.
+func TestPollReadsBusyAccountsEveryHour(t *testing.T) {
+	i, clock := newTestIngest(t, Config{})
+	srv, seen := usageServer(t, http.StatusOK, `{"five_hour":null,"limits":[{"kind":"weekly_all","percent":40,"resets_at":"2026-11-06T00:00:00Z"}]}`)
+	i.claudeUsageURL = srv.URL
+	m := coreauth.NewManager(nil, nil, nil)
+	busy := registerAuth(t, m, &coreauth.Auth{ID: "claude-busy.json", FileName: "claude-busy.json", Provider: "claude",
+		Metadata: map[string]any{"access_token": "tok-busy"}})
+	i.AttachAuthManager(m)
+
+	request := func(id string, at time.Time, h http.Header) {
+		r := claudeRecord(id, at, h)
+		r.AuthIndex, r.Latency = busy, 0
+		i.HandleUsage(context.Background(), r)
+		mustFlush(t, i)
+	}
+	// A day ago the account had a 5-hour limit; now its headers carry only
+	// the weekly window.
+	request("old", clock.t.Add(-24*time.Hour), hdr("Anthropic-Ratelimit-Unified-5h-Utilization", "0.3", "Anthropic-Ratelimit-Unified-7d-Utilization", "0.2"))
+	windows := func() map[string]bool {
+		latest, err := i.latestObservations(context.Background(), busy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]bool{}
+		for _, o := range latest {
+			out[o.Window] = true
+		}
+		return out
+	}
+
+	for step := 0; step < 4; step++ {
+		request("r"+strconv.Itoa(step), clock.t.Add(-time.Minute), hdr("Anthropic-Ratelimit-Unified-7d-Utilization", "0.4"))
+		i.pollIdle(context.Background())
+		mustFlush(t, i)
+		if len(seen()) != 0 {
+			t.Fatalf("polled a busy account after %d min", step*15)
+		}
+		clock.t = clock.t.Add(15 * time.Minute)
+	}
+	if !windows()["five_hour"] {
+		t.Fatal("the 5-hour reading should still show before the hourly poll")
+	}
+
+	request("r4", clock.t.Add(-time.Minute), hdr("Anthropic-Ratelimit-Unified-7d-Utilization", "0.4"))
+	i.pollIdle(context.Background())
+	mustFlush(t, i)
+	if len(seen()) != 1 {
+		t.Fatalf("polls after an hour of traffic = %d, want 1", len(seen()))
+	}
+	if w := windows(); w["five_hour"] || !w["seven_day"] {
+		t.Fatalf("windows after the poll = %v, want seven_day only", w)
+	}
+}
+
+// A poll interval longer than busyPollInterval also spaces out busy polls.
+func TestPollReadsBusyAccountsAtALongerInterval(t *testing.T) {
+	i, clock := newTestIngest(t, Config{PollInterval: "2h"})
+	srv, seen := usageServer(t, http.StatusOK, `{"limits":[{"kind":"weekly_all","percent":40}]}`)
+	i.claudeUsageURL = srv.URL
+	m := coreauth.NewManager(nil, nil, nil)
+	busy := registerAuth(t, m, &coreauth.Auth{ID: "claude-busy.json", FileName: "claude-busy.json", Provider: "claude",
+		Metadata: map[string]any{"access_token": "tok-busy"}})
+	i.AttachAuthManager(m)
+
+	for _, minutes := range []int{0, 61, 119, 120} {
+		clock.t = time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC).Add(time.Duration(minutes) * time.Minute)
+		r := claudeRecord("r"+strconv.Itoa(minutes), clock.t.Add(-time.Minute), hdr("Anthropic-Ratelimit-Unified-7d-Utilization", "0.4"))
+		r.AuthIndex, r.Latency = busy, 0
+		i.HandleUsage(context.Background(), r)
+		mustFlush(t, i)
+		i.pollIdle(context.Background())
+		want := 0
+		if minutes == 120 {
+			want = 1
+		}
+		if got := len(seen()); got != want {
+			t.Fatalf("polls at %d min = %d, want %d", minutes, got, want)
+		}
+	}
+}
