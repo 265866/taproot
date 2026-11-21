@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/265866/taproot/internal/taproot/alerts"
 	"github.com/265866/taproot/internal/taproot/ingest"
 	coreauth "github.com/265866/taproot/sdk/cliproxy/auth"
 )
@@ -78,13 +79,15 @@ func accountsFrom(auths []*coreauth.Auth, latest []ingest.QuotaObservation, now 
 		// sign-in-required account while its access token is valid
 		// (canServeWithAccessToken in conductor_lifecycle.go), unless that
 		// token was itself rejected.
-		rejected := coreauth.HasUnauthorizedAuthFailure(a)
-		broken := a.RequiresSignIn || rejected
+		broken, rejected := alerts.LoginBroken(a, now)
 		stillServes := broken && !rejected && a.HasValidAccessToken(now)
 		if broken {
 			acct.Reason = loginReason(a, now)
 			acct.Since = a.RenewalEventAt
-			if acct.Since.IsZero() {
+			// A refresh upstream still retries moves UpdatedAt on every
+			// attempt, so Since stays zero and the item keeps the time it was
+			// first listed.
+			if acct.Since.IsZero() && (a.RequiresSignIn || rejected) {
 				acct.Since = a.UpdatedAt
 			}
 		}
@@ -238,6 +241,8 @@ var renewalCodes = []struct{ code, text string }{
 	{"refresh_outcome_unknown", "A login refresh was interrupted, so taproot can't tell whether the provider still accepts this login"},
 	{"refresh_token_reused", "The provider ended this login because its refresh token was used elsewhere, such as by another copy of the credential"},
 	{"refresh_token_expired", "The login expired"},
+	// Anthropic sends invalid_grant with this description rather than a code.
+	{"refresh token expired", "The login expired"},
 	{"refresh_token_invalidated", "The provider ended this login, for example after a sign-out or password change"},
 	{"token_revoked", "The login was revoked"},
 	{"invalid_grant", "The provider no longer accepts this login"},

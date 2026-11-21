@@ -821,3 +821,36 @@ func TestGrantReadUsesTheGlobalProxyAndRefusesAnInvalidOne(t *testing.T) {
 		t.Fatalf("direct %q, proxied %q; want one read through the global proxy", direct, proxied)
 	}
 }
+
+// Anthropic answers an expired Claude refresh token with invalid_grant, which
+// upstream retries rather than marking RequiresSignIn. Two refusals in a row
+// break the login; once the access token expires, the pool is empty.
+func TestRetriedInvalidGrantBreaksTheLogin(t *testing.T) {
+	fake := &fakeDiscord{}
+	expiry := t0.Add(5 * time.Hour)
+	a, b := claudeAuth("a", "main"), expiresAt(claudeAuth("b", "spare"), expiry)
+	b.RefreshFailures = 1
+	b.RefreshError = &coreauth.Error{Code: "invalid_grant", Message: `token refresh failed with status 400: {"error": "invalid_grant", "error_description": "Refresh token expired"}`, HTTPStatus: 400, Retryable: true}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, a, b)
+	h.feed.hook([]ingest.QuotaObservation{{AuthIndex: a.EnsureIndex(), Provider: "claude", Window: "seven_day", Utilization: 1, Status: "rejected", ResetsAt: t0.Add(72 * time.Hour), ObservedAt: t0, AccountWide: true}})
+
+	h.step(t, 0)
+	h.step(t, loginDelay)
+	h.titles(t, 1)
+
+	b.RefreshFailures = 2
+	h.step(t, time.Minute)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 2); got[1] != "Claude login broken" {
+		t.Fatalf("titles = %q", got)
+	}
+	if login := decodeCard(t, []byte(h.body(t, 1))).description; !strings.Contains(login, "keeps working until") {
+		t.Fatalf("login alert should say b works until its token expires: %s", login)
+	}
+
+	h.step(t, 5*time.Hour)
+	h.step(t, loginDelay)
+	if got := h.titles(t, 3); got[2] != "Claude pool is empty" {
+		t.Fatalf("titles = %q", got)
+	}
+}

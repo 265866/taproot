@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -477,8 +478,8 @@ func accountsFrom(auths []*coreauth.Auth, now time.Time, held map[string]bool) [
 		if idx == "" {
 			continue
 		}
-		rejected := coreauth.HasUnauthorizedAuthFailure(a)
-		broken := a.RequiresSignIn || rejected || held[idx]
+		broken, rejected := LoginBroken(a, now)
+		broken = broken || held[idx]
 		acct := Account{AuthIndex: idx, Provider: strings.ToLower(strings.TrimSpace(a.Provider)), Label: safeLabel(authLabel(a)), LoginBroken: broken}
 		if broken {
 			acct.LoginReason = loginReason(a, now)
@@ -494,6 +495,34 @@ func accountsFrom(auths []*coreauth.Auth, now time.Time, held map[string]bool) [
 		out = append(out, acct)
 	}
 	return out
+}
+
+// refusedStatus finds a refusal in a refresh error's text. Upstream sets
+// RefreshError.HTTPStatus only for 401 and invalid_grant, while the Claude
+// and Codex refresh errors read "token refresh failed with status 403: ...".
+var refusedStatus = regexp.MustCompile(`\bstatus (400|401|403)\b`)
+
+// LoginBroken reports whether a's login needs a new sign-in, and whether
+// that is because upstream rejected its access token. Upstream marks a
+// login RequiresSignIn only for refresh failures it deems terminal; it
+// retries the rest, so two more cases count here:
+//   - The provider refused the refresh grant (invalid_grant) twice in a row.
+//     Upstream treats invalid_grant as terminal for Codex only, so Claude's
+//     "Refresh token expired" never sets RequiresSignIn. One refusal can be a
+//     refresh-token rotation race, which the next attempt settles.
+//   - The provider refused a refresh (400, 401, or 403) and the access token
+//     has expired, so upstream holds the credential back until a refresh
+//     succeeds. A network or server failure does not count: upstream retries
+//     it in minutes, and signing in again would not help.
+func LoginBroken(a *coreauth.Auth, now time.Time) (broken, tokenRejected bool) {
+	tokenRejected = coreauth.HasUnauthorizedAuthFailure(a)
+	refreshFailing := false
+	if e := a.RefreshError; e != nil {
+		refused := e.HTTPStatus == http.StatusBadRequest || e.HTTPStatus == http.StatusUnauthorized ||
+			e.HTTPStatus == http.StatusForbidden || refusedStatus.MatchString(e.Message)
+		refreshFailing = (e.Code == "invalid_grant" && a.RefreshFailures >= 2) || (refused && !a.HasValidAccessToken(now))
+	}
+	return a.RequiresSignIn || tokenRejected || refreshFailing, tokenRejected
 }
 
 // inScope reports whether alerts watch a. Upstream sets Disabled and
