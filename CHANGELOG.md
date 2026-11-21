@@ -2,6 +2,12 @@
 
 Notable changes to taproot. Releases are tagged `taproot-vX.Y.Z`. From v0.2.0 on, the `changelog` job of `.github/workflows/release-please.yml` writes each release's section in the release PR, from the Conventional Commit messages of taproot's own commits since the previous release. Notes that need more than a commit message wait under Unreleased until the release PR; see "Releases" in `CONTRIBUTING.md`.
 
+## [0.8.0](https://github.com/265866/taproot/compare/taproot-v0.7.2...taproot-v0.8.0) (2026-11-21)
+
+### Added
+
+* **taproot:** alert on failing requests and backup problems ([91d8fb7](https://github.com/265866/taproot/commit/91d8fb7e6fc6fa33d0b811650560b70550ecdf78))
+
 ## [0.7.2](https://github.com/265866/taproot/compare/taproot-v0.7.1...taproot-v0.7.2) (2026-11-21)
 
 ### Fixed
