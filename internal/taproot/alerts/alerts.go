@@ -91,6 +91,12 @@ type Service struct {
 	grantReads   map[string]grantRead
 	grantPolling bool
 
+	// server is the status module's latest report; serverSeen is set once
+	// one arrived after the start.
+	serverMu   sync.Mutex
+	server     ServerReport
+	serverSeen bool
+
 	// deliveries holds the sender's outcomes for detector messages until the
 	// evaluation goroutine, which owns the detector, applies them. rearm asks
 	// it to treat the open alerts as unsent after the webhook changed.
@@ -436,7 +442,13 @@ func (s *Service) evaluate(ctx context.Context) {
 		accounts := accountsFrom(auths, now, s.heldLogins(auths))
 		s.pollGrants(ctx, auths, now)
 		forgot := s.detector.Forget(accounts)
-		msgs, stepped := s.detector.Step(now, Conditions(s.snapshot(now, accounts)))
+		snap := s.snapshot(now, accounts)
+		conds := Conditions(snap)
+		s.serverMu.Lock()
+		seen := s.serverSeen
+		s.serverMu.Unlock()
+		s.detector.carryServerTracks(conds, snap.Server, seen)
+		msgs, stepped := s.detector.Step(now, conds)
 		changed = changed || forgot || stepped
 		for _, m := range msgs {
 			s.sender.Enqueue(m)
@@ -463,6 +475,9 @@ func (s *Service) snapshot(now time.Time, accounts []Account) Snapshot {
 		}
 	}
 	s.grantMu.Unlock()
+	s.serverMu.Lock()
+	snap.Server = s.server
+	s.serverMu.Unlock()
 	return snap
 }
 

@@ -662,3 +662,51 @@ func TestRefreshRefusalWithAValidToken(t *testing.T) {
 		})
 	}
 }
+
+// The alerts module reads the verdict's failure rate only at the down
+// threshold, and the backup item as Needs you words it.
+func TestServerReport(t *testing.T) {
+	failedRun := backup.Run{At: t0.Add(-10 * time.Hour), Error: "write backup: no space left on device"}
+	cases := []struct {
+		name        string
+		window      RequestWindow
+		backup      backupState
+		failing     bool
+		backupTitle string
+	}{
+		{"all well", RequestWindow{Requests: 200, Failed: 2}, backupState{}, false, ""},
+		{"degraded is not failing", RequestWindow{Requests: 200, Failed: 20}, backupState{}, false, ""},
+		{"down by failure rate", RequestWindow{Requests: 200, Failed: 124}, backupState{}, true, ""},
+		{"too few requests to judge", RequestWindow{Requests: 10, Failed: 10}, backupState{}, false, ""},
+		{"failed scheduled backup", RequestWindow{}, backupState{scheduled: true, last: t0.Add(-20 * time.Hour), run: failedRun, hasRun: true}, false, "The last scheduled backup failed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			st, att, _ := scene{window: c.window, backup: c.backup}.eval()
+			r := serverReport(st, att)
+			if r.RequestsFailing != c.failing || r.RequestsJudged != (c.window.Requests >= minSample) || r.Requests != c.window.Requests || r.Failed != c.window.Failed {
+				t.Errorf("report = %+v, want failing %t", r, c.failing)
+			}
+			switch {
+			case c.backupTitle == "" && r.Backup != nil:
+				t.Errorf("backup = %+v, want none", r.Backup)
+			case c.backupTitle != "" && (r.Backup == nil || r.Backup.Title != c.backupTitle || !strings.Contains(r.Backup.Detail, "no space left on device")):
+				t.Errorf("backup = %+v, want %q with the error", r.Backup, c.backupTitle)
+			}
+		})
+	}
+}
+
+// Backups taproot cannot read hide an overdue or failed one, so they report
+// as a backup problem too.
+func TestServerReportUnreadableBackups(t *testing.T) {
+	att := attention(attentionInputs{
+		now: t0, backup: backupState{scheduled: true},
+		unreadable: map[string]error{sourceBackups: errors.New("open /data/taproot/backups: permission denied")},
+		firstSeen:  func(string) time.Time { return t0 },
+	})
+	r := serverReport(Status{}, att)
+	if r.Backup == nil || r.Backup.Title != "Can't check the backups" || !strings.Contains(r.Backup.Detail, "permission denied") {
+		t.Fatalf("backup = %+v", r.Backup)
+	}
+}

@@ -854,3 +854,171 @@ func TestRetriedInvalidGrantBreaksTheLogin(t *testing.T) {
 		t.Fatalf("titles = %q", got)
 	}
 }
+
+// Most requests failing posts after requestsDelay, once, and recovers once
+// the status module stops reporting it. Forget, which runs every step, keeps
+// the server's tracks.
+func TestRequestsFailingAlert(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, claudeAuth("a", "main"))
+	h.svc.Report(ServerReport{RequestsJudged: true, RequestsFailing: true, Requests: 200, Failed: 124})
+
+	h.step(t, 0)
+	h.step(t, requestsDelay-time.Second)
+	h.titles(t, 0)
+	h.step(t, time.Second)
+	if got := h.titles(t, 1); got[0] != "Taproot is failing most requests" {
+		t.Fatalf("titles = %q", got)
+	}
+	if body := h.body(t, 0); !strings.Contains(body, "124 of 200 (62%)") {
+		t.Fatalf("body = %s", body)
+	}
+	h.step(t, time.Minute)
+	h.step(t, time.Hour)
+	h.titles(t, 1)
+
+	h.svc.Report(ServerReport{RequestsJudged: true, Requests: 200, Failed: 3})
+	h.step(t, 0)
+	h.step(t, settle)
+	if got := h.titles(t, 2); got[1] != "Taproot serves requests again" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+func TestBackupAlert(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, claudeAuth("a", "main"))
+	h.svc.Report(ServerReport{Backup: &BackupProblem{
+		Title:  "The last scheduled backup failed",
+		Detail: "The scheduled run 10 h ago failed: write backup: no space left on device.",
+	}})
+
+	h.step(t, 0)
+	if got := h.titles(t, 1); got[0] != "The last scheduled backup failed" {
+		t.Fatalf("titles = %q", got)
+	}
+	if card := decodeCard(t, []byte(h.body(t, 0))); !strings.Contains(card.description, "no space left on device") {
+		t.Fatalf("description = %s", card.description)
+	}
+	h.step(t, time.Minute)
+	h.titles(t, 1)
+
+	h.svc.Report(ServerReport{})
+	h.step(t, 0)
+	h.step(t, settle)
+	if got := h.titles(t, 2); got[1] != "Backups are back on track" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// Clients that give up on a failing server leave too few requests to judge.
+// That is no recovery: the alert stays open until enough requests succeed.
+func TestRequestsAlertHoldsWhileTooFewToJudge(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, claudeAuth("a", "main"))
+	h.svc.Report(ServerReport{RequestsJudged: true, RequestsFailing: true, Requests: 40, Failed: 40})
+	h.step(t, 0)
+	h.step(t, requestsDelay)
+	h.titles(t, 1)
+
+	h.svc.Report(ServerReport{Requests: 12, Failed: 12})
+	h.step(t, 0)
+	h.step(t, settle)
+	h.step(t, time.Hour)
+	h.titles(t, 1)
+
+	h.svc.Report(ServerReport{RequestsJudged: true, Requests: 30, Failed: 1})
+	h.step(t, 0)
+	h.step(t, settle)
+	if got := h.titles(t, 2); got[1] != "Taproot serves requests again" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// A small window that mostly succeeds is a recovery even though it is too
+// small for the verdict to judge, so light traffic does not keep the alert
+// open for days.
+func TestRequestsAlertRecoversOnASmallSucceedingWindow(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, claudeAuth("a", "main"))
+	h.svc.Report(ServerReport{RequestsJudged: true, RequestsFailing: true, Requests: 40, Failed: 40})
+	h.step(t, 0)
+	h.step(t, requestsDelay)
+	h.titles(t, 1)
+
+	h.svc.Report(ServerReport{Requests: 15, Failed: 0})
+	h.step(t, 0)
+	h.step(t, settle)
+	if got := h.titles(t, 2); got[1] != "Taproot serves requests again" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// After a restart, open server alerts wait for the status module's first
+// report: no recovery while none has arrived, and no repeat once it says the
+// problem holds.
+func TestServerAlertsHeldUntilFirstReportAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, dir), fake, claudeAuth("a", "main"))
+	problem := &BackupProblem{Title: "No backup yet", Detail: "The daily backup has not written one; the server's log says why."}
+	h.svc.Report(ServerReport{Backup: problem})
+	h.step(t, 0)
+	h.titles(t, 1)
+	h.step(t, time.Minute)
+
+	h2 := newHarnessAt(t, openDB(t, dir), fake, h.now.Add(time.Minute), claudeAuth("a", "main"))
+	h2.step(t, 0)
+	h2.step(t, settle)
+	h2.step(t, time.Hour)
+	h2.titles(t, 1)
+
+	h2.svc.Report(ServerReport{Backup: problem})
+	h2.step(t, 0)
+	h2.step(t, time.Hour)
+	h2.titles(t, 1)
+
+	h2.svc.Report(ServerReport{})
+	h2.step(t, 0)
+	h2.step(t, settle)
+	if got := h2.titles(t, 2); got[1] != "Backups are back on track" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// A tiny window that turns clear starts the recovery's settle; one that
+// fails again before it ends keeps the alert open.
+func TestRequestsAlertSmallWindowFailingAgainStopsTheRecovery(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, claudeAuth("a", "main"))
+	h.svc.Report(ServerReport{RequestsJudged: true, RequestsFailing: true, Requests: 40, Failed: 40})
+	h.step(t, 0)
+	h.step(t, requestsDelay)
+	h.titles(t, 1)
+
+	h.svc.Report(ServerReport{Requests: 3, Failed: 1})
+	h.step(t, 0)
+	h.svc.Report(ServerReport{Requests: 4, Failed: 3})
+	h.step(t, 30*time.Second)
+	h.step(t, settle)
+	h.step(t, time.Hour)
+	h.titles(t, 1)
+
+	h.svc.Report(ServerReport{RequestsJudged: true, Requests: 30, Failed: 1})
+	h.step(t, 0)
+	h.step(t, settle)
+	if got := h.titles(t, 2); got[1] != "Taproot serves requests again" {
+		t.Fatalf("titles = %q", got)
+	}
+}
+
+// A window too small to judge never opens an alert, however it fails.
+func TestRequestsAlertSmallWindowNeverOpens(t *testing.T) {
+	fake := &fakeDiscord{}
+	h := newHarness(t, openDB(t, t.TempDir()), fake, claudeAuth("a", "main"))
+	h.svc.Report(ServerReport{Requests: 15, Failed: 15})
+	h.step(t, 0)
+	h.step(t, requestsDelay)
+	h.step(t, time.Hour)
+	h.titles(t, 0)
+}

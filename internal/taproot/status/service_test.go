@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,9 +58,18 @@ func (*fakeBackups) LastScheduledRun(context.Context) (backup.Run, bool, error) 
 }
 func (*fakeBackups) NextRun() (time.Time, bool) { return time.Time{}, true }
 
-type fakeAlerts struct{}
+type fakeAlerts struct {
+	mu      sync.Mutex
+	reports []alerts.ServerReport
+}
 
-func (fakeAlerts) DeliveryHealth() alerts.DeliveryHealth { return alerts.DeliveryHealth{} }
+func (*fakeAlerts) DeliveryHealth() alerts.DeliveryHealth { return alerts.DeliveryHealth{} }
+
+func (f *fakeAlerts) Report(r alerts.ServerReport) {
+	f.mu.Lock()
+	f.reports = append(f.reports, r)
+	f.mu.Unlock()
+}
 
 type fakeAuths []*coreauth.Auth
 
@@ -72,17 +82,18 @@ type serviceFixture struct {
 	requests *fakeRequests
 	backups  *fakeBackups
 	usage    *fakeUsage
+	alerts   *fakeAlerts
 	engine   *gin.Engine
 }
 
 func newServiceFixture(t *testing.T) *serviceFixture {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	f := &serviceFixture{clock: t0, requests: &fakeRequests{}, backups: &fakeBackups{}}
+	f := &serviceFixture{clock: t0, requests: &fakeRequests{}, backups: &fakeBackups{}, alerts: &fakeAlerts{}}
 	f.usage = &fakeUsage{counts: func(from, to time.Time) ingest.RequestCounts {
 		return ingest.RequestCounts{Requests: 100, Failed: f.failed, ByProvider: map[string]int64{"claude": 100}}
 	}}
-	svc, err := New(Deps{Usage: f.usage, Requests: f.requests, Backups: f.backups, Alerts: fakeAlerts{}})
+	svc, err := New(Deps{Usage: f.usage, Requests: f.requests, Backups: f.backups, Alerts: f.alerts})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,5 +251,28 @@ func TestUnreadableSourceKeepsTheVerdict(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "access requests read again") {
 		t.Errorf("recovery not logged:\n%s", logs)
+	}
+}
+
+// Each evaluation reports its judgment to the alerts module; one whose
+// request was cancelled judges nothing and reports nothing.
+func TestEvaluateReportsToAlerts(t *testing.T) {
+	f := newServiceFixture(t)
+	f.failed = 60
+	if _, err := f.svc.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := f.svc.evaluate(ctx); err == nil {
+		t.Fatal("a cancelled evaluation succeeded")
+	}
+	f.alerts.mu.Lock()
+	defer f.alerts.mu.Unlock()
+	if len(f.alerts.reports) != 1 {
+		t.Fatalf("reports = %+v, want one", f.alerts.reports)
+	}
+	if r := f.alerts.reports[0]; !r.RequestsJudged || !r.RequestsFailing || r.Requests != 100 || r.Failed != 60 {
+		t.Errorf("report = %+v, want 60 of 100 failing", r)
 	}
 }

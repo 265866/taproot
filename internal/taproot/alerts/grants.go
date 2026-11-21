@@ -76,14 +76,17 @@ var markdownEscaper = strings.NewReplacer(
 
 // safeLabel makes upstream or user text inert inside an embed: no control
 // characters, no markdown, bounded length.
-func safeLabel(s string) string {
+func safeLabel(s string) string { return safeText(s, 120) }
+
+// safeText is safeLabel for longer text, cut to limit runes.
+func safeText(s string, limit int) string {
 	s = strings.Map(func(r rune) rune {
 		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return ' '
 		}
 		return r
 	}, s)
-	return markdownEscaper.Replace(truncate(strings.Join(strings.Fields(s), " "), 120))
+	return markdownEscaper.Replace(truncate(strings.Join(strings.Fields(s), " "), limit))
 }
 
 type grantReader struct {
