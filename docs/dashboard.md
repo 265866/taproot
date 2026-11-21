@@ -15,7 +15,7 @@ The verdict judges the last 15 minutes and the accounts that can serve right now
 | Verdict | When |
 | --- | --- |
 | **Serving normally** | Neither of the rows below applies. The detail line says how many accounts can serve, per provider. |
-| **Degraded** | At least 5% of at least 20 client requests failed in the last 15 minutes, or a provider that had traffic in the last hour has only one usable account left. A provider with only one enabled account is not degraded by that. |
+| **Degraded** | At least 5% of at least 20 client requests failed in the last 15 minutes. An account waiting for its quota reset does not make the server degraded; Needs you lists a pool that may run out and an account that needs a new sign-in. |
 | **Down** | At least 50% of at least 20 client requests failed in the last 15 minutes, or a provider that had traffic in the last hour has no account that can serve. |
 
 A degraded or down verdict has **See failures**, which opens Request Logs on the errors of the last 15 minutes. The header shows when the page last loaded and that it refreshes every 30 seconds.
