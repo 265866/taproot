@@ -110,7 +110,7 @@ jobs:
           persist-credentials: false
       # No build cache in a release build: a cache written by another workflow
       # could change what ships.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: false
@@ -167,7 +167,7 @@ jobs:
         with:
           ref: ${{ needs.meta.outputs.commit }}
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: false
@@ -311,7 +311,7 @@ jobs:
           push-to-registry: true
           # Storage records exist only for organization-owned repositories.
           create-storage-record: false
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
       # The legacy format stores the signature under the registry's
       # sha256-<digest>.sig tag, which verifiers that read only tag-based
       # signatures need. --recursive also signs each platform's image. See
@@ -424,7 +424,7 @@ jobs:
       FLAKE: github:${{ github.repository }}/${{ needs.meta.outputs.commit }}
       SYSTEM: ${{ matrix.system }}
     steps:
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - name: Build
         run: nix build --print-build-logs --out-link result "$FLAKE#packages.$SYSTEM.taproot"
       # The cachix client comes from the flake's nixpkgs. Cachix skips the paths
