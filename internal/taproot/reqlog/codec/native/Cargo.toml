@@ -12,9 +12,9 @@ crate-type = ["staticlib"]
 path = "src/lib.rs"
 
 [dependencies]
-lepton_jpeg = "=0.5.8"
+lepton_jpeg = "=0.5.9"
 preflate-rs = "=0.7.6"
-zstd = { version = "=0.14.3", default-features = false }
+zstd = { version = "=0.14.5", default-features = false }
 
 [profile.release]
 codegen-units = 1
